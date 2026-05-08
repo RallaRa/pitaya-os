@@ -1,4 +1,4 @@
-"use client"; // 추가: 라우터 기능을 사용하기 위한 클라이언트 선언
+"use client";
 
 /**
  * 파일명: app/login/page.tsx
@@ -10,12 +10,11 @@
  */
 
 import React from 'react';
-import { useRouter } from 'next/navigation'; // 추가: 화면 이동을 위한 라우터 훅 임포트
+import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
-  const router = useRouter(); // 추가: 라우터 객체 초기화
+  const router = useRouter();
 
-  // 추가: 클릭 시 대시보드로 이동하는 가짜 라우팅 함수
   const handleLoginClick = () => {
     router.push('/dashboard');
   };
@@ -26,7 +25,7 @@ export default function LoginPage() {
         <h1 className="text-3xl font-bold text-teal-400 text-center mb-6">Pitaya OS</h1>
         <p className="text-center text-slate-400 mb-8">업무의 새로운 기준</p>
         <button 
-          onClick={handleLoginClick} // 추가: 버튼 클릭 이벤트 바인딩
+          onClick={handleLoginClick}
           className="w-full bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-opacity-50"
         >
           Google 계정으로 로그인 (UI 전용)
