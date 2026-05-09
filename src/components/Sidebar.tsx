@@ -1,4 +1,5 @@
 // [History: 2026-05-05 - 대시보드 사이드바 컴포넌트 모듈화]
+// [History: 2026-05-06 - AI 대화모드 진입을 위한 라우팅 링크(a 태그) 적용 및 기존 버튼 주석 보존]
 import React from 'react';
 
 export default function Sidebar() {
@@ -8,9 +9,21 @@ export default function Sidebar() {
       <div className="p-5 flex-1 overflow-y-auto">
         <h2 className="text-2xl font-bold text-teal-400 mb-8 tracking-tight">Pitaya OS</h2>
         <nav className="space-y-2">
+          
+          {/* [History: 2026-05-06 - 기존 UI 껍데기 버튼 주석 처리 보존]
           <button className="w-full flex items-center gap-3 text-left px-4 py-3 bg-slate-800 rounded-xl border border-slate-700 text-teal-300 font-medium transition-colors shadow-sm">
             <span className="text-lg">✨</span> AI 대화모드
           </button>
+          */}
+          
+          {/* 신규: AI 대화모드 실제 이동 링크 */}
+          <a 
+            href="/dashboard/ai" 
+            className="block w-full flex items-center gap-3 text-left px-4 py-3 bg-slate-800 rounded-xl border border-slate-700 text-teal-300 font-medium transition-colors shadow-sm"
+          >
+            <span className="text-lg">✨</span> AI 대화모드
+          </a>
+
           <button className="w-full flex items-center gap-3 text-left px-4 py-3 hover:bg-slate-800/50 rounded-xl transition-colors text-slate-300">
             <span className="text-lg">💬</span> 직원 내부 메신저
           </button>
