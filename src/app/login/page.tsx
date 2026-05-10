@@ -28,7 +28,7 @@ export default function LoginPage() {
           onClick={handleLoginClick}
           className="w-full bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-opacity-50"
         >
-          Google 계정으로 로그인 (UI 전용)
+          Google 계정으로 로그인 (기능미적용)
         </button>
       </div>
     </div>

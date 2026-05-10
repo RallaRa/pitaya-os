@@ -1,12 +1,15 @@
 // [History: AI 대화모드 전용 단발성(Stateless) API 통신 라우트 신규 생성]
 // [Update: AI 페르소나 분기 처리 기능 추가]
 // [Update: 백엔드 API 에러 핸들링 로직 개선]
+// [Update: 키 참조를 GOOGLE_API_KEY로 원복]
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
 const apiKey = process.env.GOOGLE_API_KEY;
+
+// genAI 클라이언트를 모듈 스코프에서 한 번만 생성
 const genAI = new GoogleGenerativeAI(apiKey || '');
 
 const personaInstructions = {
@@ -15,7 +18,7 @@ const personaInstructions = {
 };
 
 export async function POST(req: Request) {
-  // API 키 유무를 먼저 확인
+  // API 키 유무를 핸들러 내부에서도 확인
   if (!apiKey) {
     console.error('GOOGLE_API_KEY is not set in the environment variables.');
     return NextResponse.json({ error: '서버에 API 키가 설정되지 않았습니다.' }, { status: 500 });
@@ -25,9 +28,9 @@ export async function POST(req: Request) {
     const { message, persona = 'assistant' } = await req.json();
 
     const systemInstruction = personaInstructions[persona as keyof typeof personaInstructions] || personaInstructions.assistant;
-
+    
     const model = genAI.getGenerativeModel({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.5-flash',
       systemInstruction: systemInstruction,
     });
 
