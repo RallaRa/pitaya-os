@@ -1,7 +1,8 @@
-"use client";
+'use client';
 
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import Link from 'next/link';
 
 /**
  * 파일명: app/page.tsx
@@ -15,22 +16,26 @@ export default function RootPage() {
   const router = useRouter();
 
   useEffect(() => {
-    // 화면이 렌더링된 후 0.8초(800ms) 뒤에 로그인 페이지로 자동 이동합니다.
-    const timer = setTimeout(() => {
-      router.push('/login');
-    }, 1000);
+    // 이 코드가 브라우저(클라이언트 사이드)에서만 실행되도록 보장합니다.
+    if (typeof window !== 'undefined') {
+      const timer = setTimeout(() => {
+        router.push('/login');
+      }, 1500);
 
-    // 컴포넌트가 사라질 때 타이머를 정리하여 메모리 누수를 방지합니다. 숫자는 시간 500=0.5초
-    return () => clearTimeout(timer);
+      // 컴포넌트가 언마운트될 때 타이머를 정리합니다.
+      return () => clearTimeout(timer);
+    }
   }, [router]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-slate-100 font-sans">
-      <h1 className="text-5xl font-extrabold text-teal-400 animate-pulse">
-        Pitaya OS
-      </h1>
+      <Link href="/login">
+        <h1 className="text-5xl font-extrabold text-teal-400 animate-pulse cursor-pointer">
+          Pitaya OS (여기를 클릭하여 수동으로 이동)
+        </h1>
+      </Link>
       <p className="mt-4 text-lg text-slate-300">
-        첫 페이지입니다.
+        첫 페이지입니다. 자동 이동이 실패하는 경우 위 텍스트를 클릭해보세요.
       </p>
     </div>
   );

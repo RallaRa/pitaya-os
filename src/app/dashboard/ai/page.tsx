@@ -1,10 +1,7 @@
-"use client";
+'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 
-// [History: AI 대화 프론트엔드 상태 관리 및 백엔드 API 연동 UI 구축]
-// [Update: AI 페르소나 변경 및 API 연동 기능 추가]
-// [Update: API 에러 핸들링 로직 개선]
 type Persona = 'assistant' | 'analyst';
 
 export default function AiChatPage() {
@@ -13,38 +10,97 @@ export default function AiChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [persona, setPersona] = useState<Persona>('assistant');
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
+  // [추가] 오토 스크롤을 위한 참조 훅
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    const userMessage = input;
-    setMessages((prev) => [...prev, { role: 'user', text: userMessage }]);
+  // [추가] 메시지 배열이나 로딩 상태가 변할 때마다 맨 아래로 자동 스크롤
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isLoading]);
+
+  /*const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault(); 
+
+    if (!input.trim()) return;
+
+    const currentMessage = input;
+    setMessages((prev) => [...prev, { role: 'user', text: currentMessage }]);
     setInput('');
-    setIsLoading(true);
+    setIsLoading(true); 
 
     try {
-      const response = await fetch('/api/ai', {
+      const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage, persona: persona }),
+        body: JSON.stringify({ message: currentMessage, persona }),
       });
 
-      const data = await response.json();
+      const data = await res.json();
 
-      if (!response.ok) {
-        // 서버에서 전달된 구체적인 에러 메시지를 사용
+      if (!res.ok) {
         const errorMessage = data.error || '알 수 없는 서버 오류가 발생했습니다.';
-        throw new Error(errorMessage);
+        setMessages((prev) => [...prev, { role: 'ai', text: `[통신 오류] ${errorMessage}` }]);
+        return;
       }
 
       setMessages((prev) => [...prev, { role: 'ai', text: data.text }]);
-    } catch (error) {
-      console.error('API Error:', error);
-      // 에러 객체에 담긴 메시지를 화면에 표시
-      const displayError = error instanceof Error ? error.message : '통신 중 오류가 발생했습니다. 다시 시도해 주세요.';
-      setMessages((prev) => [...prev, { role: 'ai', text: `오류: ${displayError}` }]);
+    } catch (error: any) {
+      console.error('Fetch Error:', error);
+      setMessages((prev) => [...prev, { role: 'ai', text: `[네트워크 오류] 통신에 실패했습니다.` }]);
     } finally {
-      setIsLoading(false);
+      setIsLoading(false); 
+    }
+  };*/
+
+  // [수정된 안전한 통신 로직] - 기존 handleSendMessage 함수를 통째로 덮어쓰세요
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault(); 
+
+    if (!input.trim()) return;
+
+    const currentMessage = input;
+    setMessages((prev) => [...prev, { role: 'user', text: currentMessage }]);
+    setInput('');
+    setIsLoading(true); 
+
+    try {
+      // ⚠️ 주의: 백엔드 폴더가 api/ai 라면 '/api/ai'로, api/chat 이라면 '/api/chat'으로 맞춰야 합니다.
+      const res = await fetch('/api/ai', {
+      //const res = await fetch('/api/chat', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: currentMessage, persona }),
+      });
+
+      // 1. JSON이 아닐 경우를 대비해 일단 날것의 텍스트로 받습니다.
+      const rawText = await res.text(); 
+      
+      let data;
+      try {
+        // 2. 받은 텍스트를 JSON으로 변환 시도합니다.
+        data = JSON.parse(rawText); 
+      } catch (parseError) {
+        // 3. HTML(<!DOCTYPE...)이 날아와도 앱이 죽지 않고 원인을 화면에 출력합니다.
+        console.error("서버 원본 응답:", rawText);
+        setMessages((prev) => [...prev, { 
+          role: 'ai', 
+          text: `[경로 오류] 백엔드 주소가 엇갈렸습니다. (현재 찌른 주소: /api/chat)\n좌측 파일 트리에서 백엔드 폴더명이 'ai'인지 'chat'인지 확인해주세요.` 
+        }]);
+        return;
+      }
+
+      if (!res.ok) {
+        const errorMessage = data.error || '알 수 없는 서버 오류가 발생했습니다.';
+        setMessages((prev) => [...prev, { role: 'ai', text: `[통신 오류] ${errorMessage}` }]);
+        return;
+      }
+
+      setMessages((prev) => [...prev, { role: 'ai', text: data.text }]);
+    } catch (error: any) {
+      console.error('Fetch Error:', error);
+      setMessages((prev) => [...prev, { role: 'ai', text: `[네트워크 오류] 통신에 실패했습니다.` }]);
+    } finally {
+      setIsLoading(false); 
     }
   };
 
@@ -62,9 +118,9 @@ export default function AiChatPage() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-950 text-slate-100 p-4">
+    <div className="flex flex-col h-[calc(100vh-4rem)] bg-slate-950 text-slate-100 p-4">
       {/* 페르소나 선택 UI */}
-      <div className="flex justify-center mb-4">
+      <div className="flex justify-center mb-4 shrink-0">
         <div className="p-1 bg-slate-800 rounded-lg flex gap-1 border border-slate-700">
           <button
             onClick={() => setPersona('assistant')}
@@ -96,7 +152,7 @@ export default function AiChatPage() {
         ) : (
           messages.map((msg, idx) => (
             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`p-4 rounded-xl max-w-[80%] border shadow-sm ${
+              <div className={`p-4 rounded-xl max-w-[80%] border shadow-sm break-words whitespace-pre-wrap ${
                 msg.role === 'user' 
                   ? 'bg-teal-900/50 border-teal-700/50 rounded-br-sm text-teal-50' 
                   : 'bg-slate-800 border-slate-700 rounded-bl-sm text-slate-200'
@@ -114,10 +170,12 @@ export default function AiChatPage() {
             </div>
           </div>
         )}
+        {/* [추가] 오토 스크롤이 도달할 타겟 지점 */}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* 하단 입력창 */}
-      <form onSubmit={handleSendMessage} className="flex gap-2">
+      <form onSubmit={handleSendMessage} className="flex gap-2 shrink-0">
         <input
           type="text"
           value={input}
@@ -127,8 +185,8 @@ export default function AiChatPage() {
         />
         <button
           type="submit"
-          disabled={isLoading}
-          className="bg-teal-500 hover:bg-teal-400 text-slate-950 px-6 py-3 rounded-lg font-bold transition-colors disabled:opacity-50"
+          disabled={isLoading || !input.trim()} // [수정] 로딩중이거나 빈칸이면 강제 비활성화
+          className="bg-teal-500 hover:bg-teal-400 text-slate-950 px-6 py-3 rounded-lg font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           전송
         </button>
