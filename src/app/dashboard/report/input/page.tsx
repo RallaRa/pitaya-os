@@ -63,38 +63,75 @@ export default function ReportInputPage() {
   };
 
   // 클립보드 이미지 붙여넣기 감지 핸들러
+  // 클립보드 이미지 및 엑셀 셀 붙여넣기 감지 핸들러 (강화판)
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
+    const clipboardData = e.clipboardData;
+    if (!clipboardData) return;
 
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf('image') !== -1) {
-        const file = items[i].getAsFile();
-        if (!file) continue;
+    let imageFile: File | null = null;
 
-        const MAX_SIZE = 10 * 1024 * 1024;
-        if (file.size > MAX_SIZE) {
-          alert('10MB 이하의 이미지만 붙여넣을 수 있습니다.');
-          return;
+    // 1. files 배열 우선 탐색 (엑셀 표 복사 시 이미지는 보통 files 배열에 깊숙이 숨겨져 들어옴)
+    if (clipboardData.files && clipboardData.files.length > 0) {
+      for (let i = 0; i < clipboardData.files.length; i++) {
+        if (clipboardData.files[i].type.startsWith('image/')) {
+          imageFile = clipboardData.files[i];
+          break;
         }
-
-        cancelAttachment();
-
-        const fileUrl = URL.createObjectURL(file);
-        setAttachedFileUrl(fileUrl);
-        setAttachedFileName(`pasted_image_${Date.now()}.png`);
-        setAttachedFileType('image');
-
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setAttachedFileContent(reader.result as string);
-          setImagePreview(reader.result as string);
-        };
-        reader.readAsDataURL(file);
-
-        e.preventDefault();
-        break;
       }
+    }
+
+    // 2. files에 없다면 items 배열에서 탐색 (일반 화면 캡처 이미지 등)
+    if (!imageFile && clipboardData.items) {
+      for (let i = 0; i < clipboardData.items.length; i++) {
+        if (clipboardData.items[i].type.startsWith('image/')) {
+          const file = clipboardData.items[i].getAsFile();
+          if (file) {
+            imageFile = file;
+            break;
+          }
+        }
+      }
+    }
+
+    // 3. 엑셀 이미지나 캡처 이미지를 찾아냈다면, 텍스트 입력을 강제 차단하고 이미지 첨부로 낚아챔
+    if (imageFile) {
+      e.preventDefault(); // 중요: 엑셀 텍스트가 입력창에 지저분하게 찍히는 것을 원천 차단
+
+      const MAX_SIZE = 10 * 1024 * 1024;
+      if (imageFile.size > MAX_SIZE) {
+        alert('10MB 이하의 이미지만 붙여넣을 수 있습니다.');
+        return;
+      }
+
+      cancelAttachment(); // 기존 첨부 초기화 및 메모리 해제
+
+      const fileUrl = URL.createObjectURL(imageFile);
+      setAttachedFileUrl(fileUrl);
+      setAttachedFileName(`excel_paste_${Date.now()}.png`);
+      setAttachedFileType('image');
+
+      const compressImage = (dataUrl: string): Promise<string> => {
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const ratio = Math.min(1, 2560 / img.width);
+            canvas.width = img.width * ratio;
+            canvas.height = img.height * ratio;
+            canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/jpeg', 0.95));
+          };
+          img.src = dataUrl;
+        });
+      };
+
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const compressed = await compressImage(reader.result as string);
+        setAttachedFileContent(compressed);
+        setImagePreview(compressed);
+      };
+      reader.readAsDataURL(imageFile);
     }
   };
 
