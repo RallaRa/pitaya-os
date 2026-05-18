@@ -106,6 +106,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         photoURL: 'https://ui-avatars.com/api/?name=Admin&background=0D8ABC&color=fff',
       } as User;
 
+      // 개발용 mock store 세팅
+      const mockStore = {
+        storeId: 'STR-DEV-001',
+        storeName: '개발용 매장',
+        region: '서울 강서구',
+        regionSido: '서울',
+        regionSigungu: '강서구',
+        ownerName: '개발자',
+        address: '',
+        phone: '',
+        businessNumber: '',
+        role: 'superuser',
+      };
+
       // 2. 시스템에 강제 주입
       setUser(mockUser);
       setLoading(false);

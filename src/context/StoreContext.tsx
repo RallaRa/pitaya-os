@@ -25,7 +25,18 @@ interface StoreContextType {
 const StoreContext = createContext<StoreContextType | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [currentStore, setCurrentStore] = useState<Store | null>(null);
+  const [currentStore, setCurrentStore] = useState<Store | null>({
+    storeId: 'STR-DEV-001',
+    storeName: '개발용 매장',
+    region: '서울 강서구',
+    regionSido: '서울',
+    regionSigungu: '강서구',
+    ownerName: '개발자',
+    address: '',
+    phone: '',
+    businessNumber: '',
+    role: 'superuser',
+  });
   const [myStores, setMyStores] = useState<Store[]>([]);
 
   const refreshStores = async (uid: string) => {
