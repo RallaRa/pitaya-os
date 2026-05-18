@@ -56,7 +56,7 @@ async function getNextTargetDate(): Promise<string> {
 }
 
 async function generateSerialNumber(targetDateStr: string): Promise<string> {
-  const baseSerial = `${targetDateStr}-MG-0001`;
+  const baseSerial = `${targetDateStr}-DSC-0001`;
 
   const q = query(
     collection(db, "daily_reports"),
