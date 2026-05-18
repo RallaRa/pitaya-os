@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 //import { onAuthStateChanged, User, GoogleAuthProvider, signInWithRedirect, signOut } from 'firebase/auth';
 /*import { 
   onAuthStateChanged, 
@@ -30,8 +31,21 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const checkAndRoute = async (uid: string) => {
+    const res = await fetch(`/api/store?uid=${uid}`);
+    const data = await res.json();
+    if (!data.stores || data.stores.length === 0) {
+      router.push('/select-store');
+    } else if (data.stores.length === 1) {
+      router.push('/dashboard');
+    } else {
+      router.push('/select-store');
+    }
+  };
 
   /*useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -94,8 +108,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // 2. 시스템에 강제 주입
       setUser(mockUser);
       setLoading(false);
-
-      // (주입과 동시에 login/page.tsx의 useEffect가 작동하여 대시보드로 자동 리디렉션 됩니다)
+      await checkAndRoute(mockUser.uid);
     } catch (error) {
       console.error("Login Error: ", error);
     }

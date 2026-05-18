@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { Settings } from 'lucide-react';
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -13,6 +14,7 @@ export default function Sidebar() {
     { href: '/dashboard/report/sales', icon: '📈', label: '일일 판매내역 분석' },
     { href: '/dashboard/report/hygiene', icon: '🧼', label: '위생 점검일지' },
     { href: '/dashboard/report/view', icon: '📊', label: '전체 보고서 조회' },
+    { href: '/dashboard/settings', icon: <Settings className="w-5 h-5" />, label: '설정' },
   ];
 
   return (

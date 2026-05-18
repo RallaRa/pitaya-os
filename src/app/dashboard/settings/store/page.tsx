@@ -1,0 +1,256 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/context/AuthContext';
+import { useStore } from '@/context/StoreContext';
+import {
+  Store, Copy, Check, Loader2,
+  Save, RefreshCw, Users
+} from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
+
+const SIDO_LIST = ['서울','부산','대구','인천','광주','대전','울산','세종',
+  '경기','강원','충북','충남','전북','전남','경북','경남','제주'];
+
+export default function StoreSettingsPage() {
+  const { user } = useAuth();
+  const { currentStore, refreshStores } = useStore();
+  const router = useRouter();
+
+  const [form, setForm] = useState({
+    storeName: '',
+    ownerName: '',
+    regionSido: '',
+    regionSigungu: '',
+    address: '',
+    phone: '',
+    businessNumber: '',
+  });
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (currentStore) {
+      setForm({
+        storeName: currentStore.storeName || '',
+        ownerName: currentStore.ownerName || '',
+        regionSido: currentStore.regionSido || '',
+        regionSigungu: currentStore.regionSigungu || '',
+        address: currentStore.address || '',
+        phone: currentStore.phone || '',
+        businessNumber: currentStore.businessNumber || '',
+      });
+    }
+  }, [currentStore]);
+
+  const handleCopy = () => {
+    if (!currentStore?.storeId) return;
+    navigator.clipboard.writeText(currentStore.storeId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSave = async () => {
+    if (!form.storeName || !form.regionSido || !form.regionSigungu) {
+      setError('매장명과 지역은 필수입니다.');
+      return;
+    }
+    setIsSaving(true);
+    setError('');
+    setSaveMsg('');
+    try {
+      const res = await fetch('/api/store', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          storeId: currentStore?.storeId,
+          ...form,
+          region: `${form.regionSido} ${form.regionSigungu}`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      if (user?.uid) await refreshStores(user.uid);
+      setSaveMsg('✅ 저장되었습니다.');
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (!currentStore) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p className="text-slate-400">매장 정보를 불러오는 중...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto p-6">
+
+      {/* 뒤로가기 */}
+      <Link
+        href="/dashboard/settings"
+        className="flex items-center gap-2 text-slate-400 hover:text-teal-400 text-sm mb-6 transition-colors w-fit"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        설정으로 돌아가기
+      </Link>
+
+      {/* 헤더 */}
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-bold text-teal-400 flex items-center gap-2">
+            <Store className="w-6 h-6" />
+            매장 설정
+          </h1>
+          <p className="text-slate-400 text-sm mt-1">매장 정보를 관리합니다.</p>
+        </div>
+        <button
+          onClick={() => router.push('/select-store')}
+          className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-2 rounded-xl text-sm transition-colors border border-slate-600"
+        >
+          <RefreshCw className="w-4 h-4" />
+          매장 전환
+        </button>
+      </div>
+
+      {/* 매장 ID */}
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6">
+        <p className="text-slate-400 text-xs mb-2">매장 ID (다른 계정 연결 시 필요)</p>
+        <div className="flex items-center justify-between">
+          <p className="text-teal-400 font-mono font-bold text-lg">
+            {currentStore.storeId}
+          </p>
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1.5 rounded-lg text-sm transition-colors"
+          >
+            {copied
+              ? <><Check className="w-4 h-4 text-teal-400" /> 복사됨</>
+              : <><Copy className="w-4 h-4" /> 복사</>
+            }
+          </button>
+        </div>
+      </div>
+
+      {/* 매장 정보 수정 폼 */}
+      <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 mb-6">
+        <h2 className="text-white font-bold mb-4 flex items-center gap-2">
+          <Store className="w-4 h-4 text-teal-400" />
+          기본 정보
+        </h2>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-slate-400 text-sm mb-1 block">
+              매장명 <span className="text-red-400">*</span>
+            </label>
+            <input type="text"
+              value={form.storeName}
+              onChange={e => setForm(p => ({...p, storeName: e.target.value}))}
+              className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-teal-500 transition-colors"
+            />
+          </div>
+
+          <div>
+            <label className="text-slate-400 text-sm mb-1 block">대표자명</label>
+            <input type="text"
+              value={form.ownerName}
+              onChange={e => setForm(p => ({...p, ownerName: e.target.value}))}
+              className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-teal-500 transition-colors"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-slate-400 text-sm mb-1 block">
+                시/도 <span className="text-red-400">*</span>
+              </label>
+              <select
+                value={form.regionSido}
+                onChange={e => setForm(p => ({...p, regionSido: e.target.value}))}
+                className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-teal-500 transition-colors"
+              >
+                <option value="">선택</option>
+                {SIDO_LIST.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-slate-400 text-sm mb-1 block">
+                시/군/구 <span className="text-red-400">*</span>
+              </label>
+              <input type="text"
+                value={form.regionSigungu}
+                onChange={e => setForm(p => ({...p, regionSigungu: e.target.value}))}
+                placeholder="직접 입력"
+                className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-slate-400 text-sm mb-1 block">상세 주소</label>
+            <input type="text"
+              value={form.address}
+              onChange={e => setForm(p => ({...p, address: e.target.value}))}
+              className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-teal-500 transition-colors"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-slate-400 text-sm mb-1 block">전화번호</label>
+              <input type="text"
+                value={form.phone}
+                onChange={e => setForm(p => ({...p, phone: e.target.value}))}
+                className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-teal-500 transition-colors"
+              />
+            </div>
+            <div>
+              <label className="text-slate-400 text-sm mb-1 block">사업자번호</label>
+              <input type="text"
+                value={form.businessNumber}
+                onChange={e => setForm(p => ({...p, businessNumber: e.target.value}))}
+                className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-teal-500 transition-colors"
+              />
+            </div>
+          </div>
+        </div>
+
+        {error && <p className="text-red-400 text-sm mt-4">{error}</p>}
+        {saveMsg && <p className="text-teal-400 text-sm mt-4">{saveMsg}</p>}
+
+        <button
+          onClick={handleSave}
+          disabled={isSaving}
+          className="w-full mt-6 bg-teal-600 hover:bg-teal-500 disabled:bg-slate-600 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+        >
+          {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+          {isSaving ? '저장 중...' : '저장'}
+        </button>
+      </div>
+
+      {/* 연결된 계정 목록 */}
+      <div className="bg-slate-900 border border-slate-700 rounded-xl p-6">
+        <h2 className="text-white font-bold mb-4 flex items-center gap-2">
+          <Users className="w-4 h-4 text-teal-400" />
+          연결된 계정
+        </h2>
+        <p className="text-slate-400 text-sm">
+          매장 ID를 공유하면 다른 계정이 이 매장에 연결할 수 있습니다.
+        </p>
+      </div>
+
+    </div>
+  );
+}
