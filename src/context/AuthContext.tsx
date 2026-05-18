@@ -100,6 +100,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       // 1. 구글 서버 통신(signInWithPopup) 없이 가짜 최고 관리자 신분증 강제 생성
       const mockUser = {
         uid: 'dev-master-001',
+        role: 'superuser',
         displayName: '최고 관리자(Admin)',
         email: 'admin@pitaya.com',
         photoURL: 'https://ui-avatars.com/api/?name=Admin&background=0D8ABC&color=fff',
