@@ -342,123 +342,104 @@ export default function SelectStorePage() {
         )}
 
         {/* 신규 매장 생성 모드 */}
-        {mode === 'create' && (
+        {mode === 'create' && currentStore?.role === 'superuser' && (
           <div className="bg-slate-900 rounded-2xl p-8 border border-slate-700 shadow-2xl">
 
-            {/* 슈퍼유저 아닌 경우 차단 */}
-            {currentStore?.role !== 'superuser' ? (
-              <div className="text-center py-8">
-                <Shield className="w-12 h-12 text-yellow-400 mx-auto mb-4" />
-                <p className="text-white font-bold text-lg mb-2">접근 권한 없음</p>
-                <p className="text-slate-400 text-sm mb-6">
-                  신규 매장 등록은 Superuser만 가능합니다.
-                </p>
-                <button
-                  onClick={() => setMode('link')}
-                  className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-6 py-2.5 rounded-xl font-medium transition-colors"
-                >
-                  뒤로
-                </button>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="bg-yellow-400/10 p-2 rounded-lg">
+                <Shield className="w-5 h-5 text-yellow-400" />
               </div>
-            ) : (
-              <>
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="bg-yellow-400/10 p-2 rounded-lg">
-                    <Shield className="w-5 h-5 text-yellow-400" />
-                  </div>
-                  <div>
-                    <h1 className="text-xl font-bold text-white">신규 매장 등록</h1>
-                    <p className="text-yellow-400 text-xs">Superuser 전용</p>
-                  </div>
-                </div>
+              <div>
+                <h1 className="text-xl font-bold text-white">신규 매장 등록</h1>
+                <p className="text-yellow-400 text-xs">Superuser 전용</p>
+              </div>
+            </div>
 
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-slate-400 text-sm mb-1 block">매장명 <span className="text-red-400">*</span></label>
-                    <input type="text" placeholder="예) 피타야 정육점"
-                      value={form.storeName}
-                      onChange={e => setForm(p => ({...p, storeName: e.target.value}))}
-                      className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-slate-400 text-sm mb-1 block">대표자명</label>
-                    <input type="text" placeholder="예) 홍길동"
-                      value={form.ownerName}
-                      onChange={e => setForm(p => ({...p, ownerName: e.target.value}))}
-                      className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-slate-400 text-sm mb-1 block">시/도 <span className="text-red-400">*</span></label>
-                      <select value={form.regionSido}
-                        onChange={e => setForm(p => ({...p, regionSido: e.target.value, regionSigungu: ''}))}
-                        className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-teal-500 transition-colors"
-                      >
-                        <option value="">선택</option>
-                        {SIDO_LIST.map(s => (
-                          <option key={s} value={s}>{s}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-slate-400 text-sm mb-1 block">시/군/구 <span className="text-red-400">*</span></label>
-                      <input type="text" placeholder="직접 입력"
-                        value={form.regionSigungu}
-                        onChange={e => setForm(p => ({...p, regionSigungu: e.target.value}))}
-                        className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-slate-400 text-sm mb-1 block">상세 주소</label>
-                    <input type="text" placeholder="예) 강동대로 123"
-                      value={form.address}
-                      onChange={e => setForm(p => ({...p, address: e.target.value}))}
-                      className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-slate-400 text-sm mb-1 block">전화번호</label>
-                      <input type="text" placeholder="02-1234-5678"
-                        value={form.phone}
-                        onChange={e => setForm(p => ({...p, phone: e.target.value}))}
-                        className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-slate-400 text-sm mb-1 block">사업자번호</label>
-                      <input type="text" placeholder="123-45-67890"
-                        value={form.businessNumber}
-                        onChange={e => setForm(p => ({...p, businessNumber: e.target.value}))}
-                        className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {error && <p className="text-red-400 text-sm mt-4">{error}</p>}
-
-                <div className="grid grid-cols-2 gap-3 mt-6">
-                  <button
-                    onClick={() => { setMode('link'); setError(''); }}
-                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 py-3 rounded-xl font-medium transition-colors"
+            <div className="space-y-4">
+              <div>
+                <label className="text-slate-400 text-sm mb-1 block">매장명 <span className="text-red-400">*</span></label>
+                <input type="text" placeholder="예) 피타야 정육점"
+                  value={form.storeName}
+                  onChange={e => setForm(p => ({...p, storeName: e.target.value}))}
+                  className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 text-sm mb-1 block">대표자명</label>
+                <input type="text" placeholder="예) 홍길동"
+                  value={form.ownerName}
+                  onChange={e => setForm(p => ({...p, ownerName: e.target.value}))}
+                  className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 text-sm mb-1 block">시/도 <span className="text-red-400">*</span></label>
+                  <select value={form.regionSido}
+                    onChange={e => setForm(p => ({...p, regionSido: e.target.value, regionSigungu: ''}))}
+                    className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 focus:outline-none focus:border-teal-500 transition-colors"
                   >
-                    뒤로
-                  </button>
-                  <button
-                    onClick={handleCreate}
-                    disabled={isLoading}
-                    className="bg-teal-600 hover:bg-teal-500 disabled:bg-slate-600 text-white py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
-                  >
-                    {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                    {isLoading ? '등록 중...' : '매장 등록'}
-                  </button>
+                    <option value="">선택</option>
+                    {SIDO_LIST.map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
                 </div>
-              </>
-            )}
+                <div>
+                  <label className="text-slate-400 text-sm mb-1 block">시/군/구 <span className="text-red-400">*</span></label>
+                  <input type="text" placeholder="직접 입력"
+                    value={form.regionSigungu}
+                    onChange={e => setForm(p => ({...p, regionSigungu: e.target.value}))}
+                    className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-slate-400 text-sm mb-1 block">상세 주소</label>
+                <input type="text" placeholder="예) 강동대로 123"
+                  value={form.address}
+                  onChange={e => setForm(p => ({...p, address: e.target.value}))}
+                  className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-slate-400 text-sm mb-1 block">전화번호</label>
+                  <input type="text" placeholder="02-1234-5678"
+                    value={form.phone}
+                    onChange={e => setForm(p => ({...p, phone: e.target.value}))}
+                    className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-slate-400 text-sm mb-1 block">사업자번호</label>
+                  <input type="text" placeholder="123-45-67890"
+                    value={form.businessNumber}
+                    onChange={e => setForm(p => ({...p, businessNumber: e.target.value}))}
+                    className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {error && <p className="text-red-400 text-sm mt-4">{error}</p>}
+
+            <div className="grid grid-cols-2 gap-3 mt-6">
+              <button
+                onClick={() => { setMode('link'); setError(''); }}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 py-3 rounded-xl font-medium transition-colors"
+              >
+                뒤로
+              </button>
+              <button
+                onClick={handleCreate}
+                disabled={isLoading}
+                className="bg-teal-600 hover:bg-teal-500 disabled:bg-slate-600 text-white py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
+              >
+                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                {isLoading ? '등록 중...' : '매장 등록'}
+              </button>
+            </div>
           </div>
         )}
 
