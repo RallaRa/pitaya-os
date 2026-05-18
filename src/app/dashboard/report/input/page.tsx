@@ -42,6 +42,8 @@ export default function ReportInputPage() {
   
   // [핵심] 투트랙으로 분리된 정형 데이터를 담을 State
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
+  const [awaitingDateConfirm, setAwaitingDateConfirm] = useState(false);
+  const [pendingData, setPendingData] = useState<any>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -246,7 +248,17 @@ export default function ReportInputPage() {
 
       // 2. 정형 데이터가 있으면 UI 패널 오픈
       if (data.parsedData) {
-        setExtractedData(data.parsedData);
+        const replyText = data.text || '';
+        const hasDateQuestion =
+          replyText.includes('맞습니까') ||
+          replyText.includes('맞나요');
+
+        if (hasDateQuestion) {
+          setAwaitingDateConfirm(true);
+          setPendingData(data.parsedData);
+        } else {
+          setExtractedData(data.parsedData);
+        }
       }
 
     } catch (error: any) {
@@ -364,6 +376,53 @@ const handleSaveToDB = async () => {
   }
 };
 
+  const DateConfirmButtons = () => {
+    if (!awaitingDateConfirm || !pendingData) return null;
+
+    const handleConfirm = () => {
+      setMessages(prev => [...prev, {
+        id: Date.now(),
+        role: 'ai',
+        text: '반영하겠습니다.',
+      }]);
+      setExtractedData(pendingData);
+      setAwaitingDateConfirm(false);
+      setPendingData(null);
+    };
+
+    const handleDeny = () => {
+      const today = new Date().toISOString().split('T')[0];
+      setMessages(prev => [...prev, {
+        id: Date.now(),
+        role: 'ai',
+        text: '오늘 날짜의 데이터를 반영해주세요.',
+      }]);
+      setExtractedData({
+        ...pendingData,
+        reportDate: today
+      });
+      setAwaitingDateConfirm(false);
+      setPendingData(null);
+    };
+
+    return (
+      <div className="flex gap-3 my-2 ml-14">
+        <button
+          onClick={handleConfirm}
+          className="bg-teal-600 hover:bg-teal-500 text-white px-6 py-2.5 rounded-xl font-bold transition-colors shadow-md"
+        >
+          ✅ 네
+        </button>
+        <button
+          onClick={handleDeny}
+          className="bg-slate-700 hover:bg-slate-600 text-white px-6 py-2.5 rounded-xl font-bold transition-colors shadow-md"
+        >
+          ❌ 아니오
+        </button>
+      </div>
+    );
+  };
+
   // --- 정형 데이터 시각화 패널 컴포넌트 (IDX 디자인 수용) ---
   const ExtractedDataDisplay = () => {
     if (!extractedData) return null;
@@ -456,6 +515,7 @@ const handleSaveToDB = async () => {
         )}
 
         {/* 추출 데이터 UI */}
+        <DateConfirmButtons />
         <ExtractedDataDisplay />
         <div ref={messagesEndRef} />
       </div>
