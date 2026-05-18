@@ -11,6 +11,27 @@ export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const uid = searchParams.get('uid');
+    const searchQuery = searchParams.get('search');
+
+    // uid 없이 search 파라미터가 있으면 매장 검색 (빈 문자열이면 전체 반환)
+    if (searchQuery !== null && !uid) {
+      const storesSnap = await getDocs(collection(db, 'stores'));
+      const keyword = searchQuery.toLowerCase().trim();
+
+      const allDocs = storesSnap.docs
+        .map(doc => ({ storeId: doc.id, ...doc.data() }));
+
+      const results = keyword === ''
+        ? allDocs
+        : allDocs.filter((store: any) =>
+            store.storeId?.toLowerCase().includes(keyword) ||
+            store.storeName?.toLowerCase().includes(keyword) ||
+            store.ownerName?.toLowerCase().includes(keyword)
+          ).slice(0, 10);
+
+      return NextResponse.json({ stores: results });
+    }
+
     if (!uid) return NextResponse.json({ error: 'uid 없음' }, { status: 400 });
 
     const mapQuery = query(

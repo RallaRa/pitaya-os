@@ -20,7 +20,13 @@ export default function SelectStorePage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const [storeId, setStoreId] = useState('');
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [selectedStore, setSelectedStore] = useState<any>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const [allStores, setAllStores] = useState<any[]>([]);
+  const [isLoadingAll, setIsLoadingAll] = useState(false);
 
   const [form, setForm] = useState({
     storeName: '', ownerName: '',
@@ -32,13 +38,52 @@ export default function SelectStorePage() {
     if (user?.uid) refreshStores(user.uid);
   }, [user]);
 
+  // 검색 디바운스 (300ms)
+  useEffect(() => {
+    if (searchKeyword.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const res = await fetch(`/api/store?search=${encodeURIComponent(searchKeyword)}`);
+        const data = await res.json();
+        setSearchResults(data.stores || []);
+      } catch (e) {
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchKeyword]);
+
+  const handleShowAll = async () => {
+    if (showAll) {
+      setShowAll(false);
+      return;
+    }
+    setIsLoadingAll(true);
+    try {
+      const res = await fetch('/api/store?search=');
+      const data = await res.json();
+      setAllStores(data.stores || []);
+      setShowAll(true);
+    } catch (e) {
+      setAllStores([]);
+    } finally {
+      setIsLoadingAll(false);
+    }
+  };
+
   const handleSelectStore = (store: any) => {
     setCurrentStore(store);
     router.push('/dashboard');
   };
 
   const handleLink = async () => {
-    if (!storeId.trim()) return;
+    if (!selectedStore) return;
     setIsLoading(true);
     setError('');
     try {
@@ -46,13 +91,18 @@ export default function SelectStorePage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'link', uid: user?.uid, storeId: storeId.trim()
+          action: 'link',
+          uid: user?.uid,
+          storeId: selectedStore.storeId,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       await refreshStores(user!.uid);
       setMode('select');
+      setSearchKeyword('');
+      setSearchResults([]);
+      setSelectedStore(null);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -146,31 +196,133 @@ export default function SelectStorePage() {
         {mode === 'link' && (
           <div className="bg-slate-900 rounded-2xl p-8 border border-slate-700 shadow-2xl">
             <h1 className="text-2xl font-bold text-teal-400 text-center mb-2">기존 매장 연결</h1>
-            <p className="text-slate-400 text-sm text-center mb-8">
-              매장 ID를 입력하세요. (매장 관리자에게 문의)
+            <p className="text-slate-400 text-sm text-center mb-6">
+              매장코드, 매장명, 대표자명으로 검색하세요.
             </p>
 
-            <input
-              type="text"
-              placeholder="STR-000000000000"
-              value={storeId}
-              onChange={e => setStoreId(e.target.value)}
-              className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 mb-4"
-            />
+            {/* 전체 매장 보기 버튼 */}
+            <button
+              onClick={handleShowAll}
+              disabled={isLoadingAll}
+              className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 hover:border-teal-500/50 text-slate-300 py-3 rounded-xl text-sm font-medium transition-all mb-4"
+            >
+              {isLoadingAll
+                ? <Loader2 className="w-4 h-4 animate-spin text-teal-400" />
+                : <Search className="w-4 h-4 text-teal-400" />
+              }
+              {showAll ? '전체 목록 닫기' : '등록된 전체 매장 보기'}
+            </button>
+
+            {/* 검색창 */}
+            <div className="relative mb-4">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="매장코드 / 매장명 / 대표자명"
+                value={searchKeyword}
+                onChange={e => { setSearchKeyword(e.target.value); setSelectedStore(null); }}
+                className="w-full bg-slate-800 border border-slate-600 rounded-xl pl-10 pr-4 py-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
+              />
+              {isSearching && (
+                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-teal-400 animate-spin" />
+              )}
+            </div>
+
+            {/* 전체 매장 목록 */}
+            {showAll && !selectedStore && (
+              <div className="border border-slate-700 rounded-xl overflow-hidden mb-4 max-h-64 overflow-y-auto">
+                {allStores.length === 0 ? (
+                  <p className="text-slate-500 text-sm text-center py-6">등록된 매장이 없습니다.</p>
+                ) : (
+                  allStores.map((store: any, idx: number) => (
+                    <button
+                      key={store.storeId}
+                      onClick={() => { setSelectedStore(store); setShowAll(false); }}
+                      className={`w-full flex items-center justify-between px-4 py-3 hover:bg-slate-700 transition-colors text-left ${idx !== 0 ? 'border-t border-slate-700' : ''}`}
+                    >
+                      <div>
+                        <p className="text-white font-bold text-sm">{store.storeName}</p>
+                        <p className="text-slate-400 text-xs mt-0.5">
+                          {store.ownerName && `대표: ${store.ownerName} · `}
+                          {store.region} ·
+                          <span className="font-mono ml-1 text-teal-400/70">{store.storeId}</span>
+                        </p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* 검색 결과 */}
+            {searchResults.length > 0 && !selectedStore && (
+              <div className="border border-slate-700 rounded-xl overflow-hidden mb-4">
+                {searchResults.map((store: any, idx: number) => (
+                  <button
+                    key={store.storeId}
+                    onClick={() => setSelectedStore(store)}
+                    className={`w-full flex items-center justify-between px-4 py-3 hover:bg-slate-700 transition-colors text-left ${idx !== 0 ? 'border-t border-slate-700' : ''}`}
+                  >
+                    <div>
+                      <p className="text-white font-bold text-sm">{store.storeName}</p>
+                      <p className="text-slate-400 text-xs mt-0.5">
+                        {store.ownerName && `대표: ${store.ownerName} · `}
+                        {store.region} ·
+                        <span className="font-mono ml-1">{store.storeId}</span>
+                      </p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* 검색결과 없음 */}
+            {searchKeyword.length > 1 && searchResults.length === 0 && !isSearching && (
+              <p className="text-slate-500 text-sm text-center py-4 mb-4">
+                검색 결과가 없습니다.
+              </p>
+            )}
+
+            {/* 선택된 매장 확인 */}
+            {selectedStore && (
+              <div className="bg-teal-900/30 border border-teal-500/50 rounded-xl p-4 mb-4">
+                <p className="text-teal-400 text-xs mb-1">선택된 매장</p>
+                <p className="text-white font-bold">{selectedStore.storeName}</p>
+                <p className="text-slate-400 text-sm">
+                  {selectedStore.ownerName && `대표: ${selectedStore.ownerName} · `}
+                  {selectedStore.region}
+                </p>
+                <p className="text-slate-500 text-xs font-mono mt-1">{selectedStore.storeId}</p>
+                <button
+                  onClick={() => setSelectedStore(null)}
+                  className="text-slate-400 hover:text-slate-200 text-xs mt-2 transition-colors"
+                >
+                  ✕ 선택 취소
+                </button>
+              </div>
+            )}
 
             {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
 
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={() => setMode('select')}
+                onClick={() => {
+                  setMode('select');
+                  setError('');
+                  setSearchKeyword('');
+                  setSearchResults([]);
+                  setSelectedStore(null);
+                }}
                 className="bg-slate-800 hover:bg-slate-700 text-slate-300 py-3 rounded-xl font-medium transition-colors"
               >
                 뒤로
               </button>
               <button
                 onClick={handleLink}
-                disabled={isLoading}
-                className="bg-teal-600 hover:bg-teal-500 disabled:bg-slate-600 text-white py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
+                disabled={isLoading || !selectedStore}
+                className="bg-teal-600 hover:bg-teal-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold transition-colors flex items-center justify-center gap-2"
               >
                 {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : '연결하기'}
               </button>
