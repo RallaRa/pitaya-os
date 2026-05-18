@@ -1,155 +1,464 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import * as XLSX from 'xlsx';
+import { db } from '@/lib/firebase/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { Bot, User, Loader2, DollarSign, Users, Hash, Save, CheckCircle2 } from "lucide-react";
 
-// 메시지 타입을 확장하여 이미지 데이터(base64)를 포함할 수 있도록 합니다.
-type Message = {
-  role: 'user' | 'ai';
-  text: string;
+// --- 타입 정의 영역 ---
+type Message = { 
+  id: number;
+  role: 'user' | 'ai'; 
+  text: string; 
   image?: string; 
+  attachedFileName?: string; 
+  attachedFileUrl?: string; 
 };
 
+interface ExtractedData {
+  totalSales: number;
+  customerCount: number;
+  receiptNumber: string;
+}
+
+type AttachedFileType = 'image' | 'excel';
+
+// --- 메인 컴포넌트 ---
 export default function ReportInputPage() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>([
+    { id: 1, role: 'ai', text: "안녕하세요 대표님! 마감 내용을 입력하시거나, 분석할 매출 데이터(엑셀) 및 거래명세서(사진)를 업로드해주세요." }
+  ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  
+  // 파일 및 데이터 상태
+  const [imagePreview, setImagePreview] = useState<string | null>(null); 
+  const [attachedFileContent, setAttachedFileContent] = useState<string | null>(null); 
+  const [attachedFileName, setAttachedFileName] = useState<string | null>(null);
+  const [attachedFileType, setAttachedFileType] = useState<AttachedFileType | null>(null);
+  const [attachedFileUrl, setAttachedFileUrl] = useState<string | null>(null); 
+  
+  // [핵심] 투트랙으로 분리된 정형 데이터를 담을 State
+  const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // 이미지 파일이 선택되면 미리보기를 생성합니다.
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+  // 자동 스크롤
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading, extractedData]);
+
+  // 첨부 파일 초기화
+  const cancelAttachment = () => {
+    setImagePreview(null);
+    setAttachedFileName(null);
+    setAttachedFileType(null);
+    setAttachedFileContent(null);
+    if (attachedFileUrl) URL.revokeObjectURL(attachedFileUrl);
+    setAttachedFileUrl(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // 클립보드 이미지 붙여넣기 감지 핸들러
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (!file) continue;
+
+        const MAX_SIZE = 10 * 1024 * 1024;
+        if (file.size > MAX_SIZE) {
+          alert('10MB 이하의 이미지만 붙여넣을 수 있습니다.');
+          return;
+        }
+
+        cancelAttachment();
+
+        const fileUrl = URL.createObjectURL(file);
+        setAttachedFileUrl(fileUrl);
+        setAttachedFileName(`pasted_image_${Date.now()}.png`);
+        setAttachedFileType('image');
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setAttachedFileContent(reader.result as string);
+          setImagePreview(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+
+        e.preventDefault();
+        break;
+      }
     }
   };
 
-  // 메시지 전송 핸들러: 텍스트와 이미지를 함께 전송합니다.
+  // --- [강력한 데이터 추출] 엑셀 바이너리를 환각 없이 CSV 텍스트로 파싱 ---
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    cancelAttachment();
+
+    const fileName = file.name.toLowerCase();
+    const fileUrl = URL.createObjectURL(file);
+    setAttachedFileUrl(fileUrl);
+    setAttachedFileName(file.name);
+
+    const reader = new FileReader();
+    
+    if (file.type.startsWith('image/')) {
+      setAttachedFileType('image');
+      reader.onloadend = () => {
+        const base64 = reader.result as string;
+        setImagePreview(base64); 
+        setAttachedFileContent(base64); 
+      };
+      reader.readAsDataURL(file);
+
+    } else if (fileName.endsWith('.csv')) {
+      setAttachedFileType('excel');
+      reader.onloadend = () => {
+        setAttachedFileContent(reader.result as string);
+      };
+      reader.readAsText(file, 'UTF-8');
+
+    } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+      setAttachedFileType('excel');
+      reader.onloadend = (e) => {
+        try {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const csvText = XLSX.utils.sheet_to_csv(workbook.Sheets[firstSheetName]);
+          setAttachedFileContent(csvText); // AI에게 먹일 진짜 숫자 데이터 강제 주입
+        } catch (error) {
+          console.error("Excel 파싱 에러:", error);
+          alert("엑셀 파일 데이터를 읽는 데 실패했습니다.");
+        }
+      };
+      reader.readAsArrayBuffer(file); 
+    } else {
+      alert("지원하지 않는 파일 형식입니다.");
+      cancelAttachment();
+    }
+  };
+
+  // --- [투트랙 API 통신] 메시지 전송 및 응답 분리 ---
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!input.trim() && !imagePreview) || isLoading) return;
+    if ((!input.trim() && !attachedFileContent) || isLoading) return;
 
-    const userMessage: Message = { role: 'user', text: input };
-    if (imagePreview) {
-      userMessage.image = imagePreview;
+    let finalText = input.trim();
+    if (!finalText && attachedFileName) {
+      if (attachedFileType === 'image') {
+        finalText = `[시스템] 첨부된 '${attachedFileName}' 거래명세서 이미지를 분석해주세요.`;
+      } else if (attachedFileType === 'excel') {
+        finalText = `[시스템] 첨부된 '${attachedFileName}' 매출 데이터를 분석하여 마감 보고서를 작성해주세요.`;
+      }
     }
 
-    setMessages((prev) => [...prev, userMessage]);
+    const userMessageForUI: Message = { 
+      id: Date.now(),
+      role: 'user', 
+      text: finalText,
+      attachedFileName: attachedFileName || undefined,
+      attachedFileUrl: attachedFileUrl || undefined,
+      image: imagePreview || undefined // 문법 오류 완벽 수정
+    };
+
+    setMessages((prev) => [...prev, userMessageForUI]);
+    setExtractedData(null); // 새 요청 시 기존 패널 닫기
+
+    const requestBody = {
+      text: finalText,
+      fileContent: attachedFileContent, 
+      fileName: attachedFileName,
+      fileType: attachedFileType,
+    };
+    
     setInput('');
-    setImagePreview(null);
     setIsLoading(true);
+    cancelAttachment();
 
     try {
-      const requestBody = {
-        ...userMessage,
-        persona: 'reporter' // 보고서용 페르소나 지정
-      };
-
-      const response = await fetch('/api/ai', {
+      const response = await fetch('/api/sales_ai', {
           method: 'POST',
-          headers: {
-              'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.error || `API error: ${response.statusText}`);
+          throw new Error(errorData.error || `API 오류`);
       }
 
       const data = await response.json();
-      const aiResponse: Message = {
+      
+      // 1. 대화 렌더링
+      setMessages((prev) => [...prev, {
+          id: Date.now() + 1,
           role: 'ai',
-          text: data.text, 
-      };
+          text: data.text || "분석이 완료되었습니다.",
+      }]);
 
-      setMessages((prev) => [...prev, aiResponse]);
-    } catch (error) {
-        console.error("AI 응답 오류:", error);
-        const errorMessage: Message = {
+      // 2. 정형 데이터가 있으면 UI 패널 오픈
+      if (data.parsedData) {
+        setExtractedData(data.parsedData);
+      }
+
+    } catch (error: any) {
+        setMessages((prev) => [...prev, {
+            id: Date.now() + 1,
             role: 'ai',
-            text: error instanceof Error ? error.message : '죄송합니다. AI 응답을 처리하는 중 오류가 발생했습니다.',
-        };
-        setMessages((prev) => [...prev, errorMessage]);
+            text: error.message || '오류가 발생했습니다.',
+        }]);
     } finally {
         setIsLoading(false);
     }
   };
 
+  // --- [DB 연동] 추출된 데이터를 Firestore에 저장 ---
+  /*const handleSaveToDB = async () => {
+    if (!extractedData) return;
+    setIsSaving(true);
+    try {
+      await addDoc(collection(db, "daily_reports"), {
+        ...extractedData,
+        reportDate: new Date().toISOString(),
+        createdAt: serverTimestamp() 
+      });
+      setMessages(prev => [...prev, { 
+        id: Date.now(), 
+        role: "ai", 
+        text: "✅ 성공적으로 DB에 저장했습니다. '전체 보고서 조회' 메뉴에서 확인하실 수 있습니다." 
+      }]);
+      setExtractedData(null); // 저장 완료 후 패널 닫기
+    } catch (error: any) {
+      console.error("DB 저장 오류: ", error);
+      setMessages(prev => [...prev, { id: Date.now(), role: "ai", text: `❌ DB 저장 실패: ${error.message}` }]);
+    } finally {
+      setIsSaving(false);
+    }
+  };*/
+  // --- [수정] 직접 DB 저장을 빼고, 백엔드 서버에 대행 요청을 날리는 구조로 교체 ---
+  /* const handleSaveToDB = async () => {
+    if (!extractedData) return;
+    setIsSaving(true);
+    try {
+      const response = await fetch('/api/sales_ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save',
+          extractedData: extractedData
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || '서버 저장 실패');
+      }
+
+      setMessages(prev => [...prev, { 
+        id: Date.now(), 
+        role: "ai", 
+        text: "✅ 성공적으로 DB에 저장했습니다. '전체 보고서 조회' 메뉴에서 확인하실 수 있습니다." 
+      }]);
+      setExtractedData(null); // 저장 완료 후 패널 닫기
+    } catch (error: any) {
+      console.error("DB 저장 오류: ", error);
+      setMessages(prev => [...prev, { id: Date.now(), role: "ai", text: `❌ DB 저장 실패: ${error.message}` }]);
+    } finally {
+      setIsSaving(false);
+    }
+  };*/
+
+// --- [백엔드 대행 요청 + HTML 파싱 에러 방어벽 추가] ---
+const handleSaveToDB = async () => {
+  if (!extractedData) return;
+  setIsSaving(true);
+  try {
+    const response = await fetch('/api/sales_ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'save',
+        extractedData: extractedData
+      })
+    });
+
+    // [핵심] JSON 파싱 전 텍스트로 먼저 받아서 HTML 에러 붕괴 방어
+    const responseText = await response.text();
+    
+    if (!response.ok) {
+      let errorMessage = `서버 통신 실패 (상태: ${response.status})`;
+      try {
+        // JSON 형태의 에러 메시지라면 정상 파싱
+        const errorData = JSON.parse(responseText);
+        errorMessage = errorData.error || errorMessage;
+      } catch (e) {
+        // HTML 덩어리(500 에러 페이지)가 날아오면 뻗지 않고 에러 처리
+        console.error("서버 에러 HTML 원문:", responseText);
+        errorMessage = "데이터베이스 연결 또는 서버 내부 에러가 발생했습니다. (터미널 확인)";
+      }
+      throw new Error(errorMessage);
+    }
+
+    // 정상 응답일 때만 JSON 변환
+    const data = JSON.parse(responseText);
+
+    setMessages(prev => [...prev, { 
+      id: Date.now(), 
+      role: "ai", 
+      text: "✅ 성공적으로 DB에 저장했습니다. '전체 보고서 조회' 메뉴에서 확인하실 수 있습니다." 
+    }]);
+    setExtractedData(null); 
+  } catch (error: any) {
+    console.error("DB 저장 오류: ", error);
+    setMessages(prev => [...prev, { id: Date.now(), role: "ai", text: `❌ DB 저장 실패: ${error.message}` }]);
+  } finally {
+    setIsSaving(false);
+  }
+};
+
+  // --- 정형 데이터 시각화 패널 컴포넌트 (IDX 디자인 수용) ---
+  const ExtractedDataDisplay = () => {
+    if (!extractedData) return null;
+    return (
+      <div className="bg-slate-800 border border-teal-500/50 rounded-xl p-5 shadow-lg my-4 max-w-[85%]">
+        <h3 className="text-lg font-bold text-teal-400 flex items-center mb-4">
+          <CheckCircle2 className="w-5 h-5 mr-2" />
+          AI 마감 데이터 추출 완료 (DB 저장 대기중)
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="bg-slate-900 rounded-lg p-3 border border-slate-700">
+            <p className="text-slate-400 flex items-center text-sm mb-1"><DollarSign className="w-4 h-4 mr-1"/>총매출</p>
+            <p className="text-white font-bold text-lg">{Number(extractedData.totalSales || 0).toLocaleString()} 원</p>
+          </div>
+          <div className="bg-slate-900 rounded-lg p-3 border border-slate-700">
+            <p className="text-slate-400 flex items-center text-sm mb-1"><Users className="w-4 h-4 mr-1"/>총 객수</p>
+            <p className="text-white font-bold text-lg">{extractedData.customerCount || 0} 명</p>
+          </div>
+          <div className="bg-slate-900 rounded-lg p-3 border border-slate-700">
+            <p className="text-slate-400 flex items-center text-sm mb-1"><Hash className="w-4 h-4 mr-1"/>이력번호</p>
+            <p className="text-white font-mono text-lg truncate" title={extractedData.receiptNumber}>{extractedData.receiptNumber || 'N/A'}</p>
+          </div>
+        </div>
+        <button 
+          onClick={handleSaveToDB}
+          disabled={isSaving}
+          className="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-slate-600"
+        >
+          {isSaving ? <Loader2 className="w-5 h-5 animate-spin mr-2"/> : <Save className="w-5 h-5 mr-2"/>}
+          {isSaving ? '안전하게 DB에 기록 중...' : '이 내용으로 마감 장부(DB)에 확정 저장하기'}
+        </button>
+      </div>
+    );
+  };
+
   return (
-    <div className="flex flex-col h-full bg-slate-950 text-slate-100 p-4">
-      <div className="text-center mb-8">
+    <div className="flex flex-col h-[calc(100vh-2rem)] bg-slate-950 text-slate-100 p-4">
+      <div className="text-center mb-6">
         <h1 className="text-2xl font-bold text-teal-400">일일 마감보고서 입력</h1>
-        <p className="text-slate-400">AI와 대화하며 오늘의 마감 내용을 입력하고 이미지를 캡처/첨부하세요.</p>
+        <p className="text-slate-400 text-sm">AI 비서와 대화하며 마감을 진행하고 장부에 기록하세요.</p>
       </div>
 
-      {/* 대화 이력 출력 영역 */}
-      <div className="flex-1 overflow-y-auto mb-4 space-y-4 pr-2">
-        {messages.map((msg, idx) => (
-          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`p-4 rounded-xl max-w-[80%] border shadow-sm ${
-              msg.role === 'user' 
-                ? 'bg-teal-900/50 border-teal-700/50 rounded-br-sm text-teal-50' 
-                : 'bg-slate-800 border-slate-700 rounded-bl-sm text-slate-200'
-            }`}>
-              {/* 메시지에 이미지가 있으면 출력합니다. */}
-              {msg.image && <img src={msg.image} alt="첨부 이미지" className="rounded-lg mb-2 max-w-full h-auto" />}
-              <p className="whitespace-pre-wrap">{msg.text}</p>
+      {/* 대화 이력 영역 */}
+      <div className="flex-1 overflow-y-auto mb-4 space-y-6 pr-2">
+        {messages.map((msg) => (
+          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`flex max-w-[85%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
+              <div className={`flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ${
+                msg.role === 'user' ? 'bg-blue-600 ml-3' : 'bg-teal-600 mr-3'
+              }`}>
+                {msg.role === 'user' ? <User className="w-6 h-6 text-white" /> : <Bot className="w-6 h-6 text-white" />}
+              </div>
+              
+              <div className={`p-4 rounded-2xl shadow-sm border ${
+                msg.role === 'user' 
+                  ? 'bg-blue-600 text-white border-blue-500 rounded-tr-none' 
+                  : 'bg-slate-800 text-slate-200 border-slate-700 rounded-tl-none'
+              }`}>
+                {msg.image && <img src={msg.image} alt="첨부" className="rounded-lg mb-3 max-w-full h-auto" />} 
+                <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+                
+                {/* 다운로드 가능한 엑셀 파일명 UI */}
+                {msg.attachedFileName && msg.attachedFileUrl ? (
+                  <a href={msg.attachedFileUrl} download={msg.attachedFileName} className="flex items-center gap-2 mt-3 p-2 bg-slate-900 border border-slate-600 rounded-lg text-sm text-teal-300 w-fit hover:bg-slate-700 transition-colors cursor-pointer">
+                    <span>📎</span><span className="font-medium underline underline-offset-2">{msg.attachedFileName}</span>
+                  </a>
+                ) : msg.attachedFileName ? (
+                  <div className="flex items-center gap-2 mt-3 p-2 bg-slate-900 border border-slate-600 rounded-lg text-sm text-slate-300 w-fit">
+                    <span>📎</span><span className="font-medium">{msg.attachedFileName}</span>
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
         ))}
         
+        {/* 분석 중 로딩 UI */}
         {isLoading && (
           <div className="flex justify-start">
-            <div className="p-4 rounded-xl bg-slate-800 border border-slate-700 rounded-bl-sm text-slate-400 animate-pulse">
-              AI가 분석 중...
+            <div className="flex flex-row">
+              <div className="flex-shrink-0 h-10 w-10 rounded-full bg-teal-600 mr-3 flex items-center justify-center">
+                <Bot className="w-6 h-6 text-white" />
+              </div>
+              <div className="bg-slate-800 border border-slate-700 p-4 rounded-2xl rounded-tl-none flex items-center space-x-3">
+                <Loader2 className="w-5 h-5 text-teal-400 animate-spin" />
+                <span className="text-slate-300">AI가 데이터를 심층 분석 중입니다...</span>
+              </div>
             </div>
           </div>
         )}
+
+        {/* 추출 데이터 UI */}
+        <ExtractedDataDisplay />
+        <div ref={messagesEndRef} />
       </div>
 
-      {/* 하단 입력창 */}
-      <form onSubmit={handleSendMessage} className="flex flex-col gap-2">
-        {/* 이미지 미리보기 영역 */}
-        {imagePreview && (
-          <div className="p-2 bg-slate-800 rounded-lg relative w-40">
-            <img src={imagePreview} alt="미리보기" className="rounded-md" />
-            <button
-              type="button"
-              onClick={() => setImagePreview(null)}
-              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 w-6 h-6 flex items-center justify-center text-xs font-bold"
-            >
-              X
-            </button>
+      {/* 하단 입력 폼 */}
+      <form onSubmit={handleSendMessage} className="flex flex-col gap-2 relative">
+        {/* 첨부파일 미리보기 영역 */}
+        {attachedFileType && (
+          <div className="absolute -top-14 left-0 p-2 bg-slate-800 rounded-lg border border-slate-600 shadow-xl flex items-center gap-3">
+            {attachedFileType === 'image' && imagePreview ? (
+              <img src={imagePreview} alt="미리보기" className="rounded-md h-10 w-auto object-cover" />
+            ) : (
+              <div className="text-teal-400 text-sm font-medium px-2">📊 {attachedFileName}</div>
+            )}
+            <button type="button" onClick={cancelAttachment} className="bg-red-500 hover:bg-red-600 text-white rounded-full p-1 w-6 h-6 flex items-center justify-center text-xs font-bold transition-colors">X</button>
           </div>
         )}
+
         <div className="flex items-center gap-2">
-          {/* 이미지 첨부 버튼 */}
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-3 rounded-lg font-bold transition-colors"
-            aria-label="이미지 첨부"
+            className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-4 py-3.5 rounded-xl font-bold transition-colors shadow-sm border border-slate-700"
+            title="엑셀/CSV 또는 이미지 파일 첨부"
           >
             📎
           </button>
           <input
             type="file"
             ref={fileInputRef}
-            onChange={handleImageChange}
+            onChange={handleFileChange}
             className="hidden"
-            accept="image/*"
+            accept="image/*, .csv, .xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
           />
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="오늘의 마감 내용을 입력하세요..."
-            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-3 pl-4 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-all text-slate-100 placeholder:text-slate-500 resize-none"
+            onPaste={handlePaste}
+            placeholder="마감 내용을 입력하거나 파일을 첨부하세요... (Enter로 전송)"
+            className="flex-1 bg-slate-900 border border-slate-700 rounded-xl p-3.5 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-all text-slate-100 placeholder:text-slate-500 resize-none shadow-inner"
             rows={1}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -160,8 +469,8 @@ export default function ReportInputPage() {
           />
           <button
             type="submit"
-            disabled={isLoading}
-            className="bg-teal-500 hover:bg-teal-400 text-slate-950 px-6 py-3 rounded-lg font-bold transition-colors disabled:opacity-50"
+            disabled={isLoading || (!input.trim() && !attachedFileContent)}
+            className="bg-teal-500 hover:bg-teal-400 text-slate-950 px-6 py-3.5 rounded-xl font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
           >
             전송
           </button>

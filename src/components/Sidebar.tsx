@@ -9,7 +9,7 @@ export default function Sidebar() {
 
   const menuItems = [
     { href: '/dashboard/ai', icon: '✨', label: 'AI 대화모드' },
-    { href: '/dashboard/report/input', icon: '✍️', label: 'AI 보고서 작성' },
+    { href: '/dashboard/report/input', icon: '✍️', label: 'AI 일마감보고 작성' },
     { href: '/dashboard/report/sales', icon: '📈', label: '일일 판매내역 분석' },
     { href: '/dashboard/report/hygiene', icon: '🧼', label: '위생 점검일지' },
     { href: '/dashboard/report/view', icon: '📊', label: '전체 보고서 조회' },
