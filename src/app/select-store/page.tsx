@@ -28,7 +28,17 @@ export default function SelectStorePage() {
   const [allStores, setAllStores] = useState<any[]>([]);
   const [isLoadingAll, setIsLoadingAll] = useState(false);
 
-  const isSuperuser = myStores.some(s => s.role === 'superuser');
+  const [isSuperuser, setIsSuperuser] = useState(false);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    fetch(`/api/users?uid=${user.uid}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.user?.role === 'superuser') setIsSuperuser(true);
+      })
+      .catch(() => {});
+  }, [user]);
 
   const [form, setForm] = useState({
     storeName: '', ownerName: '',
