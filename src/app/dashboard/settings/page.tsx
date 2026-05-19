@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Store, Shield, ChevronRight } from 'lucide-react';
+import { Store, Shield, Users, ChevronRight } from 'lucide-react';
 
 const SETTING_MENUS = [
   {
@@ -9,6 +9,12 @@ const SETTING_MENUS = [
     icon: <Store className="w-5 h-5 text-teal-400" />,
     label: '매장 설정',
     description: '매장 정보, 지역, 연결 계정 관리',
+  },
+  {
+    href: '/dashboard/settings/members',
+    icon: <Users className="w-5 h-5 text-blue-400" />,
+    label: '멤버 관리',
+    description: '소속 신청 승인/거절 및 멤버 목록 확인',
   },
   {
     href: '/dashboard/settings/permission',
