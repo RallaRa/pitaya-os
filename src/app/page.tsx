@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
 /**
@@ -14,29 +14,43 @@ import Link from 'next/link';
  */
 export default function RootPage() {
   const router = useRouter();
+  const [phase, setPhase] = useState<'melong' | 'error'>('melong');
 
   useEffect(() => {
-    // 이 코드가 브라우저(클라이언트 사이드)에서만 실행되도록 보장합니다.
     if (typeof window !== 'undefined') {
       const timer = setTimeout(() => {
         router.push('/login');
       }, 1500);
-
-      // 컴포넌트가 언마운트될 때 타이머를 정리합니다.
       return () => clearTimeout(timer);
     }
   }, [router]);
 
+  useEffect(() => {
+    const t = setTimeout(() => setPhase('error'), 800);
+    return () => clearTimeout(t);
+  }, []);
+
+  if (phase === 'melong') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+        <p className="text-8xl select-none">😜 메롱</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-slate-100 font-sans">
-      <Link href="/login">
-        <h1 className="text-5xl font-extrabold text-teal-400 animate-pulse cursor-pointer">
-          Pitaya OS (여기를 클릭하여 수동으로 이동)
-        </h1>
-      </Link>
-      <p className="mt-4 text-lg text-slate-300">
-        첫 페이지입니다. 자동 이동이 실패하는 경우 위 텍스트를 클릭해보세요.
-      </p>
+      <div className="bg-red-950 border border-red-700 rounded-2xl px-10 py-8 text-center shadow-2xl max-w-md">
+        <p className="text-red-400 text-5xl mb-4">⚠️</p>
+        <h1 className="text-red-400 text-2xl font-bold mb-2">심각한 오류 발생</h1>
+        <p className="text-red-300 text-sm mb-1">CRITICAL: SYSTEM_INTEGRITY_FAILURE</p>
+        <p className="text-slate-500 text-xs mb-6">오류 코드: 0x000000EE · 모듈: pitaya_core.dll</p>
+        <Link href="/login">
+          <button className="bg-red-700 hover:bg-red-600 text-white text-sm px-6 py-2 rounded-lg transition-colors">
+            재시도 (로그인으로 이동)
+          </button>
+        </Link>
+      </div>
     </div>
   );
 }

@@ -28,6 +28,8 @@ export default function SelectStorePage() {
   const [allStores, setAllStores] = useState<any[]>([]);
   const [isLoadingAll, setIsLoadingAll] = useState(false);
 
+  const isSuperuser = myStores.some(s => s.role === 'superuser');
+
   const [form, setForm] = useState({
     storeName: '', ownerName: '',
     regionSido: '', regionSigungu: '',
@@ -307,7 +309,7 @@ export default function SelectStorePage() {
             {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
 
             {/* 슈퍼유저 전용 신규 매장 등록 */}
-            {currentStore?.role === 'superuser' && (
+            {isSuperuser && (
               <button
                 onClick={() => { setMode('create'); setError(''); }}
                 className="w-full flex items-center justify-center gap-2 bg-teal-900/30 hover:bg-teal-900/50 border border-teal-500/30 hover:border-teal-500 text-teal-400 py-3 rounded-xl text-sm font-medium transition-all mb-3"
@@ -342,7 +344,7 @@ export default function SelectStorePage() {
         )}
 
         {/* 신규 매장 생성 모드 */}
-        {mode === 'create' && currentStore?.role === 'superuser' && (
+        {mode === 'create' && isSuperuser && (
           <div className="bg-slate-900 rounded-2xl p-8 border border-slate-700 shadow-2xl">
 
             <div className="flex items-center gap-3 mb-6">
