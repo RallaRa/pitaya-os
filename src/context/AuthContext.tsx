@@ -16,6 +16,7 @@ interface AuthContextType {
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
+  checkAndRoute: (uid: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -72,7 +73,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }),
       });
 
-      await checkAndRoute(result.user.uid);
     } catch (error) {
       console.error('Google Login Error:', error);
     }
@@ -87,7 +87,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, logout }}>
+    <AuthContext.Provider value={{ user, loading, signInWithGoogle, logout, checkAndRoute }}>
       {children}
     </AuthContext.Provider>
   );
