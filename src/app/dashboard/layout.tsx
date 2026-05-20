@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import Sidebar from '@/components/Sidebar';
 
 export default function DashboardLayout({
   children,
@@ -14,7 +15,6 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (!loading && !user) {
-      console.log('[DashboardLayout] 미로그인 → /login');
       router.push('/login');
     }
   }, [user, loading, router]);
@@ -27,5 +27,10 @@ export default function DashboardLayout({
     );
   }
 
-  return <>{children}</>;
+  return (
+    <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
+      <Sidebar />
+      {children}
+    </div>
+  );
 }
