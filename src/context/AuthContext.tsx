@@ -73,7 +73,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }),
       });
 
-    } catch (error) {
+    } catch (error: unknown) {
+      const code = (error as { code?: string })?.code;
+      if (code === 'auth/popup-closed-by-user') return;
+      if (code === 'auth/popup-blocked') {
+        alert('팝업이 차단되었습니다. 브라우저 팝업 허용 후 다시 시도해주세요.');
+      }
       console.error('Google Login Error:', error);
     }
   };
