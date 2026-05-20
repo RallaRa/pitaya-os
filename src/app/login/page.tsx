@@ -1,16 +1,20 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 
 export default function LoginPage() {
-  const { user, loading, signInWithGoogle, checkAndRoute } = useAuth();
+  const router = useRouter();
+  const { user, loading, signInWithGoogle } = useAuth();
 
   useEffect(() => {
+    console.log('[LoginPage useEffect]', { loading, user: user?.email });
     if (!loading && user) {
-      checkAndRoute(user.uid);
+      console.log('[LoginPage] 이미 로그인 상태 → /dashboard');
+      router.push('/dashboard');
     }
-  }, [user, loading, checkAndRoute]);
+  }, [user, loading]);
 
   if (loading) {
     return (
