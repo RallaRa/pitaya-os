@@ -18,15 +18,6 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const hasSession = request.cookies.has('__session') ||
-    request.cookies.has('firebase-auth');
-
-  if (!hasSession && pathname.startsWith('/dashboard')) {
-    const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('redirect', pathname);
-    return NextResponse.redirect(loginUrl);
-  }
-
   return NextResponse.next();
 }
 
