@@ -38,7 +38,13 @@ export default function LoginPage() {
 
         {/* Google 공식 스타일 버튼 */}
         <button
-          onClick={signInWithGoogle}
+          onClick={() => {
+            console.log('[Firebase Config Test]',
+              process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+              process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
+            );
+            signInWithGoogle();
+          }}
           className="w-full flex items-center justify-center gap-3
             bg-white hover:bg-gray-50 active:bg-gray-100
             text-[#3c4043] font-medium text-sm

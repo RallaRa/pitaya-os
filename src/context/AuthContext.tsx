@@ -4,7 +4,6 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { useRouter } from 'next/navigation';
 import {
   onAuthStateChanged,
-  getRedirectResult,
   User,
   GoogleAuthProvider,
   signInWithRedirect,
@@ -50,29 +49,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    // 리다이렉트 로그인 후 복귀 시 결과 처리
-    getRedirectResult(auth)
-      .then(async (result) => {
-        if (result?.user) {
-          console.log('[Auth] redirect result 수신:', result.user.email);
-          await fetch('/api/users', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              uid: result.user.uid,
-              name: result.user.displayName,
-              email: result.user.email,
-              photoURL: result.user.photoURL,
-            }),
-          });
-          console.log('[Auth] users upsert 완료');
-        }
-      })
-      .catch((error) => {
-        console.error('[Auth] getRedirectResult error:', error);
-      });
-
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid: currentUser.uid,
+            name: currentUser.displayName,
+            email: currentUser.email,
+            photoURL: currentUser.photoURL,
+          }),
+        }).catch(console.error);
+      }
       setUser(currentUser);
       setLoading(false);
     });
