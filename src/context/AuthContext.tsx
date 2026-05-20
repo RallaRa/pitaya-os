@@ -6,8 +6,7 @@ import {
   onAuthStateChanged,
   User,
   GoogleAuthProvider,
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithPopup,
   signOut,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase/firebase';
@@ -54,7 +53,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       console.log('[Auth State]', currentUser?.email ?? 'none');
       setUser(currentUser);
       setLoading(false);
@@ -62,38 +61,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => unsubscribe();
   }, []);
 
-  useEffect(() => {
-    getRedirectResult(auth)
-      .then(async (result) => {
-        if (!result) return;
-        console.log('[Redirect 성공]', result.user.email);
-
-        await fetch('/api/users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            uid: result.user.uid,
-            name: result.user.displayName,
-            email: result.user.email,
-            photoURL: result.user.photoURL,
-          }),
-        });
-
-        await checkAndRoute(result.user.uid);
-      })
-      .catch((error) => {
-        console.error('[Redirect 에러]', error.code, error.message);
-      });
-  }, []);
-
   const signInWithGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
     try {
-      console.log('[Auth] 리다이렉트 로그인 시작');
-      const provider = new GoogleAuthProvider();
-      await signInWithRedirect(auth, provider);
+      console.log('[Auth] 팝업 로그인 시도');
+      const result = await signInWithPopup(auth, provider);
+      console.log('[Auth] 성공', result.user.email);
+
+      await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: result.user.uid,
+          name: result.user.displayName,
+          email: result.user.email,
+          photoURL: result.user.photoURL,
+        }),
+      });
+
+      await checkAndRoute(result.user.uid);
     } catch (error: unknown) {
       const code = (error as { code?: string })?.code;
-      console.error('[Auth 에러]', code, error);
+      console.error('[Auth 에러 상세]', code, error);
+      if (code === 'auth/popup-blocked') {
+        alert('팝업 차단됨. 브라우저에서 팝업을 허용해주세요.');
+      } else if (code === 'auth/unauthorized-domain') {
+        alert('도메인 미등록. Firebase Console에서 현재 도메인을 추가해주세요:\n' + location.hostname);
+      } else if (code !== 'auth/popup-closed-by-user') {
+        alert('로그인 실패: ' + code);
+      }
     }
   };
 
