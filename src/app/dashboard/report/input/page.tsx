@@ -5,6 +5,8 @@ import * as XLSX from 'xlsx';
 import { db } from '@/lib/firebase/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Bot, User, Loader2, DollarSign, Users, Hash, Save, CheckCircle2 } from "lucide-react";
+import { useAuth } from '@/context/AuthContext';
+import { useStore } from '@/context/StoreContext';
 
 // --- 타입 정의 영역 ---
 type Message = { 
@@ -26,6 +28,8 @@ type AttachedFileType = 'image' | 'excel';
 
 // --- 메인 컴포넌트 ---
 export default function ReportInputPage() {
+  const { user } = useAuth();
+  const { currentStore } = useStore();
   const [messages, setMessages] = useState<Message[]>([
     { id: 1, role: 'ai', text: "안녕하세요 대표님! 마감 내용을 입력하시거나, 분석할 매출 데이터(엑셀) 및 거래명세서(사진)를 업로드해주세요." }
   ]);
@@ -44,6 +48,7 @@ export default function ReportInputPage() {
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
   const [awaitingDateConfirm, setAwaitingDateConfirm] = useState(false);
   const [pendingData, setPendingData] = useState<any>(null);
+  const [promotion, setPromotion] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -216,9 +221,10 @@ export default function ReportInputPage() {
 
     const requestBody = {
       text: finalText,
-      fileContent: attachedFileContent, 
+      fileContent: attachedFileContent,
       fileName: attachedFileName,
       fileType: attachedFileType,
+      promotion: promotion,
     };
     
     setInput('');
@@ -338,7 +344,9 @@ const handleSaveToDB = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'save',
-        extractedData: extractedData
+        extractedData: extractedData,
+        uid: user?.uid || '',
+        storeId: currentStore?.storeId || '',
       })
     });
 
@@ -533,6 +541,18 @@ const handleSaveToDB = async () => {
             <button type="button" onClick={cancelAttachment} className="bg-red-500 hover:bg-red-600 text-white rounded-full p-1 w-6 h-6 flex items-center justify-center text-xs font-bold transition-colors">X</button>
           </div>
         )}
+
+        {/* 프로모션/이벤트 입력 */}
+        <input
+          type="text"
+          value={promotion}
+          onChange={e => setPromotion(e.target.value)}
+          placeholder="오늘 프로모션/이벤트 (선택) 예) 한우 모듬세트 특가"
+          className="w-full bg-slate-900 border border-slate-700
+            rounded-xl px-4 py-2.5 text-slate-100 text-sm
+            placeholder:text-slate-600 focus:outline-none
+            focus:border-teal-500 transition-colors mb-2"
+        />
 
         <div className="flex items-center gap-2">
           <button

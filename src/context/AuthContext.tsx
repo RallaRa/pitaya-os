@@ -6,10 +6,13 @@ import {
   onAuthStateChanged,
   User,
   GoogleAuthProvider,
-  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase/firebase';
+
+const REDIRECT_FLAG = 'pitaya_redirect_pending';
 
 interface AuthContextType {
   user: User | null;
@@ -35,23 +38,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const activeData = await activeRes.json();
       const pendingData = await pendingRes.json();
 
+      console.log('[checkAndRoute] uid:', uid);
+      console.log('[checkAndRoute] activeData:', activeData);
+      console.log('[checkAndRoute] pendingData:', pendingData);
+
       const activeStores = activeData.stores || [];
       const pendingStores = pendingData.stores || [];
 
+      console.log('[checkAndRoute] active:', activeStores.length, 'pending:', pendingStores.length);
+
       if (activeStores.length === 0 && pendingStores.length === 0) {
+        console.log('[checkAndRoute] → /select-store?mode=apply');
         router.push('/select-store?mode=apply');
       } else if (activeStores.length === 0 && pendingStores.length > 0) {
+        console.log('[checkAndRoute] → /select-store?mode=pending');
         router.push('/select-store?mode=pending');
       } else if (activeStores.length === 1) {
+        console.log('[checkAndRoute] → /dashboard');
         router.push('/dashboard');
       } else {
+        console.log('[checkAndRoute] → /select-store');
         router.push('/select-store');
       }
     } catch (error) {
       console.error('[checkAndRoute 에러]', error);
+      router.push('/select-store?mode=apply');
     }
   };
 
+  // loading 해제는 오직 여기서만
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       console.log('[Auth State]', currentUser?.email ?? 'none');
@@ -61,35 +76,52 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => unsubscribe();
   }, []);
 
-  const signInWithGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account' });
-    try {
-      console.log('[Auth] 팝업 로그인 시도');
-      const result = await signInWithPopup(auth, provider);
-      console.log('[Auth] 성공', result.user.email);
+  // 리다이렉트 복귀 시에만 getRedirectResult 실행 (플래그 기반)
+  useEffect(() => {
+    if (!sessionStorage.getItem(REDIRECT_FLAG)) return;
 
-      await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          uid: result.user.uid,
-          name: result.user.displayName,
-          email: result.user.email,
-          photoURL: result.user.photoURL,
-        }),
+    getRedirectResult(auth)
+      .then(async (result) => {
+        if (!result) {
+          console.log('[Redirect] 결과 없음');
+          return;
+        }
+        console.log('[Redirect 성공]', result.user.email);
+
+        await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid: result.user.uid,
+            name: result.user.displayName,
+            email: result.user.email,
+            photoURL: result.user.photoURL,
+          }),
+        });
+
+        await checkAndRoute(result.user.uid);
+      })
+      .catch((error) => {
+        console.error('[Redirect 에러]', error.code, error.message);
+      })
+      .finally(() => {
+        sessionStorage.removeItem(REDIRECT_FLAG);
       });
+  }, []);
 
-      await checkAndRoute(result.user.uid);
+  const signInWithGoogle = async () => {
+    try {
+      console.log('[Auth] 리다이렉트 로그인 시작');
+      sessionStorage.setItem(REDIRECT_FLAG, '1');
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      await signInWithRedirect(auth, provider);
     } catch (error: unknown) {
+      sessionStorage.removeItem(REDIRECT_FLAG);
       const code = (error as { code?: string })?.code;
-      console.error('[Auth 에러 상세]', code, error);
-      if (code === 'auth/popup-blocked') {
-        alert('팝업 차단됨. 브라우저에서 팝업을 허용해주세요.');
-      } else if (code === 'auth/unauthorized-domain') {
+      console.error('[Auth 에러]', code, error);
+      if (code === 'auth/unauthorized-domain') {
         alert('도메인 미등록. Firebase Console에서 현재 도메인을 추가해주세요:\n' + location.hostname);
-      } else if (code !== 'auth/popup-closed-by-user') {
-        alert('로그인 실패: ' + code);
       }
     }
   };
