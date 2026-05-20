@@ -6,13 +6,10 @@ import {
   onAuthStateChanged,
   User,
   GoogleAuthProvider,
-  signInWithRedirect,
-  getRedirectResult,
+  signInWithPopup,
   signOut,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase/firebase';
-
-const REDIRECT_FLAG = 'pitaya_redirect_pending';
 
 interface AuthContextType {
   user: User | null;
@@ -76,48 +73,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => unsubscribe();
   }, []);
 
-  // 리다이렉트 복귀 시에만 getRedirectResult 실행 (플래그 기반)
-  useEffect(() => {
-    if (!sessionStorage.getItem(REDIRECT_FLAG)) return;
-
-    getRedirectResult(auth)
-      .then(async (result) => {
-        if (!result) {
-          console.log('[Redirect] 결과 없음');
-          return;
-        }
-        console.log('[Redirect 성공]', result.user.email);
-
-        await fetch('/api/users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            uid: result.user.uid,
-            name: result.user.displayName,
-            email: result.user.email,
-            photoURL: result.user.photoURL,
-          }),
-        });
-
-        await checkAndRoute(result.user.uid);
-      })
-      .catch((error) => {
-        console.error('[Redirect 에러]', error.code, error.message);
-      })
-      .finally(() => {
-        sessionStorage.removeItem(REDIRECT_FLAG);
-      });
-  }, []);
-
   const signInWithGoogle = async () => {
     try {
-      console.log('[Auth] 리다이렉트 로그인 시작');
-      sessionStorage.setItem(REDIRECT_FLAG, '1');
+      console.log('[Auth] 팝업 로그인 시작');
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      await signInWithRedirect(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+
+      console.log('[Auth 성공]', result.user.email);
+
+      await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          uid: result.user.uid,
+          name: result.user.displayName,
+          email: result.user.email,
+          photoURL: result.user.photoURL,
+        }),
+      });
+
+      await checkAndRoute(result.user.uid);
     } catch (error: unknown) {
-      sessionStorage.removeItem(REDIRECT_FLAG);
       const code = (error as { code?: string })?.code;
       console.error('[Auth 에러]', code, error);
       if (code === 'auth/unauthorized-domain') {
