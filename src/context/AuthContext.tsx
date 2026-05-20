@@ -7,6 +7,7 @@ import {
   User,
   GoogleAuthProvider,
   signInWithRedirect,
+  getRedirectResult,
   signOut,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase/firebase';
@@ -27,64 +28,79 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [loading, setLoading] = useState(true);
 
   const checkAndRoute = async (uid: string) => {
-    const [activeRes, pendingRes] = await Promise.all([
-      fetch(`/api/store?uid=${uid}`),
-      fetch(`/api/store?uid=${uid}&status=pending`),
-    ]);
-    const activeData = await activeRes.json();
-    const pendingData = await pendingRes.json();
+    try {
+      const [activeRes, pendingRes] = await Promise.all([
+        fetch(`/api/store?uid=${uid}`),
+        fetch(`/api/store?uid=${uid}&status=pending`),
+      ]);
+      const activeData = await activeRes.json();
+      const pendingData = await pendingRes.json();
 
-    const activeStores = activeData.stores || [];
-    const pendingStores = pendingData.stores || [];
+      const activeStores = activeData.stores || [];
+      const pendingStores = pendingData.stores || [];
 
-    if (activeStores.length === 0 && pendingStores.length === 0) {
-      router.push('/select-store?mode=apply');
-    } else if (activeStores.length === 0 && pendingStores.length > 0) {
-      router.push('/select-store?mode=pending');
-    } else if (activeStores.length === 1) {
-      router.push('/dashboard');
-    } else {
-      router.push('/select-store');
+      if (activeStores.length === 0 && pendingStores.length === 0) {
+        router.push('/select-store?mode=apply');
+      } else if (activeStores.length === 0 && pendingStores.length > 0) {
+        router.push('/select-store?mode=pending');
+      } else if (activeStores.length === 1) {
+        router.push('/dashboard');
+      } else {
+        router.push('/select-store');
+      }
+    } catch (error) {
+      console.error('[checkAndRoute 에러]', error);
     }
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (currentUser) {
-        fetch('/api/users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            uid: currentUser.uid,
-            name: currentUser.displayName,
-            email: currentUser.email,
-            photoURL: currentUser.photoURL,
-          }),
-        }).catch(console.error);
-      }
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      console.log('[Auth State]', currentUser?.email ?? 'none');
       setUser(currentUser);
       setLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    getRedirectResult(auth)
+      .then(async (result) => {
+        if (!result) return;
+        console.log('[Redirect 성공]', result.user.email);
+
+        await fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid: result.user.uid,
+            name: result.user.displayName,
+            email: result.user.email,
+            photoURL: result.user.photoURL,
+          }),
+        });
+
+        await checkAndRoute(result.user.uid);
+      })
+      .catch((error) => {
+        console.error('[Redirect 에러]', error.code, error.message);
+      });
+  }, []);
+
   const signInWithGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    console.log('[Auth] signInWithRedirect 호출');
     try {
+      console.log('[Auth] 리다이렉트 로그인 시작');
+      const provider = new GoogleAuthProvider();
       await signInWithRedirect(auth, provider);
     } catch (error: unknown) {
       const code = (error as { code?: string })?.code;
-      console.error('[Auth] 로그인 실패 코드:', code, error);
-      if (code === 'auth/unauthorized-domain') {
-        alert('이 도메인은 Firebase에 등록되지 않았습니다. Firebase Console > Authentication > Authorized Domains에 현재 도메인을 추가해주세요.');
-      }
+      console.error('[Auth 에러]', code, error);
     }
   };
 
   const logout = async () => {
     try {
       await signOut(auth);
+      router.push('/login');
     } catch (error) {
       console.error('Logout Error:', error);
     }
