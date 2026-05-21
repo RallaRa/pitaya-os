@@ -3,26 +3,20 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Settings, MessageCircle, Users, ShoppingCart, Store, Shield, Layers } from 'lucide-react';
+import { Settings, MessageCircle, ShoppingCart } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import { useStore } from '@/context/StoreContext';
 
 export default function Sidebar() {
   const pathname = usePathname();
   const { user } = useAuth();
-  const { currentStore } = useStore();
-  const [globalRole, setGlobalRole] = useState('');
+  const [roleLoading, setRoleLoading] = useState(true);
 
   useEffect(() => {
     if (!user?.uid) return;
     fetch(`/api/users?uid=${user.uid}`)
-      .then(r => r.json())
-      .then(data => { if (data.user?.role) setGlobalRole(data.user.role); });
+      .then(() => {})
+      .finally(() => setRoleLoading(false));
   }, [user?.uid]);
-
-  const storeRole = currentStore?.role || '';
-  const canManage = ['superuser', 'owner', 'admin'].includes(storeRole) || globalRole === 'superuser';
-  const isSuperuser = globalRole === 'superuser';
 
   const baseMenuItems = [
     { href: '/dashboard/ai', icon: '✨', label: 'AI 대화모드' },
@@ -33,15 +27,7 @@ export default function Sidebar() {
     { href: '/dashboard/report/view', icon: '📊', label: '전체 보고서 조회' },
   ];
 
-  const settingsMenuItems = [
-    ...(canManage ? [
-      { href: '/dashboard/settings/members', icon: <Users className="w-5 h-5" />, label: '멤버 관리' },
-      { href: '/dashboard/settings/store', icon: <Store className="w-5 h-5" />, label: '매장 정보' },
-    ] : []),
-    ...(isSuperuser ? [
-      { href: '/dashboard/settings/permission', icon: <Shield className="w-5 h-5" />, label: '권한 설정' },
-      { href: '/dashboard/settings/permission-group', icon: <Layers className="w-5 h-5" />, label: '권한 그룹' },
-    ] : []),
+  const settingsMenuItems = roleLoading ? [] : [
     { href: '/dashboard/settings', icon: <Settings className="w-5 h-5" />, label: '설정' },
   ];
 
