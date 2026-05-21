@@ -34,13 +34,29 @@ export async function POST(req: Request) {
       generationConfig: { temperature: 0.2 },
     });
 
-    const result = await chat.sendMessage(message);
-    const text = result.response.text();
+    const sendWithRetry = async (retryCount = 0): Promise<string> => {
+      try {
+        const result = await chat.sendMessage(message);
+        return result.response.text();
+      } catch (err: any) {
+        if (err.message?.includes('503') && retryCount < 3) {
+          await new Promise(res => setTimeout(res, 2000));
+          return sendWithRetry(retryCount + 1);
+        }
+        throw err;
+      }
+    };
+
+    const text = await sendWithRetry();
     return NextResponse.json({ text });
   } catch (error: any) {
     console.error('AI API Error:', error);
+    const is503 = error.message?.includes('503');
     return NextResponse.json(
-      { text: '⚠️ AI 응답 중 오류가 발생했습니다. 다시 시도해주세요.' },
+      { text: is503
+        ? '⚠️ Gemini 서버가 혼잡합니다. 잠시 후 다시 시도해주세요.'
+        : '⚠️ AI 응답 중 오류가 발생했습니다. 다시 시도해주세요.'
+      },
       { status: 200 }
     );
   }
