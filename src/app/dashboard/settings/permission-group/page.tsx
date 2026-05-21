@@ -70,7 +70,10 @@ export default function PermissionGroupPage() {
   }, [user?.uid]);
 
   const fetchGroups = useCallback(async () => {
-    if (!currentStore?.storeId) return;
+    if (!currentStore?.storeId) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     try {
       const res = await fetch(`/api/permissions?type=groups&storeId=${currentStore.storeId}`);
@@ -184,6 +187,15 @@ export default function PermissionGroupPage() {
     return (
       <div className="flex items-center justify-center py-24">
         <Loader2 className="w-8 h-8 text-teal-400 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!currentStore?.storeId) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-slate-400">
+        <Shield className="w-12 h-12 mb-3 opacity-30" />
+        <p className="text-sm">매장을 먼저 선택해주세요.</p>
       </div>
     );
   }
