@@ -9,6 +9,18 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 
+interface WeatherData {
+  condition: string;
+  tempMax: number;
+  tempMin: number;
+}
+
+interface IssueItem {
+  title: string;
+  url?: string;
+  source?: string;
+}
+
 interface DailyReport {
   id: string;
   serialNumber: string;
@@ -19,11 +31,10 @@ interface DailyReport {
   returnAmount: number;
   discountAmount: number;
   netSales: number;
-  promotion: string;
-  weather: string;
-  tempHigh: number;
-  tempLow: number;
-  issues: string;
+  promotions?: string[];
+  promotion?: string;
+  weather?: WeatherData | string | null;
+  issues?: IssueItem[] | string | null;
   items: any[];
   createdAt: any;
 }
@@ -167,33 +178,46 @@ export default function ReportViewPage() {
 
                   {/* 날씨 */}
                   <td className="px-4 py-3 text-center whitespace-nowrap">
-                    <span className="text-slate-300 text-sm">{report.weather || '-'}</span>
+                    <span className="text-slate-300 text-sm">
+                      {typeof report.weather === 'object' && report.weather
+                        ? report.weather.condition
+                        : (report.weather as string) || '-'}
+                    </span>
                   </td>
 
                   {/* 기온 */}
                   <td className="px-4 py-3 text-center whitespace-nowrap">
                     <span className="text-slate-300 text-sm">
-                      {report.tempLow !== undefined && report.tempHigh !== undefined
-                        ? `${report.tempLow}°↑${report.tempHigh}°`
-                        : '-'
-                      }
+                      {typeof report.weather === 'object' && report.weather
+                        ? `${report.weather.tempMin}°↑${report.weather.tempMax}°`
+                        : '-'}
                     </span>
                   </td>
 
                   {/* 이슈/프로모션 */}
                   <td className="px-4 py-3 max-w-[250px]">
                     <div className="space-y-1">
-                      {report.issues && (
+                      {Array.isArray(report.issues) && report.issues.length > 0 && (
+                        <p className="text-yellow-400 text-xs truncate" title={report.issues[0]?.title}>
+                          🔔 {report.issues[0]?.title}
+                        </p>
+                      )}
+                      {typeof report.issues === 'string' && report.issues && (
                         <p className="text-yellow-400 text-xs truncate" title={report.issues}>
                           🔔 {report.issues}
                         </p>
                       )}
-                      {report.promotion && (
+                      {(report.promotions?.length ?? 0) > 0 && (
+                        <p className="text-emerald-400 text-xs truncate">
+                          🎯 {report.promotions!.join(', ')}
+                        </p>
+                      )}
+                      {!report.promotions?.length && report.promotion && (
                         <p className="text-emerald-400 text-xs truncate" title={report.promotion}>
                           🎯 {report.promotion}
                         </p>
                       )}
-                      {!report.issues && !report.promotion && (
+                      {!report.issues && !report.promotions?.length && !report.promotion && (
                         <span className="text-slate-600 text-xs">-</span>
                       )}
                     </div>

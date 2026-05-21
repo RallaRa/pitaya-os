@@ -76,21 +76,64 @@ export default function ReportDetailPage() {
       </div>
 
       {/* 날씨/이슈/프로모션 */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {/* 날씨 카드 */}
         <div className="bg-slate-900 border border-slate-700 rounded-xl p-4">
           <p className="text-slate-400 text-xs mb-2">날씨</p>
-          <p className="text-white font-medium">
-            {report.weather || '-'}
-            {report.tempLow !== undefined && ` / ${report.tempLow}°~${report.tempHigh}°`}
-          </p>
+          {typeof report.weather === 'object' && report.weather ? (
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">
+                {{'맑음':'☀️','구름':'⛅','안개':'🌫️','비':'🌧️','눈':'❄️','소나기':'🌦️','뇌우':'⛈️'}[report.weather.condition as string] || '🌡️'}
+              </span>
+              <div>
+                <p className="text-white font-medium">{report.weather.condition}</p>
+                <p className="text-slate-400 text-sm">{report.weather.tempMin}°~{report.weather.tempMax}°</p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-slate-500">{(report.weather as string) || '-'}</p>
+          )}
         </div>
+
+        {/* 이슈 카드 */}
         <div className="bg-slate-900 border border-slate-700 rounded-xl p-4">
           <p className="text-slate-400 text-xs mb-2">이슈</p>
-          <p className="text-yellow-400 text-sm">{report.issues || '-'}</p>
+          {Array.isArray(report.issues) && report.issues.length > 0 ? (
+            <div className="space-y-2">
+              {report.issues.map((issue: any, i: number) => (
+                <div key={i} className="flex items-start gap-2">
+                  <span className="text-yellow-400 mt-0.5 flex-shrink-0">🔔</span>
+                  <div>
+                    {issue.url ? (
+                      <a href={issue.url} target="_blank" rel="noopener noreferrer"
+                        className="text-yellow-300 text-sm hover:underline">{issue.title}</a>
+                    ) : (
+                      <p className="text-yellow-300 text-sm">{issue.title}</p>
+                    )}
+                    {issue.source && <p className="text-slate-500 text-xs">{issue.source}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-slate-500 text-sm">{typeof report.issues === 'string' ? report.issues : '-'}</p>
+          )}
         </div>
+
+        {/* 프로모션 카드 */}
         <div className="bg-slate-900 border border-slate-700 rounded-xl p-4">
           <p className="text-slate-400 text-xs mb-2">프로모션/이벤트</p>
-          <p className="text-emerald-400 text-sm">{report.promotion || '-'}</p>
+          {Array.isArray(report.promotions) && report.promotions.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {report.promotions.map((p: string, i: number) => (
+                <span key={i} className="bg-emerald-900/30 border border-emerald-500/30 text-emerald-300 text-xs px-2.5 py-1 rounded-full">
+                  🎯 {p}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="text-emerald-400 text-sm">{report.promotion || '-'}</p>
+          )}
         </div>
       </div>
 

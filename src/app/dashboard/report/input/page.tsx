@@ -8,20 +8,42 @@ import { Bot, User, Loader2, DollarSign, Users, Hash, Save, CheckCircle2 } from 
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 
+const WEATHER_ICONS: Record<string, string> = {
+  '맑음': '☀️', '구름': '⛅', '안개': '🌫️', '비': '🌧️', '눈': '❄️', '소나기': '🌦️', '뇌우': '⛈️'
+};
+
+function getWeatherConditionClient(code: number): string {
+  if (code === 0) return '맑음';
+  if (code <= 3) return '구름';
+  if (code <= 48) return '안개';
+  if (code <= 67) return '비';
+  if (code <= 77) return '눈';
+  if (code <= 82) return '소나기';
+  return '뇌우';
+}
+
 // --- 타입 정의 영역 ---
-type Message = { 
+type Message = {
   id: number;
-  role: 'user' | 'ai'; 
-  text: string; 
-  image?: string; 
-  attachedFileName?: string; 
-  attachedFileUrl?: string; 
+  role: 'user' | 'ai';
+  text: string;
+  image?: string;
+  attachedFileName?: string;
+  attachedFileUrl?: string;
 };
 
 interface ExtractedData {
   totalSales: number;
   customerCount: number;
   receiptNumber: string;
+  serialNumber?: string;
+  reportDate?: string;
+  issues?: { title: string; url?: string; source?: string }[];
+  promotions?: string[];
+  returnAmount?: number;
+  discountAmount?: number;
+  netSales?: number;
+  items?: any[];
 }
 
 type AttachedFileType = 'image' | 'excel';
@@ -48,7 +70,9 @@ export default function ReportInputPage() {
   const [extractedData, setExtractedData] = useState<ExtractedData | null>(null);
   const [awaitingDateConfirm, setAwaitingDateConfirm] = useState(false);
   const [pendingData, setPendingData] = useState<any>(null);
-  const [promotion, setPromotion] = useState('');
+  const [promotions, setPromotions] = useState<string[]>([]);
+  const [promotionInput, setPromotionInput] = useState('');
+  const [weatherPreview, setWeatherPreview] = useState<{ condition: string; tempMax: number; tempMin: number } | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -57,6 +81,24 @@ export default function ReportInputPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading, extractedData]);
+
+  // 날씨 프리뷰: extractedData의 reportDate가 생기면 Open-Meteo에서 날씨 조회
+  useEffect(() => {
+    const dateStr = extractedData?.reportDate;
+    if (!dateStr) { setWeatherPreview(null); return; }
+    fetch(`https://api.open-meteo.com/v1/forecast?latitude=37.5665&longitude=126.9780&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=Asia%2FSeoul&start_date=${dateStr}&end_date=${dateStr}`)
+      .then(r => r.json())
+      .then(data => {
+        const code = data.daily?.weathercode?.[0];
+        if (code === undefined) return;
+        setWeatherPreview({
+          condition: getWeatherConditionClient(code),
+          tempMax: Math.round(data.daily?.temperature_2m_max?.[0] ?? 0),
+          tempMin: Math.round(data.daily?.temperature_2m_min?.[0] ?? 0),
+        });
+      })
+      .catch(() => {});
+  }, [extractedData?.reportDate]);
 
   // 첨부 파일 초기화
   const cancelAttachment = () => {
@@ -217,14 +259,15 @@ export default function ReportInputPage() {
     };
 
     setMessages((prev) => [...prev, userMessageForUI]);
-    setExtractedData(null); // 새 요청 시 기존 패널 닫기
+    setExtractedData(null);
+    setWeatherPreview(null);
 
     const requestBody = {
       text: finalText,
       fileContent: attachedFileContent,
       fileName: attachedFileName,
       fileType: attachedFileType,
-      promotion: promotion,
+      promotions: promotions,
     };
     
     setInput('');
@@ -431,7 +474,7 @@ const handleSaveToDB = async () => {
     );
   };
 
-  // --- 정형 데이터 시각화 패널 컴포넌트 (IDX 디자인 수용) ---
+  // --- 정형 데이터 시각화 패널 컴포넌트 ---
   const ExtractedDataDisplay = () => {
     if (!extractedData) return null;
     return (
@@ -440,7 +483,38 @@ const handleSaveToDB = async () => {
           <CheckCircle2 className="w-5 h-5 mr-2" />
           AI 마감 데이터 추출 완료 (DB 저장 대기중)
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+
+        {/* 기준일 */}
+        {extractedData.reportDate && (
+          <div className="mb-4 bg-slate-900/60 rounded-lg p-3 border border-slate-700 flex items-center gap-2">
+            <span className="text-lg">📅</span>
+            <div>
+              <p className="text-slate-400 text-xs">기준일</p>
+              <p className="text-white font-bold">
+                {new Date(extractedData.reportDate + 'T00:00:00').toLocaleDateString('ko-KR', {
+                  year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
+                })}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* 날씨 */}
+        {weatherPreview && (
+          <div className="mb-4 bg-slate-900/60 rounded-lg p-3 border border-slate-700 flex items-center gap-3">
+            <span className="text-2xl">{WEATHER_ICONS[weatherPreview.condition] || '🌡️'}</span>
+            <div>
+              <p className="text-slate-400 text-xs">날씨</p>
+              <p className="text-white font-medium">
+                {weatherPreview.condition}
+                <span className="text-slate-400 text-sm ml-2">{weatherPreview.tempMin}°~{weatherPreview.tempMax}°</span>
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* 매출 요약 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div className="bg-slate-900 rounded-lg p-3 border border-slate-700">
             <p className="text-slate-400 flex items-center text-sm mb-1"><DollarSign className="w-4 h-4 mr-1"/>총매출</p>
             <p className="text-white font-bold text-lg">{Number(extractedData.totalSales || 0).toLocaleString()} 원</p>
@@ -454,7 +528,45 @@ const handleSaveToDB = async () => {
             <p className="text-white font-mono text-lg truncate" title={extractedData.receiptNumber}>{extractedData.receiptNumber || 'N/A'}</p>
           </div>
         </div>
-        <button 
+
+        {/* 이슈 */}
+        {extractedData.issues && extractedData.issues.length > 0 && (
+          <div className="mb-4">
+            <p className="text-slate-400 text-xs mb-2">🔔 오늘의 이슈</p>
+            <div className="space-y-2">
+              {extractedData.issues.map((issue, i) => (
+                <div key={i} className="bg-slate-900/60 border border-yellow-500/20 rounded-lg p-2.5 flex items-start gap-2">
+                  <span className="text-yellow-400 flex-shrink-0">📰</span>
+                  <div>
+                    {issue.url ? (
+                      <a href={issue.url} target="_blank" rel="noopener noreferrer"
+                        className="text-yellow-300 text-sm hover:underline">{issue.title}</a>
+                    ) : (
+                      <p className="text-yellow-300 text-sm">{issue.title}</p>
+                    )}
+                    {issue.source && <p className="text-slate-500 text-xs">{issue.source}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 프로모션 */}
+        {extractedData.promotions && extractedData.promotions.length > 0 && (
+          <div className="mb-4">
+            <p className="text-slate-400 text-xs mb-2">🎯 프로모션</p>
+            <div className="flex flex-wrap gap-2">
+              {extractedData.promotions.map((p, i) => (
+                <span key={i} className="bg-emerald-900/30 border border-emerald-500/30 text-emerald-300 text-xs px-2.5 py-1 rounded-full">
+                  {p}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button
           onClick={handleSaveToDB}
           disabled={isSaving}
           className="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-slate-600"
@@ -542,17 +654,48 @@ const handleSaveToDB = async () => {
           </div>
         )}
 
-        {/* 프로모션/이벤트 입력 */}
-        <input
-          type="text"
-          value={promotion}
-          onChange={e => setPromotion(e.target.value)}
-          placeholder="오늘 프로모션/이벤트 (선택) 예) 한우 모듬세트 특가"
-          className="w-full bg-slate-900 border border-slate-700
-            rounded-xl px-4 py-2.5 text-slate-100 text-sm
-            placeholder:text-slate-600 focus:outline-none
-            focus:border-teal-500 transition-colors mb-2"
-        />
+        {/* 프로모션/이벤트 태그 입력 */}
+        <div className="mb-2">
+          {promotions.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-1.5 px-1">
+              {promotions.map((p, i) => (
+                <span key={i} className="flex items-center gap-1 bg-emerald-900/30 border border-emerald-500/40 text-emerald-300 text-xs px-2.5 py-1 rounded-full">
+                  🎯 {p}
+                  <button type="button" onClick={() => setPromotions(prev => prev.filter((_, idx) => idx !== i))}
+                    className="text-emerald-400 hover:text-white ml-0.5 font-bold">×</button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={promotionInput}
+              onChange={e => setPromotionInput(e.target.value)}
+              onKeyDown={e => {
+                if ((e.key === 'Enter' || e.key === ',') && promotionInput.trim()) {
+                  e.preventDefault();
+                  setPromotions(prev => [...prev, promotionInput.trim()]);
+                  setPromotionInput('');
+                }
+              }}
+              placeholder="프로모션/이벤트 입력 후 Enter (예: 한우 특가)"
+              className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-slate-100 text-sm placeholder:text-slate-600 focus:outline-none focus:border-emerald-500 transition-colors"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (promotionInput.trim()) {
+                  setPromotions(prev => [...prev, promotionInput.trim()]);
+                  setPromotionInput('');
+                }
+              }}
+              className="bg-emerald-800/50 hover:bg-emerald-700/60 text-emerald-300 px-3 py-2 rounded-xl text-sm font-medium transition-colors border border-emerald-600/30 whitespace-nowrap"
+            >
+              추가
+            </button>
+          </div>
+        </div>
 
         <div className="flex items-center gap-2">
           <button
