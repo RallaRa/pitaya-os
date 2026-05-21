@@ -100,7 +100,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, id: docRef.id });
     }
 
-    const { text, fileContent, fileName, fileType } = body;
+    const { text, fileContent, fileName, fileType, promotion } = body;
 
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
@@ -125,6 +125,10 @@ export async function POST(req: Request) {
 
 금액은 콤마 제거한 순수 숫자로 반환해줘.
 예) 1,250,000 → 1250000`;
+    }
+
+    if (promotion) {
+      finalPrompt += `\n\n[오늘의 특가/프로모션: ${promotion}]`;
     }
 
     const receiptDateMatch = finalPrompt.match(/20\d{2}-\d{2}-\d{2}/);
