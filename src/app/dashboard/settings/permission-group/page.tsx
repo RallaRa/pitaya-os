@@ -240,8 +240,12 @@ export default function PermissionGroupPage() {
   const memberCount = (groupId: string) =>
     storeUsers.filter(u => u.groupId === groupId).length;
 
-  const groupName = (groupId: string) =>
-    groups.find(g => g.groupId === groupId)?.groupName || groupId;
+  const pendingCount = storeUsers.filter(u => !u.groupId).length;
+
+  const groupName = (groupId: string) => {
+    if (!groupId) return '대기';
+    return groups.find(g => g.groupId === groupId)?.groupName || groupId;
+  };
 
   // ── Early returns ──
   if (!currentStore?.storeId) {
@@ -484,7 +488,8 @@ export default function PermissionGroupPage() {
                       </td>
                       <td className="py-2.5">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium
-                          ${u.groupId === 'master' ? 'bg-yellow-900/40 text-yellow-400 border border-yellow-700/40'
+                          ${!u.groupId ? 'bg-orange-900/40 text-orange-400 border border-orange-700/40'
+                            : u.groupId === 'master' ? 'bg-yellow-900/40 text-yellow-400 border border-yellow-700/40'
                             : u.groupId === 'admin' ? 'bg-blue-900/40 text-blue-400 border border-blue-700/40'
                             : u.groupId === 'staff' ? 'bg-slate-700 text-slate-300'
                             : 'bg-teal-900/40 text-teal-400 border border-teal-700/40'}`}
@@ -519,66 +524,89 @@ export default function PermissionGroupPage() {
           </div>
 
           {/* 배정 현황 요약 */}
-          <div className="px-4 py-3 bg-slate-800/50 border-b border-slate-800 flex-shrink-0">
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <Users className="w-3.5 h-3.5" />
-              <span>현재 <strong className="text-teal-400">{memberCount(selectedGroup.groupId)}명</strong> 배정됨</span>
+          <div className="px-4 py-3 bg-slate-800/50 border-b border-slate-800 flex-shrink-0 flex gap-4">
+            <div className="text-xs text-slate-400">
+              배정됨 <strong className="text-teal-400">{memberCount(selectedGroup.groupId)}명</strong>
             </div>
+            {pendingCount > 0 && (
+              <div className="text-xs text-slate-400">
+                대기 <strong className="text-orange-400">{pendingCount}명</strong>
+              </div>
+            )}
           </div>
 
-          {/* 유저 목록 */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+          {/* 유저 목록 — 3섹션: 대기 / 배정됨 / 다른그룹 */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-3">
             {storeUsers.length === 0 ? (
               <p className="text-slate-500 text-xs text-center py-8">소속 멤버가 없습니다.</p>
             ) : (
-              storeUsers.map(u => {
-                const isAssigned = u.groupId === selectedGroup.groupId;
-                const isAssigning = assigningUid === u.uid;
-
-                return (
-                  <div
-                    key={u.uid}
-                    className={`flex items-center justify-between p-2.5 rounded-lg transition-colors
-                      ${isAssigned ? 'bg-teal-900/20 border border-teal-700/30' : 'bg-slate-800/50 hover:bg-slate-800'}`}
-                  >
-                    <div className="min-w-0 flex-1 mr-2">
-                      <p className="text-white text-xs font-medium truncate">{u.name || u.uid}</p>
-                      <p className="text-slate-500 text-[10px] truncate">{u.email}</p>
-                      {!isAssigned && (
-                        <p className="text-slate-600 text-[10px]">현재: {groupName(u.groupId)}</p>
-                      )}
+              <>
+                {/* ── 대기 중 ── */}
+                {storeUsers.filter(u => !u.groupId).length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold text-orange-400 uppercase tracking-wider mb-1.5 px-1">
+                      대기 중 ({storeUsers.filter(u => !u.groupId).length}명)
+                    </p>
+                    <div className="space-y-1">
+                      {storeUsers.filter(u => !u.groupId).map(u => (
+                        <UserRow
+                          key={u.uid}
+                          u={u}
+                          state="pending"
+                          selectedGroupId={selectedGroup.groupId}
+                          assigningUid={assigningUid}
+                          groupName={groupName}
+                          onAssign={handleAssign}
+                        />
+                      ))}
                     </div>
-
-                    {isAssigned ? (
-                      <button
-                        onClick={() => handleAssign(u.uid, 'staff')}
-                        disabled={isAssigning}
-                        className="group/cancel flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-colors text-teal-400 bg-teal-900/20 hover:text-red-400 hover:bg-red-900/20 disabled:opacity-50"
-                        title="클릭하여 배정 취소 (staff로 변경)"
-                      >
-                        {isAssigning ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <>
-                            <Check className="w-3 h-3 group-hover/cancel:hidden" />
-                            <X className="w-3 h-3 hidden group-hover/cancel:block" />
-                            <span className="group-hover/cancel:hidden">배정됨</span>
-                            <span className="hidden group-hover/cancel:block">취소</span>
-                          </>
-                        )}
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handleAssign(u.uid, selectedGroup.groupId)}
-                        disabled={isAssigning}
-                        className="flex-shrink-0 flex items-center gap-1 bg-slate-700 hover:bg-teal-700 text-slate-300 hover:text-white px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50"
-                      >
-                        {isAssigning ? <Loader2 className="w-3 h-3 animate-spin" /> : '배정'}
-                      </button>
-                    )}
                   </div>
-                );
-              })
+                )}
+
+                {/* ── 이 그룹 배정됨 ── */}
+                {storeUsers.filter(u => u.groupId === selectedGroup.groupId).length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold text-teal-400 uppercase tracking-wider mb-1.5 px-1">
+                      배정됨 ({memberCount(selectedGroup.groupId)}명)
+                    </p>
+                    <div className="space-y-1">
+                      {storeUsers.filter(u => u.groupId === selectedGroup.groupId).map(u => (
+                        <UserRow
+                          key={u.uid}
+                          u={u}
+                          state="assigned"
+                          selectedGroupId={selectedGroup.groupId}
+                          assigningUid={assigningUid}
+                          groupName={groupName}
+                          onAssign={handleAssign}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── 다른 그룹 ── */}
+                {storeUsers.filter(u => u.groupId && u.groupId !== selectedGroup.groupId).length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5 px-1">
+                      다른 그룹 ({storeUsers.filter(u => u.groupId && u.groupId !== selectedGroup.groupId).length}명)
+                    </p>
+                    <div className="space-y-1">
+                      {storeUsers.filter(u => u.groupId && u.groupId !== selectedGroup.groupId).map(u => (
+                        <UserRow
+                          key={u.uid}
+                          u={u}
+                          state="other"
+                          selectedGroupId={selectedGroup.groupId}
+                          assigningUid={assigningUid}
+                          groupName={groupName}
+                          onAssign={handleAssign}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -638,6 +666,76 @@ export default function PermissionGroupPage() {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── UserRow 서브컴포넌트 ──
+function UserRow({
+  u,
+  state,
+  selectedGroupId,
+  assigningUid,
+  groupName,
+  onAssign,
+}: {
+  u: StoreUser;
+  state: 'pending' | 'assigned' | 'other';
+  selectedGroupId: string;
+  assigningUid: string | null;
+  groupName: (id: string) => string;
+  onAssign: (uid: string, groupId: string) => void;
+}) {
+  const isAssigning = assigningUid === u.uid;
+
+  const rowBg =
+    state === 'pending'  ? 'bg-orange-900/10 border border-orange-700/20' :
+    state === 'assigned' ? 'bg-teal-900/20 border border-teal-700/30' :
+                           'bg-slate-800/50 hover:bg-slate-800';
+
+  return (
+    <div className={`flex items-center justify-between p-2.5 rounded-lg transition-colors ${rowBg}`}>
+      <div className="min-w-0 flex-1 mr-2">
+        <p className="text-white text-xs font-medium truncate">{u.name || u.uid}</p>
+        <p className="text-slate-500 text-[10px] truncate">{u.email}</p>
+        {state === 'other' && (
+          <p className="text-slate-600 text-[10px]">현재: {groupName(u.groupId)}</p>
+        )}
+        {state === 'pending' && (
+          <p className="text-orange-500 text-[10px]">그룹 미배정</p>
+        )}
+      </div>
+
+      {state === 'assigned' ? (
+        <button
+          onClick={() => onAssign(u.uid, '')}
+          disabled={isAssigning}
+          className="group/cancel flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-colors text-teal-400 bg-teal-900/20 hover:text-red-400 hover:bg-red-900/20 disabled:opacity-50"
+          title="배정 취소 → 대기 상태로 변경"
+        >
+          {isAssigning ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <>
+              <Check className="w-3 h-3 group-hover/cancel:hidden" />
+              <X className="w-3 h-3 hidden group-hover/cancel:block" />
+              <span className="group-hover/cancel:hidden">배정됨</span>
+              <span className="hidden group-hover/cancel:block">취소</span>
+            </>
+          )}
+        </button>
+      ) : (
+        <button
+          onClick={() => onAssign(u.uid, selectedGroupId)}
+          disabled={isAssigning}
+          className={`flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-colors disabled:opacity-50
+            ${state === 'pending'
+              ? 'bg-orange-700 hover:bg-orange-600 text-white'
+              : 'bg-slate-700 hover:bg-teal-700 text-slate-300 hover:text-white'}`}
+        >
+          {isAssigning ? <Loader2 className="w-3 h-3 animate-spin" /> : '배정'}
+        </button>
       )}
     </div>
   );

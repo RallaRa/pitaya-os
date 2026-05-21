@@ -98,7 +98,7 @@ export async function GET(req: Request) {
         return NextResponse.json({ groupId: 'master', menuAccess: masterAccess });
       }
 
-      let groupId = '';
+      let groupId: string | null = null;
 
       // 2. 매장별 groupId (user_store_map)
       if (storeId) {
@@ -106,15 +106,26 @@ export async function GET(req: Request) {
           .where('uid', '==', uid)
           .where('storeId', '==', storeId)
           .get();
-        if (!mapSnap.empty) groupId = mapSnap.docs[0].data().groupId || '';
+        if (!mapSnap.empty) {
+          const storeGroupId = mapSnap.docs[0].data().groupId;
+          // 명시적으로 설정된 경우 (''도 포함) 그대로 사용
+          if (storeGroupId !== undefined && storeGroupId !== null) {
+            groupId = storeGroupId;
+          }
+        }
       }
 
-      // 3. 글로벌 groupId (users)
-      if (!groupId) {
+      // 3. 글로벌 groupId fallback
+      if (groupId === null) {
         groupId = userData?.groupId || 'staff';
       }
 
-      // 4. 그룹의 menuAccess 조회
+      // 4. 대기 상태 → 모든 메뉴 false
+      if (groupId === '') {
+        return NextResponse.json({ groupId: '', menuAccess: ALL_FALSE });
+      }
+
+      // 5. 그룹의 menuAccess 조회
       const groupDoc = await adminDb.collection('permission_groups').doc(groupId).get();
       if (groupDoc.exists) {
         return NextResponse.json({ groupId, menuAccess: groupDoc.data()?.menuAccess });

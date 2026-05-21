@@ -32,8 +32,10 @@ export async function GET(req: Request) {
         const { uid, role, groupId: storeGroupId } = mapDoc.data();
         const userDoc = await adminDb.collection('users').doc(uid).get();
         const userData = userDoc.exists ? userDoc.data() : null;
-        // 매장별 groupId 우선, 없으면 글로벌 groupId 사용
-        const effectiveGroupId = storeGroupId || userData?.groupId || 'staff';
+        // storeGroupId가 명시적으로 설정된 경우 우선 사용
+        // ''(빈 문자열) = 대기 상태, undefined/null = 글로벌 groupId 사용
+        const hasStoreGroup = storeGroupId !== undefined && storeGroupId !== null;
+        const effectiveGroupId = hasStoreGroup ? storeGroupId : (userData?.groupId || 'staff');
         if (userData) {
           return { ...userData, uid, role, groupId: effectiveGroupId };
         }
@@ -81,7 +83,7 @@ export async function PUT(req: Request) {
     const body = await req.json();
     const { action, uid, storeId, groupId } = body;
 
-    if (action !== 'assignGroup' || !uid || !groupId) {
+    if (action !== 'assignGroup' || !uid || groupId === undefined) {
       return NextResponse.json({ error: '잘못된 요청' }, { status: 400 });
     }
 
