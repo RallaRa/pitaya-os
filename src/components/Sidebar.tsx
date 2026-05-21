@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Settings, MessageCircle, Users } from 'lucide-react';
+import { Settings, MessageCircle, Users, ShoppingCart } from 'lucide-react';
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -11,7 +11,8 @@ export default function Sidebar() {
   const menuItems = [
     { href: '/dashboard/ai', icon: '✨', label: 'AI 대화모드' },
     { href: '/dashboard/messenger', label: '메신저', icon: <MessageCircle className="w-5 h-5" /> },
-    { href: '/dashboard/report/input', icon: '✍️', label: 'AI 일마감보고 작성' },
+    { href: '/dashboard/report/input', icon: '✍️', label: 'AI 매출관리' },
+    { href: '/dashboard/report/purchase/input', icon: <ShoppingCart className="w-5 h-5" />, label: 'AI 매입관리' },
     { href: '/dashboard/report/hygiene', icon: '🧼', label: '위생 점검일지' },
     { href: '/dashboard/report/view', icon: '📊', label: '전체 보고서 조회' },
     { href: '/dashboard/settings/members', icon: <Users className="w-5 h-5" />, label: '멤버 관리' },
