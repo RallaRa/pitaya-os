@@ -280,7 +280,7 @@ function SelectStoreContent() {
   // ══════════════ PENDING MODE ══════════════
   if (urlMode === 'pending') {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-slate-950 flex items-start justify-center p-4 py-8 overflow-y-auto">
         <div className="w-full max-w-md bg-slate-900 rounded-2xl p-8 border border-slate-700 shadow-2xl text-center">
           <div className="bg-yellow-400/10 rounded-full w-20 h-20 mx-auto mb-6 flex items-center justify-center">
             <Clock className="w-10 h-10 text-yellow-400" />
@@ -338,7 +338,7 @@ function SelectStoreContent() {
   // ══════════════ APPLY MODE ══════════════
   if (urlMode === 'apply') {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-slate-950 flex items-start justify-center p-4 py-8 overflow-y-auto">
         <div className="w-full max-w-lg">
 
           {/* 소속 신청 화면 */}
@@ -443,7 +443,7 @@ function SelectStoreContent() {
 
   // ══════════════ SELECT MODE (기존 매장 보유 유저) ══════════════
   return (
-    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-950 flex items-start justify-center p-4 py-8 overflow-y-auto">
       <div className="w-full max-w-lg">
 
         {successMsg && (
