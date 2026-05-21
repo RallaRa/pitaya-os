@@ -550,9 +550,23 @@ export default function PermissionGroupPage() {
                     </div>
 
                     {isAssigned ? (
-                      <span className="flex items-center gap-1 text-teal-400 text-[10px] font-bold flex-shrink-0">
-                        <Check className="w-3 h-3" />배정됨
-                      </span>
+                      <button
+                        onClick={() => handleAssign(u.uid, 'staff')}
+                        disabled={isAssigning}
+                        className="group/cancel flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold transition-colors text-teal-400 bg-teal-900/20 hover:text-red-400 hover:bg-red-900/20 disabled:opacity-50"
+                        title="클릭하여 배정 취소 (staff로 변경)"
+                      >
+                        {isAssigning ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <>
+                            <Check className="w-3 h-3 group-hover/cancel:hidden" />
+                            <X className="w-3 h-3 hidden group-hover/cancel:block" />
+                            <span className="group-hover/cancel:hidden">배정됨</span>
+                            <span className="hidden group-hover/cancel:block">취소</span>
+                          </>
+                        )}
+                      </button>
                     ) : (
                       <button
                         onClick={() => handleAssign(u.uid, selectedGroup.groupId)}
