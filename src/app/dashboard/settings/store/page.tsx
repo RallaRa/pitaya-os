@@ -230,14 +230,23 @@ export default function StoreSettingsPage() {
         {error && <p className="text-red-400 text-sm mt-4">{error}</p>}
         {saveMsg && <p className="text-teal-400 text-sm mt-4">{saveMsg}</p>}
 
-        <button
-          onClick={handleSave}
-          disabled={isSaving}
-          className="w-full mt-6 bg-teal-600 hover:bg-teal-500 disabled:bg-slate-600 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
-        >
-          {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-          {isSaving ? '저장 중...' : '저장'}
-        </button>
+        <div className="grid grid-cols-2 gap-3 mt-6">
+          <Link
+            href="/dashboard/settings"
+            className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            뒤로
+          </Link>
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="bg-teal-600 hover:bg-teal-500 disabled:bg-slate-600 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+          >
+            {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+            {isSaving ? '저장 중...' : '저장'}
+          </button>
+        </div>
       </div>
 
       {/* 연결된 계정 목록 */}
