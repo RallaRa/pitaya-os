@@ -29,12 +29,12 @@ export async function GET(req: Request) {
 
     const users = await Promise.all(
       mapSnap.docs.map(async (mapDoc) => {
-        const { uid, role } = mapDoc.data();
+        const { uid, role, groupId } = mapDoc.data();
         const userDoc = await adminDb.collection('users').doc(uid).get();
         if (userDoc.exists) {
-          return { uid, role, ...userDoc.data() };
+          return { uid, role, groupId, ...userDoc.data() };
         }
-        return { uid, role, name: uid, email: '' };
+        return { uid, role, groupId, name: uid, email: '' };
       })
     );
 
@@ -51,8 +51,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'uid 없음' }, { status: 400 });
     }
 
-    // hipona00@gmail.com은 항상 superuser로 고정
-    const finalRole = email === 'hipona00@gmail.com' ? 'superuser' : (role || 'staff');
+    const existingDoc = await adminDb.collection('users').doc(uid).get();
+    const existingData = existingDoc.exists ? existingDoc.data() : null;
+
+    const finalRole = email === 'hipona00@gmail.com' ? 'superuser' : (role || existingData?.role || 'staff');
+    const finalGroupId = email === 'hipona00@gmail.com' ? 'master' : (existingData?.groupId || 'staff');
 
     await adminDb.collection('users').doc(uid).set({
       uid,
@@ -60,8 +63,36 @@ export async function POST(req: Request) {
       email: email || '',
       photoURL: photoURL || '',
       role: finalRole,
+      groupId: finalGroupId,
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function PUT(req: Request) {
+  try {
+    const body = await req.json();
+    const { action, uid, storeId, groupId } = body;
+
+    if (action !== 'assignGroup' || !uid || !groupId) {
+      return NextResponse.json({ error: '잘못된 요청' }, { status: 400 });
+    }
+
+    if (storeId) {
+      const mapSnap = await adminDb.collection('user_store_map')
+        .where('uid', '==', uid)
+        .where('storeId', '==', storeId)
+        .get();
+      if (!mapSnap.empty) {
+        await mapSnap.docs[0].ref.update({ groupId, updatedAt: FieldValue.serverTimestamp() });
+      }
+    } else {
+      await adminDb.collection('users').doc(uid).update({ groupId, updatedAt: FieldValue.serverTimestamp() });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

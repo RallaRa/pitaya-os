@@ -2,58 +2,66 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Store, Shield, Users, ChevronRight, Layers, Loader2 } from 'lucide-react';
+import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
+
+type MenuAccess = {
+  ai: boolean; sales: boolean; purchase: boolean; report: boolean;
+  messenger: boolean; members: boolean; store: boolean;
+  permissionGroup: boolean; memberGroup: boolean;
+};
 
 export default function SettingsPage() {
   const { user } = useAuth();
   const { currentStore, storesLoaded } = useStore();
-  const [globalRole, setGlobalRole] = useState('');
-  const [roleLoading, setRoleLoading] = useState(true);
+  const [menuAccess, setMenuAccess] = useState<MenuAccess | null>(null);
+  const [accessLoaded, setAccessLoaded] = useState(false);
 
   useEffect(() => {
-    if (!user?.uid) return;
-    fetch(`/api/users?uid=${user.uid}`)
+    if (!user?.uid || !storesLoaded) return;
+    const storeId = currentStore?.storeId || '';
+    const url = `/api/permissions?type=myAccess&uid=${user.uid}${storeId ? `&storeId=${storeId}` : ''}`;
+    fetch(url)
       .then(r => r.json())
-      .then(data => { if (data.user?.role) setGlobalRole(data.user.role); })
-      .finally(() => setRoleLoading(false));
-  }, [user?.uid]);
+      .then(data => { if (data.menuAccess) setMenuAccess(data.menuAccess); })
+      .finally(() => setAccessLoaded(true));
+  }, [user?.uid, currentStore?.storeId, storesLoaded]);
 
-  const storeRole = currentStore?.role || '';
-  const isSuperuser = globalRole === 'superuser';
-  const canManage = ['superuser', 'owner', 'admin'].includes(storeRole) || isSuperuser;
-
-  const SETTING_MENUS = [
-    ...(canManage ? [
-      {
-        href: '/dashboard/settings/store',
-        icon: <Store className="w-5 h-5 text-teal-400" />,
-        label: '매장 설정',
-        description: '매장 정보, 지역, 연결 계정 관리',
-      },
-      {
-        href: '/dashboard/settings/members',
-        icon: <Users className="w-5 h-5 text-blue-400" />,
-        label: '멤버 관리',
-        description: '소속 신청 승인/거절 및 멤버 목록 확인',
-      },
-    ] : []),
-    ...(isSuperuser ? [
-      {
-        href: '/dashboard/settings/permission',
-        icon: <Shield className="w-5 h-5 text-yellow-400" />,
-        label: '권한 설정',
-        description: '역할별 메뉴 접근 권한 관리 (Superuser 전용)',
-      },
-      {
-        href: '/dashboard/settings/permission-group',
-        icon: <Layers className="w-5 h-5 text-purple-400" />,
-        label: '권한 그룹 관리',
-        description: '그룹별 메뉴 접근 권한 설정',
-      },
-    ] : []),
+  const allMenus = [
+    {
+      key: 'members' as const,
+      href: '/dashboard/settings/members',
+      icon: <Users className="w-5 h-5 text-blue-400" />,
+      label: '멤버 관리',
+      description: '소속 신청 승인/거절 및 멤버 목록 확인',
+    },
+    {
+      key: 'store' as const,
+      href: '/dashboard/settings/store',
+      icon: <Store className="w-5 h-5 text-teal-400" />,
+      label: '매장 정보',
+      description: '매장 정보, 지역, 연결 계정 관리',
+    },
+    {
+      key: 'permissionGroup' as const,
+      href: '/dashboard/settings/permission-group',
+      icon: <Layers className="w-5 h-5 text-purple-400" />,
+      label: '권한 그룹 관리',
+      description: '그룹별 메뉴 접근 권한 설정',
+    },
+    {
+      key: 'memberGroup' as const,
+      href: '/dashboard/settings/member-group',
+      icon: <UserCog className="w-5 h-5 text-yellow-400" />,
+      label: '멤버-그룹 연결',
+      description: '멤버에게 권한 그룹 배정',
+    },
   ];
+
+  const visibleMenus = menuAccess
+    ? allMenus.filter(m => menuAccess[m.key])
+    : [];
 
   return (
     <div className="max-w-2xl mx-auto p-6">
@@ -64,16 +72,16 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {roleLoading || !storesLoaded ? (
+      {!accessLoaded || !storesLoaded ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="w-6 h-6 text-teal-400 animate-spin" />
         </div>
       ) : (
         <div className="space-y-3">
-          {SETTING_MENUS.length === 0 ? (
+          {visibleMenus.length === 0 ? (
             <p className="text-slate-500 text-sm text-center py-8">접근 가능한 설정 항목이 없습니다.</p>
           ) : (
-            SETTING_MENUS.map((menu) => (
+            visibleMenus.map((menu) => (
               <Link
                 key={menu.href}
                 href={menu.href}

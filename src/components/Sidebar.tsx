@@ -3,53 +3,87 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Settings, MessageCircle, ShoppingCart } from 'lucide-react';
+import { Settings, MessageCircle, ShoppingCart, Sparkles, BarChart2, TrendingUp } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
+import { useStore } from '@/context/StoreContext';
+
+type MenuAccess = {
+  ai: boolean; sales: boolean; purchase: boolean; report: boolean;
+  messenger: boolean; members: boolean; store: boolean;
+  permissionGroup: boolean; memberGroup: boolean;
+};
+
+const ALL_FALSE: MenuAccess = {
+  ai: false, sales: false, purchase: false, report: false,
+  messenger: false, members: false, store: false,
+  permissionGroup: false, memberGroup: false,
+};
 
 export default function Sidebar() {
   const pathname = usePathname();
   const { user } = useAuth();
-  const [roleLoading, setRoleLoading] = useState(true);
+  const { currentStore } = useStore();
+  const [menuAccess, setMenuAccess] = useState<MenuAccess>(ALL_FALSE);
+  const [accessLoaded, setAccessLoaded] = useState(false);
 
   useEffect(() => {
     if (!user?.uid) return;
-    fetch(`/api/users?uid=${user.uid}`)
-      .then(() => {})
-      .finally(() => setRoleLoading(false));
-  }, [user?.uid]);
+    const storeId = currentStore?.storeId || '';
+    const url = `/api/permissions?type=myAccess&uid=${user.uid}${storeId ? `&storeId=${storeId}` : ''}`;
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        if (data.menuAccess) setMenuAccess(data.menuAccess);
+      })
+      .finally(() => setAccessLoaded(true));
+  }, [user?.uid, currentStore?.storeId]);
 
-  const baseMenuItems = [
-    { href: '/dashboard/ai', icon: '✨', label: 'AI 대화모드' },
-    { href: '/dashboard/messenger', label: '메신저', icon: <MessageCircle className="w-5 h-5" /> },
-    { href: '/dashboard/report/input', icon: '✍️', label: 'AI 매출관리' },
-    { href: '/dashboard/report/purchase/input', icon: <ShoppingCart className="w-5 h-5" />, label: 'AI 매입관리' },
-    { href: '/dashboard/report/hygiene', icon: '🧼', label: '위생 점검일지' },
-    { href: '/dashboard/report/view', icon: '📊', label: '전체 보고서 조회' },
+  const mainMenus = [
+    { key: 'ai' as const, href: '/dashboard/ai', icon: <Sparkles className="w-5 h-5" />, label: 'AI 대화모드' },
+    { key: 'messenger' as const, href: '/dashboard/messenger', icon: <MessageCircle className="w-5 h-5" />, label: '메신저' },
+    { key: 'sales' as const, href: '/dashboard/report/input', icon: <TrendingUp className="w-5 h-5" />, label: 'AI 매출관리' },
+    { key: 'purchase' as const, href: '/dashboard/report/purchase/input', icon: <ShoppingCart className="w-5 h-5" />, label: 'AI 매입관리' },
+    { key: 'report' as const, href: '/dashboard/report/view', icon: <BarChart2 className="w-5 h-5" />, label: '전체 보고서' },
   ];
 
-  const settingsMenuItems = roleLoading ? [] : [
-    { href: '/dashboard/settings', icon: <Settings className="w-5 h-5" />, label: '설정' },
-  ];
-
-  const menuItems = [...baseMenuItems, ...settingsMenuItems];
+  const visibleMenus = accessLoaded
+    ? mainMenus.filter(m => menuAccess[m.key])
+    : [];
 
   return (
     <aside className="hidden md:flex w-72 flex-col bg-slate-900 border-r border-slate-800">
       <div className="p-5 flex-1 overflow-y-auto">
         <h2 className="text-2xl font-bold text-teal-400 mb-8 tracking-tight">Pitaya OS</h2>
         <nav className="space-y-2">
-          {menuItems.map((item) => (
+          {visibleMenus.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className={`block w-full flex items-center gap-3 text-left px-4 py-3 rounded-xl transition-colors ${pathname.startsWith(item.href)
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+                pathname.startsWith(item.href)
                   ? 'bg-slate-800 text-teal-300 font-medium'
                   : 'text-slate-300 hover:bg-slate-800/50'
-                }`}>
-              <span className="text-lg">{item.icon}</span>
+              }`}
+            >
+              <span className="shrink-0">{item.icon}</span>
               {item.label}
             </Link>
           ))}
+
+          {/* 설정: 항상 표시 */}
+          {accessLoaded && (
+            <Link
+              href="/dashboard/settings"
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+                pathname.startsWith('/dashboard/settings')
+                  ? 'bg-slate-800 text-teal-300 font-medium'
+                  : 'text-slate-300 hover:bg-slate-800/50'
+              }`}
+            >
+              <Settings className="w-5 h-5 shrink-0" />
+              설정
+            </Link>
+          )}
         </nav>
       </div>
 
@@ -77,7 +111,7 @@ export default function Sidebar() {
               <div className="bg-yellow-500 h-1.5 rounded-full" style={{ width: '82%' }}></div>
             </div>
           </div>
-           <div>
+          <div>
             <div className="flex justify-between text-xs mb-1.5">
               <span className="text-slate-400">드라이브 스토리지</span>
               <span className="text-teal-400 font-medium">12%</span>
