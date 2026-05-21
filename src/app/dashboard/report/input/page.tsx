@@ -7,20 +7,7 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Bot, User, Loader2, DollarSign, Users, Hash, Save, CheckCircle2 } from "lucide-react";
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
-
-const WEATHER_ICONS: Record<string, string> = {
-  '맑음': '☀️', '구름': '⛅', '안개': '🌫️', '비': '🌧️', '눈': '❄️', '소나기': '🌦️', '뇌우': '⛈️'
-};
-
-function getWeatherConditionClient(code: number): string {
-  if (code === 0) return '맑음';
-  if (code <= 3) return '구름';
-  if (code <= 48) return '안개';
-  if (code <= 67) return '비';
-  if (code <= 77) return '눈';
-  if (code <= 82) return '소나기';
-  return '뇌우';
-}
+import { WEATHER_ICONS, getStoreCoords, fetchWeather } from '@/lib/weather';
 
 // --- 타입 정의 영역 ---
 type Message = {
@@ -82,23 +69,13 @@ export default function ReportInputPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading, extractedData]);
 
-  // 날씨 프리뷰: extractedData의 reportDate가 생기면 Open-Meteo에서 날씨 조회
+  // 날씨 프리뷰: extractedData의 reportDate가 생기면 매장 지역 기준으로 날씨 조회
   useEffect(() => {
     const dateStr = extractedData?.reportDate;
     if (!dateStr) { setWeatherPreview(null); return; }
-    fetch(`https://api.open-meteo.com/v1/forecast?latitude=37.5665&longitude=126.9780&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=Asia%2FSeoul&start_date=${dateStr}&end_date=${dateStr}`)
-      .then(r => r.json())
-      .then(data => {
-        const code = data.daily?.weathercode?.[0];
-        if (code === undefined) return;
-        setWeatherPreview({
-          condition: getWeatherConditionClient(code),
-          tempMax: Math.round(data.daily?.temperature_2m_max?.[0] ?? 0),
-          tempMin: Math.round(data.daily?.temperature_2m_min?.[0] ?? 0),
-        });
-      })
-      .catch(() => {});
-  }, [extractedData?.reportDate]);
+    const coords = getStoreCoords(currentStore?.regionSido);
+    fetchWeather(dateStr, coords).then(w => setWeatherPreview(w));
+  }, [extractedData?.reportDate, currentStore?.regionSido]);
 
   // 첨부 파일 초기화
   const cancelAttachment = () => {

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI, Part } from '@google/generative-ai';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { fetchWeather, getStoreCoords } from '@/lib/weather';
 
 function formatYMD(date: Date): string {
   const y = date.getFullYear();
@@ -77,35 +78,6 @@ async function generateSerialNumber(targetDateStr: string): Promise<string> {
   return `${baseSerial}-${String(maxRevision + 1).padStart(2, '0')}`;
 }
 
-function getWeatherCondition(code: number): string {
-  if (code === 0) return '맑음';
-  if (code <= 3) return '구름';
-  if (code <= 48) return '안개';
-  if (code <= 67) return '비';
-  if (code <= 77) return '눈';
-  if (code <= 82) return '소나기';
-  return '뇌우';
-}
-
-async function fetchWeather(dateStr: string): Promise<{ condition: string; tempMax: number; tempMin: number } | null> {
-  try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=37.5665&longitude=126.9780&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=Asia%2FSeoul&start_date=${dateStr}&end_date=${dateStr}`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const json = await res.json();
-    const code = json.daily?.weathercode?.[0];
-    const tempMax = json.daily?.temperature_2m_max?.[0];
-    const tempMin = json.daily?.temperature_2m_min?.[0];
-    if (code === undefined) return null;
-    return {
-      condition: getWeatherCondition(code),
-      tempMax: Math.round(tempMax ?? 0),
-      tempMin: Math.round(tempMin ?? 0),
-    };
-  } catch {
-    return null;
-  }
-}
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
@@ -130,7 +102,15 @@ export async function POST(req: Request) {
         }
       }
 
-      const weather = await fetchWeather(reportDate);
+      let storeCoords = getStoreCoords();
+      if (storeId) {
+        const storeDoc = await adminDb.collection('stores').doc(storeId).get();
+        if (storeDoc.exists) {
+          const storeData = storeDoc.data() as any;
+          storeCoords = getStoreCoords(storeData.regionSido);
+        }
+      }
+      const weather = await fetchWeather(reportDate, storeCoords);
 
       const docRef = await adminDb.collection("daily_reports").add({
         ...extractedData,
