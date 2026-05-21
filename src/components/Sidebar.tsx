@@ -1,23 +1,50 @@
 'use client';
 
-import React from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Settings, MessageCircle, Users, ShoppingCart } from 'lucide-react';
+import { Settings, MessageCircle, Users, ShoppingCart, Store, Shield } from 'lucide-react';
+import { useAuth } from '@/context/AuthContext';
+import { useStore } from '@/context/StoreContext';
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const { currentStore } = useStore();
+  const [globalRole, setGlobalRole] = useState('');
 
-  const menuItems = [
+  useEffect(() => {
+    if (!user?.uid) return;
+    fetch(`/api/users?uid=${user.uid}`)
+      .then(r => r.json())
+      .then(data => { if (data.user?.role) setGlobalRole(data.user.role); });
+  }, [user?.uid]);
+
+  const storeRole = currentStore?.role || '';
+  const canManage = ['superuser', 'owner', 'admin'].includes(storeRole) || globalRole === 'superuser';
+  const isSuperuser = globalRole === 'superuser';
+
+  const baseMenuItems = [
     { href: '/dashboard/ai', icon: '✨', label: 'AI 대화모드' },
     { href: '/dashboard/messenger', label: '메신저', icon: <MessageCircle className="w-5 h-5" /> },
     { href: '/dashboard/report/input', icon: '✍️', label: 'AI 매출관리' },
     { href: '/dashboard/report/purchase/input', icon: <ShoppingCart className="w-5 h-5" />, label: 'AI 매입관리' },
     { href: '/dashboard/report/hygiene', icon: '🧼', label: '위생 점검일지' },
     { href: '/dashboard/report/view', icon: '📊', label: '전체 보고서 조회' },
-    { href: '/dashboard/settings/members', icon: <Users className="w-5 h-5" />, label: '멤버 관리' },
+  ];
+
+  const settingsMenuItems = [
+    ...(canManage ? [
+      { href: '/dashboard/settings/members', icon: <Users className="w-5 h-5" />, label: '멤버 관리' },
+      { href: '/dashboard/settings/store', icon: <Store className="w-5 h-5" />, label: '매장 정보' },
+    ] : []),
+    ...(isSuperuser ? [
+      { href: '/dashboard/settings/permission', icon: <Shield className="w-5 h-5" />, label: '권한 설정' },
+    ] : []),
     { href: '/dashboard/settings', icon: <Settings className="w-5 h-5" />, label: '설정' },
   ];
+
+  const menuItems = [...baseMenuItems, ...settingsMenuItems];
 
   return (
     <aside className="hidden md:flex w-72 flex-col bg-slate-900 border-r border-slate-800">

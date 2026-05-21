@@ -6,7 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import {
   Store, Plus, Search, Loader2, ChevronRight,
-  Shield, Clock, LogOut, CheckCircle,
+  Shield, Clock, LogOut, CheckCircle, XCircle,
 } from 'lucide-react';
 
 const SIDO_LIST = ['서울','부산','대구','인천','광주','대전','울산','세종',
@@ -22,6 +22,7 @@ function SelectStoreContent() {
 
   const [isSuperuser, setIsSuperuser] = useState(false);
   const [pendingStores, setPendingStores] = useState<any[]>([]);
+  const [rejectedStores, setRejectedStores] = useState<any[]>([]);
   const [internalMode, setInternalMode] = useState<'list' | 'link' | 'create'>('list');
 
   const [allStores, setAllStores] = useState<any[]>([]);
@@ -54,9 +55,13 @@ function SelectStoreContent() {
 
   useEffect(() => {
     if (urlMode !== 'pending' || !user?.uid) return;
-    fetch(`/api/store?uid=${user.uid}&status=pending`)
-      .then(r => r.json())
-      .then(data => setPendingStores(data.stores || []));
+    Promise.all([
+      fetch(`/api/store?uid=${user.uid}&status=pending`).then(r => r.json()),
+      fetch(`/api/store?uid=${user.uid}&status=rejected`).then(r => r.json()),
+    ]).then(([pendingData, rejectedData]) => {
+      setPendingStores(pendingData.stores || []);
+      setRejectedStores(rejectedData.stores || []);
+    });
   }, [urlMode, user]);
 
   useEffect(() => {
@@ -291,10 +296,33 @@ function SelectStoreContent() {
               ))}
             </div>
           )}
-          <p className="text-slate-400 text-sm mb-8">
-            매장 관리자의 승인을 기다리고 있습니다.<br />
-            승인이 완료되면 로그인 후 대시보드에 접속할 수 있습니다.
+          {rejectedStores.length > 0 && (
+            <div className="mb-6 space-y-2">
+              {rejectedStores.map(store => (
+                <div key={store.storeId} className="bg-red-950/40 border border-red-700/50 rounded-xl px-4 py-3 text-left">
+                  <div className="flex items-center gap-2 mb-1">
+                    <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                    <p className="text-red-300 font-bold text-sm">{store.storeName} — 거절됨</p>
+                  </div>
+                  {store.rejectedReason && (
+                    <p className="text-red-400/80 text-xs ml-6">사유: {store.rejectedReason}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="text-slate-400 text-sm mb-6">
+            {pendingStores.length > 0
+              ? '매장 관리자의 승인을 기다리고 있습니다.\n승인이 완료되면 로그인 후 대시보드에 접속할 수 있습니다.'
+              : '다른 매장에 소속 신청하거나 새로 로그인해주세요.'
+            }
           </p>
+          <button
+            onClick={() => router.push('/select-store?mode=apply')}
+            className="w-full bg-teal-600 hover:bg-teal-500 text-white py-2.5 rounded-xl text-sm font-medium transition-colors mb-3"
+          >
+            다른 매장에 신청하기
+          </button>
           <button
             onClick={handleLogout}
             className="flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200 text-sm mx-auto transition-colors"

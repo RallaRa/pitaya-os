@@ -196,8 +196,52 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true });
     }
 
-    // [멤버 거절]
+    // [멤버 거절] — 삭제 대신 status: 'rejected' 저장 (사유 포함)
     if (action === 'reject') {
+      const { targetUid, storeId, reason } = body;
+      if (!targetUid || !storeId) {
+        return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
+      }
+
+      const snap = await adminDb.collection('user_store_map')
+        .where('uid', '==', targetUid)
+        .where('storeId', '==', storeId)
+        .get();
+
+      if (!snap.empty) {
+        await snap.docs[0].ref.update({
+          status: 'rejected',
+          rejectedReason: reason || '',
+          rejectedAt: FieldValue.serverTimestamp(),
+        });
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
+    // [역할 변경]
+    if (action === 'changeRole') {
+      const { targetUid, storeId, role } = body;
+      if (!targetUid || !storeId || !role) {
+        return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
+      }
+
+      const snap = await adminDb.collection('user_store_map')
+        .where('uid', '==', targetUid)
+        .where('storeId', '==', storeId)
+        .where('status', '==', 'active')
+        .get();
+
+      if (snap.empty) {
+        return NextResponse.json({ error: '해당 멤버를 찾을 수 없습니다.' }, { status: 404 });
+      }
+
+      await snap.docs[0].ref.update({ role, updatedAt: FieldValue.serverTimestamp() });
+      return NextResponse.json({ success: true });
+    }
+
+    // [멤버 내보내기 (강제 탈퇴)]
+    if (action === 'remove') {
       const { targetUid, storeId } = body;
       if (!targetUid || !storeId) {
         return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
@@ -206,7 +250,6 @@ export async function POST(req: Request) {
       const snap = await adminDb.collection('user_store_map')
         .where('uid', '==', targetUid)
         .where('storeId', '==', storeId)
-        .where('status', '==', 'pending')
         .get();
 
       if (!snap.empty) {
