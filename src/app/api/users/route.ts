@@ -29,12 +29,15 @@ export async function GET(req: Request) {
 
     const users = await Promise.all(
       mapSnap.docs.map(async (mapDoc) => {
-        const { uid, role, groupId } = mapDoc.data();
+        const { uid, role, groupId: storeGroupId } = mapDoc.data();
         const userDoc = await adminDb.collection('users').doc(uid).get();
-        if (userDoc.exists) {
-          return { uid, role, groupId, ...userDoc.data() };
+        const userData = userDoc.exists ? userDoc.data() : null;
+        // 매장별 groupId 우선, 없으면 글로벌 groupId 사용
+        const effectiveGroupId = storeGroupId || userData?.groupId || 'staff';
+        if (userData) {
+          return { ...userData, uid, role, groupId: effectiveGroupId };
         }
-        return { uid, role, groupId, name: uid, email: '' };
+        return { uid, role, groupId: effectiveGroupId, name: uid, email: '' };
       })
     );
 
