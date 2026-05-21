@@ -17,6 +17,7 @@ interface Store {
 interface StoreContextType {
   currentStore: Store | null;
   myStores: Store[];
+  storesLoaded: boolean;
   setCurrentStore: (store: Store) => void;
   refreshStores: (uid: string) => Promise<Store[]>;
   clearStore: () => void;
@@ -27,22 +28,25 @@ const StoreContext = createContext<StoreContextType | null>(null);
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [currentStore, setCurrentStore] = useState<Store | null>(null);
   const [myStores, setMyStores] = useState<Store[]>([]);
+  const [storesLoaded, setStoresLoaded] = useState(false);
 
   const refreshStores = async (uid: string) => {
     const res = await fetch(`/api/store?uid=${uid}`);
     const data = await res.json();
     setMyStores(data.stores || []);
+    setStoresLoaded(true);
     return data.stores || [];
   };
 
   const clearStore = () => {
     setCurrentStore(null);
     setMyStores([]);
+    setStoresLoaded(false);
   };
 
   return (
     <StoreContext.Provider value={{
-      currentStore, myStores,
+      currentStore, myStores, storesLoaded,
       setCurrentStore, refreshStores, clearStore
     }}>
       {children}

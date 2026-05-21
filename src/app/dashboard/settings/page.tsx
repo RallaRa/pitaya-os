@@ -8,7 +8,7 @@ import { useStore } from '@/context/StoreContext';
 
 export default function SettingsPage() {
   const { user } = useAuth();
-  const { currentStore } = useStore();
+  const { currentStore, storesLoaded } = useStore();
   const [globalRole, setGlobalRole] = useState('');
   const [roleLoading, setRoleLoading] = useState(true);
 
@@ -64,7 +64,7 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {roleLoading ? (
+      {roleLoading || !storesLoaded ? (
         <div className="flex items-center justify-center py-16">
           <Loader2 className="w-6 h-6 text-teal-400 animate-spin" />
         </div>
