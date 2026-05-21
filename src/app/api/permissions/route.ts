@@ -84,9 +84,23 @@ export async function GET(req: Request) {
     if (type === 'myAccess' && uid) {
       await ensureSystemGroups();
 
+      // 1. users 컬렉션에서 이메일 + groupId 조회
+      const userDoc = await adminDb.collection('users').doc(uid).get();
+      const userData = userDoc.exists ? userDoc.data() : null;
+
+      // hipona00@gmail.com은 항상 master 강제
+      if (userData?.email === 'hipona00@gmail.com') {
+        if (userData?.groupId !== 'master') {
+          await adminDb.collection('users').doc(uid).update({ groupId: 'master' });
+        }
+        const masterDoc = await adminDb.collection('permission_groups').doc('master').get();
+        const masterAccess = masterDoc.exists ? masterDoc.data()?.menuAccess : SYSTEM_GROUPS[0].menuAccess;
+        return NextResponse.json({ groupId: 'master', menuAccess: masterAccess });
+      }
+
       let groupId = '';
 
-      // 1. 매장별 groupId (user_store_map)
+      // 2. 매장별 groupId (user_store_map)
       if (storeId) {
         const mapSnap = await adminDb.collection('user_store_map')
           .where('uid', '==', uid)
@@ -95,13 +109,12 @@ export async function GET(req: Request) {
         if (!mapSnap.empty) groupId = mapSnap.docs[0].data().groupId || '';
       }
 
-      // 2. 글로벌 groupId (users)
+      // 3. 글로벌 groupId (users)
       if (!groupId) {
-        const userDoc = await adminDb.collection('users').doc(uid).get();
-        groupId = userDoc.exists ? (userDoc.data()?.groupId || 'staff') : 'staff';
+        groupId = userData?.groupId || 'staff';
       }
 
-      // 3. 그룹의 menuAccess 조회
+      // 4. 그룹의 menuAccess 조회
       const groupDoc = await adminDb.collection('permission_groups').doc(groupId).get();
       if (groupDoc.exists) {
         return NextResponse.json({ groupId, menuAccess: groupDoc.data()?.menuAccess });

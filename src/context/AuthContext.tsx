@@ -69,6 +69,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.log('[Auth State]', currentUser?.email ?? 'none');
       setUser(currentUser);
       setLoading(false);
+
+      // 세션 복원 시에도 groupId 동기화 (재로그인 없이도 최신 groupId 유지)
+      if (currentUser) {
+        fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid: currentUser.uid,
+            name: currentUser.displayName,
+            email: currentUser.email,
+            photoURL: currentUser.photoURL,
+          }),
+        }).catch(() => {});
+      }
     });
     return () => unsubscribe();
   }, []);
