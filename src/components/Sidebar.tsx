@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Settings, MessageCircle, Users, ShoppingCart, Store, Shield } from 'lucide-react';
+import { Settings, MessageCircle, Users, ShoppingCart, Store, Shield, Layers } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 
@@ -40,6 +40,7 @@ export default function Sidebar() {
     ] : []),
     ...(isSuperuser ? [
       { href: '/dashboard/settings/permission', icon: <Shield className="w-5 h-5" />, label: '권한 설정' },
+      { href: '/dashboard/settings/permission-group', icon: <Layers className="w-5 h-5" />, label: '권한 그룹' },
     ] : []),
     { href: '/dashboard/settings', icon: <Settings className="w-5 h-5" />, label: '설정' },
   ];

@@ -51,12 +51,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'uid 없음' }, { status: 400 });
     }
 
+    // hipona00@gmail.com은 항상 superuser로 고정
+    const finalRole = email === 'hipona00@gmail.com' ? 'superuser' : (role || 'staff');
+
     await adminDb.collection('users').doc(uid).set({
       uid,
       name: name || '',
       email: email || '',
       photoURL: photoURL || '',
-      role: role || 'staff',
+      role: finalRole,
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
 
