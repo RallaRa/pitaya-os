@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { Menu } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import Sidebar from '@/components/Sidebar';
@@ -11,6 +12,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, loading } = useAuth();
   const { currentStore, myStores, refreshStores, setCurrentStore } = useStore();
   const router = useRouter();
@@ -42,11 +44,24 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto">
-        {children}
-      </main>
+    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
+      {/* 모바일 상단 헤더 */}
+      <header className="md:hidden flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800 shrink-0">
+        <span className="text-teal-400 font-bold text-lg">Pitaya OS</span>
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+          aria-label="메뉴 열기"
+        >
+          <Menu className="w-6 h-6" />
+        </button>
+      </header>
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <main className="flex-1 overflow-y-auto">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }
