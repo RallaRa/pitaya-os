@@ -434,7 +434,7 @@ export default function AiChatPage() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSend(); }
               }}
               placeholder="메시지를 입력하세요... (Enter 전송, Shift+Enter 줄바꿈)"
               rows={1}
