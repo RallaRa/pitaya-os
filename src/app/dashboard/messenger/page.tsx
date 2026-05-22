@@ -6,8 +6,7 @@ import { useStore } from '@/context/StoreContext';
 import { db } from '@/lib/firebase/firebase';
 import {
   collection, query, where, orderBy,
-  onSnapshot, getDocs, doc, setDoc, addDoc,
-  serverTimestamp, updateDoc,
+  onSnapshot, doc, updateDoc,
 } from 'firebase/firestore';
 import {
   MessageCircle, Send, Search, Loader2, ChevronLeft,
@@ -73,8 +72,6 @@ export default function MessengerPage() {
   const [input, setInput] = useState('');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isSeedLoading, setIsSeedLoading] = useState(false);
-  const [seedResult, setSeedResult] = useState<string | null>(null);
   const [showUserList, setShowUserList] = useState(false);
   const [view, setView] = useState<'list' | 'chat'>('list');
 
@@ -165,47 +162,6 @@ export default function MessengerPage() {
     finally { setIsLoading(false); }
   };
 
-  // 개발용 시드 데이터
-  const handleSeed = async () => {
-    setIsSeedLoading(true);
-    setSeedResult(null);
-    const DEV_STORE_ID = 'STR-DEV-001';
-    const SEED_USERS = [
-      { uid: 'dev-master-001', name: '최고 관리자', email: 'admin@pitaya.com', role: 'superuser' },
-      { uid: 'dev-staff-001', name: '김직원', email: 'staff1@pitaya.com', role: 'staff' },
-      { uid: 'dev-staff-002', name: '이매니저', email: 'staff2@pitaya.com', role: 'manager' },
-    ];
-    const results: string[] = [];
-    try {
-      for (const u of SEED_USERS) {
-        await setDoc(doc(db, 'users', u.uid), {
-          uid: u.uid, name: u.name, email: u.email,
-          role: u.role, updatedAt: serverTimestamp(),
-        }, { merge: true });
-        const existSnap = await getDocs(query(
-          collection(db, 'user_store_map'),
-          where('uid', '==', u.uid),
-          where('storeId', '==', DEV_STORE_ID)
-        ));
-        if (existSnap.empty) {
-          await addDoc(collection(db, 'user_store_map'), {
-            uid: u.uid, storeId: DEV_STORE_ID, role: u.role,
-            status: 'active', linkedAt: serverTimestamp(), unlinkedAt: null,
-          });
-          results.push(`✓ ${u.name} 등록`);
-        } else {
-          results.push(`- ${u.name} 이미 존재`);
-        }
-      }
-      setSeedResult(results.join('\n'));
-      await loadUsers();
-    } catch (e: any) {
-      setSeedResult(`오류: ${e.message}`);
-    } finally {
-      setIsSeedLoading(false);
-    }
-  };
-
   // 메시지 전송
   const handleSend = async () => {
     if (!input.trim() || !currentRoom || !user?.uid) return;
@@ -254,22 +210,6 @@ export default function MessengerPage() {
         w-full md:w-80 flex-shrink-0 flex-col bg-slate-900 border-r border-slate-700
       `}>
         <div className="px-4 py-3 border-b border-slate-700">
-          {process.env.NODE_ENV === 'development' && (
-            <div className="mb-3 p-2.5 bg-amber-950/40 border border-amber-700/50 rounded-lg">
-              <p className="text-amber-400 text-xs font-bold mb-1.5">DEV — 테스트 유저 시드</p>
-              <button
-                onClick={handleSeed}
-                disabled={isSeedLoading}
-                className="w-full text-xs bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 text-white py-1.5 rounded-md transition-colors font-medium"
-              >
-                {isSeedLoading ? '주입 중...' : '시드 데이터 주입'}
-              </button>
-              {seedResult && (
-                <pre className="mt-1.5 text-amber-300 text-xs whitespace-pre-wrap leading-relaxed">{seedResult}</pre>
-              )}
-            </div>
-          )}
-
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-white font-bold text-lg">메신저</h1>
             <button
