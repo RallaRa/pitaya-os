@@ -31,7 +31,7 @@ export default function SettingsPage() {
   const allMenus = [
     {
       key: 'members' as const,
-      href: '/dashboard/settings/members',
+      href: '/dashboard/hr/members',
       icon: <Users className="w-5 h-5 text-blue-400" />,
       label: '멤버 관리',
       description: '소속 신청 승인/거절 및 멤버 목록 확인',

@@ -125,7 +125,7 @@ export default function HygieneViewPage() {
           </p>
         </div>
         <Link
-          href="/dashboard/report/hygiene"
+          href="/dashboard/hygiene"
           className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-teal-400 transition-colors shrink-0 mt-1"
         >
           <PenLine className="w-4 h-4" />
@@ -176,7 +176,7 @@ export default function HygieneViewPage() {
         <div className="text-center py-20 text-slate-500">
           <ClipboardCheck className="w-12 h-12 mx-auto mb-4 opacity-30" />
           <p>해당 기간에 점검일지가 없습니다.</p>
-          <Link href="/dashboard/report/hygiene"
+          <Link href="/dashboard/hygiene"
             className="text-teal-400 text-sm mt-2 block hover:underline">
             점검일지 작성하기 →
           </Link>
@@ -204,7 +204,7 @@ export default function HygieneViewPage() {
                 {/* 요약 행 */}
                 <div
                   onClick={() => isDraft
-                    ? router.push(`/dashboard/report/hygiene?date=${rec.checkDate}`)
+                    ? router.push(`/dashboard/hygiene?date=${rec.checkDate}`)
                     : toggleExpand(rec.id)
                   }
                   className="w-full flex items-center gap-3 px-5 py-4 hover:bg-slate-800/50 transition-colors cursor-pointer"

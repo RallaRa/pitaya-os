@@ -297,7 +297,7 @@ function HygieneChecklistContent() {
             축산물 판매업소<br className="md:hidden" /> 위생관리 점검일지
           </h1>
           <Link
-            href="/dashboard/report/hygiene/view"
+            href="/dashboard/hygiene/view"
             className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-teal-400 transition-colors shrink-0 mt-1"
           >
             <Eye className="w-4 h-4" />
