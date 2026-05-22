@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Settings, MessageCircle, ShoppingCart, Sparkles,
-  BarChart2, TrendingUp, ClipboardCheck, X,
+  BarChart2, TrendingUp, ClipboardCheck, X, LogOut,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -29,7 +29,7 @@ interface SidebarProps {
 
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { currentStore } = useStore();
   const [menuAccess, setMenuAccess] = useState<MenuAccess>(ALL_FALSE);
   const [accessLoading, setAccessLoading] = useState(true);
@@ -65,6 +65,17 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const visibleMenus = accessLoading
     ? []
     : mainMenus.filter(m => menuAccess[m.key]);
+
+  // ── 공통 하단 로그아웃 버튼 ──
+  const logoutButton = (
+    <button
+      onClick={async () => { onClose?.(); await logout(); }}
+      className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800/50 hover:text-red-400 transition-colors"
+    >
+      <LogOut className="w-5 h-5 shrink-0" />
+      로그아웃
+    </button>
+  );
 
   // ── 공통 nav 콘텐츠 ──
   const navContent = (
@@ -104,6 +115,9 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
             <Settings className="w-5 h-5 shrink-0" />
             설정
           </Link>
+          <div className="border-t border-slate-800 pt-2 mt-2">
+            {logoutButton}
+          </div>
         </>
       )}
     </nav>
