@@ -62,7 +62,7 @@ async function callClaude(message: string, history: any[], system: string): Prom
   }));
 
   const response = await client.messages.create({
-    model:      'claude-sonnet-4-20250514',
+    model:      'claude-sonnet-4-6',
     max_tokens: 2048,
     system,
     messages:   [...claudeHistory, { role: 'user', content: message }],
@@ -132,13 +132,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: '사용 가능한 AI API 키가 없습니다.' }, { status: 500 });
     }
 
-    // ── 호출 ──
+    // ── 호출 (실패 시 Gemini로 재시도) ──
     let text: string;
-    if      (resolved === 'claude') text = await callClaude(message, msgs, system);
-    else if (resolved === 'gpt')    text = await callGPT(message, msgs, system);
-    else                            text = await callGemini(message, msgs, system);
+    let finalModel = resolved;
 
-    return NextResponse.json({ text, usedModel: MODEL_NAMES[resolved] });
+    try {
+      if      (resolved === 'claude') text = await callClaude(message, msgs, system);
+      else if (resolved === 'gpt')    text = await callGPT(message, msgs, system);
+      else                            text = await callGemini(message, msgs, system);
+    } catch (callErr: any) {
+      // Claude/GPT 호출 실패(크레딧 부족, 일시 오류 등) → Gemini 우회
+      if (resolved !== 'gemini') {
+        console.warn(`[AI] ${resolved} 호출 실패 → Gemini 우회:`, callErr.message);
+        text = await callGemini(message, msgs, system);
+        finalModel = 'gemini';
+      } else {
+        throw callErr;
+      }
+    }
+
+    return NextResponse.json({ text, usedModel: MODEL_NAMES[finalModel] });
 
   } catch (error: any) {
     console.error('AI API Error:', error);
