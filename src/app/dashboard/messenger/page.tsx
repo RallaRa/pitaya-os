@@ -9,7 +9,7 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import {
-  MessageCircle, Send, Search, Loader2, ChevronLeft,
+  MessageCircle, Send, Search, Loader2, ChevronLeft, X,
 } from 'lucide-react';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
 
@@ -28,6 +28,13 @@ interface Room {
   unreadCount: Record<string, number>;
 }
 
+interface ReplyTo {
+  messageId: string;
+  senderName: string;
+  text: string;
+  type: 'text';
+}
+
 interface Message {
   id: string;
   roomId: string;
@@ -36,7 +43,11 @@ interface Message {
   text: string;
   createdAt: any;
   readBy: string[];
+  replyTo?: ReplyTo;
+  reactions?: Record<string, string[]>;
 }
+
+const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '👏'];
 
 // 날짜 문자열 비교용 (YYYY-MM-DD)
 const getDateStr = (ts: any): string => {
@@ -66,21 +77,26 @@ export default function MessengerPage() {
   const { user } = useAuth();
   const { currentStore } = useStore();
 
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
-  const [searchKeyword, setSearchKeyword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [showUserList, setShowUserList] = useState(false);
-  const [view, setView] = useState<'list' | 'chat'>('list');
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [users,              setUsers]              = useState<UserProfile[]>([]);
+  const [rooms,              setRooms]              = useState<Room[]>([]);
+  const [currentRoom,        setCurrentRoom]        = useState<Room | null>(null);
+  const [messages,           setMessages]           = useState<Message[]>([]);
+  const [input,              setInput]              = useState('');
+  const [searchKeyword,      setSearchKeyword]      = useState('');
+  const [isLoading,          setIsLoading]          = useState(false);
+  const [showUserList,       setShowUserList]       = useState(false);
+  const [view,               setView]               = useState<'list' | 'chat'>('list');
+  const [showEmojiPicker,    setShowEmojiPicker]    = useState(false);
+  const [replyingTo,         setReplyingTo]         = useState<Message | null>(null);
+  const [hoveredMsgId,       setHoveredMsgId]       = useState<string | null>(null);
+  const [reactionPickerMsgId, setReactionPickerMsgId] = useState<string | null>(null);
 
-  const messagesEndRef  = useRef<HTMLDivElement>(null);
-  const unsubscribeRef  = useRef<(() => void) | null>(null);
-  const emojiPickerRef  = useRef<HTMLDivElement>(null);
-  const emojiButtonRef  = useRef<HTMLButtonElement>(null);
+  const messagesEndRef    = useRef<HTMLDivElement>(null);
+  const unsubscribeRef    = useRef<(() => void) | null>(null);
+  const emojiPickerRef    = useRef<HTMLDivElement>(null);
+  const emojiButtonRef    = useRef<HTMLButtonElement>(null);
+  const reactionPickerRef = useRef<HTMLDivElement>(null);
+  const msgRefs           = useRef<Record<string, HTMLDivElement | null>>({});
 
   // 매장 유저 목록 로드
   const loadUsers = async () => {
@@ -124,7 +140,6 @@ export default function MessengerPage() {
       }).catch(console.error);
     };
 
-    // 입장 즉시 읽음 처리 (뱃지 초기화)
     markRead();
 
     if (unsubscribeRef.current) unsubscribeRef.current();
@@ -138,7 +153,6 @@ export default function MessengerPage() {
     const unsub = onSnapshot(q, snap => {
       setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Message[]);
 
-      // 새 메시지 도착 시 읽지 않은 게 있으면 즉시 읽음 처리 (실시간 ✓✓ 갱신)
       if (myUid) {
         const hasUnread = snap.docs.some(d => {
           const data = d.data();
@@ -156,7 +170,7 @@ export default function MessengerPage() {
     return () => unsub();
   }, [currentRoom]);
 
-  // 이모지 피커 외부 클릭 시 닫기
+  // 이모지 피커 / 반응 피커 외부 클릭 시 닫기
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (
@@ -164,6 +178,9 @@ export default function MessengerPage() {
         emojiButtonRef.current && !emojiButtonRef.current.contains(e.target as Node)
       ) {
         setShowEmojiPicker(false);
+      }
+      if (reactionPickerRef.current && !reactionPickerRef.current.contains(e.target as Node)) {
+        setReactionPickerMsgId(null);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -196,11 +213,18 @@ export default function MessengerPage() {
     finally { setIsLoading(false); }
   };
 
-  // 메시지 전송
+  // 메시지 전송 (replyTo 포함)
   const handleSend = async () => {
     if (!input.trim() || !currentRoom || !user?.uid) return;
     const text = input.trim();
+    const replyTo = replyingTo ? {
+      messageId: replyingTo.id,
+      senderName: replyingTo.senderName,
+      text: replyingTo.text.slice(0, 50),
+      type: 'text' as const,
+    } : undefined;
     setInput('');
+    setReplyingTo(null);
     try {
       await fetch('/api/messenger/messages', {
         method: 'POST',
@@ -210,9 +234,31 @@ export default function MessengerPage() {
           senderUid: user.uid,
           senderName: user.displayName || user.email || '나',
           text,
+          replyTo,
         }),
       });
     } catch (e) { console.error(e); }
+  };
+
+  // 이모지 반응 토글
+  const handleReaction = async (messageId: string, emoji: string) => {
+    if (!user?.uid) return;
+    setReactionPickerMsgId(null);
+    fetch('/api/messenger/messages', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'react', messageId, emoji, uid: user.uid }),
+    }).catch(console.error);
+  };
+
+  // 원본 메시지로 스크롤
+  const scrollToMessage = (messageId: string) => {
+    const el = msgRefs.current[messageId];
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.style.transition = 'background-color 0.3s ease';
+    el.style.backgroundColor = 'rgba(20, 184, 166, 0.15)';
+    setTimeout(() => { el.style.backgroundColor = ''; }, 1500);
   };
 
   const getPartner = (room: Room) => {
@@ -238,7 +284,7 @@ export default function MessengerPage() {
   return (
     <div className="flex h-full bg-slate-950 rounded-xl overflow-hidden border border-slate-800">
 
-      {/* 왼쪽: 채팅방 목록 */}
+      {/* ── 왼쪽: 채팅방 목록 ── */}
       <div className={`
         ${view === 'chat' ? 'hidden md:flex' : 'flex'}
         w-full md:w-80 flex-shrink-0 flex-col bg-slate-900 border-r border-slate-700
@@ -336,7 +382,7 @@ export default function MessengerPage() {
         </div>
       </div>
 
-      {/* 오른쪽: 채팅 영역 */}
+      {/* ── 오른쪽: 채팅 영역 ── */}
       <div className={`${view === 'list' ? 'hidden md:flex' : 'flex'} flex-1 flex-col min-w-0`}>
         {!currentRoom ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
@@ -364,7 +410,7 @@ export default function MessengerPage() {
             </div>
 
             {/* 메시지 영역 */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-950">
+            <div className="flex-1 overflow-y-auto p-4 space-y-1 bg-slate-950">
               {messages.length === 0 && (
                 <div className="text-center py-12">
                   <p className="text-slate-600 text-sm">대화를 시작해보세요.</p>
@@ -372,12 +418,13 @@ export default function MessengerPage() {
               )}
 
               {messages.map((msg, idx) => {
-                const isMine = msg.senderUid === user?.uid;
-                const prevMsg = messages[idx - 1];
+                const isMine      = msg.senderUid === user?.uid;
+                const prevMsg     = messages[idx - 1];
                 const showDateSep = getDateStr(msg.createdAt) !== getDateStr(prevMsg?.createdAt);
-                const showName = !isMine && prevMsg?.senderUid !== msg.senderUid;
-                const showTime = !messages[idx + 1] || messages[idx + 1].senderUid !== msg.senderUid;
-                const partnerUid = currentRoom?.members.find(m => m !== user?.uid) ?? '';
+                const showName    = !isMine && prevMsg?.senderUid !== msg.senderUid;
+                const showTime    = !messages[idx + 1] || messages[idx + 1].senderUid !== msg.senderUid;
+                const partnerUid  = currentRoom?.members.find(m => m !== user?.uid) ?? '';
+                const showActions = hoveredMsgId === msg.id || reactionPickerMsgId === msg.id;
 
                 return (
                   <React.Fragment key={msg.id}>
@@ -392,7 +439,46 @@ export default function MessengerPage() {
                       </div>
                     )}
 
-                    <div className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                    {/* 메시지 행 */}
+                    <div
+                      ref={el => { msgRefs.current[msg.id] = el; }}
+                      className={`flex ${isMine ? 'justify-end' : 'justify-start'} py-0.5`}
+                      onMouseEnter={() => setHoveredMsgId(msg.id)}
+                      onMouseLeave={() => { if (!reactionPickerMsgId) setHoveredMsgId(null); }}
+                    >
+                      {/* isMine: 액션 버튼이 버블 왼쪽 */}
+                      {isMine && (
+                        <div className={`flex items-end gap-0.5 mr-1 pb-1 flex-shrink-0 transition-opacity ${showActions ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                          <button
+                            onClick={() => setReplyingTo(msg)}
+                            className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-700 transition-colors"
+                            title="답글"
+                          >↩</button>
+                          <div className="relative">
+                            <button
+                              onClick={() => setReactionPickerMsgId(reactionPickerMsgId === msg.id ? null : msg.id)}
+                              className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-700 transition-colors"
+                              title="이모지 반응"
+                            >😊</button>
+                            {reactionPickerMsgId === msg.id && (
+                              <div
+                                ref={reactionPickerRef}
+                                className="absolute bottom-full right-0 mb-1 z-50 flex gap-1 bg-slate-800 border border-slate-700 rounded-full px-2 py-1.5 shadow-xl"
+                              >
+                                {QUICK_EMOJIS.map(emoji => (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => handleReaction(msg.id, emoji)}
+                                    className="text-lg hover:scale-125 transition-transform leading-none"
+                                  >{emoji}</button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 버블 영역 */}
                       <div className={`flex gap-2 max-w-[70%] ${isMine ? 'flex-row-reverse' : ''}`}>
                         {/* 아바타 (상대방만) */}
                         {!isMine && (
@@ -410,6 +496,18 @@ export default function MessengerPage() {
                               <p className="text-slate-600 text-xs mb-0.5 flex-shrink-0">{formatTime(msg.createdAt)}</p>
                             )}
                             <div className={`px-3 py-2 rounded-2xl text-sm max-w-full break-words ${isMine ? 'bg-teal-600 text-white rounded-tr-sm' : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-tl-sm'}`}>
+                              {/* 답글 인용 블록 */}
+                              {msg.replyTo && (
+                                <button
+                                  onClick={() => scrollToMessage(msg.replyTo!.messageId)}
+                                  className={`w-full text-left mb-2 border-l-2 border-teal-400 pl-2 pr-1 py-1 rounded-r block ${
+                                    isMine ? 'bg-teal-700/40' : 'bg-slate-700/60'
+                                  }`}
+                                >
+                                  <p className="text-teal-300 text-[10px] font-semibold truncate">↩ {msg.replyTo.senderName}</p>
+                                  <p className="text-xs text-slate-300/80 truncate">{msg.replyTo.text}</p>
+                                </button>
+                              )}
                               {msg.text}
                               {isMine && (
                                 <span className={`text-[10px] ml-1 align-bottom ${msg.readBy?.includes(partnerUid) ? 'text-teal-100' : 'text-teal-300/60'}`}>
@@ -421,14 +519,85 @@ export default function MessengerPage() {
                               <p className="text-slate-600 text-xs mb-0.5 flex-shrink-0">{formatTime(msg.createdAt)}</p>
                             )}
                           </div>
+
+                          {/* 이모지 반응 바 */}
+                          {msg.reactions && Object.entries(msg.reactions).some(([, uids]) => uids.length > 0) && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {Object.entries(msg.reactions)
+                                .filter(([, uids]) => uids.length > 0)
+                                .map(([emoji, uids]) => (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => handleReaction(msg.id, emoji)}
+                                    className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs border transition-all ${
+                                      uids.includes(user?.uid || '')
+                                        ? 'border-teal-500 bg-teal-500/20 text-teal-300'
+                                        : 'border-slate-700 bg-slate-800/80 text-slate-300 hover:border-slate-500'
+                                    }`}
+                                  >
+                                    <span>{emoji}</span>
+                                    <span className="font-medium ml-0.5">{uids.length}</span>
+                                  </button>
+                                ))}
+                            </div>
+                          )}
                         </div>
                       </div>
+
+                      {/* !isMine: 액션 버튼이 버블 오른쪽 */}
+                      {!isMine && (
+                        <div className={`flex items-end gap-0.5 ml-1 pb-1 flex-shrink-0 transition-opacity ${showActions ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                          <button
+                            onClick={() => setReplyingTo(msg)}
+                            className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-700 transition-colors"
+                            title="답글"
+                          >↩</button>
+                          <div className="relative">
+                            <button
+                              onClick={() => setReactionPickerMsgId(reactionPickerMsgId === msg.id ? null : msg.id)}
+                              className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-700 transition-colors"
+                              title="이모지 반응"
+                            >😊</button>
+                            {reactionPickerMsgId === msg.id && (
+                              <div
+                                ref={reactionPickerRef}
+                                className="absolute bottom-full left-0 mb-1 z-50 flex gap-1 bg-slate-800 border border-slate-700 rounded-full px-2 py-1.5 shadow-xl"
+                              >
+                                {QUICK_EMOJIS.map(emoji => (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => handleReaction(msg.id, emoji)}
+                                    className="text-lg hover:scale-125 transition-transform leading-none"
+                                  >{emoji}</button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </React.Fragment>
                 );
               })}
               <div ref={messagesEndRef} />
             </div>
+
+            {/* 답글 미리보기 */}
+            {replyingTo && (
+              <div className="bg-slate-800/80 border-t border-slate-700 px-4 py-2 flex items-center gap-2">
+                <div className="w-0.5 self-stretch bg-teal-500 rounded-full flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-teal-400 text-xs font-medium">↩ {replyingTo.senderName}에게 답글</p>
+                  <p className="text-slate-400 text-xs truncate">{replyingTo.text.slice(0, 60)}</p>
+                </div>
+                <button
+                  onClick={() => setReplyingTo(null)}
+                  className="text-slate-400 hover:text-white transition-colors flex-shrink-0 p-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
 
             {/* 입력창 */}
             <div className="bg-slate-900 border-t border-slate-700 p-3">

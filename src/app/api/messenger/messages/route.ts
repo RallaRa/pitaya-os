@@ -4,19 +4,22 @@ import { FieldValue } from 'firebase-admin/firestore';
 
 export async function POST(req: Request) {
   try {
-    const { roomId, senderUid, text, senderName } = await req.json();
+    const { roomId, senderUid, text, senderName, replyTo } = await req.json();
     if (!roomId || !senderUid || !text) {
       return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
     }
 
-    await adminDb.collection('chat_messages').add({
+    const msgData: Record<string, any> = {
       roomId,
       senderUid,
       senderName: senderName || '',
       text,
       createdAt: FieldValue.serverTimestamp(),
       readBy: [senderUid],
-    });
+    };
+    if (replyTo) msgData.replyTo = replyTo;
+
+    await adminDb.collection('chat_messages').add(msgData);
 
     const roomDoc = await adminDb.collection('chat_rooms').doc(roomId).get();
     const members: string[] = roomDoc.data()?.members || [];
@@ -36,7 +39,7 @@ export async function POST(req: Request) {
 
     await adminDb.collection('chat_rooms').doc(roomId).update(roomUpdate);
 
-    // 채팅방 밖에 있는 수신자에게만 알림 생성 (unreadCount !== 0 → 방 밖에 있음)
+    // 채팅방 밖에 있는 수신자에게만 알림 생성
     const notifyTargets = members.filter(
       (uid: string) => uid !== senderUid && currentUnreadCounts[uid] !== 0
     );
@@ -65,33 +68,56 @@ export async function POST(req: Request) {
 
 export async function PUT(req: Request) {
   try {
-    const { action, roomId, uid } = await req.json();
-    if (action !== 'readAll' || !roomId || !uid) {
-      return NextResponse.json({ error: '잘못된 요청' }, { status: 400 });
+    const body = await req.json();
+    const { action } = body;
+
+    // ── readAll: 방 전체 메시지 읽음 처리 ──
+    if (action === 'readAll') {
+      const { roomId, uid } = body;
+      if (!roomId || !uid) return NextResponse.json({ error: '잘못된 요청' }, { status: 400 });
+
+      const msgsSnap = await adminDb.collection('chat_messages')
+        .where('roomId', '==', roomId)
+        .get();
+
+      const unreadDocs = msgsSnap.docs.filter(d => {
+        const readBy: string[] = d.data().readBy || [];
+        return !readBy.includes(uid);
+      });
+
+      if (unreadDocs.length > 0) {
+        const batch = adminDb.batch();
+        unreadDocs.forEach(d => batch.update(d.ref, { readBy: FieldValue.arrayUnion(uid) }));
+        await batch.commit();
+      }
+
+      await adminDb.collection('chat_rooms').doc(roomId).update({
+        [`unreadCount.${uid}`]: 0,
+      });
+
+      return NextResponse.json({ success: true, updated: unreadDocs.length });
     }
 
-    // 해당 방에서 내가 readBy에 없는 메시지 전체에 uid 추가
-    const msgsSnap = await adminDb.collection('chat_messages')
-      .where('roomId', '==', roomId)
-      .get();
+    // ── react: 이모지 반응 토글 ──
+    if (action === 'react') {
+      const { messageId, emoji, uid } = body;
+      if (!messageId || !emoji || !uid) return NextResponse.json({ error: '잘못된 요청' }, { status: 400 });
 
-    const unreadDocs = msgsSnap.docs.filter(d => {
-      const readBy: string[] = d.data().readBy || [];
-      return !readBy.includes(uid);
-    });
+      const msgRef = adminDb.collection('chat_messages').doc(messageId);
+      const msgDoc = await msgRef.get();
+      const reactions: Record<string, string[]> = msgDoc.data()?.reactions || {};
+      const currentReactors: string[] = reactions[emoji] || [];
 
-    if (unreadDocs.length > 0) {
-      const batch = adminDb.batch();
-      unreadDocs.forEach(d => batch.update(d.ref, { readBy: FieldValue.arrayUnion(uid) }));
-      await batch.commit();
+      if (currentReactors.includes(uid)) {
+        await msgRef.update({ [`reactions.${emoji}`]: FieldValue.arrayRemove(uid) });
+      } else {
+        await msgRef.update({ [`reactions.${emoji}`]: FieldValue.arrayUnion(uid) });
+      }
+
+      return NextResponse.json({ success: true });
     }
 
-    // unreadCount 초기화
-    await adminDb.collection('chat_rooms').doc(roomId).update({
-      [`unreadCount.${uid}`]: 0,
-    });
-
-    return NextResponse.json({ success: true, updated: unreadDocs.length });
+    return NextResponse.json({ error: '알 수 없는 action' }, { status: 400 });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
