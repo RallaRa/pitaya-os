@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Settings, MessageCircle, ShoppingCart, Sparkles, BarChart2, TrendingUp } from 'lucide-react';
+import { Settings, MessageCircle, ShoppingCart, Sparkles, BarChart2, TrendingUp, ClipboardCheck } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 
@@ -24,10 +24,11 @@ export default function Sidebar() {
   const { user } = useAuth();
   const { currentStore } = useStore();
   const [menuAccess, setMenuAccess] = useState<MenuAccess>(ALL_FALSE);
-  const [accessLoaded, setAccessLoaded] = useState(false);
+  const [accessLoading, setAccessLoading] = useState(true);
 
   useEffect(() => {
     if (!user?.uid) return;
+    setAccessLoading(true);
     const storeId = currentStore?.storeId || '';
     const url = `/api/permissions?type=myAccess&uid=${user.uid}${storeId ? `&storeId=${storeId}` : ''}`;
     fetch(url)
@@ -35,54 +36,64 @@ export default function Sidebar() {
       .then(data => {
         if (data.menuAccess) setMenuAccess(data.menuAccess);
       })
-      .finally(() => setAccessLoaded(true));
+      .catch(() => setMenuAccess(ALL_FALSE))
+      .finally(() => setAccessLoading(false));
   }, [user?.uid, currentStore?.storeId]);
 
   const mainMenus = [
-    { key: 'ai' as const, href: '/dashboard/ai', icon: <Sparkles className="w-5 h-5" />, label: 'AI 대화모드' },
-    { key: 'messenger' as const, href: '/dashboard/messenger', icon: <MessageCircle className="w-5 h-5" />, label: '메신저' },
-    { key: 'sales' as const, href: '/dashboard/report/input', icon: <TrendingUp className="w-5 h-5" />, label: 'AI 매출관리' },
-    { key: 'purchase' as const, href: '/dashboard/report/purchase/input', icon: <ShoppingCart className="w-5 h-5" />, label: 'AI 매입관리' },
-    { key: 'report' as const, href: '/dashboard/report/view', icon: <BarChart2 className="w-5 h-5" />, label: '전체 보고서' },
+    { key: 'ai' as const,       href: '/dashboard/ai',                    icon: <Sparkles className="w-5 h-5" />,       label: 'AI 대화모드' },
+    { key: 'messenger' as const, href: '/dashboard/messenger',             icon: <MessageCircle className="w-5 h-5" />,  label: '메신저' },
+    { key: 'sales' as const,    href: '/dashboard/report/input',           icon: <TrendingUp className="w-5 h-5" />,     label: 'AI 매출관리' },
+    { key: 'sales' as const,    href: '/dashboard/report/hygiene',         icon: <ClipboardCheck className="w-5 h-5" />, label: '위생 점검일지' },
+    { key: 'purchase' as const, href: '/dashboard/report/purchase/input',  icon: <ShoppingCart className="w-5 h-5" />,   label: 'AI 매입관리' },
+    { key: 'report' as const,   href: '/dashboard/report/view',            icon: <BarChart2 className="w-5 h-5" />,      label: '전체 보고서' },
   ];
 
-  const visibleMenus = accessLoaded
-    ? mainMenus.filter(m => menuAccess[m.key])
-    : [];
+  const visibleMenus = accessLoading
+    ? []
+    : mainMenus.filter(m => menuAccess[m.key]);
 
   return (
     <aside className="hidden md:flex w-72 flex-col bg-slate-900 border-r border-slate-800">
       <div className="p-5 flex-1 overflow-y-auto">
         <h2 className="text-2xl font-bold text-teal-400 mb-8 tracking-tight">Pitaya OS</h2>
         <nav className="space-y-2">
-          {visibleMenus.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-                pathname.startsWith(item.href)
-                  ? 'bg-slate-800 text-teal-300 font-medium'
-                  : 'text-slate-300 hover:bg-slate-800/50'
-              }`}
-            >
-              <span className="shrink-0">{item.icon}</span>
-              {item.label}
-            </Link>
-          ))}
-
-          {/* 설정: 항상 표시 */}
-          {accessLoaded && (
-            <Link
-              href="/dashboard/settings"
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-                pathname.startsWith('/dashboard/settings')
-                  ? 'bg-slate-800 text-teal-300 font-medium'
-                  : 'text-slate-300 hover:bg-slate-800/50'
-              }`}
-            >
-              <Settings className="w-5 h-5 shrink-0" />
-              설정
-            </Link>
+          {accessLoading ? (
+            /* 로딩 스켈레톤 — 깜빡임 방지 */
+            <>
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="h-11 rounded-xl bg-slate-800/60 animate-pulse" />
+              ))}
+            </>
+          ) : (
+            <>
+              {visibleMenus.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+                    pathname.startsWith(item.href)
+                      ? 'bg-slate-800 text-teal-300 font-medium'
+                      : 'text-slate-300 hover:bg-slate-800/50'
+                  }`}
+                >
+                  <span className="shrink-0">{item.icon}</span>
+                  {item.label}
+                </Link>
+              ))}
+              {/* 설정: 항상 표시 */}
+              <Link
+                href="/dashboard/settings"
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
+                  pathname.startsWith('/dashboard/settings')
+                    ? 'bg-slate-800 text-teal-300 font-medium'
+                    : 'text-slate-300 hover:bg-slate-800/50'
+                }`}
+              >
+                <Settings className="w-5 h-5 shrink-0" />
+                설정
+              </Link>
+            </>
           )}
         </nav>
       </div>
