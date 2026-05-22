@@ -151,7 +151,11 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ text, usedModel: MODEL_NAMES[finalModel] });
+    return NextResponse.json({
+      text,
+      usedModel: MODEL_NAMES[finalModel],
+      isAuto: modelChoice === 'auto',
+    });
 
   } catch (error: any) {
     console.error('AI API Error:', error);

@@ -29,6 +29,7 @@ interface Message {
   content: string;
   timestamp: string;
   usedModel?: string;
+  isAuto?: boolean;
 }
 
 interface Conversation {
@@ -46,6 +47,7 @@ function normalizeMsg(msg: any): Message {
     content:   msg.content || msg.text || '',
     timestamp: msg.timestamp || msg.createdAt || new Date().toISOString(),
     usedModel: msg.usedModel,
+    isAuto:    msg.isAuto,
   };
 }
 
@@ -138,6 +140,7 @@ export default function AiChatPage() {
         content:   data.text || '응답을 받지 못했습니다.',
         timestamp: new Date().toISOString(),
         usedModel: data.usedModel || '',
+        isAuto:    data.isAuto ?? false,
       };
 
       const finalMessages = [...newMessages, aiMsg];
@@ -365,11 +368,14 @@ export default function AiChatPage() {
                   {/* usedModel 뱃지 */}
                   {msg.role === 'model' && msg.usedModel && (() => {
                     const badge = MODEL_BADGE[msg.usedModel];
+                    const label = msg.isAuto
+                      ? `🤖 자동 → ${badge?.emoji ?? ''} ${msg.usedModel}`
+                      : `${badge?.emoji ?? '🤖'} ${msg.usedModel}`;
                     return (
                       <span className={`self-start text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
                         badge ? badge.cls : 'bg-slate-700 text-slate-400 border-slate-600'
                       }`}>
-                        {badge?.emoji ?? '🤖'} {msg.usedModel}
+                        {label}
                       </span>
                     );
                   })()}
