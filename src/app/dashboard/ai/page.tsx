@@ -9,10 +9,26 @@ import {
   Edit2, Check, X
 } from 'lucide-react';
 
+type ModelChoice = 'auto' | 'gemini' | 'claude' | 'gpt';
+
+const MODEL_OPTIONS: { value: ModelChoice; emoji: string; label: string }[] = [
+  { value: 'auto',   emoji: '🤖', label: '자동 (권장)' },
+  { value: 'gemini', emoji: '⚡', label: 'Gemini'      },
+  { value: 'claude', emoji: '🧠', label: 'Claude'      },
+  { value: 'gpt',    emoji: '👔', label: 'GPT'         },
+];
+
+const MODEL_BADGE: Record<string, string> = {
+  'Gemini 2.5 Flash':  '⚡',
+  'Claude 3.5 Sonnet': '🧠',
+  'GPT-4o':            '👔',
+};
+
 interface Message {
   role: 'user' | 'model';
   content: string;
   timestamp: string;
+  usedModel?: string;
 }
 
 interface Conversation {
@@ -26,9 +42,10 @@ interface Conversation {
 
 function normalizeMsg(msg: any): Message {
   return {
-    role: msg.role === 'ai' ? 'model' : (msg.role || 'model'),
-    content: msg.content || msg.text || '',
+    role:      msg.role === 'ai' ? 'model' : (msg.role || 'model'),
+    content:   msg.content || msg.text || '',
     timestamp: msg.timestamp || msg.createdAt || new Date().toISOString(),
+    usedModel: msg.usedModel,
   };
 }
 
@@ -40,17 +57,20 @@ function toDate(val: any): Date {
 }
 
 export default function AiChatPage() {
-  const { user } = useAuth();
+  const { user }         = useAuth();
   const { currentStore } = useStore();
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [currentId, setCurrentId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingList, setIsLoadingList] = useState(true);
-  const [showSidebar, setShowSidebar] = useState(true);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState('');
+
+  const [conversations,  setConversations]  = useState<Conversation[]>([]);
+  const [currentId,      setCurrentId]      = useState<string | null>(null);
+  const [messages,       setMessages]       = useState<Message[]>([]);
+  const [input,          setInput]          = useState('');
+  const [isLoading,      setIsLoading]      = useState(false);
+  const [isLoadingList,  setIsLoadingList]  = useState(true);
+  const [showSidebar,    setShowSidebar]    = useState(true);
+  const [editingId,      setEditingId]      = useState<string | null>(null);
+  const [editTitle,      setEditTitle]      = useState('');
+  const [selectedModel,  setSelectedModel]  = useState<ModelChoice>('auto');
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const loadConversations = useCallback(async () => {
@@ -59,7 +79,7 @@ export default function AiChatPage() {
     try {
       const params = new URLSearchParams({ uid: user.uid });
       if (currentStore?.storeId) params.set('storeId', currentStore.storeId);
-      const res = await fetch(`/api/conversations?${params}`);
+      const res  = await fetch(`/api/conversations?${params}`);
       const data = await res.json();
       setConversations(data.conversations || []);
     } finally {
@@ -90,57 +110,58 @@ export default function AiChatPage() {
     if (!input.trim() || isLoading) return;
 
     const userMsg: Message = {
-      role: 'user',
-      content: input.trim(),
+      role:      'user',
+      content:   input.trim(),
       timestamp: new Date().toISOString(),
     };
 
-    const historyForAI = [...messages]; // 현재 메시지 전까지의 이전 대화 전체
-    const newMessages = [...messages, userMsg];
+    const historyForAI = [...messages];
+    const newMessages  = [...messages, userMsg];
     setMessages(newMessages);
     setInput('');
     setIsLoading(true);
 
     try {
-      const res = await fetch('/api/ai', {
-        method: 'POST',
+      const res  = await fetch('/api/ai', {
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body:    JSON.stringify({
           message: userMsg.content,
           history: historyForAI,
+          model:   selectedModel,
         }),
       });
       const data = await res.json();
 
       const aiMsg: Message = {
-        role: 'model',
-        content: data.text || '응답을 받지 못했습니다.',
+        role:      'model',
+        content:   data.text || '응답을 받지 못했습니다.',
         timestamp: new Date().toISOString(),
+        usedModel: data.usedModel || '',
       };
 
       const finalMessages = [...newMessages, aiMsg];
       setMessages(finalMessages);
 
-      // Firestore 저장 (신규: title 포함 / 기존: conversationId만)
-      const title = userMsg.content.slice(0, 20) + (userMsg.content.length > 20 ? '...' : '');
+      const title   = userMsg.content.slice(0, 20) + (userMsg.content.length > 20 ? '...' : '');
       const saveRes = await fetch('/api/conversations', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body:    JSON.stringify({
           ...(currentId ? { conversationId: currentId } : { title }),
-          uid: user?.uid,
-          storeId: currentStore?.storeId || '',
+          uid:      user?.uid,
+          storeId:  currentStore?.storeId || '',
           messages: finalMessages,
         }),
       });
       const saveData = await saveRes.json();
       if (saveData.id && !currentId) setCurrentId(saveData.id);
-
       await loadConversations();
+
     } catch (e: any) {
       setMessages(prev => [...prev, {
-        role: 'model',
-        content: `오류: ${e.message}`,
+        role:      'model',
+        content:   `오류: ${e.message}`,
         timestamp: new Date().toISOString(),
       }]);
     } finally {
@@ -165,14 +186,14 @@ export default function AiChatPage() {
   const handleRenameSave = async (id: string) => {
     const conv = conversations.find(c => c.id === id);
     await fetch('/api/conversations', {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+      body:    JSON.stringify({
         conversationId: id,
-        uid: user?.uid,
-        storeId: currentStore?.storeId || '',
-        title: editTitle,
-        messages: conv?.messages || [],
+        uid:            user?.uid,
+        storeId:        currentStore?.storeId || '',
+        title:          editTitle,
+        messages:       conv?.messages || [],
       }),
     });
     setEditingId(null);
@@ -180,20 +201,20 @@ export default function AiChatPage() {
   };
 
   const groupByDate = (convs: Conversation[]) => {
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const weekAgo = new Date(today);
-    weekAgo.setDate(weekAgo.getDate() - 7);
+    const today     = new Date();
+    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+    const weekAgo   = new Date(today); weekAgo.setDate(weekAgo.getDate() - 7);
     const ts = (c: Conversation) => toDate(c.updatedAt);
     return {
-      '오늘': convs.filter(c => ts(c).toDateString() === today.toDateString()),
-      '어제': convs.filter(c => ts(c).toDateString() === yesterday.toDateString()),
+      '오늘':   convs.filter(c => ts(c).toDateString() === today.toDateString()),
+      '어제':   convs.filter(c => ts(c).toDateString() === yesterday.toDateString()),
       '이번 주': convs.filter(c => {
         const d = ts(c);
-        return d > weekAgo && d.toDateString() !== today.toDateString() && d.toDateString() !== yesterday.toDateString();
+        return d > weekAgo
+          && d.toDateString() !== today.toDateString()
+          && d.toDateString() !== yesterday.toDateString();
       }),
-      '이전': convs.filter(c => ts(c) <= weekAgo),
+      '이전':   convs.filter(c => ts(c) <= weekAgo),
     };
   };
 
@@ -202,7 +223,7 @@ export default function AiChatPage() {
   return (
     <div className="flex h-[calc(100vh-2rem)] bg-slate-950 rounded-xl overflow-hidden border border-slate-800">
 
-      {/* 사이드바 — 대화 목록 */}
+      {/* ── 대화 목록 사이드바 ── */}
       <div className={`
         ${showSidebar ? 'w-72' : 'w-0 md:w-72'}
         flex-shrink-0 bg-slate-900 border-r border-slate-700
@@ -213,8 +234,7 @@ export default function AiChatPage() {
             onClick={handleNewChat}
             className="w-full flex items-center gap-2 bg-teal-600 hover:bg-teal-500 text-white px-4 py-2.5 rounded-xl font-medium text-sm transition-colors"
           >
-            <Plus className="w-4 h-4" />
-            새 대화
+            <Plus className="w-4 h-4" />새 대화
           </button>
         </div>
 
@@ -285,9 +305,10 @@ export default function AiChatPage() {
         </div>
       </div>
 
-      {/* 채팅 영역 */}
+      {/* ── 채팅 영역 ── */}
       <div className="flex-1 flex flex-col min-w-0">
 
+        {/* 헤더 */}
         <div className="bg-slate-900 border-b border-slate-700 px-4 py-3 flex items-center gap-3">
           <button
             onClick={() => setShowSidebar(!showSidebar)}
@@ -304,6 +325,7 @@ export default function AiChatPage() {
           </div>
         </div>
 
+        {/* 메시지 목록 */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center">
@@ -319,18 +341,34 @@ export default function AiChatPage() {
           {messages.map((msg, idx) => (
             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               <div className={`flex gap-3 max-w-[75%] ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${msg.role === 'user' ? 'bg-blue-600' : 'bg-teal-600'}`}>
-                  {msg.role === 'user' ? <User className="w-4 h-4 text-white" /> : <Bot className="w-4 h-4 text-white" />}
-                </div>
-                <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
-                  msg.role === 'user'
-                    ? 'bg-blue-600 text-white rounded-tr-sm'
-                    : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-tl-sm'
+                <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                  msg.role === 'user' ? 'bg-blue-600' : 'bg-teal-600'
                 }`}>
-                  {msg.content}
-                  <p className={`text-xs mt-1 ${msg.role === 'user' ? 'text-blue-200' : 'text-slate-500'}`}>
-                    {new Date(msg.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
-                  </p>
+                  {msg.role === 'user'
+                    ? <User className="w-4 h-4 text-white" />
+                    : <Bot  className="w-4 h-4 text-white" />
+                  }
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                    msg.role === 'user'
+                      ? 'bg-blue-600 text-white rounded-tr-sm'
+                      : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-tl-sm'
+                  }`}>
+                    {msg.content}
+                    <p className={`text-xs mt-1 ${msg.role === 'user' ? 'text-blue-200' : 'text-slate-500'}`}>
+                      {new Date(msg.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </div>
+
+                  {/* usedModel 뱃지 */}
+                  {msg.role === 'model' && msg.usedModel && (
+                    <span className="text-[11px] text-slate-500 pl-1 flex items-center gap-1">
+                      <span>{MODEL_BADGE[msg.usedModel] ?? '🤖'}</span>
+                      <span>{msg.usedModel}이 작성함</span>
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -359,7 +397,28 @@ export default function AiChatPage() {
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="bg-slate-900 border-t border-slate-700 p-4">
+        {/* 입력 영역 */}
+        <div className="bg-slate-900 border-t border-slate-700 p-4 space-y-3">
+
+          {/* 모델 선택 */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-xs text-slate-500 mr-1">모델:</span>
+            {MODEL_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setSelectedModel(opt.value)}
+                className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+                  selectedModel === opt.value
+                    ? 'bg-teal-500 text-slate-950'
+                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700'
+                }`}
+              >
+                {opt.emoji} {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* 텍스트 입력 */}
           <div className="flex items-end gap-2">
             <textarea
               value={input}
