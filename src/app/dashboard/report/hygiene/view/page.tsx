@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useStore } from '@/context/StoreContext';
 import { Loader2, Search, ClipboardCheck, ChevronDown, ChevronUp, PenLine } from 'lucide-react';
 import { HYGIENE_SECTIONS } from '@/lib/hygieneChecklist';
@@ -21,6 +22,7 @@ interface HygieneRecord {
   totalItems: number;
   passedItems: number;
   status: 'pass' | 'partial' | 'fail';
+  saveType?: 'draft' | 'final';
   createdAt?: any;
   updatedAt?: any;
 }
@@ -29,7 +31,7 @@ type Preset = 'week' | 'month' | 'custom';
 
 function toYMD(d: Date) { return d.toISOString().split('T')[0]; }
 
-function getThisWeek()  {
+function getThisWeek() {
   const today = new Date();
   const dow = today.getDay();
   const mon = new Date(today);
@@ -46,20 +48,20 @@ function getThisMonth() {
 }
 
 const STATUS_META = {
-  pass:    { label: '양호',  icon: '✅', cls: 'text-teal-400'   },
-  partial: { label: '부분',  icon: '⚠️', cls: 'text-yellow-400' },
-  fail:    { label: '미흡',  icon: '❌', cls: 'text-red-400'    },
+  pass:    { label: '양호', icon: '✅', cls: 'text-teal-400'   },
+  partial: { label: '부분', icon: '⚠️', cls: 'text-yellow-400' },
+  fail:    { label: '미흡', icon: '❌', cls: 'text-red-400'    },
 } as const;
 
 export default function HygieneViewPage() {
   const { currentStore } = useStore();
+  const router = useRouter();
 
-  const [preset, setPreset] = useState<Preset>('month');
-  const init = getThisMonth();
+  const [preset, setPreset]           = useState<Preset>('month');
+  const init                          = getThisMonth();
   const [queriedRange, setQueriedRange] = useState(init);
-  const [customStart, setCustomStart] = useState(init.start);
-  const [customEnd,   setCustomEnd]   = useState(init.end);
-
+  const [customStart, setCustomStart]   = useState(init.start);
+  const [customEnd,   setCustomEnd]     = useState(init.end);
   const [records,   setRecords]   = useState<HygieneRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [expanded,  setExpanded]  = useState<Set<string>>(new Set());
@@ -88,10 +90,6 @@ export default function HygieneViewPage() {
     setPreset(p);
     if (p === 'week')  { const r = getThisWeek();  setQueriedRange(r); }
     if (p === 'month') { const r = getThisMonth(); setQueriedRange(r); }
-  };
-
-  const handleCustomSearch = () => {
-    if (customStart && customEnd) setQueriedRange({ start: customStart, end: customEnd });
   };
 
   const toggleExpand = (id: string) => {
@@ -158,8 +156,10 @@ export default function HygieneViewPage() {
             <span className="text-slate-500">~</span>
             <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
               className="bg-slate-800 border border-slate-700 text-slate-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-teal-500" />
-            <button onClick={handleCustomSearch}
-              className="flex items-center gap-1.5 px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 rounded-lg text-sm font-semibold transition-colors">
+            <button
+              onClick={() => { if (customStart && customEnd) setQueriedRange({ start: customStart, end: customEnd }); }}
+              className="flex items-center gap-1.5 px-4 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 rounded-lg text-sm font-semibold transition-colors"
+            >
               <Search className="w-4 h-4" />조회
             </button>
           </div>
@@ -172,7 +172,6 @@ export default function HygieneViewPage() {
           <Loader2 className="w-6 h-6 text-teal-400 animate-spin" />
         </div>
 
-      /* 빈 결과 */
       ) : records.length === 0 ? (
         <div className="text-center py-20 text-slate-500">
           <ClipboardCheck className="w-12 h-12 mx-auto mb-4 opacity-30" />
@@ -183,29 +182,32 @@ export default function HygieneViewPage() {
           </Link>
         </div>
 
-      /* 목록 */
       ) : (
         <div className="space-y-3">
           {records.map(rec => {
-            const meta = STATUS_META[rec.status] ?? STATUS_META.fail;
-            const isOpen = expanded.has(rec.id);
-            const failItems: Array<{ section: string; item: string; note: string }> = [];
+            const isDraft  = rec.saveType === 'draft';
+            const meta     = STATUS_META[rec.status] ?? STATUS_META.fail;
+            const isOpen   = expanded.has(rec.id);
 
+            const failItems: Array<{ section: string; item: string; note: string }> = [];
             HYGIENE_SECTIONS.forEach((section, si) => {
               section.items.forEach((item, ii) => {
                 const cell = rec.items?.[`${si}_${ii}`];
-                if (cell?.result === 'fail') {
-                  failItems.push({ section: section.category, item, note: cell.note });
-                }
+                if (cell?.result === 'fail') failItems.push({ section: section.category, item, note: cell.note });
               });
             });
 
             return (
-              <div key={rec.id} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+              <div key={rec.id} className={`bg-slate-900 border rounded-xl overflow-hidden ${
+                isDraft ? 'border-yellow-700/50' : 'border-slate-800'
+              }`}>
                 {/* 요약 행 */}
-                <button
-                  onClick={() => toggleExpand(rec.id)}
-                  className="w-full flex items-center gap-4 px-5 py-4 hover:bg-slate-800/50 transition-colors text-left"
+                <div
+                  onClick={() => isDraft
+                    ? router.push(`/dashboard/report/hygiene?date=${rec.checkDate}`)
+                    : toggleExpand(rec.id)
+                  }
+                  className="w-full flex items-center gap-3 px-5 py-4 hover:bg-slate-800/50 transition-colors cursor-pointer"
                 >
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-white text-sm">{formatDate(rec.checkDate)}</p>
@@ -214,24 +216,38 @@ export default function HygieneViewPage() {
                       {rec.updatedAt && ` · ${formatTimestamp(rec.updatedAt)}`}
                     </p>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className={`text-sm font-bold ${meta.cls}`}>
-                      {meta.icon} {meta.label}
-                    </span>
-                    <span className="text-slate-400 text-sm">
-                      {rec.passedItems}/{rec.totalItems}
-                    </span>
-                    {isOpen
-                      ? <ChevronUp className="w-4 h-4 text-slate-400" />
-                      : <ChevronDown className="w-4 h-4 text-slate-400" />
-                    }
-                  </div>
-                </button>
 
-                {/* 상세 (펼쳐짐) */}
-                {isOpen && (
+                  <div className="flex items-center gap-2 shrink-0">
+                    {isDraft ? (
+                      <>
+                        <span className="text-sm">📝</span>
+                        <span className="text-yellow-400 text-sm font-semibold">작성중</span>
+                        <span className="text-slate-400 text-sm">{rec.passedItems}/{rec.totalItems}</span>
+                        <span className="bg-yellow-500/20 text-yellow-400 text-xs font-semibold px-2 py-0.5 rounded-full border border-yellow-600/30">
+                          임시
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span className={`text-sm font-bold ${meta.cls}`}>
+                          {meta.icon} {meta.label}
+                        </span>
+                        <span className="text-slate-400 text-sm">{rec.passedItems}/{rec.totalItems}</span>
+                        <span className="bg-teal-500/20 text-teal-400 text-xs font-semibold px-2 py-0.5 rounded-full border border-teal-600/30">
+                          완료
+                        </span>
+                        {isOpen
+                          ? <ChevronUp className="w-4 h-4 text-slate-400" />
+                          : <ChevronDown className="w-4 h-4 text-slate-400" />
+                        }
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* 최종저장 상세 (펼쳐짐) */}
+                {!isDraft && isOpen && (
                   <div className="border-t border-slate-800 px-5 py-4 space-y-5">
-                    {/* 부적정 항목 요약 */}
                     {failItems.length > 0 && (
                       <div className="bg-red-900/20 border border-red-800/40 rounded-lg p-3">
                         <p className="text-red-400 text-xs font-semibold mb-2">
@@ -248,7 +264,6 @@ export default function HygieneViewPage() {
                       </div>
                     )}
 
-                    {/* 섹션별 전체 항목 */}
                     {HYGIENE_SECTIONS.map((section, si) => (
                       <div key={si}>
                         <h3 className="text-xs font-semibold text-teal-400 uppercase tracking-wider mb-2">
@@ -256,7 +271,7 @@ export default function HygieneViewPage() {
                         </h3>
                         <div className="space-y-1">
                           {section.items.map((item, ii) => {
-                            const cell = rec.items?.[`${si}_${ii}`];
+                            const cell   = rec.items?.[`${si}_${ii}`];
                             const result = cell?.result;
                             return (
                               <div key={ii} className={`flex items-start gap-2 text-xs py-1.5 px-2 rounded-lg ${

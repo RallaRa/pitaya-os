@@ -19,7 +19,7 @@ export async function GET(req: Request) {
   if (!storeId) return NextResponse.json({ error: 'storeId required' }, { status: 400 });
 
   try {
-    // 특정 날짜 단건 조회
+    // 특정 날짜 단건 조회 (draft 포함)
     if (date) {
       const snap = await adminDb.collection('hygiene_checklists')
         .where('storeId', '==', storeId)
@@ -31,7 +31,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ record: { id: doc.id, ...doc.data() } });
     }
 
-    // 기간 목록 조회 — storeId 단일 equality 필터 후 JS에서 날짜 필터 (composite index 불필요)
+    // 기간 목록 조회
     const snap = await adminDb.collection('hygiene_checklists')
       .where('storeId', '==', storeId)
       .get();
@@ -49,13 +49,32 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { storeId, uid, inspectorName, checkDate, items, totalItems, passedItems } = await req.json();
+    const {
+      storeId, uid, inspectorName, checkDate,
+      items, totalItems, passedItems,
+      saveType = 'final',
+      savedSections = [],
+    } = await req.json();
 
     if (!storeId || !uid || !checkDate) {
       return NextResponse.json({ error: '필수 항목 누락 (storeId, uid, checkDate)' }, { status: 400 });
     }
 
     const status = calcStatus(passedItems ?? 0, totalItems ?? 0);
+    const now = FieldValue.serverTimestamp();
+
+    const payload = {
+      uid,
+      inspectorName: inspectorName || '',
+      items: items || {},
+      totalItems: totalItems ?? 0,
+      passedItems: passedItems ?? 0,
+      status,
+      saveType,
+      savedSections,
+      lastSavedAt: now,
+      updatedAt: now,
+    };
 
     // 같은 날짜 + 매장이면 업데이트
     const existing = await adminDb.collection('hygiene_checklists')
@@ -65,21 +84,14 @@ export async function POST(req: Request) {
       .get();
 
     if (!existing.empty) {
-      await existing.docs[0].ref.update({
-        uid, inspectorName: inspectorName || '',
-        items: items || {}, totalItems: totalItems ?? 0,
-        passedItems: passedItems ?? 0, status,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+      await existing.docs[0].ref.update(payload);
       return NextResponse.json({ success: true, id: existing.docs[0].id });
     }
 
     const ref = await adminDb.collection('hygiene_checklists').add({
-      storeId, uid, inspectorName: inspectorName || '',
-      checkDate, items: items || {},
-      totalItems: totalItems ?? 0, passedItems: passedItems ?? 0, status,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
+      storeId, checkDate,
+      ...payload,
+      createdAt: now,
     });
 
     return NextResponse.json({ success: true, id: ref.id });
