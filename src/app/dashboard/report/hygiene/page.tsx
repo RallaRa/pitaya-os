@@ -6,14 +6,13 @@ import Link from 'next/link';
 import { Loader2, CheckCircle, Eye, Save } from 'lucide-react';
 import { useStore } from '@/context/StoreContext';
 import { useAuth } from '@/context/AuthContext';
-import { HYGIENE_SECTIONS } from '@/lib/hygieneChecklist';
+import { HYGIENE_SECTIONS, TOTAL_ITEMS } from '@/lib/hygieneChecklist';
 
 interface CheckItemState {
   evaluation: '적정' | '부적정' | null;
   notes: string;
 }
 
-// useSearchParams 사용하는 실제 컴포넌트
 function HygieneChecklistContent() {
   const searchParams = useSearchParams();
   const dateParam = searchParams.get('date');
@@ -35,12 +34,10 @@ function HygieneChecklistContent() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // 로그인 유저 이름 자동 입력
   useEffect(() => {
     if (user?.displayName) setInspectorName(user.displayName);
   }, [user]);
 
-  // API 데이터로 체크리스트 상태 복원
   const restoreFromRecord = useCallback((record: any) => {
     if (!record?.items) return;
     const newState: Record<string, Record<number, CheckItemState>> = {};
@@ -62,7 +59,6 @@ function HygieneChecklistContent() {
     }
   }, []);
 
-  // 페이지 진입 시 해당 날짜 draft 불러오기
   useEffect(() => {
     if (!currentStore?.storeId) return;
     const targetDate = dateParam || new Date().toISOString().slice(0, 10);
@@ -79,23 +75,97 @@ function HygieneChecklistContent() {
       .catch(() => {});
   }, [currentStore?.storeId, dateParam, restoreFromRecord]);
 
-  const handleStateChange = (
-    category: string, itemIndex: number,
-    field: keyof CheckItemState, value: string,
-  ) => {
+  // [수정 1] 토글 핸들러
+  const handleToggle = (category: string, itemIndex: number, value: '적정' | '부적정') => {
+    setChecklistState(prev => {
+      const current = prev[category]?.[itemIndex]?.evaluation;
+      return {
+        ...prev,
+        [category]: {
+          ...prev[category],
+          [itemIndex]: {
+            ...(prev[category]?.[itemIndex] || { evaluation: null, notes: '' }),
+            evaluation: current === value ? null : value,
+          },
+        },
+      };
+    });
+  };
+
+  const handleNoteChange = (category: string, itemIndex: number, notes: string) => {
     setChecklistState(prev => ({
       ...prev,
       [category]: {
         ...prev[category],
         [itemIndex]: {
           ...(prev[category]?.[itemIndex] || { evaluation: null, notes: '' }),
-          [field]: value,
+          notes,
         },
       },
     }));
   };
 
-  // items 변환 + 집계
+  // [수정 2] 섹션별 전체 적정 / 전체 해제
+  const handleSectionAllPass = (si: number) => {
+    const section = HYGIENE_SECTIONS[si];
+    setChecklistState(prev => {
+      const catState = { ...prev[section.category] };
+      section.items.forEach((_, ii) => {
+        catState[ii] = { ...(prev[section.category]?.[ii] || { evaluation: null, notes: '' }), evaluation: '적정' };
+      });
+      return { ...prev, [section.category]: catState };
+    });
+  };
+
+  const handleSectionClear = (si: number) => {
+    const section = HYGIENE_SECTIONS[si];
+    setChecklistState(prev => {
+      const catState = { ...prev[section.category] };
+      section.items.forEach((_, ii) => {
+        catState[ii] = { ...(prev[section.category]?.[ii] || { evaluation: null, notes: '' }), evaluation: null };
+      });
+      return { ...prev, [section.category]: catState };
+    });
+  };
+
+  // [수정 3] 전체 페이지 전체 적정 / 전체 해제
+  const handleAllPass = () => {
+    setChecklistState(prev => {
+      const next = { ...prev };
+      HYGIENE_SECTIONS.forEach((section, si) => {
+        const catState = { ...next[section.category] };
+        section.items.forEach((_, ii) => {
+          catState[ii] = { ...(prev[section.category]?.[ii] || { evaluation: null, notes: '' }), evaluation: '적정' };
+        });
+        next[section.category] = catState;
+      });
+      return next;
+    });
+  };
+
+  const handleAllClear = () => {
+    setChecklistState(prev => {
+      const next = { ...prev };
+      HYGIENE_SECTIONS.forEach((section) => {
+        const catState = { ...next[section.category] };
+        section.category && Object.keys(catState).forEach(k => {
+          catState[Number(k)] = { ...(catState[Number(k)] || { evaluation: null, notes: '' }), evaluation: null };
+        });
+        next[section.category] = catState;
+      });
+      return next;
+    });
+  };
+
+  // [수정 4] 실시간 진행률
+  let checkedCount = 0;
+  HYGIENE_SECTIONS.forEach(section => {
+    section.items.forEach((_, ii) => {
+      if (checklistState[section.category]?.[ii]?.evaluation != null) checkedCount++;
+    });
+  });
+  const progressPct = TOTAL_ITEMS > 0 ? Math.round((checkedCount / TOTAL_ITEMS) * 100) : 0;
+
   const buildPayload = () => {
     const itemsData: Record<string, { result: 'pass' | 'fail' | null; note: string }> = {};
     let totalItems = 0;
@@ -213,7 +283,7 @@ function HygieneChecklistContent() {
         </div>
       )}
 
-      {/* 중간저장 불러오기 안내 */}
+      {/* 불러오기 안내 */}
       {loadInfo && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-blue-600 text-white px-4 py-2 rounded-xl shadow-lg text-sm font-medium">
           📂 {loadInfo}
@@ -221,7 +291,7 @@ function HygieneChecklistContent() {
       )}
 
       {/* 헤더 */}
-      <div className="mb-6">
+      <div className="mb-5">
         <div className="flex items-start justify-between mb-4">
           <h1 className="text-2xl md:text-3xl font-bold text-teal-400">
             축산물 판매업소<br className="md:hidden" /> 위생관리 점검일지
@@ -234,7 +304,9 @@ function HygieneChecklistContent() {
             조회
           </Link>
         </div>
-        <div className="flex flex-wrap justify-end items-center gap-4 text-sm">
+
+        {/* 점검일 / 점검자 */}
+        <div className="flex flex-wrap justify-end items-center gap-4 text-sm mb-4">
           <div className="flex items-center gap-2">
             <label htmlFor="checkDate" className="font-semibold text-slate-400">점검일</label>
             <input
@@ -257,6 +329,36 @@ function HygieneChecklistContent() {
             />
           </div>
         </div>
+
+        {/* [수정 4] 진행률 바 */}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-semibold text-slate-300">진행률</span>
+              {/* [수정 3] 전체 선택/해제 버튼 */}
+              <button
+                onClick={handleAllPass}
+                className="px-2.5 py-1 rounded-md text-xs font-semibold bg-teal-500/20 text-teal-400 border border-teal-600/30 hover:bg-teal-500/30 transition-colors"
+              >
+                전체 적정
+              </button>
+              <button
+                onClick={handleAllClear}
+                className="px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-700 text-slate-400 border border-slate-600 hover:bg-slate-600 transition-colors"
+              >
+                전체 해제
+              </button>
+            </div>
+            <span className="text-sm font-bold text-teal-400">{checkedCount} / {TOTAL_ITEMS}</span>
+          </div>
+          <div className="w-full bg-slate-800 rounded-full h-2">
+            <div
+              className="bg-teal-500 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+          <p className="text-xs text-slate-500 mt-1.5">{progressPct}% 완료</p>
+        </div>
       </div>
 
       {/* 체크리스트 */}
@@ -271,14 +373,29 @@ function HygieneChecklistContent() {
                   {isSectionSaved && <span className="text-teal-400 text-base">✅</span>}
                   {section.category}
                 </h2>
-                <button
-                  onClick={() => handleSectionSave(si)}
-                  disabled={isBusy}
-                  className="flex items-center gap-1 text-xs text-slate-400 hover:text-teal-400 disabled:opacity-40 transition-colors px-2 py-1 rounded-md hover:bg-slate-800"
-                >
-                  <Save className="w-3 h-3" />
-                  이 섹션 저장
-                </button>
+                {/* [수정 2] 섹션 전체 적정/해제 + 섹션 저장 */}
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => handleSectionAllPass(si)}
+                    className="px-2.5 py-1 rounded-md text-xs font-semibold bg-teal-500/20 text-teal-400 border border-teal-600/30 hover:bg-teal-500/30 transition-colors"
+                  >
+                    전체 적정
+                  </button>
+                  <button
+                    onClick={() => handleSectionClear(si)}
+                    className="px-2.5 py-1 rounded-md text-xs font-semibold bg-slate-700 text-slate-400 border border-slate-600 hover:bg-slate-600 transition-colors"
+                  >
+                    전체 해제
+                  </button>
+                  <button
+                    onClick={() => handleSectionSave(si)}
+                    disabled={isBusy}
+                    className="flex items-center gap-1 text-xs text-slate-400 hover:text-teal-400 disabled:opacity-40 transition-colors px-2 py-1 rounded-md hover:bg-slate-800"
+                  >
+                    <Save className="w-3 h-3" />
+                    저장
+                  </button>
+                </div>
               </div>
 
               <table className="w-full text-sm text-left">
@@ -292,40 +409,42 @@ function HygieneChecklistContent() {
                 <tbody>
                   {section.items.map((item, ii) => {
                     const state = checklistState[section.category]?.[ii];
+                    const ev = state?.evaluation ?? null;
                     return (
                       <tr key={ii} className={`border-b border-slate-800 hover:bg-slate-800/30 ${
-                        state?.evaluation === '부적정' ? 'bg-red-900/10' : ''
+                        ev === '부적정' ? 'bg-red-900/10' : ''
                       }`}>
                         <td className="px-4 py-3 font-medium text-slate-300 leading-relaxed">{item}</td>
+                        {/* [수정 1] 토글 버튼 */}
                         <td className="px-4 py-3">
-                          <div className="flex items-center justify-center gap-4 whitespace-nowrap">
-                            <label className="flex items-center gap-1.5 cursor-pointer text-slate-300">
-                              <input
-                                type="radio"
-                                name={`${si}-${ii}`}
-                                checked={state?.evaluation === '적정'}
-                                onChange={() => handleStateChange(section.category, ii, 'evaluation', '적정')}
-                                className="w-4 h-4 accent-teal-500"
-                              />
+                          <div className="flex items-center justify-center gap-2 whitespace-nowrap">
+                            <button
+                              onClick={() => handleToggle(section.category, ii, '적정')}
+                              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                                ev === '적정'
+                                  ? 'bg-teal-500 text-slate-950'
+                                  : 'bg-slate-800 text-slate-400 border border-slate-700 hover:border-teal-600 hover:text-teal-400'
+                              }`}
+                            >
                               적정
-                            </label>
-                            <label className="flex items-center gap-1.5 cursor-pointer text-slate-300">
-                              <input
-                                type="radio"
-                                name={`${si}-${ii}`}
-                                checked={state?.evaluation === '부적정'}
-                                onChange={() => handleStateChange(section.category, ii, 'evaluation', '부적정')}
-                                className="w-4 h-4 accent-yellow-500"
-                              />
+                            </button>
+                            <button
+                              onClick={() => handleToggle(section.category, ii, '부적정')}
+                              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                                ev === '부적정'
+                                  ? 'bg-red-500 text-white'
+                                  : 'bg-slate-800 text-slate-400 border border-slate-700 hover:border-red-600 hover:text-red-400'
+                              }`}
+                            >
                               부적정
-                            </label>
+                            </button>
                           </div>
                         </td>
                         <td className="px-4 py-3">
                           <input
                             type="text"
                             value={state?.notes || ''}
-                            onChange={e => handleStateChange(section.category, ii, 'notes', e.target.value)}
+                            onChange={e => handleNoteChange(section.category, ii, e.target.value)}
                             className="w-full bg-slate-800 border border-slate-700 rounded-md px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-all"
                           />
                         </td>
@@ -339,7 +458,7 @@ function HygieneChecklistContent() {
         })}
       </div>
 
-      {/* 하단 버튼 영역 */}
+      {/* 하단 버튼 */}
       <div className="mt-6 flex justify-end gap-3">
         <button
           onClick={handleDraftSave}
@@ -362,7 +481,6 @@ function HygieneChecklistContent() {
   );
 }
 
-// useSearchParams는 Suspense 경계 안에서 사용해야 함
 export default function HygieneChecklistPage() {
   return (
     <Suspense fallback={
