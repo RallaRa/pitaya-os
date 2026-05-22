@@ -1,0 +1,85 @@
+import { NextResponse } from 'next/server';
+import { adminDb } from '@/lib/firebase/admin';
+import { FieldValue } from 'firebase-admin/firestore';
+
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const uid   = searchParams.get('uid');
+  const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50);
+
+  if (!uid) return NextResponse.json({ error: 'uid required' }, { status: 400 });
+
+  try {
+    const snap = await adminDb.collection('notifications')
+      .where('targetUid', '==', uid)
+      .get();
+
+    let notifications = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
+    notifications.sort((a, b) => {
+      const ta = a.createdAt?.seconds ?? 0;
+      const tb = b.createdAt?.seconds ?? 0;
+      return tb - ta;
+    });
+    notifications = notifications.slice(0, limit);
+
+    const unreadCount = notifications.filter(n => !n.isRead).length;
+    return NextResponse.json({ notifications, unreadCount });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
+
+export async function PUT(req: Request) {
+  try {
+    const body = await req.json();
+
+    // 전체 읽음 처리
+    if (body.action === 'readAll' && body.uid) {
+      const snap = await adminDb.collection('notifications')
+        .where('targetUid', '==', body.uid)
+        .where('isRead', '==', false)
+        .get();
+      if (!snap.empty) {
+        const batch = adminDb.batch();
+        snap.docs.forEach(doc => batch.update(doc.ref, { isRead: true }));
+        await batch.commit();
+      }
+      return NextResponse.json({ success: true });
+    }
+
+    // 단건 읽음 처리
+    if (body.id) {
+      await adminDb.collection('notifications').doc(body.id).update({ isRead: true });
+      return NextResponse.json({ success: true });
+    }
+
+    return NextResponse.json({ error: '잘못된 요청' }, { status: 400 });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const { targetUid, senderUid, senderName, type, message, link } = await req.json();
+
+    if (!targetUid || !type || !message) {
+      return NextResponse.json({ error: '필수 항목 누락 (targetUid, type, message)' }, { status: 400 });
+    }
+
+    const ref = await adminDb.collection('notifications').add({
+      targetUid,
+      senderUid:  senderUid  || '',
+      senderName: senderName || '',
+      type,
+      message,
+      link:      link || '',
+      isRead:    false,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    return NextResponse.json({ success: true, id: ref.id });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
