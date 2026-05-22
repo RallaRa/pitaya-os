@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.98.0",
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.105.4",
+    "emoji-picker-react": "^4.19.1",
     "firebase": "^12.13.0",
     "firebase-admin": "^13.9.0",
     "lucide-react": "^1.16.0",

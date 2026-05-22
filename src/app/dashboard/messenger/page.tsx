@@ -6,11 +6,12 @@ import { useStore } from '@/context/StoreContext';
 import { db } from '@/lib/firebase/firebase';
 import {
   collection, query, where, orderBy,
-  onSnapshot, doc, updateDoc,
+  onSnapshot,
 } from 'firebase/firestore';
 import {
   MessageCircle, Send, Search, Loader2, ChevronLeft,
 } from 'lucide-react';
+import EmojiPicker, { Theme } from 'emoji-picker-react';
 
 interface UserProfile {
   uid: string;
@@ -74,9 +75,12 @@ export default function MessengerPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [showUserList, setShowUserList] = useState(false);
   const [view, setView] = useState<'list' | 'chat'>('list');
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const messagesEndRef  = useRef<HTMLDivElement>(null);
+  const unsubscribeRef  = useRef<(() => void) | null>(null);
+  const emojiPickerRef  = useRef<HTMLDivElement>(null);
+  const emojiButtonRef  = useRef<HTMLButtonElement>(null);
 
   // 매장 유저 목록 로드
   const loadUsers = async () => {
@@ -105,17 +109,23 @@ export default function MessengerPage() {
     return () => unsub();
   }, [user]);
 
-  // 채팅방 입장 시: unreadCount 초기화 + 메시지 구독
+  // 채팅방 입장 시: readBy 배치 업데이트 + unreadCount 초기화 + 메시지 구독
   useEffect(() => {
     if (!currentRoom) return;
 
-    // 내 unreadCount 초기화
     const myUid = user?.uid;
-    if (myUid) {
-      updateDoc(doc(db, 'chat_rooms', currentRoom.id), {
-        [`unreadCount.${myUid}`]: 0,
+
+    const markRead = () => {
+      if (!myUid) return;
+      fetch('/api/messenger/messages', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'readAll', roomId: currentRoom.id, uid: myUid }),
       }).catch(console.error);
-    }
+    };
+
+    // 입장 즉시 읽음 처리 (뱃지 초기화)
+    markRead();
 
     if (unsubscribeRef.current) unsubscribeRef.current();
 
@@ -127,6 +137,16 @@ export default function MessengerPage() {
 
     const unsub = onSnapshot(q, snap => {
       setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Message[]);
+
+      // 새 메시지 도착 시 읽지 않은 게 있으면 즉시 읽음 처리 (실시간 ✓✓ 갱신)
+      if (myUid) {
+        const hasUnread = snap.docs.some(d => {
+          const data = d.data();
+          return data.senderUid !== myUid && !(data.readBy || []).includes(myUid);
+        });
+        if (hasUnread) markRead();
+      }
+
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }, 100);
@@ -135,6 +155,20 @@ export default function MessengerPage() {
     unsubscribeRef.current = unsub;
     return () => unsub();
   }, [currentRoom]);
+
+  // 이모지 피커 외부 클릭 시 닫기
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (
+        emojiPickerRef.current && !emojiPickerRef.current.contains(e.target as Node) &&
+        emojiButtonRef.current && !emojiButtonRef.current.contains(e.target as Node)
+      ) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   // 채팅방 입장 (새 대화 시작 or 기존 방 열기)
   const handleEnterRoom = async (targetUid: string) => {
@@ -343,6 +377,7 @@ export default function MessengerPage() {
                 const showDateSep = getDateStr(msg.createdAt) !== getDateStr(prevMsg?.createdAt);
                 const showName = !isMine && prevMsg?.senderUid !== msg.senderUid;
                 const showTime = !messages[idx + 1] || messages[idx + 1].senderUid !== msg.senderUid;
+                const partnerUid = currentRoom?.members.find(m => m !== user?.uid) ?? '';
 
                 return (
                   <React.Fragment key={msg.id}>
@@ -376,6 +411,11 @@ export default function MessengerPage() {
                             )}
                             <div className={`px-3 py-2 rounded-2xl text-sm max-w-full break-words ${isMine ? 'bg-teal-600 text-white rounded-tr-sm' : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-tl-sm'}`}>
                               {msg.text}
+                              {isMine && (
+                                <span className={`text-[10px] ml-1 align-bottom ${msg.readBy?.includes(partnerUid) ? 'text-teal-100' : 'text-teal-300/60'}`}>
+                                  {msg.readBy?.includes(partnerUid) ? '✓✓' : '✓'}
+                                </span>
+                              )}
                             </div>
                             {!isMine && showTime && (
                               <p className="text-slate-600 text-xs mb-0.5 flex-shrink-0">{formatTime(msg.createdAt)}</p>
@@ -392,27 +432,45 @@ export default function MessengerPage() {
 
             {/* 입력창 */}
             <div className="bg-slate-900 border-t border-slate-700 p-3">
-              <div className="flex items-end gap-2">
-                <textarea
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSend();
-                    }
-                  }}
-                  placeholder="메시지 입력... (Enter 전송)"
-                  rows={1}
-                  className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-slate-100 text-sm placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors resize-none"
-                />
-                <button
-                  onClick={handleSend}
-                  disabled={!input.trim()}
-                  className="bg-teal-600 hover:bg-teal-500 disabled:bg-slate-700 text-white p-2.5 rounded-xl transition-colors flex-shrink-0"
-                >
-                  <Send className="w-5 h-5" />
-                </button>
+              <div className="relative">
+                {showEmojiPicker && (
+                  <div ref={emojiPickerRef} className="absolute bottom-full mb-2 left-0 z-50">
+                    <EmojiPicker
+                      theme={Theme.DARK}
+                      onEmojiClick={(e) => setInput(prev => prev + e.emoji)}
+                    />
+                  </div>
+                )}
+                <div className="flex items-end gap-2">
+                  <button
+                    ref={emojiButtonRef}
+                    type="button"
+                    onClick={() => setShowEmojiPicker(prev => !prev)}
+                    className="text-slate-400 hover:text-teal-400 transition-colors p-2 flex-shrink-0 text-xl leading-none"
+                  >
+                    😊
+                  </button>
+                  <textarea
+                    value={input}
+                    onChange={e => setInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSend();
+                      }
+                    }}
+                    placeholder="메시지 입력... (Enter 전송)"
+                    rows={1}
+                    className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-slate-100 text-sm placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors resize-none"
+                  />
+                  <button
+                    onClick={handleSend}
+                    disabled={!input.trim()}
+                    className="bg-teal-600 hover:bg-teal-500 disabled:bg-slate-700 text-white p-2.5 rounded-xl transition-colors flex-shrink-0"
+                  >
+                    <Send className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
             </div>
           </>

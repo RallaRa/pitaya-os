@@ -27,6 +27,7 @@ const TYPE_ICON: Record<string, string> = {
   member_approved: '✅',
   member_rejected: '❌',
   system:          '🔔',
+  message:         '💬',
 };
 
 function timeAgo(ts: any): string {
