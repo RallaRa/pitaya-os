@@ -18,10 +18,10 @@ const MODEL_OPTIONS: { value: ModelChoice; emoji: string; label: string }[] = [
   { value: 'gpt',    emoji: '👔', label: 'GPT'         },
 ];
 
-const MODEL_BADGE: Record<string, string> = {
-  'Gemini 2.5 Flash':  '⚡',
-  'Claude 3.5 Sonnet': '🧠',
-  'GPT-4o':            '👔',
+const MODEL_BADGE: Record<string, { emoji: string; cls: string }> = {
+  'Gemini': { emoji: '⚡', cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30'   },
+  'Claude': { emoji: '🧠', cls: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
+  'GPT-4o': { emoji: '👔', cls: 'bg-green-500/20 text-green-400 border-green-500/30'  },
 };
 
 interface Message {
@@ -363,12 +363,16 @@ export default function AiChatPage() {
                   </div>
 
                   {/* usedModel 뱃지 */}
-                  {msg.role === 'model' && msg.usedModel && (
-                    <span className="text-[11px] text-slate-500 pl-1 flex items-center gap-1">
-                      <span>{MODEL_BADGE[msg.usedModel] ?? '🤖'}</span>
-                      <span>{msg.usedModel}이 작성함</span>
-                    </span>
-                  )}
+                  {msg.role === 'model' && msg.usedModel && (() => {
+                    const badge = MODEL_BADGE[msg.usedModel];
+                    return (
+                      <span className={`self-start text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                        badge ? badge.cls : 'bg-slate-700 text-slate-400 border-slate-600'
+                      }`}>
+                        {badge?.emoji ?? '🤖'} {msg.usedModel}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

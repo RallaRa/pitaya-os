@@ -11,8 +11,8 @@ const SYSTEM_INSTRUCTIONS: Record<string, string> = {
 };
 
 const MODEL_NAMES = {
-  gemini: 'Gemini 2.5 Flash',
-  claude: 'Claude 3.5 Sonnet',
+  gemini: 'Gemini',
+  claude: 'Claude',
   gpt:    'GPT-4o',
 } as const;
 
@@ -62,7 +62,7 @@ async function callClaude(message: string, history: any[], system: string): Prom
   }));
 
   const response = await client.messages.create({
-    model:      'claude-3-5-sonnet-20241022',
+    model:      'claude-sonnet-4-20250514',
     max_tokens: 2048,
     system,
     messages:   [...claudeHistory, { role: 'user', content: message }],
