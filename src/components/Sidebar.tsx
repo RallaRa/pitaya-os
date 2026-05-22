@@ -13,13 +13,13 @@ import { useStore } from '@/context/StoreContext';
 type MenuAccess = {
   ai: boolean; sales: boolean; purchase: boolean; report: boolean;
   messenger: boolean; members: boolean; store: boolean;
-  permissionGroup: boolean; memberGroup: boolean;
+  permissionGroup: boolean; memberGroup: boolean; hygiene: boolean;
 };
 
 const ALL_FALSE: MenuAccess = {
   ai: false, sales: false, purchase: false, report: false,
   messenger: false, members: false, store: false,
-  permissionGroup: false, memberGroup: false,
+  permissionGroup: false, memberGroup: false, hygiene: false,
 };
 
 interface SidebarProps {
@@ -57,7 +57,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { key: 'ai' as const,        href: '/dashboard/ai',                   icon: <Sparkles className="w-5 h-5" />,       label: 'AI 대화모드' },
     { key: 'messenger' as const, href: '/dashboard/messenger',            icon: <MessageCircle className="w-5 h-5" />,  label: '메신저' },
     { key: 'sales' as const,     href: '/dashboard/report/input',         icon: <TrendingUp className="w-5 h-5" />,     label: 'AI 매출관리' },
-    { key: 'sales' as const,     href: '/dashboard/report/hygiene',       icon: <ClipboardCheck className="w-5 h-5" />, label: '위생 점검일지' },
+    { key: 'hygiene' as const,   href: '/dashboard/report/hygiene',       icon: <ClipboardCheck className="w-5 h-5" />, label: '위생 점검일지' },
     { key: 'purchase' as const,  href: '/dashboard/report/purchase/input',icon: <ShoppingCart className="w-5 h-5" />,   label: 'AI 매입관리' },
     { key: 'report' as const,    href: '/dashboard/report/view',          icon: <BarChart2 className="w-5 h-5" />,      label: '전체 보고서' },
   ];

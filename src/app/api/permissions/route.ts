@@ -6,19 +6,19 @@ import { DEFAULT_PERMISSIONS, ALL_MENUS, Role } from '@/lib/permissions';
 type MenuAccess = {
   ai: boolean; sales: boolean; purchase: boolean; report: boolean;
   messenger: boolean; members: boolean; store: boolean;
-  permissionGroup: boolean; memberGroup: boolean;
+  permissionGroup: boolean; memberGroup: boolean; hygiene: boolean;
 };
 
 const ALL_FALSE: MenuAccess = {
   ai: false, sales: false, purchase: false, report: false,
   messenger: false, members: false, store: false,
-  permissionGroup: false, memberGroup: false,
+  permissionGroup: false, memberGroup: false, hygiene: false,
 };
 
 const STAFF_ACCESS: MenuAccess = {
   ai: true, sales: true, purchase: false, report: false,
   messenger: true, members: false, store: false,
-  permissionGroup: false, memberGroup: false,
+  permissionGroup: false, memberGroup: false, hygiene: true,
 };
 
 const SYSTEM_GROUPS = [
@@ -26,35 +26,35 @@ const SYSTEM_GROUPS = [
     groupId: 'master',
     storeId: 'global',
     groupName: 'Master',
-    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: true, memberGroup: true },
+    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: true, memberGroup: true, hygiene: true },
     isSystem: true,
   },
   {
     groupId: 'admin',
     storeId: 'global',
     groupName: '관리자',
-    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: false, memberGroup: false },
+    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: false, memberGroup: false, hygiene: true },
     isSystem: true,
   },
   {
     groupId: 'user',
     storeId: 'global',
     groupName: '사용자',
-    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: false, store: false, permissionGroup: false, memberGroup: false },
+    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: true },
     isSystem: true,
   },
   {
     groupId: 'staff',
     storeId: 'global',
     groupName: '직원',
-    menuAccess: { ai: true, sales: true, purchase: false, report: false, messenger: true, members: false, store: false, permissionGroup: false, memberGroup: false },
+    menuAccess: { ai: true, sales: true, purchase: false, report: false, messenger: true, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: true },
     isSystem: true,
   },
   {
     groupId: 'guest',
     storeId: 'global',
     groupName: '게스트',
-    menuAccess: { ai: true, sales: false, purchase: false, report: false, messenger: false, members: false, store: false, permissionGroup: false, memberGroup: false },
+    menuAccess: { ai: true, sales: false, purchase: false, report: false, messenger: false, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: false },
     isSystem: true,
   },
 ];
@@ -68,6 +68,16 @@ async function ensureSystemGroups() {
     if (!doc.exists) {
       batch.set(ref, { ...group, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
       hasChanges = true;
+    } else {
+      // 새로 추가된 키가 기존 Firestore 문서에 없으면 시스템 기본값으로 패치
+      const existingAccess = doc.data()?.menuAccess || {};
+      const missingKeys = Object.keys(group.menuAccess).filter(k => !(k in existingAccess));
+      if (missingKeys.length > 0) {
+        const patch: Record<string, any> = { updatedAt: FieldValue.serverTimestamp() };
+        missingKeys.forEach(k => { patch[`menuAccess.${k}`] = (group.menuAccess as any)[k]; });
+        batch.update(ref, patch);
+        hasChanges = true;
+      }
     }
   }
   if (hasChanges) await batch.commit();
