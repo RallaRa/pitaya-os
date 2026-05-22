@@ -1,188 +1,104 @@
 rules_version = '2';
 
 // ════════════════════════════════════════════════════════
-//  Pitaya OS — Firestore 보안 규칙
-//  작성일: 2026-05-19
+//  Pitaya OS — Firestore 보안 규칙 Phase 2
+//  업데이트: 2026-05-22
 //
-//  [현재 아키텍처 제약]
-//  Next.js API Route가 Firebase 클라이언트 SDK를 서버에서 사용 중.
-//  서버 환경에는 인증 토큰이 없으므로 request.auth == null 상태.
-//  따라서 API Route가 쓰는 컬렉션은 현재 allow write: if isAuthed() 가
-//  서버 쓰기를 막지 않음 → Admin SDK 전환 완료 후 즉시 강화 가능.
-//
-//  [단계별 적용 계획]
-//  Phase 1 (현재): 인증 요구 + 채팅 멤버십 검사 적용
-//  Phase 2 (Admin SDK 전환 후): 모든 서버 쓰기를 Admin SDK로,
-//                               클라이언트 직접 쓰기는 전면 차단
+//  모든 서버 쓰기는 Admin SDK(adminDb)로 처리.
+//  클라이언트 직접 쓰기는 ai_conversations/chat_messages 외 전면 차단.
 // ════════════════════════════════════════════════════════
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
     // ──────────────────────────────────────────
-    // Helper Functions
-    // ──────────────────────────────────────────
-
-    // 인증된 사용자인지 확인
-    function isAuthed() {
-      return request.auth != null;
-    }
-
-    // 요청 uid와 문서 uid 일치 여부
-    function isOwner(uid) {
-      return isAuthed() && request.auth.uid == uid;
-    }
-
-    // 쓰기 요청에 특정 필드가 포함됐는지 확인
-    function hasField(field) {
-      return field in request.resource.data;
-    }
-
-    // 채팅방 멤버 여부 확인 (chat_rooms.members 배열 사용)
-    function isRoomMember(roomId) {
-      return isAuthed() &&
-        request.auth.uid in
-          get(/databases/$(database)/documents/chat_rooms/$(roomId)).data.members;
-    }
-
-    // ──────────────────────────────────────────
-    // users
-    //   - 읽기: 인증된 모든 유저 (메신저 상대방 이름 표시용)
-    //   - 쓰기: 본인만 (로그인 시 프로필 upsert)
+    // users: 본인 프로필만 읽기, 서버만 쓰기
     // ──────────────────────────────────────────
     match /users/{uid} {
-      allow read: if isAuthed();
-      allow write: if isOwner(uid);
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
     }
 
     // ──────────────────────────────────────────
-    // stores
-    //   - 읽기: 인증된 모든 유저 (매장 검색 포함)
-    //   - 쓰기: Phase 1 — API Route가 클라이언트 SDK 사용 중이므로 임시 허용
-    //           Phase 2 — Admin SDK 전환 후 false 로 변경
+    // stores: 인증된 유저 읽기, 서버만 쓰기
     // ──────────────────────────────────────────
     match /stores/{storeId} {
-      allow read: if isAuthed();
-      // TODO (Phase 2): allow write: if false;
-      allow write: if isAuthed();
+      allow read: if request.auth != null;
+      allow write: if false;
     }
 
     // ──────────────────────────────────────────
-    // user_store_map
-    //   - 읽기: 인증된 모든 유저 (매장 멤버 목록 조회용)
-    //   - 쓰기: Phase 2 전까지 임시 허용
+    // user_store_map: 본인 것만 읽기, 서버만 쓰기
     // ──────────────────────────────────────────
     match /user_store_map/{docId} {
-      allow read: if isAuthed();
-      // TODO (Phase 2): allow write: if false;
-      allow write: if isAuthed();
-    }
-
-    // ──────────────────────────────────────────
-    // role_permissions
-    //   - 읽기: 인증된 모든 유저
-    //   - 쓰기: superuser만 — Custom Claims 미설정 시 API Route 통해서만 처리
-    //           Phase 2: false → Admin SDK 단독 처리
-    // ──────────────────────────────────────────
-    match /role_permissions/{role} {
-      allow read: if isAuthed();
-      // TODO (Phase 2): allow write: if false;
-      allow write: if isAuthed();
-    }
-
-    // ──────────────────────────────────────────
-    // ai_conversations
-    //   - 본인의 대화 기록만 접근 가능
-    //   - 생성 시 uid 필드 = 본인 uid 강제
-    // ──────────────────────────────────────────
-    match /ai_conversations/{docId} {
-      allow read: if isAuthed()
+      allow read: if request.auth != null
         && resource.data.uid == request.auth.uid;
-
-      allow create: if isAuthed()
-        && hasField('uid')
-        && request.resource.data.uid == request.auth.uid;
-
-      allow update: if isAuthed()
-        && resource.data.uid == request.auth.uid
-        // uid 필드는 변경 불가
-        && request.resource.data.uid == resource.data.uid;
-
-      allow delete: if isAuthed()
-        && resource.data.uid == request.auth.uid;
+      allow write: if false;
     }
 
     // ──────────────────────────────────────────
-    // daily_reports
-    //   - Phase 1: 인증된 유저면 모두 허용
-    //              (문서에 uid·storeId 필드가 없어 격리 불가)
-    //   - Phase 2: uid, storeId 필드 추가 완료 후 아래 규칙으로 교체
-    //
-    //   [Phase 2 규칙 — 현재 주석처리]
-    //   allow read: if isAuthed()
-    //     && resource.data.uid == request.auth.uid;
-    //   allow create: if isAuthed()
-    //     && request.resource.data.uid == request.auth.uid
-    //     && hasField('storeId');
-    //   allow update, delete: if isAuthed()
-    //     && resource.data.uid == request.auth.uid;
+    // permission_groups: 읽기 허용, 서버만 쓰기
+    // ──────────────────────────────────────────
+    match /permission_groups/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ──────────────────────────────────────────
+    // role_permissions: 읽기 허용, 서버만 쓰기
+    // ──────────────────────────────────────────
+    match /role_permissions/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ──────────────────────────────────────────
+    // daily_reports: 읽기 허용, 서버만 쓰기
     // ──────────────────────────────────────────
     match /daily_reports/{docId} {
-      allow read, write: if isAuthed();
+      allow read: if request.auth != null;
+      allow write: if false;
     }
 
     // ──────────────────────────────────────────
-    // hygiene_checklists
-    //   - 인증된 유저면 접근 (향후 storeId 기반 격리 예정)
+    // hygiene_checklists: 인증된 유저 읽기/쓰기
+    // (클라이언트에서 직접 저장하는 기능)
     // ──────────────────────────────────────────
     match /hygiene_checklists/{docId} {
-      allow read, write: if isAuthed();
+      allow read, write: if request.auth != null;
     }
 
     // ──────────────────────────────────────────
-    // chat_rooms
-    //   - 읽기·수정: 방 멤버만 (members 배열 검사)
-    //   - 생성: 본인이 members에 포함된 경우만
-    //   - 삭제: 차단 (status='inactive' 로 소프트 삭제)
+    // ai_conversations: 본인 것만 읽기, 서버만 쓰기
+    // ──────────────────────────────────────────
+    match /ai_conversations/{docId} {
+      allow read: if request.auth != null
+        && resource.data.uid == request.auth.uid;
+      allow write: if false;
+    }
+
+    // ──────────────────────────────────────────
+    // chat_rooms: 멤버만 읽기, 서버만 쓰기
+    // (onSnapshot으로 클라이언트가 직접 구독)
     // ──────────────────────────────────────────
     match /chat_rooms/{roomId} {
-      allow read: if isAuthed()
+      allow read: if request.auth != null
         && request.auth.uid in resource.data.members;
-
-      allow create: if isAuthed()
-        && request.auth.uid in request.resource.data.members
-        && hasField('members')
-        && hasField('status')
-        && hasField('type');
-
-      allow update: if isAuthed()
-        && request.auth.uid in resource.data.members;
-
-      allow delete: if false;
+      allow write: if false;
     }
 
     // ──────────────────────────────────────────
-    // chat_messages
-    //   - 읽기: 해당 채팅방의 멤버만
-    //   - 생성: 발신자가 본인이고 채팅방 멤버인 경우만
-    //   - 수정·삭제: 차단 (메시지 불변성 보장)
+    // chat_messages: 방 멤버만 읽기, 서버만 쓰기
     // ──────────────────────────────────────────
     match /chat_messages/{msgId} {
-      allow read: if isAuthed()
-        && isRoomMember(resource.data.roomId);
-
-      allow create: if isAuthed()
-        && hasField('roomId')
-        && hasField('senderUid')
-        && hasField('text')
-        && request.resource.data.senderUid == request.auth.uid
-        && isRoomMember(request.resource.data.roomId);
-
-      allow update, delete: if false;
+      allow read: if request.auth != null
+        && request.auth.uid in
+          get(/databases/$(database)/documents/chat_rooms/$(resource.data.roomId)).data.members;
+      allow write: if false;
     }
 
     // ──────────────────────────────────────────
-    // 그 외 정의되지 않은 컬렉션 — 전면 차단
+    // 정의되지 않은 컬렉션 — 전면 차단
     // ──────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
