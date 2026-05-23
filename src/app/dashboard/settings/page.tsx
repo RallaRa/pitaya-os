@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2 } from 'lucide-react';
+import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 
@@ -59,6 +59,16 @@ export default function SettingsPage() {
     },
   ];
 
+  const adminOnlyMenus = [
+    {
+      href: '/dashboard/settings/widgets',
+      icon: <LayoutGrid className="w-5 h-5 text-teal-400" />,
+      label: '대시보드 위젯 권한',
+      description: '역할별 위젯 표시 여부 설정',
+      show: ['master', 'superuser', 'admin', 'owner'].includes(currentStore?.role || ''),
+    },
+  ].filter(m => m.show);
+
   const visibleMenus = menuAccess
     ? allMenus.filter(m => menuAccess[m.key])
     : [];
@@ -78,10 +88,10 @@ export default function SettingsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {visibleMenus.length === 0 ? (
+          {visibleMenus.length === 0 && adminOnlyMenus.length === 0 ? (
             <p className="text-slate-500 text-sm text-center py-8">접근 가능한 설정 항목이 없습니다.</p>
           ) : (
-            visibleMenus.map((menu) => (
+            [...visibleMenus, ...adminOnlyMenus].map((menu) => (
               <Link
                 key={menu.href}
                 href={menu.href}
