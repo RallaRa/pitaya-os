@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '@/context/StoreContext';
 import { useAuth } from '@/context/AuthContext';
-import { UserCog, Loader2, Users, Check, Clock, ChevronDown } from 'lucide-react';
+import { UserCog, Loader2, Users, Check, Clock, ChevronDown, Save, X } from 'lucide-react';
 
 interface PermissionGroup {
   groupId: string;
@@ -36,13 +36,15 @@ export default function MemberGroupPage() {
   const { currentStore } = useStore();
   const { user } = useAuth();
 
-  const [groups, setGroups] = useState<PermissionGroup[]>([]);
-  const [storeUsers, setStoreUsers] = useState<StoreUser[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [groups,      setGroups]      = useState<PermissionGroup[]>([]);
+  const [storeUsers,  setStoreUsers]  = useState<StoreUser[]>([]);
+  const [isLoading,   setIsLoading]   = useState(true);
+  const [isSaving,    setIsSaving]    = useState(false);
+  const [error,       setError]       = useState('');
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // uid → 'saving' | 'saved' | null
-  const [rowState, setRowState] = useState<Record<string, 'saving' | 'saved'>>({});
+  // uid → newGroupId (저장 전 임시 변경사항)
+  const [localChanges, setLocalChanges] = useState<Record<string, string>>({});
 
   // ── 데이터 로드 ──
   const fetchAll = useCallback(async () => {
@@ -57,6 +59,7 @@ export default function MemberGroupPage() {
       const [groupsData, usersData] = await Promise.all([groupsRes.json(), usersRes.json()]);
       setGroups(groupsData.groups || []);
       setStoreUsers(usersData.users || []);
+      setLocalChanges({});
     } catch {
       setError('데이터를 불러오지 못했습니다.');
     } finally {
@@ -66,30 +69,58 @@ export default function MemberGroupPage() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  // ── 그룹 변경 (자동 저장) ──
-  const handleGroupChange = async (uid: string, newGroupId: string) => {
-    setRowState(prev => ({ ...prev, [uid]: 'saving' }));
+  // ── 드롭다운 변경 → 로컬 상태만 업데이트 ──
+  const handleGroupChange = (uid: string, newGroupId: string) => {
+    const original = storeUsers.find(u => u.uid === uid)?.groupId ?? '';
+    setLocalChanges(prev => {
+      const next = { ...prev };
+      if (newGroupId === original) {
+        delete next[uid];
+      } else {
+        next[uid] = newGroupId;
+      }
+      return next;
+    });
+  };
+
+  // ── 일괄 저장 ──
+  const handleSave = async () => {
+    if (Object.keys(localChanges).length === 0) return;
+    setIsSaving(true);
     setError('');
     try {
-      const res = await fetch('/api/users', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'assignGroup',
-          uid,
-          storeId: currentStore?.storeId,
-          groupId: newGroupId,
-        }),
-      });
-      if (!res.ok) throw new Error((await res.json()).error);
-      setStoreUsers(prev => prev.map(u => u.uid === uid ? { ...u, groupId: newGroupId } : u));
-      setRowState(prev => ({ ...prev, [uid]: 'saved' }));
-      setTimeout(() => setRowState(prev => { const n = { ...prev }; delete n[uid]; return n; }), 2000);
+      await Promise.all(
+        Object.entries(localChanges).map(([uid, groupId]) =>
+          fetch('/api/users', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'assignGroup',
+              uid,
+              storeId: currentStore?.storeId,
+              groupId,
+            }),
+          }).then(r => { if (!r.ok) throw new Error('저장 실패'); })
+        )
+      );
+      setStoreUsers(prev =>
+        prev.map(u => localChanges[u.uid] !== undefined
+          ? { ...u, groupId: localChanges[u.uid] }
+          : u
+        )
+      );
+      setLocalChanges({});
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
     } catch (e: any) {
-      setError(e.message);
-      setRowState(prev => { const n = { ...prev }; delete n[uid]; return n; });
+      setError(e.message || '저장 중 오류가 발생했습니다.');
+    } finally {
+      setIsSaving(false);
     }
   };
+
+  // ── 취소 ──
+  const handleCancel = () => setLocalChanges({});
 
   // ── 정렬: 대기 → 그룹순 → 이름순 ──
   const groupOrder = (gid: string) => {
@@ -99,12 +130,16 @@ export default function MemberGroupPage() {
   };
 
   const sortedUsers = [...storeUsers].sort((a, b) => {
-    const go = groupOrder(a.groupId) - groupOrder(b.groupId);
+    const aGid = localChanges[a.uid] ?? a.groupId;
+    const bGid = localChanges[b.uid] ?? b.groupId;
+    const go = groupOrder(aGid) - groupOrder(bGid);
     if (go !== 0) return go;
     return (a.name || '').localeCompare(b.name || '');
   });
 
   const pendingCount = storeUsers.filter(u => !u.groupId).length;
+  const changedCount = Object.keys(localChanges).length;
+
   const groupName = (gid: string) => {
     if (!gid) return '대기';
     return groups.find(g => g.groupId === gid)?.groupName || gid;
@@ -156,6 +191,40 @@ export default function MemberGroupPage() {
         </div>
       )}
 
+      {/* 미저장 변경사항 배너 */}
+      {changedCount > 0 && (
+        <div className="flex items-center gap-3 bg-amber-900/20 border border-amber-500/30 rounded-xl px-4 py-3 mb-4">
+          <span className="text-amber-400 text-sm font-medium flex-1">
+            저장되지 않은 변경사항 {changedCount}개
+          </span>
+          <button
+            onClick={handleCancel}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
+          >
+            <X className="w-3.5 h-3.5" /> 취소
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-black bg-teal-400 hover:bg-teal-300 disabled:opacity-50 rounded-lg transition-colors"
+          >
+            {isSaving
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : saveSuccess
+                ? <><Check className="w-3.5 h-3.5" /> 저장됨</>
+                : <><Save className="w-3.5 h-3.5" /> 저장하기</>
+            }
+          </button>
+        </div>
+      )}
+
+      {/* 저장 성공 (변경 없을 때) */}
+      {saveSuccess && changedCount === 0 && (
+        <div className="flex items-center gap-2 bg-teal-900/20 border border-teal-500/30 rounded-xl px-4 py-3 mb-4 text-teal-400 text-sm">
+          <Check className="w-4 h-4" /> 권한이 저장되었습니다.
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-900/30 border border-red-500/30 rounded-xl p-3 mb-4 text-red-400 text-xs">
           {error}
@@ -180,24 +249,30 @@ export default function MemberGroupPage() {
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">이름</span>
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">이메일</span>
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">그룹 배정</span>
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-center">상태</span>
+            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-center">변경</span>
           </div>
 
           {/* 행 목록 */}
           <div className="divide-y divide-slate-800">
             {sortedUsers.map((u, idx) => {
-              const state = rowState[u.uid];
-              const isPending = !u.groupId;
+              const isPending  = !u.groupId;
+              const isChanged  = localChanges[u.uid] !== undefined;
+              const currentGid = localChanges[u.uid] ?? u.groupId;
 
               return (
                 <div
                   key={u.uid}
                   className={`grid grid-cols-[1fr_1fr_180px_60px] items-center gap-0 px-4 py-3 transition-colors
-                    ${isPending ? 'bg-orange-900/10' : idx % 2 === 0 ? '' : 'bg-slate-800/20'}`}
+                    ${isChanged
+                      ? 'bg-amber-900/10 border-l-2 border-l-amber-500'
+                      : isPending
+                        ? 'bg-orange-900/10'
+                        : idx % 2 === 0 ? '' : 'bg-slate-800/20'
+                    }`}
                 >
                   {/* 이름 */}
                   <div className="flex items-center gap-2 min-w-0 pr-3">
-                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${groupDot(u.groupId)}`} />
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${groupDot(currentGid)}`} />
                     <span className="text-white text-sm font-medium truncate">{u.name || u.uid}</span>
                   </div>
 
@@ -209,13 +284,16 @@ export default function MemberGroupPage() {
                   {/* 그룹 드롭다운 */}
                   <div className="relative">
                     <select
-                      value={u.groupId}
+                      value={currentGid}
                       onChange={e => handleGroupChange(u.uid, e.target.value)}
-                      disabled={state === 'saving'}
+                      disabled={isSaving}
                       className={`w-full appearance-none rounded-lg px-3 py-1.5 pr-7 text-xs font-medium cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-500 transition-colors disabled:opacity-60
-                        ${isPending
-                          ? 'bg-orange-900/30 border border-orange-700/50 text-orange-300'
-                          : 'bg-slate-800 border border-slate-600 text-slate-200 hover:border-teal-600'}`}
+                        ${isChanged
+                          ? 'bg-amber-900/30 border border-amber-600/60 text-amber-200'
+                          : isPending
+                            ? 'bg-orange-900/30 border border-orange-700/50 text-orange-300'
+                            : 'bg-slate-800 border border-slate-600 text-slate-200 hover:border-teal-600'
+                        }`}
                     >
                       <option value="">대기 (미배정)</option>
                       {groups.map(g => (
@@ -227,19 +305,42 @@ export default function MemberGroupPage() {
                     <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                   </div>
 
-                  {/* 상태 */}
+                  {/* 변경 표시 */}
                   <div className="flex justify-center">
-                    {state === 'saving' && (
-                      <Loader2 className="w-4 h-4 text-teal-400 animate-spin" />
-                    )}
-                    {state === 'saved' && (
-                      <Check className="w-4 h-4 text-teal-400" />
+                    {isChanged && (
+                      <span className="w-2 h-2 rounded-full bg-amber-400" title="미저장 변경사항" />
                     )}
                   </div>
                 </div>
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* 하단 저장 버튼 (변경사항 없어도 항상 표시) */}
+      {!isLoading && sortedUsers.length > 0 && (
+        <div className="flex justify-end mt-4 gap-2">
+          {changedCount > 0 && (
+            <button
+              onClick={handleCancel}
+              className="px-4 py-2 text-sm text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors"
+            >
+              취소
+            </button>
+          )}
+          <button
+            onClick={handleSave}
+            disabled={changedCount === 0 || isSaving}
+            className="flex items-center gap-2 px-5 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl transition-colors"
+          >
+            {isSaving
+              ? <><Loader2 className="w-4 h-4 animate-spin" /> 저장 중...</>
+              : saveSuccess
+                ? <><Check className="w-4 h-4" /> 저장됨</>
+                : <><Save className="w-4 h-4" /> 변경사항 저장{changedCount > 0 ? ` (${changedCount})` : ''}</>
+            }
+          </button>
         </div>
       )}
     </div>

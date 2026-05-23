@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   ChevronLeft, ChevronRight, Plus, X, Check, AlertCircle,
@@ -118,7 +118,7 @@ function getWeekDays(date: Date): Date[] {
 }
 
 /* ══════════════════════════════════════ */
-export default function HrCalendarPage() {
+function HrCalendarContent() {
   const { user }         = useAuth();
   const { currentStore } = useStore();
   const searchParams     = useSearchParams();
@@ -1308,5 +1308,17 @@ export default function HrCalendarPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function HrCalendarPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-full">
+        <RefreshCw className="w-6 h-6 text-slate-600 animate-spin" />
+      </div>
+    }>
+      <HrCalendarContent />
+    </Suspense>
   );
 }

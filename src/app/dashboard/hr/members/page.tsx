@@ -5,7 +5,7 @@ import { useStore } from '@/context/StoreContext';
 import { useAuth } from '@/context/AuthContext';
 import {
   UserCheck, UserX, Loader2, Users, Clock,
-  ChevronDown, LogOut, ChevronRight, Store, Building2,
+  ChevronDown, LogOut, ChevronRight, Store, Building2, Save, X, Check,
 } from 'lucide-react';
 
 interface Member {
@@ -81,6 +81,11 @@ export default function MembersPage() {
   const [rejectTarget, setRejectTarget] = useState<Member | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [openRoleMenuTab2, setOpenRoleMenuTab2] = useState<string | null>(null);
+
+  // 미저장 권한 변경 (key: `${uid}:${storeId}`, value: newRole)
+  const [localRoleChanges, setLocalRoleChanges] = useState<Record<string, string>>({});
+  const [isSavingRoles, setIsSavingRoles] = useState(false);
+  const [roleSaveSuccess, setRoleSaveSuccess] = useState(false);
 
   const canManage = ['superuser', 'owner', 'admin'].includes(myRole);
   const isSuperuser = myRole === 'superuser';
@@ -174,31 +179,42 @@ export default function MembersPage() {
     finally { setActionLoading(null); }
   };
 
-  const handleChangeRole = async (targetUid: string, storeId: string, role: string, isTab1 = false) => {
+  // 로컬 상태만 업데이트 (API 호출 안 함)
+  const handleChangeRole = (targetUid: string, storeId: string, role: string, isTab1 = false) => {
     setOpenRoleMenuTab1(null);
     setOpenRoleMenuTab2(null);
     const key = `${targetUid}:${storeId}`;
-    setActionLoading(key);
+    const originalRole = isTab1
+      ? (memberStores[targetUid] || []).find(s => s.storeId === storeId)?.role
+      : activeMembers.find(m => m.uid === targetUid)?.role;
+    setLocalRoleChanges(prev => {
+      const next = { ...prev };
+      if (role === originalRole) { delete next[key]; } else { next[key] = role; }
+      return next;
+    });
+  };
+
+  // 일괄 저장
+  const handleSaveRoles = async () => {
+    const entries = Object.entries(localRoleChanges);
+    if (entries.length === 0) return;
+    setIsSavingRoles(true);
     setError('');
     try {
-      const res = await fetch('/api/store', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'changeRole', targetUid, storeId, role }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      if (isTab1) {
-        setMemberStores(prev => ({
-          ...prev,
-          [targetUid]: (prev[targetUid] || []).map(s =>
-            s.storeId === storeId ? { ...s, role } : s
-          ),
-        }));
-      }
+      await Promise.all(entries.map(([key, role]) => {
+        const [targetUid, storeId] = key.split(':');
+        return fetch('/api/store', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'changeRole', targetUid, storeId, role }),
+        }).then(r => r.json().then(d => { if (!r.ok) throw new Error(d.error); }));
+      }));
+      setLocalRoleChanges({});
+      setRoleSaveSuccess(true);
+      setTimeout(() => setRoleSaveSuccess(false), 2000);
       await fetchMembers();
-    } catch (e: any) { setError(e.message); }
-    finally { setActionLoading(null); }
+    } catch (e: any) { setError(e.message || '저장 중 오류가 발생했습니다.'); }
+    finally { setIsSavingRoles(false); }
   };
 
   const handleRemove = async (targetUid: string, name: string, storeId: string, storeName?: string) => {
@@ -249,6 +265,39 @@ export default function MembersPage() {
               <span className="text-yellow-300">승인 대기 <strong className="text-yellow-200">{pendingMembers.length}명</strong></span>
             </div>
           )}
+        </div>
+      )}
+
+      {/* 미저장 변경사항 배너 */}
+      {Object.keys(localRoleChanges).length > 0 && (
+        <div className="flex items-center gap-3 bg-amber-900/20 border border-amber-500/30 rounded-xl px-4 py-3 mb-4">
+          <span className="text-amber-400 text-sm font-medium flex-1">
+            저장되지 않은 권한 변경 {Object.keys(localRoleChanges).length}개
+          </span>
+          <button
+            onClick={() => setLocalRoleChanges({})}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors"
+          >
+            <X className="w-3.5 h-3.5" /> 취소
+          </button>
+          <button
+            onClick={handleSaveRoles}
+            disabled={isSavingRoles}
+            className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold text-black bg-teal-400 hover:bg-teal-300 disabled:opacity-50 rounded-lg transition-colors"
+          >
+            {isSavingRoles
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : roleSaveSuccess
+                ? <><Check className="w-3.5 h-3.5" /> 저장됨</>
+                : <><Save className="w-3.5 h-3.5" /> 저장하기</>
+            }
+          </button>
+        </div>
+      )}
+
+      {roleSaveSuccess && Object.keys(localRoleChanges).length === 0 && (
+        <div className="flex items-center gap-2 bg-teal-900/20 border border-teal-500/30 rounded-xl px-4 py-3 mb-4 text-teal-400 text-sm">
+          <Check className="w-4 h-4" /> 권한이 저장되었습니다.
         </div>
       )}
 
@@ -377,9 +426,11 @@ export default function MembersPage() {
                         const actionKey = `${member.uid}:${currentStore?.storeId}`;
                         const isActionLoading = actionLoading === actionKey;
                         const canEdit = canManage && !isOwner && !isMe;
+                        const effectiveRole = localRoleChanges[actionKey] ?? member.role;
+                        const isRoleChanged = localRoleChanges[actionKey] !== undefined;
 
                         return (
-                          <div key={member.uid} className="grid grid-cols-[auto_1fr_1fr_100px_44px] items-center gap-0 px-4 py-3 hover:bg-slate-800/30 transition-colors">
+                          <div key={member.uid} className={`grid grid-cols-[auto_1fr_1fr_100px_44px] items-center gap-0 px-4 py-3 transition-colors ${isRoleChanged ? 'bg-amber-900/10 border-l-2 border-l-amber-500' : 'hover:bg-slate-800/30'}`}>
                             <div className="w-10">
                               <MemberAvatar member={member} />
                             </div>
@@ -398,9 +449,9 @@ export default function MembersPage() {
                                 <>
                                   <button
                                     onClick={() => setOpenRoleMenuTab2(openRoleMenuTab2 === member.uid ? null : member.uid)}
-                                    className="flex items-center gap-1 text-xs bg-slate-800 hover:bg-slate-700 border border-slate-600 px-2 py-1 rounded-lg transition-colors w-full"
+                                    className={`flex items-center gap-1 text-xs border px-2 py-1 rounded-lg transition-colors w-full ${isRoleChanged ? 'bg-amber-900/30 border-amber-600/60' : 'bg-slate-800 hover:bg-slate-700 border-slate-600'}`}
                                   >
-                                    <RoleBadge role={member.role} />
+                                    <RoleBadge role={effectiveRole} />
                                     <ChevronDown className="w-3 h-3 text-slate-400 ml-auto flex-shrink-0" />
                                   </button>
                                   {openRoleMenuTab2 === member.uid && (
@@ -409,7 +460,7 @@ export default function MembersPage() {
                                         <button
                                           key={r}
                                           onClick={() => handleChangeRole(member.uid, currentStore?.storeId || '', r)}
-                                          className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-700 transition-colors ${member.role === r ? 'text-teal-400 font-bold' : 'text-slate-300'}`}
+                                          className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-700 transition-colors ${effectiveRole === r ? 'text-teal-400 font-bold' : 'text-slate-300'}`}
                                         >
                                           {ROLE_LABELS[r]}
                                         </button>
@@ -418,7 +469,7 @@ export default function MembersPage() {
                                   )}
                                 </>
                               ) : (
-                                <RoleBadge role={member.role} />
+                                <RoleBadge role={effectiveRole} />
                               )}
                             </div>
                             {/* 내보내기 */}
@@ -507,8 +558,10 @@ export default function MembersPage() {
                                   const actionKey = `${member.uid}:${store.storeId}`;
                                   const isActionLoading = actionLoading === actionKey;
 
+                                  const storeEffectiveRole = localRoleChanges[actionKey] ?? store.role;
+                                  const isStoreRoleChanged = localRoleChanges[actionKey] !== undefined;
                                   return (
-                                    <div key={store.storeId} className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-6 py-2.5 border-b border-slate-800/50 last:border-b-0">
+                                    <div key={store.storeId} className={`grid grid-cols-[auto_1fr_auto] items-center gap-3 px-6 py-2.5 border-b border-slate-800/50 last:border-b-0 ${isStoreRoleChanged ? 'bg-amber-900/10' : ''}`}>
                                       <Store className="w-3.5 h-3.5 text-teal-400/40 flex-shrink-0" />
                                       <div className="min-w-0">
                                         <p className="text-slate-200 text-xs font-medium truncate">{store.storeName}</p>
@@ -519,9 +572,9 @@ export default function MembersPage() {
                                           <div className="relative">
                                             <button
                                               onClick={() => setOpenRoleMenuTab1(openRoleMenuTab1 === actionKey ? null : actionKey)}
-                                              className="flex items-center gap-1 text-xs text-slate-300 bg-slate-800 hover:bg-slate-700 border border-slate-600 px-2 py-1 rounded-lg transition-colors"
+                                              className={`flex items-center gap-1 text-xs border px-2 py-1 rounded-lg transition-colors ${isStoreRoleChanged ? 'text-amber-200 bg-amber-900/30 border-amber-600/60' : 'text-slate-300 bg-slate-800 hover:bg-slate-700 border-slate-600'}`}
                                             >
-                                              {ROLE_LABELS[store.role] || store.role}
+                                              {ROLE_LABELS[storeEffectiveRole] || storeEffectiveRole}
                                               <ChevronDown className="w-3 h-3" />
                                             </button>
                                             {openRoleMenuTab1 === actionKey && (
@@ -530,7 +583,7 @@ export default function MembersPage() {
                                                   <button
                                                     key={r}
                                                     onClick={() => handleChangeRole(member.uid, store.storeId, r, true)}
-                                                    className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-700 transition-colors ${store.role === r ? 'text-teal-400 font-bold' : 'text-slate-300'}`}
+                                                    className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-700 transition-colors ${storeEffectiveRole === r ? 'text-teal-400 font-bold' : 'text-slate-300'}`}
                                                   >
                                                     {ROLE_LABELS[r]}
                                                   </button>
@@ -548,7 +601,7 @@ export default function MembersPage() {
                                           </button>
                                         </div>
                                       ) : (
-                                        <RoleBadge role={store.role} />
+                                        <RoleBadge role={storeEffectiveRole} />
                                       )}
                                     </div>
                                   );

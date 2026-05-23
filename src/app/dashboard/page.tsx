@@ -1,10 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ResponsiveGridLayout } from 'react-grid-layout';
+import dynamic from 'next/dynamic';
 import type { LayoutItem } from 'react-grid-layout';
-import 'react-grid-layout/css/styles.css';
-import 'react-resizable/css/styles.css';
+
+const ResponsiveGridLayout = dynamic(
+  () => import('react-grid-layout').then(m => ({ default: m.ResponsiveGridLayout })),
+  { ssr: false }
+);
 import { Plus, LayoutGrid, Lock, RotateCcw } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
