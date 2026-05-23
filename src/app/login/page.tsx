@@ -9,9 +9,7 @@ export default function LoginPage() {
   const { user, loading, signInWithGoogle } = useAuth();
 
   useEffect(() => {
-    console.log('[LoginPage useEffect]', { loading, user: user?.email });
     if (!loading && user) {
-      console.log('[LoginPage] 이미 로그인 상태 → /dashboard');
       router.push('/dashboard');
     }
   }, [user, loading]);
@@ -42,13 +40,7 @@ export default function LoginPage() {
 
         {/* Google 공식 스타일 버튼 */}
         <button
-          onClick={() => {
-            console.log('[Firebase Config Test]',
-              process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-              process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
-            );
-            signInWithGoogle();
-          }}
+          onClick={() => signInWithGoogle()}
           className="w-full flex items-center justify-center gap-3
             bg-white hover:bg-gray-50 active:bg-gray-100
             text-[#3c4043] font-medium text-sm

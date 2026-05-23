@@ -11,6 +11,8 @@ import {
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase/firebase';
 
+const isDev = process.env.NODE_ENV === 'development';
+
 interface AuthContextType {
   user: User | null;
   loading: boolean;
@@ -35,26 +37,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const activeData = await activeRes.json();
       const pendingData = await pendingRes.json();
 
-      console.log('[checkAndRoute] uid:', uid);
-      console.log('[checkAndRoute] activeData:', activeData);
-      console.log('[checkAndRoute] pendingData:', pendingData);
-
       const activeStores = activeData.stores || [];
       const pendingStores = pendingData.stores || [];
 
-      console.log('[checkAndRoute] active:', activeStores.length, 'pending:', pendingStores.length);
+      if (isDev) {
+        console.log('[checkAndRoute] uid:', uid);
+        console.log('[checkAndRoute] active:', activeStores.length, 'pending:', pendingStores.length);
+      }
 
       if (activeStores.length === 0 && pendingStores.length === 0) {
-        console.log('[checkAndRoute] → /select-store?mode=apply');
         router.push('/select-store?mode=apply');
       } else if (activeStores.length === 0 && pendingStores.length > 0) {
-        console.log('[checkAndRoute] → /select-store?mode=pending');
         router.push('/select-store?mode=pending');
       } else if (activeStores.length === 1) {
-        console.log('[checkAndRoute] → /dashboard');
         router.push('/dashboard');
       } else {
-        console.log('[checkAndRoute] → /select-store');
         router.push('/select-store');
       }
     } catch (error) {
@@ -66,7 +63,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // loading 해제는 오직 여기서만
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      console.log('[Auth State]', currentUser?.email ?? 'none');
+      if (isDev) console.log('[Auth State]', currentUser?.email ?? 'none');
       setUser(currentUser);
       setLoading(false);
 
@@ -89,12 +86,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signInWithGoogle = async () => {
     try {
-      console.log('[Auth] 팝업 로그인 시작');
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       const result = await signInWithPopup(auth, provider);
 
-      console.log('[Auth 성공]', result.user.email);
+      if (isDev) console.log('[Auth 성공]', result.user.email);
 
       await fetch('/api/users', {
         method: 'POST',
