@@ -6,10 +6,13 @@ import { usePathname } from 'next/navigation';
 import {
   Settings, MessageCircle, ShoppingCart, Sparkles,
   BarChart2, TrendingUp, ClipboardCheck, X, LogOut,
+  Circle,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import NotificationHub from '@/components/NotificationHub';
+import { db } from '@/lib/firebase/firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 
 type MenuAccess = {
   ai: boolean; sales: boolean; purchase: boolean; report: boolean;
@@ -23,18 +26,36 @@ const ALL_FALSE: MenuAccess = {
   permissionGroup: false, memberGroup: false, hygiene: false,
 };
 
+interface AiModel {
+  id: string;
+  name: string;
+  provider: string;
+  emoji: string;
+  active: boolean;
+}
+
 interface SidebarProps {
   isOpen?: boolean;
   onClose?: () => void;
 }
 
+const AI_PROVIDER_STYLE: Record<string, string> = {
+  gemini: 'text-blue-400 border-blue-500/30 bg-blue-500/10',
+  claude: 'text-purple-400 border-purple-500/30 bg-purple-500/10',
+  gpt:    'text-green-400 border-green-500/30 bg-green-500/10',
+};
+
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const { currentStore } = useStore();
-  const [menuAccess, setMenuAccess] = useState<MenuAccess>(ALL_FALSE);
-  const [accessLoading, setAccessLoading] = useState(true);
 
+  const [menuAccess,    setMenuAccess]    = useState<MenuAccess>(ALL_FALSE);
+  const [accessLoading, setAccessLoading] = useState(true);
+  const [aiModels,      setAiModels]      = useState<AiModel[]>([]);
+  const [unreadCount,   setUnreadCount]   = useState(0);
+
+  /* 메뉴 권한 */
   useEffect(() => {
     if (!user?.uid) return;
     setAccessLoading(true);
@@ -42,149 +63,209 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     const url = `/api/permissions?type=myAccess&uid=${user.uid}${storeId ? `&storeId=${storeId}` : ''}`;
     fetch(url)
       .then(r => r.json())
-      .then(data => { if (data.menuAccess) setMenuAccess(data.menuAccess); })
+      .then(d => { if (d.menuAccess) setMenuAccess(d.menuAccess); })
       .catch(() => setMenuAccess(ALL_FALSE))
       .finally(() => setAccessLoading(false));
   }, [user?.uid, currentStore?.storeId]);
 
-  // 페이지 이동 시 모바일 사이드바 닫기
+  /* AI 모델 상태 */
+  useEffect(() => {
+    fetch('/api/ai')
+      .then(r => r.json())
+      .then(d => { if (d.models) setAiModels(d.models); })
+      .catch(() => {});
+  }, []);
+
+  /* 안읽은 메시지 (실시간) */
+  useEffect(() => {
+    if (!user?.uid) return;
+    const q = query(
+      collection(db, 'chat_rooms'),
+      where('members', 'array-contains', user.uid),
+      where('status', '==', 'active'),
+    );
+    return onSnapshot(q, snap => {
+      let total = 0;
+      snap.docs.forEach(d => {
+        total += (d.data().unreadCount || {})[user.uid] || 0;
+      });
+      setUnreadCount(total);
+    });
+  }, [user?.uid]);
+
+  /* 페이지 이동 시 모바일 닫기 */
   useEffect(() => {
     onClose?.();
-  // pathname 변경 시만 실행
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
   const mainMenus = [
-    { key: 'ai' as const,        href: '/dashboard/ai',                   icon: <Sparkles className="w-5 h-5" />,       label: 'AI 대화모드' },
-    { key: 'messenger' as const, href: '/dashboard/messenger',            icon: <MessageCircle className="w-5 h-5" />,  label: '메신저' },
-    { key: 'sales' as const,     href: '/dashboard/report/input',         icon: <TrendingUp className="w-5 h-5" />,     label: 'AI 매출관리' },
-    { key: 'hygiene' as const,   href: '/dashboard/hygiene',              icon: <ClipboardCheck className="w-5 h-5" />, label: '위생 점검일지' },
-    { key: 'purchase' as const,  href: '/dashboard/report/purchases/input',icon: <ShoppingCart className="w-5 h-5" />,  label: 'AI 매입관리' },
-    { key: 'report' as const,    href: '/dashboard/report/view',          icon: <BarChart2 className="w-5 h-5" />,      label: '전체 보고서' },
+    { key: 'ai' as const,        href: '/dashboard/ai',                    icon: <Sparkles className="w-4 h-4" />,       label: 'AI 대화모드' },
+    { key: 'messenger' as const, href: '/dashboard/messenger',             icon: <MessageCircle className="w-4 h-4" />,  label: '메신저',      badge: unreadCount },
+    { key: 'sales' as const,     href: '/dashboard/report/input',          icon: <TrendingUp className="w-4 h-4" />,     label: 'AI 매출관리' },
+    { key: 'hygiene' as const,   href: '/dashboard/hygiene',               icon: <ClipboardCheck className="w-4 h-4" />, label: '위생 점검일지' },
+    { key: 'purchase' as const,  href: '/dashboard/report/purchases/input', icon: <ShoppingCart className="w-4 h-4" />,  label: 'AI 매입관리' },
+    { key: 'report' as const,    href: '/dashboard/report/view',           icon: <BarChart2 className="w-4 h-4" />,      label: '전체 보고서' },
   ];
 
-  const visibleMenus = accessLoading
-    ? []
-    : mainMenus.filter(m => menuAccess[m.key]);
+  const visibleMenus = accessLoading ? [] : mainMenus.filter(m => menuAccess[m.key]);
 
-  // ── 공통 하단 로그아웃 버튼 ──
-  const logoutButton = (
-    <button
-      onClick={async () => { onClose?.(); await logout(); }}
-      className="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-slate-400 hover:bg-slate-800/50 hover:text-red-400 transition-colors"
-    >
-      <LogOut className="w-5 h-5 shrink-0" />
-      로그아웃
-    </button>
-  );
+  /* ── 공통 사이드바 콘텐츠 ── */
+  const sidebarContent = (
+    <div className="flex flex-col h-full">
 
-  // ── 공통 nav 콘텐츠 ──
-  const navContent = (
-    <nav className="space-y-2">
-      {accessLoading ? (
-        <>
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-11 rounded-xl bg-slate-800/60 animate-pulse" />
-          ))}
-        </>
-      ) : (
-        <>
-          {visibleMenus.map(item => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-                pathname.startsWith(item.href)
-                  ? 'bg-slate-800 text-teal-300 font-medium'
-                  : 'text-slate-300 hover:bg-slate-800/50'
-              }`}
-            >
-              <span className="shrink-0">{item.icon}</span>
-              {item.label}
-            </Link>
-          ))}
-          <Link
-            href="/dashboard/settings"
-            onClick={onClose}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-colors ${
-              pathname.startsWith('/dashboard/settings')
-                ? 'bg-slate-800 text-teal-300 font-medium'
-                : 'text-slate-300 hover:bg-slate-800/50'
-            }`}
-          >
-            <Settings className="w-5 h-5 shrink-0" />
-            설정
-          </Link>
-          <div className="border-t border-slate-800 pt-2 mt-2 space-y-1">
-            {/* 데스크탑 알림 버튼 */}
-            <div className="hidden md:flex items-center gap-3 px-4 py-3 rounded-xl text-slate-300">
-              <NotificationHub />
-              <span className="text-sm">알림</span>
+      {/* 스크롤 영역 */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+
+        {/* 네비게이션 */}
+        <nav className="space-y-1">
+          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-3 mb-2">메뉴</p>
+          {accessLoading ? (
+            [...Array(4)].map((_, i) => (
+              <div key={i} className="h-10 rounded-xl bg-slate-800/60 animate-pulse mx-1" />
+            ))
+          ) : (
+            <>
+              {visibleMenus.map(item => {
+                const active = pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={onClose}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm ${
+                      active
+                        ? 'bg-teal-600/20 text-teal-300 font-semibold border border-teal-500/20'
+                        : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                    }`}
+                  >
+                    <span className={`shrink-0 ${active ? 'text-teal-400' : ''}`}>{item.icon}</span>
+                    <span className="flex-1">{item.label}</span>
+                    {item.badge != null && item.badge > 0 && (
+                      <span className="bg-teal-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center shrink-0">
+                        {item.badge > 9 ? '9+' : item.badge}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+
+              {/* 구분선 */}
+              <div className="my-2 border-t border-slate-800" />
+
+              <Link
+                href="/dashboard/settings"
+                onClick={onClose}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm ${
+                  pathname.startsWith('/dashboard/settings')
+                    ? 'bg-teal-600/20 text-teal-300 font-semibold border border-teal-500/20'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                }`}
+              >
+                <Settings className="w-4 h-4 shrink-0" />
+                설정
+              </Link>
+
+              <div className="hidden md:flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-400 hover:bg-slate-800 transition-all cursor-pointer text-sm">
+                <NotificationHub />
+                <span>알림</span>
+              </div>
+            </>
+          )}
+        </nav>
+
+        {/* AI 엔진 현황 */}
+        <div>
+          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-3 mb-3">AI 엔진</p>
+          {aiModels.length === 0 ? (
+            <div className="space-y-2 px-1">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="h-9 rounded-xl bg-slate-800/60 animate-pulse" />
+              ))}
             </div>
-            {logoutButton}
+          ) : (
+            <div className="space-y-1.5 px-1">
+              {aiModels.map(m => (
+                <div
+                  key={m.id}
+                  className={`flex items-center gap-3 px-3 py-2 rounded-xl border text-xs ${AI_PROVIDER_STYLE[m.id] || 'text-slate-400 border-slate-700 bg-slate-800/40'}`}
+                >
+                  <span className="text-base leading-none shrink-0">{m.emoji}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold truncate">{m.name}</p>
+                    <p className="opacity-60 text-[10px]">{m.provider}</p>
+                  </div>
+                  <Circle
+                    className={`w-2 h-2 shrink-0 ${m.active ? 'fill-current' : 'text-slate-600 fill-slate-600'}`}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 하단: 유저 + 로그아웃 */}
+      <div className="p-4 border-t border-slate-800">
+        {user && (
+          <div className="flex items-center gap-3 mb-3 px-2">
+            {user.photoURL ? (
+              <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full border border-slate-700 shrink-0" />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-teal-700 flex items-center justify-center text-xs font-bold text-white shrink-0">
+                {user.displayName?.slice(0, 1) || 'U'}
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-slate-200 text-xs font-medium truncate">{user.displayName || user.email}</p>
+              <p className="text-slate-500 text-[10px] truncate">{currentStore?.storeName || '매장 없음'}</p>
+            </div>
           </div>
-        </>
-      )}
-    </nav>
-  );
-
-  // ── 공통 하단 리소스 섹션 ──
-  const resourceSection = (
-    <div className="p-5 border-t border-slate-800 bg-slate-900/50">
-      <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">
-        시스템 리소스 현황
-      </h3>
-      <div className="space-y-4">
-        {[
-          { label: 'Gemini 토큰 (일간)', value: '45%', color: 'bg-teal-500', textColor: 'text-teal-400', width: '45%' },
-          { label: 'GCP 트래픽 제한',    value: '82%', color: 'bg-yellow-500', textColor: 'text-yellow-400', width: '82%' },
-          { label: '드라이브 스토리지',  value: '12%', color: 'bg-teal-500', textColor: 'text-teal-400', width: '12%' },
-        ].map(item => (
-          <div key={item.label}>
-            <div className="flex justify-between text-xs mb-1.5">
-              <span className="text-slate-400">{item.label}</span>
-              <span className={`${item.textColor} font-medium`}>{item.value}</span>
-            </div>
-            <div className="w-full bg-slate-800 rounded-full h-1.5">
-              <div className={`${item.color} h-1.5 rounded-full`} style={{ width: item.width }} />
-            </div>
-          </div>
-        ))}
+        )}
+        <button
+          onClick={async () => { onClose?.(); await logout(); }}
+          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-slate-400 hover:bg-red-900/20 hover:text-red-400 transition-colors text-sm"
+        >
+          <LogOut className="w-4 h-4 shrink-0" />
+          로그아웃
+        </button>
       </div>
     </div>
   );
 
   return (
     <>
-      {/* ── 데스크탑: 고정 사이드바 ── */}
-      <aside className="hidden md:flex w-72 flex-col bg-slate-900 border-r border-slate-800">
-        <div className="p-5 flex-1 overflow-y-auto">
-          <h2 className="text-2xl font-bold text-teal-400 mb-8 tracking-tight">Pitaya OS</h2>
-          {navContent}
+      {/* ── 데스크탑 ── */}
+      <aside className="hidden md:flex w-64 flex-col bg-slate-900 border-r border-slate-800/60">
+        {/* 로고 */}
+        <div className="px-5 py-5 border-b border-slate-800/60">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 bg-teal-500 rounded-lg flex items-center justify-center shrink-0">
+              <span className="text-black font-black text-xs">P</span>
+            </div>
+            <h2 className="text-lg font-bold text-slate-100 tracking-tight">Pitaya OS</h2>
+          </div>
         </div>
-        {resourceSection}
+        {sidebarContent}
       </aside>
 
-      {/* ── 모바일: 오버레이 사이드바 ── */}
+      {/* ── 모바일 오버레이 ── */}
       <div className="md:hidden">
-        {/* 반투명 배경 */}
         <div
-          className={`fixed inset-0 bg-black/60 z-40 transition-opacity duration-300 ${
-            isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-          }`}
+          className={`fixed inset-0 bg-black/70 z-40 transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
           onClick={onClose}
           aria-hidden="true"
         />
-
-        {/* 슬라이드 패널 */}
         <aside
-          className={`fixed top-0 left-0 h-full w-72 flex flex-col bg-slate-900 border-r border-slate-800 z-50 transition-transform duration-300 ease-in-out ${
-            isOpen ? 'translate-x-0' : '-translate-x-full'
-          }`}
+          className={`fixed top-0 left-0 h-full w-64 flex flex-col bg-slate-900 border-r border-slate-800/60 z-50 transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
         >
-          <div className="flex items-center justify-between px-5 pt-5 pb-4">
-            <h2 className="text-2xl font-bold text-teal-400 tracking-tight">Pitaya OS</h2>
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800/60">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-teal-500 rounded-lg flex items-center justify-center shrink-0">
+                <span className="text-black font-black text-xs">P</span>
+              </div>
+              <h2 className="text-lg font-bold text-slate-100 tracking-tight">Pitaya OS</h2>
+            </div>
             <button
               onClick={onClose}
               className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
@@ -193,10 +274,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               <X className="w-5 h-5" />
             </button>
           </div>
-          <div className="px-5 pb-5 flex-1 overflow-y-auto">
-            {navContent}
-          </div>
-          {resourceSection}
+          {sidebarContent}
         </aside>
       </div>
     </>

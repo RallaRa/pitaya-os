@@ -93,6 +93,16 @@ async function callGPT(message: string, history: any[], system: string): Promise
   return completion.choices[0]?.message?.content || '';
 }
 
+export async function GET() {
+  return NextResponse.json({
+    models: [
+      { id: 'gemini', name: 'Gemini 2.5 Flash', provider: 'Google',    emoji: '⚡', active: hasKey.gemini() },
+      { id: 'claude', name: 'Claude Sonnet 4.6', provider: 'Anthropic', emoji: '🧠', active: hasKey.claude() },
+      { id: 'gpt',    name: 'GPT-4o',            provider: 'OpenAI',   emoji: '👔', active: hasKey.gpt()    },
+    ],
+  });
+}
+
 export async function POST(req: Request) {
   try {
     const { message, persona, history, model: modelChoice = 'auto' } =
