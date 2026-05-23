@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import Groq from 'groq-sdk';
 import { NextResponse } from 'next/server';
+import { trackUsage } from '@/lib/trackUsage';
 
 type GroqModel = 'groq-mixtral' | 'groq-llama';
 type ModelChoice = 'auto' | 'gemini' | 'claude' | 'gpt' | GroqModel;
@@ -203,6 +204,10 @@ export async function POST(req: Request) {
         throw callErr;
       }
     }
+
+    // 비동기 사용량 추적 (실패해도 응답에 영향 없음)
+    const trackProvider = (finalModel.startsWith('groq') ? 'groq' : finalModel) as any;
+    trackUsage(trackProvider, Math.ceil(text.length / 4)).catch(() => {});
 
     return NextResponse.json({
       text,

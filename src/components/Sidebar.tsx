@@ -11,6 +11,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import NotificationHub from '@/components/NotificationHub';
+import ResourceMonitor from '@/components/ResourceMonitor';
 import { db } from '@/lib/firebase/firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 
@@ -204,6 +205,9 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           )}
         </div>
       </div>
+
+      {/* 리소스 모니터 (접이식) */}
+      <ResourceMonitor />
 
       {/* 하단: 유저 + 로그아웃 */}
       <div className="p-4 border-t border-slate-800">
