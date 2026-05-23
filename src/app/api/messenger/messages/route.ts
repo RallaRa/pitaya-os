@@ -4,7 +4,8 @@ import { FieldValue } from 'firebase-admin/firestore';
 
 export async function POST(req: Request) {
   try {
-    const { roomId, senderUid, text, senderName, replyTo } = await req.json();
+    const { roomId, senderUid, text, senderName, replyTo,
+            fileUrl, fileName, fileType } = await req.json();
     if (!roomId || !senderUid || !text) {
       return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
     }
@@ -18,6 +19,7 @@ export async function POST(req: Request) {
       readBy: [senderUid],
     };
     if (replyTo) msgData.replyTo = replyTo;
+    if (fileUrl) { msgData.fileUrl = fileUrl; msgData.fileName = fileName || ''; msgData.fileType = fileType || ''; }
 
     await adminDb.collection('chat_messages').add(msgData);
 
@@ -25,8 +27,12 @@ export async function POST(req: Request) {
     const members: string[] = roomDoc.data()?.members || [];
     const currentUnreadCounts: Record<string, number> = roomDoc.data()?.unreadCount || {};
 
+    const lastMessage = fileUrl
+      ? (fileType?.startsWith('image/') ? '📷 이미지' : `📎 ${(fileName || '파일').slice(0, 40)}`)
+      : text.slice(0, 50);
+
     const roomUpdate: Record<string, any> = {
-      lastMessage: text.slice(0, 50),
+      lastMessage,
       lastMessageAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     };
@@ -70,6 +76,32 @@ export async function PUT(req: Request) {
   try {
     const body = await req.json();
     const { action } = body;
+
+    // ── delete: 메시지 소프트 삭제 ──
+    if (action === 'delete') {
+      const { messageId } = body;
+      if (!messageId) return NextResponse.json({ error: '잘못된 요청' }, { status: 400 });
+      await adminDb.collection('chat_messages').doc(messageId).update({
+        deletedAt: FieldValue.serverTimestamp(),
+      });
+      return NextResponse.json({ success: true });
+    }
+
+    // ── edit: 메시지 수정 ──
+    if (action === 'edit') {
+      const { messageId, text } = body;
+      if (!messageId || !text) return NextResponse.json({ error: '잘못된 요청' }, { status: 400 });
+      const msgRef = adminDb.collection('chat_messages').doc(messageId);
+      const msgDoc = await msgRef.get();
+      const currentData = msgDoc.data();
+      const originalText = currentData?.originalText || currentData?.text || '';
+      await msgRef.update({
+        originalText,
+        text,
+        editedAt: FieldValue.serverTimestamp(),
+      });
+      return NextResponse.json({ success: true });
+    }
 
     // ── readAll: 방 전체 메시지 읽음 처리 ──
     if (action === 'readAll') {

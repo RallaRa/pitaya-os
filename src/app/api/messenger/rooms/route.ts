@@ -58,3 +58,44 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+export async function PUT(req: Request) {
+  try {
+    const body = await req.json();
+    const { action, roomId } = body;
+    if (!roomId) return NextResponse.json({ error: '잘못된 요청' }, { status: 400 });
+
+    const roomRef = adminDb.collection('chat_rooms').doc(roomId);
+
+    // ── leave: uid를 멤버에서 제거, 멤버 0명이면 archived ──
+    if (action === 'leave') {
+      const { uid } = body;
+      if (!uid) return NextResponse.json({ error: 'uid 없음' }, { status: 400 });
+
+      const roomDoc = await roomRef.get();
+      const members: string[] = roomDoc.data()?.members || [];
+      const newMembers = members.filter(m => m !== uid);
+
+      await roomRef.update({
+        members: newMembers,
+        status: newMembers.length === 0 ? 'archived' : 'active',
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+      return NextResponse.json({ success: true });
+    }
+
+    // ── delete: 슈퍼유저 전용 - 즉시 archived ──
+    if (action === 'delete') {
+      await roomRef.update({
+        status: 'archived',
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return NextResponse.json({ success: true });
+    }
+
+    return NextResponse.json({ error: '알 수 없는 action' }, { status: 400 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
