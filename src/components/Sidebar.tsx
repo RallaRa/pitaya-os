@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   Settings, MessageCircle, ShoppingCart, Sparkles,
   BarChart2, TrendingUp, ClipboardCheck, X, LogOut,
-  Circle,
+  Circle, CalendarDays,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -19,12 +19,14 @@ type MenuAccess = {
   ai: boolean; sales: boolean; purchase: boolean; report: boolean;
   messenger: boolean; members: boolean; store: boolean;
   permissionGroup: boolean; memberGroup: boolean; hygiene: boolean;
+  hrCalendar: boolean;
 };
 
 const ALL_FALSE: MenuAccess = {
   ai: false, sales: false, purchase: false, report: false,
   messenger: false, members: false, store: false,
   permissionGroup: false, memberGroup: false, hygiene: false,
+  hrCalendar: false,
 };
 
 interface AiModel {
@@ -106,7 +108,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { key: 'sales' as const,     href: '/dashboard/report/input',          icon: <TrendingUp className="w-4 h-4" />,     label: 'AI 매출관리' },
     { key: 'hygiene' as const,   href: '/dashboard/hygiene',               icon: <ClipboardCheck className="w-4 h-4" />, label: '위생 점검일지' },
     { key: 'purchase' as const,  href: '/dashboard/report/purchases/input', icon: <ShoppingCart className="w-4 h-4" />,  label: 'AI 매입관리' },
-    { key: 'report' as const,    href: '/dashboard/report/view',           icon: <BarChart2 className="w-4 h-4" />,      label: '전체 보고서' },
+    { key: 'report' as const,      href: '/dashboard/report/view',           icon: <BarChart2 className="w-4 h-4" />,      label: '전체 보고서' },
+    { key: 'hrCalendar' as const,  href: '/dashboard/hr/calendar',           icon: <CalendarDays className="w-4 h-4" />,   label: '인사 달력' },
   ];
 
   const visibleMenus = accessLoading ? [] : mainMenus.filter(m => menuAccess[m.key]);
