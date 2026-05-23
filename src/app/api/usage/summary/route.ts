@@ -1,174 +1,290 @@
 import { NextResponse } from 'next/server';
-import { adminDb } from '@/lib/firebase/admin';
-import { getStorage } from 'firebase-admin/storage';
-import { getApps } from 'firebase-admin/app';
+import { adminDb, adminStorage } from '@/lib/firebase/admin';
 
-/* ── 서비스별 월 한도 (무료/기본 플랜 기준) ── */
-const LIMITS = {
-  gemini:  { requests: 1500,   label: '요청/일', daily: true  },
-  claude:  { tokens: 200000,   label: '토큰/월', daily: false },
-  gpt:     { tokens: 500000,   label: '토큰/월', daily: false },
-  groq:    { tokens: 500000,   label: '토큰/일', daily: true  },
-  groq_mixtral: { tokens: 500000, label: '토큰/일', daily: true },
-  firestore_reads:  { count: 50000,  label: '읽기/일',  daily: true  },
-  firestore_writes: { count: 20000,  label: '쓰기/일',  daily: true  },
-  storage: { bytes: 1073741824, label: 'GB', daily: false },
-};
+/* ── 내부 헬퍼: 개별 usage API 호출 (서버 내부 직접 임포트) ── */
 
-async function getAiUsageStats() {
-  const now = new Date();
-  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const dayKey   = now.toISOString().split('T')[0];
-
+async function fetchClaude() {
+  const monthKey = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  })();
+  if (!process.env.ANTHROPIC_API_KEY) return null;
   try {
-    const doc = await adminDb.collection('usage_stats').doc('global').get();
-    if (!doc.exists) return null;
-    const data = doc.data() || {};
+    const doc = await adminDb
+      .collection('usage_logs').doc('claude')
+      .collection('monthly').doc(monthKey).get();
+    const d = doc.exists ? doc.data()! : {};
     return {
-      monthly: data[`month_${monthKey}`] || {},
-      daily:   data[`day_${dayKey}`]     || {},
+      totalTokens:  d.total_tokens  || 0,
+      requestCount: d.request_count || 0,
+      limit:        1_000_000,
     };
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
-async function getStorageUsage(): Promise<{ bytes: number; fileCount: number } | null> {
+async function fetchGPT() {
+  if (!process.env.OPENAI_API_KEY) return null;
+
+  const now = new Date();
+  const monthKey  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const startDate = `${monthKey}-01`;
+  const endDate   = now.toISOString().split('T')[0];
+
+  // 1차: OpenAI Billing API
   try {
-    if (getApps().length === 0) return null;
-    const bucket = getStorage().bucket();
-    const [files] = await bucket.getFiles({ maxResults: 1000 });
-    let totalBytes = 0;
-    for (const file of files) {
-      const meta = file.metadata;
-      totalBytes += parseInt(String(meta.size || '0'), 10);
+    const res = await fetch(
+      `https://api.openai.com/v1/dashboard/billing/usage?start_date=${startDate}&end_date=${endDate}`,
+      {
+        headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+        signal: AbortSignal.timeout(6000),
+      },
+    );
+    if (res.ok) {
+      const data = await res.json();
+      if (typeof data.total_usage === 'number') {
+        const costUsd = data.total_usage / 100;
+        return { costUsd, budgetUsd: 10, source: 'billing' };
+      }
     }
-    return { bytes: totalBytes, fileCount: files.length };
-  } catch {
-    return null;
-  }
+  } catch { /* fall through */ }
+
+  // 2차: Firestore 추정
+  try {
+    const doc = await adminDb
+      .collection('usage_logs').doc('gpt')
+      .collection('monthly').doc(monthKey).get();
+    const d = doc.exists ? doc.data()! : {};
+    const inp = d.input_tokens  || 0;
+    const out = d.output_tokens || 0;
+    const cost = inp * (2.50 / 1e6) + out * (10.00 / 1e6);
+    return { costUsd: Math.round(cost * 1e4) / 1e4, budgetUsd: 10, requestCount: d.request_count || 0, source: 'estimate' };
+  } catch { return null; }
 }
 
-async function getGroqUsage(): Promise<{ tokensUsed: number; limit: number } | null> {
-  const key = process.env.GROQ_API_KEY;
-  if (!key) return null;
+async function fetchGroq() {
+  const monthKey = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  })();
+  if (!process.env.GROQ_API_KEY) return null;
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/usage', {
-      headers: { Authorization: `Bearer ${key}` },
-      signal: AbortSignal.timeout(5000),
-    });
+    const doc = await adminDb
+      .collection('usage_logs').doc('groq')
+      .collection('monthly').doc(monthKey).get();
+    const d = doc.exists ? doc.data()! : {};
+    return {
+      totalTokens:  d.total_tokens  || 0,
+      requestCount: d.request_count || 0,
+      limit:        1_000_000,
+    };
+  } catch { return null; }
+}
+
+async function fetchDrive() {
+  const { GoogleAuth } = await import('google-auth-library');
+  const keyStr = process.env.GOOGLE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  let token: string | null = process.env.GOOGLE_DRIVE_ACCESS_TOKEN || null;
+
+  if (!token && keyStr) {
+    try {
+      const auth = new GoogleAuth({
+        credentials: JSON.parse(keyStr),
+        scopes: ['https://www.googleapis.com/auth/drive.metadata.readonly'],
+      });
+      const client = await auth.getClient();
+      const t = await (client as any).getAccessToken();
+      token = t?.token || t?.access_token || null;
+    } catch { /* ignore */ }
+  }
+
+  if (!token) return null;
+
+  try {
+    const res = await fetch(
+      'https://www.googleapis.com/drive/v3/about?fields=storageQuota',
+      { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(6000) },
+    );
     if (!res.ok) return null;
     const data = await res.json();
-    // Groq usage API may return daily stats
-    const used = data.data?.[0]?.total_tokens || data.total_tokens || 0;
-    return { tokensUsed: used, limit: LIMITS.groq.tokens };
-  } catch {
-    return null;
-  }
+    const q = data.storageQuota || {};
+    const usageBytes = parseInt(q.usage || '0', 10);
+    const limitBytes = parseInt(q.limit || '0', 10);
+    return {
+      usageGB: Math.round((usageBytes / 1024 ** 3) * 100) / 100,
+      limitGB: limitBytes > 0 ? Math.round((limitBytes / 1024 ** 3) * 100) / 100 : 15,
+      source: 'drive_api',
+    };
+  } catch { return null; }
+}
+
+async function fetchFirebaseStorage() {
+  try {
+    const bucket = adminStorage.bucket();
+    const [files] = await bucket.getFiles({ maxResults: 1000 });
+    let totalBytes = 0;
+    files.forEach(f => { totalBytes += parseInt(String(f.metadata.size || '0'), 10); });
+    return { bytes: totalBytes, fileCount: files.length };
+  } catch { return null; }
+}
+
+async function fetchGeminiStats() {
+  const now = new Date();
+  const dayKey   = now.toISOString().split('T')[0];
+  const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  try {
+    const doc = await adminDb.collection('usage_stats').doc('global').get();
+    if (!doc.exists) return { daily: 0, monthly: 0 };
+    const data = doc.data()!;
+    return {
+      daily:   data[`day_${dayKey}`]?.gemini_requests   || 0,
+      monthly: data[`month_${monthKey}`]?.gemini_requests || 0,
+    };
+  } catch { return { daily: 0, monthly: 0 }; }
+}
+
+async function fetchFirestoreStats() {
+  const dk = new Date().toISOString().split('T')[0];
+  try {
+    const doc = await adminDb.collection('usage_stats').doc('global').get();
+    if (!doc.exists) return { reads: 0, writes: 0 };
+    const d = doc.data()!;
+    return {
+      reads:  d[`day_${dk}`]?.fs_reads  || 0,
+      writes: d[`day_${dk}`]?.fs_writes || 0,
+    };
+  } catch { return { reads: 0, writes: 0 }; }
+}
+
+async function fetchVercelDeploys() {
+  const token = process.env.VERCEL_TOKEN;
+  if (!token) return null;
+
+  const now = new Date();
+  const since = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+  try {
+    const res = await fetch(
+      `https://api.vercel.com/v6/deployments?limit=100&since=${since}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(6000),
+      },
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return { count: (data.deployments || []).length, limit: 100 };
+  } catch { return null; }
 }
 
 export async function GET() {
-  const [aiStats, storageInfo, groqUsage] = await Promise.all([
-    getAiUsageStats(),
-    getStorageUsage(),
-    getGroqUsage(),
+  const [claude, gpt, groq, drive, storage, gemini, fsStats, vercel] = await Promise.all([
+    fetchClaude(),
+    fetchGPT(),
+    fetchGroq(),
+    fetchDrive(),
+    fetchFirebaseStorage(),
+    fetchGeminiStats(),
+    fetchFirestoreStats(),
+    fetchVercelDeploys(),
   ]);
-
-  const now    = new Date();
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const dayOfMonth  = now.getDate();
-
-  const monthly = aiStats?.monthly || {};
-  const daily   = aiStats?.daily   || {};
-
-  const fmt = (n: number) => n?.toLocaleString?.() ?? String(n);
 
   const services = [
     {
-      id: 'gemini',
-      name: 'Gemini 2.5 Flash',
-      provider: 'Google',
-      emoji: '⚡',
-      used: daily.gemini_requests || 0,
-      limit: LIMITS.gemini.requests,
-      unit: '요청',
-      period: '일',
+      id:        'gemini',
+      name:      'Gemini 2.5 Flash',
+      provider:  'Google',
+      emoji:     '⚡',
+      used:      gemini.daily,
+      limit:     1500,
+      unit:      '요청',
+      period:    '일',
       available: !!process.env.GEMINI_API_KEY,
-      note: `이번달 총 ${fmt(monthly.gemini_requests || 0)}건`,
+      note:      `이번달 총 ${gemini.monthly}건`,
     },
     {
-      id: 'claude',
-      name: 'Claude Sonnet',
-      provider: 'Anthropic',
-      emoji: '🧠',
-      used: monthly.claude_tokens || 0,
-      limit: LIMITS.claude.tokens,
-      unit: '토큰',
-      period: '월',
+      id:        'claude',
+      name:      'Claude Sonnet',
+      provider:  'Anthropic',
+      emoji:     '🧠',
+      used:      claude?.totalTokens ?? 0,
+      limit:     claude?.limit ?? 1_000_000,
+      unit:      '토큰',
+      period:    '월',
       available: !!process.env.ANTHROPIC_API_KEY,
-      note: `${fmt(monthly.claude_requests || 0)}건 호출`,
+      note:      claude ? `${claude.requestCount}건 호출 · Firestore 누적` : '데이터 없음',
+      realtime:  false,
     },
     {
-      id: 'gpt',
-      name: 'GPT-4o',
-      provider: 'OpenAI',
-      emoji: '👔',
-      used: monthly.gpt_tokens || 0,
-      limit: LIMITS.gpt.tokens,
-      unit: '토큰',
-      period: '월',
+      id:        'gpt',
+      name:      'GPT-4o',
+      provider:  'OpenAI',
+      emoji:     '👔',
+      used:      gpt ? Math.round((gpt.costUsd / gpt.budgetUsd) * 100) : 0,
+      limit:     100,
+      unit:      '%',
+      period:    '월',
       available: !!process.env.OPENAI_API_KEY,
-      note: `${fmt(monthly.gpt_requests || 0)}건 호출`,
+      note:      gpt
+        ? `$${gpt.costUsd.toFixed(4)} / $${gpt.budgetUsd} · ${gpt.source === 'billing' ? '실시간' : '추정'}`
+        : '데이터 없음',
+      realtime:  gpt?.source === 'billing',
+      rawCost:   gpt?.costUsd,
+      rawBudget: gpt?.budgetUsd,
     },
     {
-      id: 'groq',
-      name: 'Groq',
-      provider: 'Groq',
-      emoji: '🚀',
-      used: groqUsage?.tokensUsed ?? (daily.groq_tokens || 0),
-      limit: LIMITS.groq.tokens,
-      unit: '토큰',
-      period: '일',
+      id:        'groq',
+      name:      'Groq',
+      provider:  'Groq',
+      emoji:     '🚀',
+      used:      groq?.totalTokens ?? 0,
+      limit:     groq?.limit ?? 1_000_000,
+      unit:      '토큰',
+      period:    '월',
       available: !!process.env.GROQ_API_KEY,
-      note: groqUsage ? '실시간' : `${fmt(monthly.groq_requests || 0)}건 호출`,
-      realtime: !!groqUsage,
+      note:      groq ? `${groq.requestCount}건 호출 · Firestore 누적` : '데이터 없음',
+      realtime:  false,
     },
     {
-      id: 'firestore',
-      name: 'Firestore',
-      provider: 'Firebase',
-      emoji: '🔥',
-      used: daily.fs_reads || 0,
-      limit: LIMITS.firestore_reads.count,
-      unit: '읽기',
-      period: '일',
+      id:        'firestore',
+      name:      'Firestore',
+      provider:  'Firebase',
+      emoji:     '🔥',
+      used:      fsStats.reads,
+      limit:     50000,
+      unit:      '읽기',
+      period:    '일',
       available: true,
-      note: `쓰기 ${fmt(daily.fs_writes || 0)}건`,
+      note:      `쓰기 ${fsStats.writes}건`,
     },
     {
-      id: 'storage',
-      name: 'Storage',
-      provider: 'Firebase',
-      emoji: '🗄️',
-      used: storageInfo ? Math.round(storageInfo.bytes / 1024 / 1024) : null,
-      limit: 1024,
-      unit: 'MB',
-      period: '누적',
-      available: true,
-      note: storageInfo ? `${storageInfo.fileCount}개 파일` : '조회 중',
-      realtime: !!storageInfo,
+      id:        'storage',
+      name:      drive ? 'Google Drive' : 'Firebase Storage',
+      provider:  'Firebase',
+      emoji:     '🗄️',
+      used:      drive
+        ? drive.usageGB
+        : storage ? Math.round(storage.bytes / 1024 / 1024) : null,
+      limit:     drive ? drive.limitGB : 1024,
+      unit:      drive ? 'GB' : 'MB',
+      period:    '누적',
+      available: !!(drive || storage),
+      note:      drive
+        ? `Drive API 실조회 · ${drive.usageGB}GB / ${drive.limitGB}GB`
+        : storage ? `${storage.fileCount}개 파일 · Firebase Storage` : 'Storage 미활성화',
+      realtime:  !!(drive || storage),
     },
     {
-      id: 'vercel',
-      name: 'Vercel',
-      provider: 'Vercel',
-      emoji: '▲',
-      used: monthly.vercel_deploys || null,
-      limit: 100,
-      unit: '배포',
-      period: '월',
+      id:        'vercel',
+      name:      'Vercel',
+      provider:  'Vercel',
+      emoji:     '▲',
+      used:      vercel?.count ?? null,
+      limit:     vercel?.limit ?? 100,
+      unit:      '배포',
+      period:    '월',
       available: !!process.env.VERCEL_TOKEN,
-      note: process.env.VERCEL_TOKEN ? '실시간' : 'VERCEL_TOKEN 미설정',
+      note:      vercel ? `이번달 ${vercel.count}회 배포` : 'VERCEL_TOKEN 미설정',
+      realtime:  !!vercel,
     },
   ];
 
