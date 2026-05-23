@@ -76,8 +76,20 @@ export default function AiChatPage() {
   const [editingId,      setEditingId]      = useState<string | null>(null);
   const [editTitle,      setEditTitle]      = useState('');
   const [selectedModel,  setSelectedModel]  = useState<ModelChoice>('auto');
+  const [activeModelIds, setActiveModelIds] = useState<Set<string>>(new Set());
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch('/api/ai')
+      .then(r => r.json())
+      .then(d => {
+        if (d.models) {
+          setActiveModelIds(new Set(d.models.filter((m: any) => m.active).map((m: any) => m.id)));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const loadConversations = useCallback(async () => {
     if (!user?.uid) return;
@@ -417,19 +429,26 @@ export default function AiChatPage() {
           {/* 모델 선택 */}
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-xs text-slate-500 mr-1">모델:</span>
-            {MODEL_OPTIONS.map(opt => (
-              <button
-                key={opt.value}
-                onClick={() => setSelectedModel(opt.value)}
-                className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
-                  selectedModel === opt.value
-                    ? 'bg-teal-500 text-slate-950'
-                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700'
-                }`}
-              >
-                {opt.emoji} {opt.label}
-              </button>
-            ))}
+            {MODEL_OPTIONS.map(opt => {
+              const isActive = opt.value === 'auto' || activeModelIds.size === 0 || activeModelIds.has(opt.value);
+              return (
+                <button
+                  key={opt.value}
+                  onClick={() => setSelectedModel(opt.value)}
+                  title={!isActive ? 'API 키 미설정' : undefined}
+                  className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors relative ${
+                    selectedModel === opt.value
+                      ? 'bg-teal-500 text-slate-950'
+                      : isActive
+                        ? 'bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700'
+                        : 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed opacity-50'
+                  }`}
+                >
+                  {opt.emoji} {opt.label}
+                  {!isActive && <span className="ml-0.5 text-[9px]">🔒</span>}
+                </button>
+              );
+            })}
           </div>
 
           {/* 텍스트 입력 */}

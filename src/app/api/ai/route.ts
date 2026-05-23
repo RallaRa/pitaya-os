@@ -3,7 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import Groq from 'groq-sdk';
 import { NextResponse } from 'next/server';
-import { trackUsage } from '@/lib/trackUsage';
+import { trackUsage, trackTokens } from '@/lib/trackUsage';
 
 type GroqModel = 'groq-mixtral' | 'groq-llama';
 type ModelChoice = 'auto' | 'gemini' | 'claude' | 'gpt' | GroqModel;
@@ -14,9 +14,9 @@ const SYSTEM_INSTRUCTIONS: Record<string, string> = {
 };
 
 const MODEL_NAMES: Record<string, string> = {
-  gemini:        'Gemini',
-  claude:        'Claude',
-  gpt:           'GPT-4o',
+  gemini:         'Gemini',
+  claude:         'Claude',
+  gpt:            'GPT-4o',
   'groq-mixtral': 'Groq Mixtral',
   'groq-llama':   'Groq Llama',
 };
@@ -33,7 +33,10 @@ const hasKey = {
   groq:   () => !!process.env.GROQ_API_KEY,
 };
 
-async function callGemini(message: string, history: any[], system: string): Promise<string> {
+/* ── 반환 타입: text + 실제 토큰 수 ── */
+interface CallResult { text: string; inputTokens: number; outputTokens: number; }
+
+async function callGemini(message: string, history: any[], system: string): Promise<CallResult> {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   const genAI  = new GoogleGenerativeAI(apiKey!);
   const model  = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
@@ -49,9 +52,16 @@ async function callGemini(message: string, history: any[], system: string): Prom
     generationConfig:  { temperature: 0.2 },
   });
 
-  const sendWithRetry = async (retry = 0): Promise<string> => {
+  const sendWithRetry = async (retry = 0): Promise<CallResult> => {
     try {
-      return (await chat.sendMessage(message)).response.text();
+      const res = await chat.sendMessage(message);
+      const text = res.response.text();
+      const usage = res.response.usageMetadata;
+      return {
+        text,
+        inputTokens:  usage?.promptTokenCount     ?? Math.ceil(message.length / 4),
+        outputTokens: usage?.candidatesTokenCount  ?? Math.ceil(text.length / 4),
+      };
     } catch (err: any) {
       if (err.message?.includes('503') && retry < 3) {
         await new Promise(r => setTimeout(r, 2000));
@@ -64,7 +74,7 @@ async function callGemini(message: string, history: any[], system: string): Prom
   return sendWithRetry();
 }
 
-async function callClaude(message: string, history: any[], system: string): Promise<string> {
+async function callClaude(message: string, history: any[], system: string): Promise<CallResult> {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   const claudeHistory = history.map((m: any) => ({
@@ -80,10 +90,15 @@ async function callClaude(message: string, history: any[], system: string): Prom
   });
 
   const block = response.content[0];
-  return block.type === 'text' ? block.text : '';
+  const text = block.type === 'text' ? block.text : '';
+  return {
+    text,
+    inputTokens:  response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+  };
 }
 
-async function callGPT(message: string, history: any[], system: string): Promise<string> {
+async function callGPT(message: string, history: any[], system: string): Promise<CallResult> {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const gptHistory = history.map((m: any) => ({
@@ -101,10 +116,15 @@ async function callGPT(message: string, history: any[], system: string): Promise
     ],
   });
 
-  return completion.choices[0]?.message?.content || '';
+  const text = completion.choices[0]?.message?.content || '';
+  return {
+    text,
+    inputTokens:  completion.usage?.prompt_tokens     ?? 0,
+    outputTokens: completion.usage?.completion_tokens ?? 0,
+  };
 }
 
-async function callGroq(message: string, history: any[], system: string, groqModelId: string): Promise<string> {
+async function callGroq(message: string, history: any[], system: string, groqModelId: string): Promise<CallResult> {
   const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
   const groqHistory = history.map((m: any) => ({
@@ -123,17 +143,22 @@ async function callGroq(message: string, history: any[], system: string, groqMod
     ],
   });
 
-  return completion.choices[0]?.message?.content || '';
+  const text = completion.choices[0]?.message?.content || '';
+  return {
+    text,
+    inputTokens:  completion.usage?.prompt_tokens     ?? 0,
+    outputTokens: completion.usage?.completion_tokens ?? 0,
+  };
 }
 
 export async function GET() {
   return NextResponse.json({
     models: [
-      { id: 'gemini',        name: 'Gemini 2.5 Flash',   provider: 'Google',    emoji: '⚡', active: hasKey.gemini() },
-      { id: 'claude',        name: 'Claude Sonnet 4.6',   provider: 'Anthropic', emoji: '🧠', active: hasKey.claude() },
-      { id: 'gpt',           name: 'GPT-4o',              provider: 'OpenAI',    emoji: '👔', active: hasKey.gpt()    },
-      { id: 'groq-mixtral',  name: 'Groq Mixtral 8x7B',  provider: 'Groq',      emoji: '🚀', active: hasKey.groq()   },
-      { id: 'groq-llama',    name: 'Groq Llama3 70B',     provider: 'Groq',      emoji: '🦙', active: hasKey.groq()   },
+      { id: 'gemini',       name: 'Gemini 2.5 Flash',  provider: 'Google',    emoji: '⚡', active: hasKey.gemini() },
+      { id: 'claude',       name: 'Claude Sonnet 4.6',  provider: 'Anthropic', emoji: '🧠', active: hasKey.claude() },
+      { id: 'gpt',          name: 'GPT-4o',             provider: 'OpenAI',    emoji: '👔', active: hasKey.gpt()    },
+      { id: 'groq-mixtral', name: 'Groq Mixtral 8x7B', provider: 'Groq',      emoji: '🚀', active: hasKey.groq()   },
+      { id: 'groq-llama',   name: 'Groq Llama3 70B',   provider: 'Groq',      emoji: '🦙', active: hasKey.groq()   },
     ],
   });
 }
@@ -160,7 +185,6 @@ export async function POST(req: Request) {
       if (hasImage) {
         resolved = 'gemini';
       } else if (hasKey.groq()) {
-        // Groq: 빠른 응답 우선 (일반 대화)
         resolved = 'groq-llama';
       } else if (hasAnalytics && hasKey.claude()) {
         resolved = 'claude';
@@ -173,46 +197,50 @@ export async function POST(req: Request) {
       resolved = modelChoice;
     }
 
-    // ── Fail-Safe: 키 없으면 우회 순서: groq → gemini ──
-    if ((resolved === 'claude')        && !hasKey.claude()) resolved = hasKey.groq() ? 'groq-llama' : 'gemini';
-    if ((resolved === 'gpt')           && !hasKey.gpt())    resolved = hasKey.groq() ? 'groq-llama' : 'gemini';
+    // ── Fail-Safe ──
+    if (resolved === 'claude'       && !hasKey.claude()) resolved = hasKey.groq() ? 'groq-llama' : 'gemini';
+    if (resolved === 'gpt'          && !hasKey.gpt())    resolved = hasKey.groq() ? 'groq-llama' : 'gemini';
     if ((resolved === 'groq-mixtral' || resolved === 'groq-llama') && !hasKey.groq()) resolved = 'gemini';
     if (!hasKey.gemini() && resolved === 'gemini') {
       return NextResponse.json({ error: '사용 가능한 AI API 키가 없습니다.' }, { status: 500 });
     }
 
     // ── 호출 ──
-    let text: string;
+    let result: CallResult;
     let finalModel = resolved;
 
     try {
       if (resolved === 'claude') {
-        text = await callClaude(message, msgs, system);
+        result = await callClaude(message, msgs, system);
       } else if (resolved === 'gpt') {
-        text = await callGPT(message, msgs, system);
+        result = await callGPT(message, msgs, system);
       } else if (resolved === 'groq-mixtral' || resolved === 'groq-llama') {
-        text = await callGroq(message, msgs, system, GROQ_MODEL_IDS[resolved as GroqModel]);
+        result = await callGroq(message, msgs, system, GROQ_MODEL_IDS[resolved as GroqModel]);
       } else {
-        text = await callGemini(message, msgs, system);
+        result = await callGemini(message, msgs, system);
       }
     } catch (callErr: any) {
       if (resolved !== 'gemini') {
         console.warn(`[AI] ${resolved} 호출 실패 → Gemini 우회:`, callErr.message);
-        text = await callGemini(message, msgs, system);
+        result = await callGemini(message, msgs, system);
         finalModel = 'gemini';
       } else {
         throw callErr;
       }
     }
 
-    // 비동기 사용량 추적 (실패해도 응답에 영향 없음)
+    // ── 사용량 추적 ──
     const trackProvider = (finalModel.startsWith('groq') ? 'groq' : finalModel) as any;
-    trackUsage(trackProvider, Math.ceil(text.length / 4)).catch(() => {});
+    if (trackProvider === 'gemini') {
+      trackUsage('gemini', result.inputTokens + result.outputTokens).catch(() => {});
+    } else {
+      trackTokens(trackProvider, result.inputTokens, result.outputTokens).catch(() => {});
+    }
 
     return NextResponse.json({
-      text,
+      text:      result.text,
       usedModel: MODEL_NAMES[finalModel] || finalModel,
-      isAuto: modelChoice === 'auto',
+      isAuto:    modelChoice === 'auto',
     });
 
   } catch (error: any) {

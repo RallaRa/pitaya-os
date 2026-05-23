@@ -107,8 +107,8 @@ export async function GET(req: Request) {
           await adminDb.collection('users').doc(uid).update({ groupId: 'master' });
         }
         const masterDoc = await adminDb.collection('permission_groups').doc('master').get();
-        const masterAccess = masterDoc.exists ? masterDoc.data()?.menuAccess : SYSTEM_GROUPS[0].menuAccess;
-        return NextResponse.json({ groupId: 'master', menuAccess: masterAccess });
+        const masterStored = masterDoc.exists ? masterDoc.data()?.menuAccess : SYSTEM_GROUPS[0].menuAccess;
+        return NextResponse.json({ groupId: 'master', menuAccess: { ...ALL_FALSE, ...masterStored } });
       }
 
       let groupId: string | null = null;
@@ -141,10 +141,11 @@ export async function GET(req: Request) {
       // 5. 그룹의 menuAccess 조회
       const groupDoc = await adminDb.collection('permission_groups').doc(groupId).get();
       if (groupDoc.exists) {
-        return NextResponse.json({ groupId, menuAccess: groupDoc.data()?.menuAccess });
+        const stored = groupDoc.data()?.menuAccess || {};
+        return NextResponse.json({ groupId, menuAccess: { ...ALL_FALSE, ...stored } });
       }
 
-      return NextResponse.json({ groupId: 'staff', menuAccess: STAFF_ACCESS });
+      return NextResponse.json({ groupId: 'staff', menuAccess: { ...ALL_FALSE, ...STAFF_ACCESS } });
     }
 
     // ── 권한 그룹 목록 조회 ──

@@ -43,9 +43,11 @@ interface SidebarProps {
 }
 
 const AI_PROVIDER_STYLE: Record<string, string> = {
-  gemini: 'text-blue-400 border-blue-500/30 bg-blue-500/10',
-  claude: 'text-purple-400 border-purple-500/30 bg-purple-500/10',
-  gpt:    'text-green-400 border-green-500/30 bg-green-500/10',
+  gemini:         'text-blue-400   border-blue-500/30   bg-blue-500/10',
+  claude:         'text-purple-400 border-purple-500/30 bg-purple-500/10',
+  gpt:            'text-green-400  border-green-500/30  bg-green-500/10',
+  'groq-mixtral': 'text-orange-400 border-orange-500/30 bg-orange-500/10',
+  'groq-llama':   'text-amber-400  border-amber-500/30  bg-amber-500/10',
 };
 
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {

@@ -103,9 +103,21 @@ export default function ResourceMonitor() {
             <p className="text-slate-600 text-xs text-center py-2">데이터 없음</p>
           ) : (
             services.map(svc => {
+              // GPT는 used가 이미 % 값(0~100)으로 들어옴
+              const isGpt = svc.id === 'gpt';
               const pct = svc.used != null && svc.limit > 0
-                ? Math.min(100, Math.round((svc.used / svc.limit) * 100))
+                ? Math.min(100, isGpt ? svc.used : Math.round((svc.used / svc.limit) * 100))
                 : null;
+
+              const displayValue = !svc.available
+                ? '미설정'
+                : svc.used == null
+                  ? '조회 불가'
+                  : isGpt
+                    ? (svc as any).rawCost != null
+                      ? `$${(svc as any).rawCost.toFixed(4)} / $${(svc as any).rawBudget}`
+                      : `${svc.used}%`
+                    : `${Number(svc.used).toLocaleString()} / ${Number(svc.limit).toLocaleString()} ${svc.unit}`;
 
               return (
                 <div key={svc.id}>
@@ -118,12 +130,7 @@ export default function ResourceMonitor() {
                       )}
                     </div>
                     <span className={`text-[10px] font-semibold ${pct != null ? textColor(pct, svc.available) : 'text-slate-600'}`}>
-                      {!svc.available
-                        ? '미설정'
-                        : svc.used == null
-                          ? '조회 불가'
-                          : `${svc.used.toLocaleString()}/${svc.limit.toLocaleString()} ${svc.unit}`
-                      }
+                      {displayValue}
                     </span>
                   </div>
                   <div className="w-full bg-slate-800 rounded-full h-1.5">
