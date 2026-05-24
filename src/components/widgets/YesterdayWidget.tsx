@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import WidgetWrapper from './WidgetWrapper';
 
 interface Item { name: string; qty: number; amount: number; }
-interface YesterdayData { dateLabel: string; top: Item[]; bottom: Item[]; }
+interface YesterdayData { dateLabel: string; top: Item[]; bottom: Item[]; noData?: boolean; }
 
 export default function YesterdayWidget({
   editMode, onRemove, storeId,
@@ -16,12 +16,14 @@ export default function YesterdayWidget({
   const [error,     setError]     = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (forceRefresh = false) => {
     setLoading(true);
     setError(null);
     try {
-      const q   = storeId ? `?storeId=${storeId}` : '';
-      const res = await fetch(`/api/dashboard/yesterday-analysis${q}`);
+      const params = new URLSearchParams();
+      if (storeId)      params.set('storeId', storeId);
+      if (forceRefresh) params.set('refresh', '1');
+      const res = await fetch(`/api/dashboard/yesterday-analysis?${params}`);
       const d   = await res.json();
       if (d.error) throw new Error(d.error);
       setData(d);
@@ -33,7 +35,7 @@ export default function YesterdayWidget({
     }
   }, [storeId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(false); }, [load]);
 
   const RANK_COLOR = ['text-yellow-400', 'text-slate-300', 'text-orange-400', 'text-slate-400', 'text-slate-500'];
 
@@ -42,7 +44,7 @@ export default function YesterdayWidget({
       title="📅 전일 판매 분석"
       editMode={editMode}
       onRemove={onRemove}
-      onRefresh={load}
+      onRefresh={() => load(true)}  // 새로고침 → 캐시 우회
       updatedAt={updatedAt}
       loading={loading}
       error={error}
@@ -53,41 +55,50 @@ export default function YesterdayWidget({
             <p className="text-slate-500 text-[10px] font-semibold">{data.dateLabel} 판매 현황</p>
           )}
 
-          {/* TOP 5 */}
-          <div>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">🥇 TOP 5 판매</p>
-            {data.top.length === 0 ? (
-              <p className="text-slate-600 text-xs">전일 데이터 없음</p>
-            ) : (
-              <div className="space-y-1">
-                {data.top.map((item, i) => (
-                  <div key={i} className="flex items-center gap-2 bg-slate-800/50 rounded-lg px-2.5 py-1.5">
-                    <span className={`text-[10px] font-bold w-4 shrink-0 text-center ${RANK_COLOR[i] || 'text-slate-500'}`}>{i + 1}</span>
-                    <span className="text-slate-200 text-xs flex-1 truncate">{item.name}</span>
-                    <span className="text-slate-400 text-[10px] shrink-0">{item.qty.toLocaleString()}개</span>
-                    <span className="text-slate-500 text-[10px] shrink-0">{item.amount ? `${Math.round(item.amount / 1000)}K` : ''}</span>
+          {data.noData ? (
+            <div className="flex flex-col items-center justify-center h-24 gap-2">
+              <p className="text-slate-500 text-xs text-center">전일 판매 데이터가 없습니다</p>
+              <p className="text-slate-600 text-[10px] text-center">AI 매출관리에서 데이터를 입력하면<br/>여기서 자동으로 분석됩니다</p>
+            </div>
+          ) : (
+            <>
+              {/* TOP 5 */}
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">🥇 TOP 5 판매</p>
+                {data.top.length === 0 ? (
+                  <p className="text-slate-600 text-xs">전일 데이터 없음</p>
+                ) : (
+                  <div className="space-y-1">
+                    {data.top.map((item, i) => (
+                      <div key={i} className="flex items-center gap-2 bg-slate-800/50 rounded-lg px-2.5 py-1.5">
+                        <span className={`text-[10px] font-bold w-4 shrink-0 text-center ${RANK_COLOR[i] || 'text-slate-500'}`}>{i + 1}</span>
+                        <span className="text-slate-200 text-xs flex-1 truncate">{item.name}</span>
+                        <span className="text-slate-400 text-[10px] shrink-0">{item.qty.toLocaleString()}개</span>
+                        <span className="text-slate-500 text-[10px] shrink-0">{item.amount ? `${Math.round(item.amount / 1000)}K` : ''}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            )}
-          </div>
 
-          {/* BOTTOM 5 */}
-          <div>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">📉 BOTTOM 5</p>
-            {data.bottom.length === 0 ? (
-              <p className="text-slate-600 text-xs">데이터 없음</p>
-            ) : (
-              <div className="space-y-1">
-                {data.bottom.map((item, i) => (
-                  <div key={i} className="flex items-center gap-2 bg-slate-800/30 rounded-lg px-2.5 py-1.5">
-                    <span className="text-slate-200 text-xs flex-1 truncate">{item.name}</span>
-                    <span className="text-slate-500 text-[10px] shrink-0">{item.qty.toLocaleString()}개</span>
+              {/* BOTTOM 5 */}
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">📉 BOTTOM 5</p>
+                {data.bottom.length === 0 ? (
+                  <p className="text-slate-600 text-xs">데이터 없음</p>
+                ) : (
+                  <div className="space-y-1">
+                    {data.bottom.map((item, i) => (
+                      <div key={i} className="flex items-center gap-2 bg-slate-800/30 rounded-lg px-2.5 py-1.5">
+                        <span className="text-slate-200 text-xs flex-1 truncate">{item.name}</span>
+                        <span className="text-slate-500 text-[10px] shrink-0">{item.qty.toLocaleString()}개</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            )}
-          </div>
+            </>
+          )}
         </div>
       )}
     </WidgetWrapper>
