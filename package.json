@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.98.0",
     "@google/generative-ai": "^0.24.1",
     "@supabase/supabase-js": "^2.105.4",
+    "@types/recharts": "^1.8.29",
     "emoji-picker-react": "^4.19.1",
     "firebase": "^12.13.0",
     "firebase-admin": "^13.9.0",
@@ -23,6 +24,7 @@
     "react": "^18",
     "react-dom": "^18",
     "react-grid-layout": "^2.2.3",
+    "recharts": "^3.8.1",
     "tailwindcss-animate": "^1.0.7",
     "xlsx": "^0.18.5"
   },

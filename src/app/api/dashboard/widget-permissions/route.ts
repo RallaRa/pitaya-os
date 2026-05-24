@@ -8,6 +8,7 @@ const DEFAULT_PERMISSIONS = {
   weekly_analysis:    { master: true, admin: true,  user: false, staff: false },
   yesterday_analysis: { master: true, admin: true,  user: true,  staff: false },
   quick_menu:         { master: true, admin: true,  user: true,  staff: true  },
+  ai_insight:         { master: true, admin: true,  user: false, staff: false },
 };
 
 export async function GET(req: Request) {

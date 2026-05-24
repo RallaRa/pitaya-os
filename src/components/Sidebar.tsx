@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   Settings, MessageCircle, ShoppingCart, Sparkles,
   BarChart2, TrendingUp, ClipboardCheck, X, LogOut,
-  Circle, CalendarDays,
+  Circle, CalendarDays, Tag,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -160,10 +160,23 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               <div className="my-2 border-t border-slate-800" />
 
               <Link
+                href="/dashboard/settings/keywords"
+                onClick={onClose}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm ${
+                  pathname === '/dashboard/settings/keywords'
+                    ? 'bg-teal-600/20 text-teal-300 font-semibold border border-teal-500/20'
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                }`}
+              >
+                <Tag className="w-4 h-4 shrink-0" />
+                키워드 관리
+              </Link>
+
+              <Link
                 href="/dashboard/settings"
                 onClick={onClose}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm ${
-                  pathname.startsWith('/dashboard/settings')
+                  pathname.startsWith('/dashboard/settings') && pathname !== '/dashboard/settings/keywords'
                     ? 'bg-teal-600/20 text-teal-300 font-semibold border border-teal-500/20'
                     : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
                 }`}
