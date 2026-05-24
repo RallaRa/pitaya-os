@@ -13,6 +13,32 @@ const SYSTEM_INSTRUCTIONS: Record<string, string> = {
   analyst: '당신은 Pitaya OS의 AI 데이터 분석가입니다. 매출, 재고 등 수치와 팩트 기반으로 명확하게 요약 답변합니다.',
 };
 
+/* ── 축산물 이력번호 감지 및 조회 ── */
+const TRACE_NO_RE = /\b(\d{12,15})\b/g;
+
+async function fetchMeatHistory(traceNo: string): Promise<string | null> {
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9000';
+    const res = await fetch(`${baseUrl}/api/external/meat-history?traceNo=${traceNo}`, {
+      signal: AbortSignal.timeout(6000),
+    });
+    const d = await res.json();
+    if (!d.found) return null;
+    const parts = [
+      d.cattleType && `축종: ${d.cattleType}`,
+      d.origin     && `원산지: ${d.origin}`,
+      d.farmName   && `농장: ${d.farmName}`,
+      d.slaughterDate && `도축일: ${d.slaughterDate}`,
+      d.slaughterPlace && `도축장: ${d.slaughterPlace}`,
+      (d.qgrade || d.ygrade) && `등급: 육질 ${d.qgrade || '-'} / 육량 ${d.ygrade || '-'}`,
+      d.weight && `도체중: ${d.weight}kg`,
+    ].filter(Boolean);
+    return `[이력번호 ${traceNo} 조회결과]\n${parts.join('\n')}`;
+  } catch {
+    return null;
+  }
+}
+
 const MODEL_NAMES: Record<string, string> = {
   gemini:         'Gemini',
   claude:         'Claude',
@@ -172,8 +198,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: '메시지 없음' }, { status: 400 });
     }
 
-    const system = SYSTEM_INSTRUCTIONS[persona || 'default'] ?? SYSTEM_INSTRUCTIONS.default;
-    const msgs   = history || [];
+    let system = SYSTEM_INSTRUCTIONS[persona || 'default'] ?? SYSTEM_INSTRUCTIONS.default;
+    const msgs = history || [];
+
+    // ── 이력번호 자동 감지 → 정보 주입 ──
+    const traceMatches = [...new Set(Array.from(message.matchAll(TRACE_NO_RE), m => m[1]))];
+    if (traceMatches.length > 0) {
+      const results = await Promise.all(traceMatches.map(fetchMeatHistory));
+      const valid   = results.filter(Boolean);
+      if (valid.length > 0) {
+        system += `\n\n아래는 사용자가 언급한 이력번호의 실시간 조회 결과입니다. 이 정보를 바탕으로 답변하세요:\n${valid.join('\n\n')}`;
+      }
+    }
 
     // ── 모델 결정 ──
     let resolved: ModelChoice;

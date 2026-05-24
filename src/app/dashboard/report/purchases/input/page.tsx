@@ -5,8 +5,23 @@ import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import {
   ShoppingCart, Upload, X, FileSpreadsheet, Send,
-  CheckCircle, Loader2, Save, AlertCircle,
+  CheckCircle, Loader2, Save, AlertCircle, Search, Beef,
 } from 'lucide-react';
+
+interface TraceInfo {
+  found:          boolean;
+  traceNo?:       string;
+  cattleType?:    string;
+  origin?:        string;
+  farmName?:      string;
+  farmAddr?:      string;
+  slaughterDate?: string;
+  slaughterPlace?:string;
+  qgrade?:        string;
+  ygrade?:        string;
+  weight?:        string;
+  message?:       string;
+}
 
 interface PurchaseItem {
   name: string;
@@ -43,6 +58,30 @@ export default function PurchaseInputPage() {
   const [parsedData, setParsedData] = useState<PurchaseData | null>(null);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+
+  // 이력번호 조회
+  const [traceNo,      setTraceNo]      = useState('');
+  const [traceInfo,    setTraceInfo]    = useState<TraceInfo | null>(null);
+  const [traceLoading, setTraceLoading] = useState(false);
+  const [traceError,   setTraceError]   = useState('');
+
+  const handleTraceSearch = async () => {
+    const no = traceNo.replace(/\D/g, '');
+    if (no.length < 12) { setTraceError('이력번호 12자리를 입력해주세요.'); return; }
+    setTraceLoading(true);
+    setTraceError('');
+    setTraceInfo(null);
+    try {
+      const res = await fetch(`/api/external/meat-history?traceNo=${no}`);
+      const d   = await res.json();
+      if (d.error) throw new Error(d.error);
+      setTraceInfo(d);
+    } catch (e: any) {
+      setTraceError(e.message || '조회 실패');
+    } finally {
+      setTraceLoading(false);
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -164,6 +203,63 @@ export default function PurchaseInputPage() {
             <p className="text-red-300 text-sm">{error}</p>
           </div>
         )}
+
+        {/* 이력번호 조회 */}
+        <div className="bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Beef className="w-4 h-4 text-amber-400" />
+            <p className="text-amber-400 text-xs font-semibold">축산물 이력번호 조회</p>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={traceNo}
+              onChange={e => setTraceNo(e.target.value.replace(/\D/g, '').slice(0, 15))}
+              onKeyDown={e => e.key === 'Enter' && handleTraceSearch()}
+              placeholder="이력번호 12자리 입력"
+              maxLength={15}
+              className="flex-1 bg-slate-800 border border-slate-600 rounded-xl px-4 py-2.5 text-slate-200
+                placeholder:text-slate-600 text-sm focus:outline-none focus:border-amber-500/50 transition-colors"
+            />
+            <button
+              onClick={handleTraceSearch}
+              disabled={traceLoading || traceNo.replace(/\D/g,'').length < 12}
+              className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-700/80 hover:bg-amber-600
+                disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-xl text-sm font-medium transition-colors"
+            >
+              {traceLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              조회
+            </button>
+          </div>
+
+          {traceError && (
+            <p className="text-red-400 text-xs">{traceError}</p>
+          )}
+
+          {traceInfo && (
+            traceInfo.found ? (
+              <div className="bg-slate-800/60 rounded-xl p-4 grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
+                {[
+                  ['축종',    traceInfo.cattleType],
+                  ['원산지',  traceInfo.origin],
+                  ['농장명',  traceInfo.farmName],
+                  ['도축일',  traceInfo.slaughterDate],
+                  ['도축장',  traceInfo.slaughterPlace],
+                  ['육질등급', traceInfo.qgrade],
+                  ['육량등급', traceInfo.ygrade],
+                  ['도체중',  traceInfo.weight ? `${traceInfo.weight}kg` : ''],
+                ].filter(([, v]) => v).map(([label, value]) => (
+                  <div key={label as string}>
+                    <span className="text-slate-500">{label}: </span>
+                    <span className="text-slate-200 font-medium">{value as string}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-slate-500 text-xs">{traceInfo.message || '조회된 이력이 없습니다.'}</p>
+            )
+          )}
+        </div>
 
         {/* 파일 업로드 */}
         <div className="space-y-3">
