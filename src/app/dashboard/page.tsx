@@ -34,7 +34,7 @@ const WIDGET_META: WidgetMeta[] = [
   {
     id: 'weather',
     title: '오늘 날씨',
-    defaultItem: { i: 'weather', x: 0, y: 0, w: 3, h: 3, minW: 2, minH: 2, maxW: 4, maxH: 5 },
+    defaultItem: { i: 'weather', x: 0, y: 0, w: 6, h: 3, minW: 5, minH: 2, maxW: 12, maxH: 5 },
     permKey: 'weather',
   },
   {
