@@ -17,13 +17,13 @@ const MODEL_NAMES: Record<string, string> = {
   gemini:         'Gemini',
   claude:         'Claude',
   gpt:            'GPT-4o',
-  'groq-mixtral': 'Groq Mixtral',
-  'groq-llama':   'Groq Llama',
+  'groq-mixtral': 'Groq Llama3 8B',
+  'groq-llama':   'Groq Llama3 70B',
 };
 
 const GROQ_MODEL_IDS: Record<GroqModel, string> = {
-  'groq-mixtral': 'mixtral-8x7b-32768',
-  'groq-llama':   'llama3-70b-8192',
+  'groq-mixtral': 'llama-3.1-8b-instant',
+  'groq-llama':   'llama-3.3-70b-versatile',
 };
 
 const hasKey = {
@@ -157,7 +157,7 @@ export async function GET() {
       { id: 'gemini',       name: 'Gemini 2.5 Flash',  provider: 'Google',    emoji: '⚡', active: hasKey.gemini() },
       { id: 'claude',       name: 'Claude Sonnet 4.6',  provider: 'Anthropic', emoji: '🧠', active: hasKey.claude() },
       { id: 'gpt',          name: 'GPT-4o',             provider: 'OpenAI',    emoji: '👔', active: hasKey.gpt()    },
-      { id: 'groq-mixtral', name: 'Groq Mixtral 8x7B', provider: 'Groq',      emoji: '🚀', active: hasKey.groq()   },
+      { id: 'groq-mixtral', name: 'Groq Llama3 8B',    provider: 'Groq',      emoji: '🚀', active: hasKey.groq()   },
       { id: 'groq-llama',   name: 'Groq Llama3 70B',   provider: 'Groq',      emoji: '🦙', active: hasKey.groq()   },
     ],
   });

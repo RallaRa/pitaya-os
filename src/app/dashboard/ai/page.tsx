@@ -16,16 +16,16 @@ const MODEL_OPTIONS: { value: ModelChoice; emoji: string; label: string }[] = [
   { value: 'gemini',        emoji: '⚡', label: 'Gemini 2.5'      },
   { value: 'claude',        emoji: '🧠', label: 'Claude'           },
   { value: 'gpt',           emoji: '👔', label: 'GPT-4o'           },
-  { value: 'groq-mixtral',  emoji: '🚀', label: 'Groq Mixtral'    },
-  { value: 'groq-llama',    emoji: '🦙', label: 'Groq Llama3'     },
+  { value: 'groq-mixtral',  emoji: '🚀', label: 'Groq 8B (빠름)'  },
+  { value: 'groq-llama',    emoji: '🦙', label: 'Groq 70B'        },
 ];
 
 const MODEL_BADGE: Record<string, { emoji: string; cls: string }> = {
   'Gemini':        { emoji: '⚡', cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30'     },
   'Claude':        { emoji: '🧠', cls: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
   'GPT-4o':        { emoji: '👔', cls: 'bg-green-500/20 text-green-400 border-green-500/30'   },
-  'Groq Mixtral':  { emoji: '🚀', cls: 'bg-orange-500/20 text-orange-400 border-orange-500/30' },
-  'Groq Llama':    { emoji: '🦙', cls: 'bg-amber-500/20 text-amber-400 border-amber-500/30'   },
+  'Groq Llama3 8B':  { emoji: '🚀', cls: 'bg-orange-500/20 text-orange-400 border-orange-500/30' },
+  'Groq Llama3 70B': { emoji: '🦙', cls: 'bg-amber-500/20 text-amber-400 border-amber-500/30'   },
 };
 
 interface Message {
