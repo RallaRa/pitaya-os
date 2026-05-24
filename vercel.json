@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/update-keywords",
       "schedule": "0 5 * * 1"
+    },
+    {
+      "path": "/api/cron/calendar-notifications",
+      "schedule": "0 * * * *"
     }
   ]
 }
