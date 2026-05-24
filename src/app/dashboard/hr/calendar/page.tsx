@@ -1191,7 +1191,7 @@ function HrCalendarContent() {
       {/* 페이지 헤더 */}
       <div className="px-4 md:px-6 py-4 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-slate-100 font-bold text-lg">인사 달력</h1>
+          <h1 className="text-slate-100 font-bold text-lg">캘린더</h1>
           <p className="text-slate-500 text-xs">연차·휴무 신청 및 일정 관리</p>
         </div>
         {/* 탭 */}

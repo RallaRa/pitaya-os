@@ -111,7 +111,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { key: 'hygiene' as const,   href: '/dashboard/hygiene',               icon: <ClipboardCheck className="w-4 h-4" />, label: '위생 점검일지' },
     { key: 'purchase' as const,  href: '/dashboard/report/purchases/input', icon: <ShoppingCart className="w-4 h-4" />,  label: 'AI 매입관리' },
     { key: 'report' as const,      href: '/dashboard/report/view',           icon: <BarChart2 className="w-4 h-4" />,      label: '전체 보고서' },
-    { key: 'hrCalendar' as const,  href: '/dashboard/hr/calendar',           icon: <CalendarDays className="w-4 h-4" />,   label: '인사 달력' },
+    { key: 'hrCalendar' as const,  href: '/dashboard/hr/calendar',           icon: <CalendarDays className="w-4 h-4" />,   label: '캘린더' },
   ];
 
   const visibleMenus = accessLoading ? [] : mainMenus.filter(m => menuAccess[m.key]);

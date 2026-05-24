@@ -16,7 +16,7 @@ const ALL_MENUS: MenuItem[] = [
   { label: '메신저',        href: '/dashboard/messenger',              icon: 'message'   },
   { label: 'AI 매입관리',   href: '/dashboard/report/purchases/input', icon: 'cart'      },
   { label: '전체 보고서',   href: '/dashboard/report/view',            icon: 'bar'       },
-  { label: '인사 달력',     href: '/dashboard/hr/calendar',            icon: 'calendar'  },
+  { label: '캘린더',        href: '/dashboard/hr/calendar',            icon: 'calendar'  },
   { label: 'AI 대화',       href: '/dashboard/ai',                     icon: 'sparkles'  },
 ];
 
