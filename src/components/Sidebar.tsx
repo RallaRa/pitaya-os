@@ -248,12 +248,12 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       <aside className="hidden md:flex w-64 flex-col bg-slate-900 border-r border-slate-800/60">
         {/* 로고 */}
         <div className="px-5 py-5 border-b border-slate-800/60">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-teal-500 rounded-lg flex items-center justify-center shrink-0">
+          <Link href="/dashboard" className="flex items-center gap-2 group">
+            <div className="w-7 h-7 bg-teal-500 group-hover:bg-teal-400 rounded-lg flex items-center justify-center shrink-0 transition-colors">
               <span className="text-black font-black text-xs">P</span>
             </div>
-            <h2 className="text-lg font-bold text-slate-100 tracking-tight">Pitaya OS</h2>
-          </div>
+            <h2 className="text-lg font-bold text-slate-100 group-hover:text-teal-300 tracking-tight transition-colors">Pitaya OS</h2>
+          </Link>
         </div>
         {sidebarContent}
       </aside>
@@ -269,12 +269,12 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           className={`fixed top-0 left-0 h-full w-64 flex flex-col bg-slate-900 border-r border-slate-800/60 z-50 transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
         >
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800/60">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 bg-teal-500 rounded-lg flex items-center justify-center shrink-0">
+            <Link href="/dashboard" onClick={onClose} className="flex items-center gap-2 group">
+              <div className="w-7 h-7 bg-teal-500 group-hover:bg-teal-400 rounded-lg flex items-center justify-center shrink-0 transition-colors">
                 <span className="text-black font-black text-xs">P</span>
               </div>
-              <h2 className="text-lg font-bold text-slate-100 tracking-tight">Pitaya OS</h2>
-            </div>
+              <h2 className="text-lg font-bold text-slate-100 group-hover:text-teal-300 tracking-tight transition-colors">Pitaya OS</h2>
+            </Link>
             <button
               onClick={onClose}
               className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors"

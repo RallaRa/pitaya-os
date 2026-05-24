@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { Menu } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -48,7 +49,7 @@ export default function DashboardLayout({
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
       {/* 모바일 상단 헤더 */}
       <header className="md:hidden flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800 shrink-0">
-        <span className="text-teal-400 font-bold text-lg">Pitaya OS</span>
+        <Link href="/dashboard" className="text-teal-400 hover:text-teal-300 font-bold text-lg transition-colors">Pitaya OS</Link>
         <div className="flex items-center gap-1">
           <NotificationHub />
           <button
