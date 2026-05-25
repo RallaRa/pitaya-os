@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid } from 'lucide-react';
+import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 
@@ -65,6 +65,13 @@ export default function SettingsPage() {
       icon: <LayoutGrid className="w-5 h-5 text-teal-400" />,
       label: '대시보드 위젯 권한',
       description: '역할별 위젯 표시 여부 설정',
+      show: ['master', 'superuser', 'admin', 'owner'].includes(currentStore?.role || ''),
+    },
+    {
+      href: '/dashboard/settings/prediction-variables',
+      icon: <SlidersHorizontal className="w-5 h-5 text-orange-400" />,
+      label: 'AI 예측 변수 설정',
+      description: '날씨·요일·이벤트가 매출에 미치는 영향 변수 관리',
       show: ['master', 'superuser', 'admin', 'owner'].includes(currentStore?.role || ''),
     },
   ].filter(m => m.show);

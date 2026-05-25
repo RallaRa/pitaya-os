@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   Settings, MessageCircle, ShoppingCart, Sparkles,
   BarChart2, TrendingUp, ClipboardCheck, X, LogOut,
-  Circle, CalendarDays, Tag, Scale, LineChart, Building2,
+  Circle, CalendarDays, Tag, Scale, LineChart, Building2, SlidersHorizontal,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -115,8 +115,9 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { key: 'report' as const,      href: '/dashboard/report/view',           icon: <BarChart2 className="w-4 h-4" />,      label: '전체 보고서' },
     { key: 'hrCalendar' as const,         href: '/dashboard/hr/calendar',                    icon: <CalendarDays className="w-4 h-4" />,  label: '캘린더' },
     { key: 'scaleCode' as const,          href: '/dashboard/scale',                          icon: <Scale className="w-4 h-4" />,         label: '저울 코드 관리' },
-    { key: 'salesForecast' as const,      href: '/dashboard/sales-forecast',                 icon: <LineChart className="w-4 h-4" />,     label: '품목별 매출 추이' },
-    { key: 'suppliers' as const,          href: '/dashboard/suppliers',                      icon: <Building2 className="w-4 h-4" />,     label: '거래처 관리' },
+    { key: 'salesForecast' as const,         href: '/dashboard/sales-forecast',                      icon: <LineChart          className="w-4 h-4" />, label: '품목별 매출 추이' },
+    { key: 'suppliers' as const,             href: '/dashboard/suppliers',                           icon: <Building2          className="w-4 h-4" />, label: '거래처 관리' },
+    { key: 'predictionVariables' as const,   href: '/dashboard/settings/prediction-variables',       icon: <SlidersHorizontal  className="w-4 h-4" />, label: 'AI 예측 변수' },
   ];
 
   const visibleMenus = accessLoading ? [] : mainMenus.filter(m => menuAccess[m.key]);
