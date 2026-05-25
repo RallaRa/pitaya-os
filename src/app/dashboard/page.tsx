@@ -18,6 +18,7 @@ import YesterdayWidget      from '@/components/widgets/YesterdayWidget';
 import QuickMenuWidget      from '@/components/widgets/QuickMenuWidget';
 import AiInsightWidget        from '@/components/widgets/AiInsightWidget';
 import SalesPredictionWidget  from '@/components/widgets/SalesPredictionWidget';
+import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 /* ── 타입 ── */
 type GridLayout = readonly LayoutItem[];
@@ -156,7 +157,8 @@ export default function DashboardPage() {
   /* 권한 조회 */
   useEffect(() => {
     if (!uid) return;
-    fetch(`/api/permissions?type=myAccess&uid=${uid}${storeId ? `&storeId=${storeId}` : ''}`)
+    getAuthHeaders()
+      .then(headers => fetch(`/api/permissions?type=myAccess${storeId ? `&storeId=${storeId}` : ''}`, { headers }))
       .then(r => r.json())
       .then(d => { if (d.role) setUserRole(d.role); })
       .catch(() => {});

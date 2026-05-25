@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { DEFAULT_PERMISSIONS, ALL_MENUS, Role } from '@/lib/permissions';
+import { verifyToken, getActualGroupId, isAdminGroup, isMasterGroup } from '@/lib/authVerify';
 
 type MenuAccess = {
   ai: boolean; sales: boolean; purchase: boolean; report: boolean;
@@ -94,10 +95,15 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const type = searchParams.get('type');
     const storeId = searchParams.get('storeId');
-    const uid = searchParams.get('uid');
 
     // ── 내 권한 조회 ──
-    if (type === 'myAccess' && uid) {
+    if (type === 'myAccess') {
+      // 토큰에서 uid 추출 (쿼리 파라미터 uid는 무시)
+      const verified = await verifyToken(req);
+      if (!verified) {
+        return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 });
+      }
+      const uid = verified.uid;
       await ensureSystemGroups();
 
       // 1. users 컬렉션에서 이메일 + groupId 조회
@@ -192,6 +198,12 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    // 토큰 검증
+    const verified = await verifyToken(req);
+    if (!verified) {
+      return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 });
+    }
+
     const body = await req.json();
     const { type } = body;
 
@@ -200,6 +212,11 @@ export async function POST(req: Request) {
       const { storeId, groupName, menuAccess } = body;
       if (!storeId || !groupName) {
         return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
+      }
+      // 관리자 이상만 그룹 생성 가능
+      const groupId = await getActualGroupId(verified.uid, storeId);
+      if (!isAdminGroup(groupId)) {
+        return NextResponse.json({ error: '권한 없음. 관리자 이상만 그룹을 생성할 수 있습니다.' }, { status: 403 });
       }
       const ref = adminDb.collection('permission_groups').doc();
       await ref.set({
@@ -214,10 +231,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, groupId: ref.id });
     }
 
-    // ── 기존: 역할별 권한 저장 (permission 페이지용) ──
-    const { permissions, requestorRole } = body;
-    if (requestorRole !== 'superuser') {
-      return NextResponse.json({ error: '권한 없음. superuser만 변경 가능합니다.' }, { status: 403 });
+    // ── 역할별 권한 저장 (permission 페이지용) ──
+    const { permissions } = body;
+    // 서버에서 실제 role 조회 — requestorRole 클라이언트 전송 불가
+    const actualGroupId = await getActualGroupId(verified.uid);
+    if (!isMasterGroup(actualGroupId)) {
+      return NextResponse.json({ error: '권한 없음. master만 역할 권한을 변경할 수 있습니다.' }, { status: 403 });
     }
     const roles: Role[] = ['admin', 'user', 'staff'];
     for (const role of roles) {
@@ -235,11 +254,22 @@ export async function POST(req: Request) {
 
 export async function PUT(req: Request) {
   try {
+    const verified = await verifyToken(req);
+    if (!verified) {
+      return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 });
+    }
+
     const body = await req.json();
     const { type, groupId, groupName, menuAccess } = body;
 
     if (type !== 'updateGroup' || !groupId) {
       return NextResponse.json({ error: '잘못된 요청' }, { status: 400 });
+    }
+
+    // 관리자 이상만 그룹 수정 가능
+    const actualGroupId = await getActualGroupId(verified.uid);
+    if (!isAdminGroup(actualGroupId)) {
+      return NextResponse.json({ error: '권한 없음. 관리자 이상만 그룹을 수정할 수 있습니다.' }, { status: 403 });
     }
 
     const update: Record<string, any> = { updatedAt: FieldValue.serverTimestamp() };
@@ -255,6 +285,17 @@ export async function PUT(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
+    const verified = await verifyToken(req);
+    if (!verified) {
+      return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 });
+    }
+
+    // 관리자 이상만 그룹 삭제 가능
+    const actualGroupId = await getActualGroupId(verified.uid);
+    if (!isAdminGroup(actualGroupId)) {
+      return NextResponse.json({ error: '권한 없음. 관리자 이상만 그룹을 삭제할 수 있습니다.' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(req.url);
     const type = searchParams.get('type');
     const groupId = searchParams.get('groupId');

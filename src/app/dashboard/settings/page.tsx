@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal } from 'lucide-react';
+import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 
@@ -21,8 +22,9 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!user?.uid || !storesLoaded) return;
     const storeId = currentStore?.storeId || '';
-    const url = `/api/permissions?type=myAccess&uid=${user.uid}${storeId ? `&storeId=${storeId}` : ''}`;
-    fetch(url)
+    const url = `/api/permissions?type=myAccess${storeId ? `&storeId=${storeId}` : ''}`;
+    getAuthHeaders()
+      .then(headers => fetch(url, { headers }))
       .then(r => r.json())
       .then(data => { if (data.menuAccess) setMenuAccess(data.menuAccess); })
       .finally(() => setAccessLoaded(true));

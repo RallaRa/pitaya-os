@@ -14,6 +14,7 @@ import NotificationHub from '@/components/NotificationHub';
 import ResourceMonitor from '@/components/ResourceMonitor';
 import { db } from '@/lib/firebase/firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 type MenuAccess = {
   ai: boolean; sales: boolean; purchase: boolean; report: boolean;
@@ -67,8 +68,9 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     if (!user?.uid) return;
     setAccessLoading(true);
     const storeId = currentStore?.storeId || '';
-    const url = `/api/permissions?type=myAccess&uid=${user.uid}${storeId ? `&storeId=${storeId}` : ''}`;
-    fetch(url)
+    const url = `/api/permissions?type=myAccess${storeId ? `&storeId=${storeId}` : ''}`;
+    getAuthHeaders()
+      .then(headers => fetch(url, { headers }))
       .then(r => r.json())
       .then(d => { if (d.menuAccess) setMenuAccess(d.menuAccess); })
       .catch(() => setMenuAccess(ALL_FALSE))

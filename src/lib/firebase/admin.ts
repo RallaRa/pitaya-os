@@ -1,6 +1,7 @@
 import { getApps, initializeApp, cert, App } from 'firebase-admin/app';
 import { Firestore, getFirestore } from 'firebase-admin/firestore';
 import { Storage, getStorage } from 'firebase-admin/storage';
+import { Auth, getAuth } from 'firebase-admin/auth';
 
 const APP_NAME = 'admin';
 
@@ -37,5 +38,13 @@ export const adminStorage = new Proxy({} as Storage, {
     const storage = getStorage(getAdminApp());
     const val = storage[prop as keyof Storage];
     return typeof val === 'function' ? (val as Function).bind(storage) : val;
+  },
+});
+
+export const adminAuth = new Proxy({} as Auth, {
+  get(_, prop: string | symbol) {
+    const auth = getAuth(getAdminApp());
+    const val = auth[prop as keyof Auth];
+    return typeof val === 'function' ? (val as Function).bind(auth) : val;
   },
 });

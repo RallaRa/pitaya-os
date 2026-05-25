@@ -5,6 +5,7 @@ import { useStore } from '@/context/StoreContext';
 import { ALL_MENUS, Role, DEFAULT_PERMISSIONS } from '@/lib/permissions';
 import { Shield, Loader2, Save, ArrowLeft, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
+import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 
 const ROLES: { key: Role; label: string; color: string }[] = [
   { key: 'superuser', label: 'Superuser', color: 'text-yellow-400' },
@@ -59,13 +60,11 @@ export default function PermissionPage() {
     setError('');
     setSaveMsg('');
     try {
+      const headers = await getAuthJsonHeaders();
       const res = await fetch('/api/permissions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          permissions,
-          requestorRole: currentStore?.role,
-        }),
+        headers,
+        body: JSON.stringify({ permissions }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);

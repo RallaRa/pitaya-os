@@ -7,6 +7,7 @@ import {
   Shield, Plus, Loader2, Pencil, Trash2, X, Check,
   Users, ChevronDown, ChevronUp, Eye, Settings,
 } from 'lucide-react';
+import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 
 type MenuKey =
   | 'ai' | 'sales' | 'purchase' | 'report' | 'messenger'
@@ -168,9 +169,10 @@ export default function PermissionGroupPage() {
     setSavingId(groupId);
     setError('');
     try {
+      const headers = await getAuthJsonHeaders();
       const res = await fetch('/api/permissions', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ type: 'updateGroup', groupId, menuAccess: draftAccess[groupId] }),
       });
       const data = await res.json();
@@ -188,9 +190,10 @@ export default function PermissionGroupPage() {
     if (!editingName.trim()) return;
     setSavingId(groupId);
     try {
+      const headers = await getAuthJsonHeaders();
       const res = await fetch('/api/permissions', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ type: 'updateGroup', groupId, groupName: editingName.trim() }),
       });
       if (!res.ok) throw new Error((await res.json()).error);
@@ -208,7 +211,8 @@ export default function PermissionGroupPage() {
     if (!confirm(`"${group.groupName}" 그룹을 삭제하시겠습니까?`)) return;
     setDeletingId(group.groupId);
     try {
-      const res = await fetch(`/api/permissions?type=group&groupId=${group.groupId}`, { method: 'DELETE' });
+      const headers = await getAuthJsonHeaders();
+      const res = await fetch(`/api/permissions?type=group&groupId=${group.groupId}`, { method: 'DELETE', headers });
       if (!res.ok) throw new Error((await res.json()).error);
       setGroups(prev => prev.filter(g => g.groupId !== group.groupId));
       if (selectedGroup?.groupId === group.groupId) setSelectedGroup(null);
@@ -223,9 +227,10 @@ export default function PermissionGroupPage() {
     if (!newGroupName.trim() || !currentStore?.storeId) return;
     setIsCreating(true);
     try {
+      const headers = await getAuthJsonHeaders();
       const res = await fetch('/api/permissions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           type: 'createGroup',
           storeId: currentStore.storeId,
