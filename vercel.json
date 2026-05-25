@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/calendar-notifications",
-      "schedule": "0 * * * *"
+      "schedule": "0 0 * * *"
     }
   ]
 }
