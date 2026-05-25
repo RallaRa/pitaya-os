@@ -85,8 +85,28 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
+    // ── 기존 보고서 불러오기 ──
+    if (body.action === 'load') {
+      const { storeId, reportDate } = body;
+      if (!reportDate) {
+        return NextResponse.json({ error: "날짜가 필요합니다." }, { status: 400 });
+      }
+      const snap = await adminDb.collection("daily_reports")
+        .where("storeId", "==", storeId || '')
+        .where("reportDate", "==", reportDate)
+        .orderBy("createdAt", "desc")
+        .limit(1)
+        .get();
+      if (snap.empty) {
+        return NextResponse.json({ found: false });
+      }
+      const doc = snap.docs[0];
+      return NextResponse.json({ found: true, id: doc.id, data: doc.data() });
+    }
+
+    // ── 보고서 저장 (신규 or 수정) ──
     if (body.action === 'save') {
-      const { extractedData, uid, storeId } = body;
+      const { extractedData, uid, storeId, userName } = body;
       if (!extractedData) {
         return NextResponse.json({ error: "저장할 데이터가 없습니다." }, { status: 400 });
       }
@@ -112,6 +132,46 @@ export async function POST(req: Request) {
       }
       const weather = await fetchWeather(reportDate, storeCoords);
 
+      // 같은 날짜+매장 문서가 있는지 확인
+      const existing = await adminDb.collection("daily_reports")
+        .where("storeId", "==", storeId || '')
+        .where("reportDate", "==", reportDate)
+        .orderBy("createdAt", "desc")
+        .limit(1)
+        .get();
+
+      const editorInfo = { uid: uid || '', name: userName || '' };
+
+      if (!existing.empty) {
+        // 수정 — 기존 문서 업데이트 + editHistory 추가
+        const docRef = existing.docs[0].ref;
+        const prev = existing.docs[0].data();
+        const historyEntry = {
+          editedAt: FieldValue.serverTimestamp(),
+          editedBy: editorInfo,
+          snapshot: {
+            totalSales:     prev.totalSales     ?? 0,
+            customerCount:  prev.customerCount  ?? 0,
+            netSales:       prev.netSales       ?? 0,
+            returnAmount:   prev.returnAmount   ?? 0,
+            discountAmount: prev.discountAmount ?? 0,
+            reportDate:     prev.reportDate     ?? '',
+          },
+        };
+        await docRef.update({
+          ...extractedData,
+          uid: uid || '',
+          storeId: storeId || '',
+          reportDate,
+          weather: weather || prev.weather || null,
+          lastModifiedAt: FieldValue.serverTimestamp(),
+          lastModifiedBy: editorInfo,
+          editHistory: FieldValue.arrayUnion(historyEntry),
+        });
+        return NextResponse.json({ success: true, id: docRef.id, updated: true });
+      }
+
+      // 신규 생성
       const docRef = await adminDb.collection("daily_reports").add({
         ...extractedData,
         uid: uid || '',
@@ -119,9 +179,12 @@ export async function POST(req: Request) {
         reportDate,
         weather: weather || null,
         createdAt: FieldValue.serverTimestamp(),
+        lastModifiedAt: FieldValue.serverTimestamp(),
+        lastModifiedBy: editorInfo,
+        editHistory: [],
       });
 
-      return NextResponse.json({ success: true, id: docRef.id });
+      return NextResponse.json({ success: true, id: docRef.id, updated: false });
     }
 
     const { text, fileContent, fileName, fileType, promotion, promotions } = body;

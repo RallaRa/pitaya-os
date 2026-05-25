@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { db } from '@/lib/firebase/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { Bot, User, Loader2, DollarSign, Users, Hash, Save, CheckCircle2 } from "lucide-react";
+import { Bot, User, Loader2, DollarSign, Users, Hash, Save, CheckCircle2, Pencil, ChevronDown, ChevronUp, Clock, RotateCcw } from "lucide-react";
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import { WEATHER_ICONS, getStoreCoords, fetchWeather } from '@/lib/weather';
@@ -60,6 +60,15 @@ export default function ReportInputPage() {
   const [promotions, setPromotions] = useState<string[]>([]);
   const [promotionInput, setPromotionInput] = useState('');
   const [weatherPreview, setWeatherPreview] = useState<{ condition: string; tempMax: number; tempMin: number } | null>(null);
+
+  // 수정 모드
+  const [editMode, setEditMode]         = useState(false);
+  const [editDate, setEditDate]         = useState('');
+  const [editLoading, setEditLoading]   = useState(false);
+  const [editHistory, setEditHistory]   = useState<any[]>([]);
+  const [historyOpen, setHistoryOpen]   = useState(false);
+  const [currentReportId, setCurrentReportId] = useState<string | null>(null);
+  const [saveResult, setSaveResult]     = useState<{ updated: boolean } | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -364,43 +373,86 @@ const handleSaveToDB = async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'save',
-        extractedData: extractedData,
+        extractedData,
         uid: user?.uid || '',
         storeId: currentStore?.storeId || '',
+        userName: user?.displayName || '',
       })
     });
 
-    // [핵심] JSON 파싱 전 텍스트로 먼저 받아서 HTML 에러 붕괴 방어
     const responseText = await response.text();
-    
     if (!response.ok) {
       let errorMessage = `서버 통신 실패 (상태: ${response.status})`;
       try {
-        // JSON 형태의 에러 메시지라면 정상 파싱
         const errorData = JSON.parse(responseText);
         errorMessage = errorData.error || errorMessage;
-      } catch (e) {
-        // HTML 덩어리(500 에러 페이지)가 날아오면 뻗지 않고 에러 처리
-        console.error("서버 에러 HTML 원문:", responseText);
-        errorMessage = "데이터베이스 연결 또는 서버 내부 에러가 발생했습니다. (터미널 확인)";
+      } catch {
+        errorMessage = "데이터베이스 연결 또는 서버 내부 에러가 발생했습니다.";
       }
       throw new Error(errorMessage);
     }
 
-    // 정상 응답일 때만 JSON 변환
     const data = JSON.parse(responseText);
+    setSaveResult({ updated: data.updated });
 
-    setMessages(prev => [...prev, { 
-      id: Date.now(), 
-      role: "ai", 
-      text: "✅ 성공적으로 DB에 저장했습니다. '전체 보고서 조회' 메뉴에서 확인하실 수 있습니다." 
-    }]);
-    setExtractedData(null); 
+    const msg = data.updated
+      ? "✅ 기존 마감 데이터가 수정되었습니다. 수정 이력이 기록됩니다."
+      : "✅ 성공적으로 DB에 저장했습니다. '전체 보고서 조회' 메뉴에서 확인하실 수 있습니다.";
+
+    setMessages(prev => [...prev, { id: Date.now(), role: "ai", text: msg }]);
+    setExtractedData(null);
+    setEditHistory([]);
+    setCurrentReportId(null);
   } catch (error: any) {
-    console.error("DB 저장 오류: ", error);
     setMessages(prev => [...prev, { id: Date.now(), role: "ai", text: `❌ DB 저장 실패: ${error.message}` }]);
   } finally {
     setIsSaving(false);
+  }
+};
+
+// 과거 데이터 불러오기
+const handleLoadReport = async () => {
+  if (!editDate) return;
+  setEditLoading(true);
+  try {
+    const res = await fetch('/api/sales_ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'load',
+        storeId: currentStore?.storeId || '',
+        reportDate: editDate,
+      }),
+    });
+    const data = await res.json();
+    if (!data.found) {
+      setMessages(prev => [...prev, { id: Date.now(), role: 'ai',
+        text: `📭 ${editDate} 날짜의 마감 데이터가 없습니다. 새로 입력해주세요.` }]);
+      setExtractedData(null);
+      return;
+    }
+    const d = data.data;
+    setExtractedData({
+      totalSales:     d.totalSales     ?? 0,
+      customerCount:  d.customerCount  ?? 0,
+      receiptNumber:  d.receiptNumber  ?? '',
+      serialNumber:   d.serialNumber   ?? '',
+      reportDate:     d.reportDate     ?? editDate,
+      issues:         d.issues         ?? [],
+      promotions:     d.promotions     ?? [],
+      returnAmount:   d.returnAmount   ?? 0,
+      discountAmount: d.discountAmount ?? 0,
+      netSales:       d.netSales       ?? 0,
+      items:          d.items          ?? [],
+    });
+    setEditHistory(d.editHistory ?? []);
+    setCurrentReportId(data.id);
+    setMessages(prev => [...prev, { id: Date.now(), role: 'ai',
+      text: `📂 ${editDate} 마감 데이터를 불러왔습니다. 수정 후 저장하세요.` }]);
+  } catch {
+    setMessages(prev => [...prev, { id: Date.now(), role: 'ai', text: '❌ 데이터 불러오기 실패' }]);
+  } finally {
+    setEditLoading(false);
   }
 };
 
@@ -454,11 +506,18 @@ const handleSaveToDB = async () => {
   // --- 정형 데이터 시각화 패널 컴포넌트 ---
   const ExtractedDataDisplay = () => {
     if (!extractedData) return null;
+
+    const fmtTs = (ts: any) => {
+      if (!ts) return '';
+      const d = ts.toDate ? ts.toDate() : new Date(ts._seconds ? ts._seconds * 1000 : ts);
+      return d.toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    };
+
     return (
       <div className="bg-slate-800 border border-teal-500/50 rounded-xl p-5 shadow-lg my-4 max-w-[85%]">
         <h3 className="text-lg font-bold text-teal-400 flex items-center mb-4">
           <CheckCircle2 className="w-5 h-5 mr-2" />
-          AI 마감 데이터 추출 완료 (DB 저장 대기중)
+          {currentReportId ? '기존 마감 데이터 (수정 중)' : 'AI 마감 데이터 추출 완료 (DB 저장 대기중)'}
         </h3>
 
         {/* 기준일 */}
@@ -543,13 +602,99 @@ const handleSaveToDB = async () => {
           </div>
         )}
 
+        {/* 직접 수정 필드 */}
+        <div className="mb-4 bg-slate-900/50 rounded-xl p-4 border border-slate-700">
+          <p className="text-slate-400 text-xs mb-3 font-semibold">✏️ 값 직접 수정</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-slate-500 text-xs block mb-1">총매출 (원)</label>
+              <input
+                type="number"
+                value={extractedData.totalSales ?? 0}
+                onChange={e => setExtractedData(d => d ? { ...d, totalSales: Number(e.target.value) } : d)}
+                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500"
+              />
+            </div>
+            <div>
+              <label className="text-slate-500 text-xs block mb-1">총 객수 (명)</label>
+              <input
+                type="number"
+                value={extractedData.customerCount ?? 0}
+                onChange={e => setExtractedData(d => d ? { ...d, customerCount: Number(e.target.value) } : d)}
+                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500"
+              />
+            </div>
+            <div>
+              <label className="text-slate-500 text-xs block mb-1">반품 금액 (원)</label>
+              <input
+                type="number"
+                value={extractedData.returnAmount ?? 0}
+                onChange={e => setExtractedData(d => d ? { ...d, returnAmount: Number(e.target.value) } : d)}
+                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500"
+              />
+            </div>
+            <div>
+              <label className="text-slate-500 text-xs block mb-1">할인 금액 (원)</label>
+              <input
+                type="number"
+                value={extractedData.discountAmount ?? 0}
+                onChange={e => setExtractedData(d => d ? { ...d, discountAmount: Number(e.target.value) } : d)}
+                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="text-slate-500 text-xs block mb-1">순매출 (원)</label>
+              <input
+                type="number"
+                value={extractedData.netSales ?? (extractedData.totalSales - (extractedData.returnAmount ?? 0) - (extractedData.discountAmount ?? 0))}
+                onChange={e => setExtractedData(d => d ? { ...d, netSales: Number(e.target.value) } : d)}
+                className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* 수정 이력 */}
+        {editHistory.length > 0 && (
+          <div className="mb-4">
+            <button
+              onClick={() => setHistoryOpen(v => !v)}
+              className="flex items-center gap-2 text-slate-400 hover:text-slate-200 text-xs font-semibold mb-2 w-full"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              수정 이력 ({editHistory.length}건)
+              {historyOpen ? <ChevronUp className="w-3.5 h-3.5 ml-auto" /> : <ChevronDown className="w-3.5 h-3.5 ml-auto" />}
+            </button>
+            {historyOpen && (
+              <div className="space-y-2">
+                {[...editHistory].reverse().map((h: any, i: number) => (
+                  <div key={i} className="bg-slate-900/60 border border-slate-700/50 rounded-lg px-3 py-2.5 text-xs">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-slate-400 flex items-center gap-1">
+                        <RotateCcw className="w-3 h-3" />
+                        {h.editedBy?.name || h.editedBy?.uid || '알 수 없음'}
+                      </span>
+                      <span className="text-slate-500">{fmtTs(h.editedAt)}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-x-4 gap-y-0.5 text-slate-500">
+                      <span>총매출: <span className="text-slate-300">{Number(h.snapshot?.totalSales ?? 0).toLocaleString()}원</span></span>
+                      <span>객수: <span className="text-slate-300">{h.snapshot?.customerCount ?? 0}명</span></span>
+                      <span>순매출: <span className="text-slate-300">{Number(h.snapshot?.netSales ?? 0).toLocaleString()}원</span></span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <button
           onClick={handleSaveToDB}
           disabled={isSaving}
           className="w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center transition-colors disabled:bg-slate-600"
         >
           {isSaving ? <Loader2 className="w-5 h-5 animate-spin mr-2"/> : <Save className="w-5 h-5 mr-2"/>}
-          {isSaving ? '안전하게 DB에 기록 중...' : '이 내용으로 마감 장부(DB)에 확정 저장하기'}
+          {isSaving ? '안전하게 DB에 기록 중...' : currentReportId ? '수정 내용 저장하기' : '이 내용으로 마감 장부(DB)에 확정 저장하기'}
         </button>
       </div>
     );
@@ -557,9 +702,51 @@ const handleSaveToDB = async () => {
 
   return (
     <div className="flex flex-col h-[calc(100vh-2rem)] bg-slate-950 text-slate-100 p-4">
-      <div className="text-center mb-6">
-        <h1 className="text-2xl font-bold text-teal-400">일일 마감보고서 입력</h1>
-        <p className="text-slate-400 text-sm">AI 비서와 대화하며 마감을 진행하고 장부에 기록하세요.</p>
+      <div className="mb-4">
+        <div className="flex items-center justify-between mb-1">
+          <div>
+            <h1 className="text-2xl font-bold text-teal-400">일일 마감보고서 입력</h1>
+            <p className="text-slate-400 text-sm">AI 비서와 대화하며 마감을 진행하고 장부에 기록하세요.</p>
+          </div>
+          <button
+            onClick={() => {
+              setEditMode(v => !v);
+              setExtractedData(null);
+              setEditHistory([]);
+              setCurrentReportId(null);
+            }}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors border ${
+              editMode
+                ? 'bg-amber-700/30 border-amber-600/50 text-amber-300'
+                : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-500'
+            }`}
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            {editMode ? '수정 모드 ON' : '과거 데이터 수정'}
+          </button>
+        </div>
+
+        {/* 수정 모드: 날짜 선택 */}
+        {editMode && (
+          <div className="flex items-center gap-2 mt-2 p-3 bg-amber-950/30 border border-amber-600/30 rounded-xl">
+            <span className="text-amber-300 text-xs font-semibold whitespace-nowrap">수정할 날짜</span>
+            <input
+              type="date"
+              value={editDate}
+              onChange={e => setEditDate(e.target.value)}
+              max={new Date().toISOString().split('T')[0]}
+              className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-amber-500"
+            />
+            <button
+              onClick={handleLoadReport}
+              disabled={!editDate || editLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-700 hover:bg-amber-600 text-white text-sm rounded-lg disabled:opacity-40 transition-colors whitespace-nowrap"
+            >
+              {editLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+              불러오기
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 대화 이력 영역 */}
