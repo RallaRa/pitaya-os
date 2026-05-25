@@ -8,6 +8,7 @@ type MenuAccess = {
   messenger: boolean; members: boolean; store: boolean;
   permissionGroup: boolean; memberGroup: boolean; hygiene: boolean;
   hrCalendar: boolean; scaleCode: boolean;
+  salesForecast: boolean; suppliers: boolean; predictionVariables: boolean;
 };
 
 const ALL_FALSE: MenuAccess = {
@@ -15,6 +16,7 @@ const ALL_FALSE: MenuAccess = {
   messenger: false, members: false, store: false,
   permissionGroup: false, memberGroup: false, hygiene: false,
   hrCalendar: false, scaleCode: false,
+  salesForecast: false, suppliers: false, predictionVariables: false,
 };
 
 const STAFF_ACCESS: MenuAccess = {
@@ -22,6 +24,7 @@ const STAFF_ACCESS: MenuAccess = {
   messenger: true, members: false, store: false,
   permissionGroup: false, memberGroup: false, hygiene: true,
   hrCalendar: true, scaleCode: false,
+  salesForecast: false, suppliers: false, predictionVariables: false,
 };
 
 const SYSTEM_GROUPS = [
@@ -29,35 +32,35 @@ const SYSTEM_GROUPS = [
     groupId: 'master',
     storeId: 'global',
     groupName: 'Master',
-    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: true, memberGroup: true, hygiene: true, hrCalendar: true, scaleCode: true },
+    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: true, memberGroup: true, hygiene: true, hrCalendar: true, scaleCode: true, salesForecast: true, suppliers: true, predictionVariables: true },
     isSystem: true,
   },
   {
     groupId: 'admin',
     storeId: 'global',
     groupName: '관리자',
-    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: true },
+    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: true, salesForecast: true, suppliers: true, predictionVariables: false },
     isSystem: true,
   },
   {
     groupId: 'user',
     storeId: 'global',
     groupName: '사용자',
-    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: false },
+    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: false, salesForecast: true, suppliers: false, predictionVariables: false },
     isSystem: true,
   },
   {
     groupId: 'staff',
     storeId: 'global',
     groupName: '직원',
-    menuAccess: { ai: true, sales: true, purchase: false, report: false, messenger: true, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: false },
+    menuAccess: { ai: true, sales: true, purchase: false, report: false, messenger: true, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: false, salesForecast: false, suppliers: false, predictionVariables: false },
     isSystem: true,
   },
   {
     groupId: 'guest',
     storeId: 'global',
     groupName: '게스트',
-    menuAccess: { ai: true, sales: false, purchase: false, report: false, messenger: false, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: false, hrCalendar: false, scaleCode: false },
+    menuAccess: { ai: true, sales: false, purchase: false, report: false, messenger: false, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: false, hrCalendar: false, scaleCode: false, salesForecast: false, suppliers: false, predictionVariables: false },
     isSystem: true,
   },
 ];

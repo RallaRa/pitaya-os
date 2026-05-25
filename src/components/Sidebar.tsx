@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   Settings, MessageCircle, ShoppingCart, Sparkles,
   BarChart2, TrendingUp, ClipboardCheck, X, LogOut,
-  Circle, CalendarDays, Tag, Scale,
+  Circle, CalendarDays, Tag, Scale, LineChart, Building2,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -20,6 +20,7 @@ type MenuAccess = {
   messenger: boolean; members: boolean; store: boolean;
   permissionGroup: boolean; memberGroup: boolean; hygiene: boolean;
   hrCalendar: boolean; scaleCode: boolean;
+  salesForecast: boolean; suppliers: boolean; predictionVariables: boolean;
 };
 
 const ALL_FALSE: MenuAccess = {
@@ -27,6 +28,7 @@ const ALL_FALSE: MenuAccess = {
   messenger: false, members: false, store: false,
   permissionGroup: false, memberGroup: false, hygiene: false,
   hrCalendar: false, scaleCode: false,
+  salesForecast: false, suppliers: false, predictionVariables: false,
 };
 
 interface AiModel {
@@ -111,8 +113,10 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { key: 'hygiene' as const,   href: '/dashboard/hygiene',               icon: <ClipboardCheck className="w-4 h-4" />, label: '위생 점검일지' },
     { key: 'purchase' as const,  href: '/dashboard/report/purchases/input', icon: <ShoppingCart className="w-4 h-4" />,  label: 'AI 매입관리' },
     { key: 'report' as const,      href: '/dashboard/report/view',           icon: <BarChart2 className="w-4 h-4" />,      label: '전체 보고서' },
-    { key: 'hrCalendar' as const,  href: '/dashboard/hr/calendar',           icon: <CalendarDays className="w-4 h-4" />,   label: '캘린더' },
-    { key: 'scaleCode' as const,   href: '/dashboard/scale',                 icon: <Scale className="w-4 h-4" />,          label: '저울 코드 관리' },
+    { key: 'hrCalendar' as const,         href: '/dashboard/hr/calendar',                    icon: <CalendarDays className="w-4 h-4" />,  label: '캘린더' },
+    { key: 'scaleCode' as const,          href: '/dashboard/scale',                          icon: <Scale className="w-4 h-4" />,         label: '저울 코드 관리' },
+    { key: 'salesForecast' as const,      href: '/dashboard/sales-forecast',                 icon: <LineChart className="w-4 h-4" />,     label: '품목별 매출 추이' },
+    { key: 'suppliers' as const,          href: '/dashboard/suppliers',                      icon: <Building2 className="w-4 h-4" />,     label: '거래처 관리' },
   ];
 
   const visibleMenus = accessLoading ? [] : mainMenus.filter(m => menuAccess[m.key]);
