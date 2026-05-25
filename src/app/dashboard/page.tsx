@@ -16,7 +16,8 @@ import WeatherWidget        from '@/components/widgets/WeatherWidget';
 import WeeklyAnalysisWidget from '@/components/widgets/WeeklyAnalysisWidget';
 import YesterdayWidget      from '@/components/widgets/YesterdayWidget';
 import QuickMenuWidget      from '@/components/widgets/QuickMenuWidget';
-import AiInsightWidget      from '@/components/widgets/AiInsightWidget';
+import AiInsightWidget        from '@/components/widgets/AiInsightWidget';
+import SalesPredictionWidget  from '@/components/widgets/SalesPredictionWidget';
 
 /* ── 타입 ── */
 type GridLayout = readonly LayoutItem[];
@@ -67,9 +68,15 @@ const WIDGET_META: WidgetMeta[] = [
     defaultItem: { i: 'ai_insight', x: 0, y: 7, w: 8, h: 5, minW: 5, minH: 4, maxW: 12, maxH: 8 },
     permKey: 'ai_insight',
   },
+  {
+    id: 'sales_prediction',
+    title: 'AI 매출 예측',
+    defaultItem: { i: 'sales_prediction', x: 0, y: 4, w: 12, h: 4, minW: 8, minH: 3, maxW: 12, maxH: 6 },
+    permKey: 'sales_prediction',
+  },
 ];
 
-const DEFAULT_ACTIVE = ['weather', 'quick_menu', 'news', 'weekly_analysis', 'yesterday_analysis', 'ai_insight'];
+const DEFAULT_ACTIVE = ['weather', 'quick_menu', 'weekly_analysis', 'yesterday_analysis', 'news', 'sales_prediction', 'ai_insight'];
 
 function makeDefaultLayout(ids: string[]): GridLayout {
   return WIDGET_META.filter(m => ids.includes(m.id)).map(m => ({ ...m.defaultItem }));
@@ -262,7 +269,8 @@ export default function DashboardPage() {
       case 'weekly_analysis':    return <WeeklyAnalysisWidget editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
       case 'yesterday_analysis': return <YesterdayWidget      editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
       case 'quick_menu':         return <QuickMenuWidget      editMode={editMode} onRemove={() => removeWidget(id)} />;
-      case 'ai_insight':         return <AiInsightWidget      editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
+      case 'ai_insight':         return <AiInsightWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
+      case 'sales_prediction':   return <SalesPredictionWidget  editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
       default:                   return null;
     }
   };

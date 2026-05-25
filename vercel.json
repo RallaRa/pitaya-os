@@ -1,12 +1,10 @@
 {
   "crons": [
-    {
-      "path": "/api/cron/update-keywords",
-      "schedule": "0 5 * * 1"
-    },
-    {
-      "path": "/api/cron/calendar-notifications",
-      "schedule": "0 0 * * *"
-    }
+    { "path": "/api/cron/update-keywords",        "schedule": "0 5 * * 1" },
+    { "path": "/api/cron/calendar-notifications", "schedule": "0 0 * * *" },
+    { "path": "/api/cron/daily-prediction",       "schedule": "0 6 * * *" },
+    { "path": "/api/cron/order-notification",     "schedule": "0 8 * * *" },
+    { "path": "/api/cron/sync-order-calendar",    "schedule": "0 6 * * 1" },
+    { "path": "/api/cron/recalibrate-variables",  "schedule": "0 7 * * 1" }
   ]
 }
