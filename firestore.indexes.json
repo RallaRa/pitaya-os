@@ -1,6 +1,14 @@
 {
   "indexes": [
     {
+      "collectionGroup": "daily_reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "reportDate", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "chat_rooms",
       "queryScope": "COLLECTION",
       "fields": [

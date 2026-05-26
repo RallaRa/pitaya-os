@@ -3,16 +3,17 @@ Pitaya OS - POS 브릿지 클라이언트
 로컬 POS DB → /api/pos/sync 전송
 
 사용법:
-  python client.py              # 오늘 데이터 전송
-  python client.py 2026-05-26   # 특정 날짜 전송
-  python client.py --dry-run    # 실제 전송 없이 조회만
+  python client.py                          # 오늘 데이터 전송
+  python client.py 2026-05-26               # 특정 날짜 전송
+  python client.py --range 2026-01-01 2026-05-25  # 날짜 범위 일괄 전송
+  python client.py --dry-run                # 실제 전송 없이 조회만
 """
 import sys
 import json
 import time
 import logging
 import argparse
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import requests
 import config as cfg
@@ -159,42 +160,15 @@ def send_to_api(payload: dict, dry_run: bool) -> bool:
     return False
 
 
-# ── 메인 ─────────────────────────────────────────────────────────
-def main():
-    parser = argparse.ArgumentParser(description='Pitaya OS POS 브릿지')
-    parser.add_argument('date', nargs='?', default=None,
-                        help='동기화 날짜 YYYY-MM-DD (기본: 오늘)')
-    parser.add_argument('--dry-run', action='store_true',
-                        help='DB 조회만 수행, 실제 전송 안 함')
-    args = parser.parse_args()
-
-    target_date = args.date or date.today().strftime('%Y-%m-%d')
-
-    # 날짜 형식 검증
-    try:
-        datetime.strptime(target_date, '%Y-%m-%d')
-    except ValueError:
-        log.error(f"날짜 형식 오류: {target_date} (YYYY-MM-DD 형식 필요)")
-        sys.exit(1)
-
-    # 설정 검증
-    if not args.dry_run:
-        if not cfg.API_KEY:
-            log.error("POS_BRIDGE_KEY가 설정되지 않았습니다 (.env 파일 확인)")
-            sys.exit(1)
-        if not cfg.STORE_ID:
-            log.error("STORE_ID가 설정되지 않았습니다 (.env 파일 확인)")
-            sys.exit(1)
-
+# ── 단일 날짜 동기화 ──────────────────────────────────────────────
+def sync_date(target_date: str, dry_run: bool) -> bool:
     log.info(f"======== POS 브릿지 시작: {target_date} ========")
 
-    # DB 연결 및 데이터 조회
     try:
         conn = get_connection()
-        log.info(f"DB 연결 성공 ({cfg.DB_TYPE})")
     except Exception as e:
         log.error(f"DB 연결 실패: {e}")
-        sys.exit(1)
+        return False
 
     try:
         headers = fetch_headers(conn, target_date)
@@ -204,14 +178,13 @@ def main():
                  f"일마감 {'있음' if finish else '없음'}")
     except Exception as e:
         log.error(f"DB 조회 실패: {e}")
-        conn.close()
-        sys.exit(1)
+        return False
     finally:
         conn.close()
 
     if not headers and not details and not finish:
         log.warning(f"{target_date} 데이터 없음 — 전송 건너뜀")
-        sys.exit(0)
+        return True  # 데이터 없는 날은 정상으로 취급
 
     payload = {
         'storeId':  cfg.STORE_ID,
@@ -222,7 +195,67 @@ def main():
         'syncedAt': datetime.utcnow().isoformat() + 'Z',
     }
 
-    success = send_to_api(payload, dry_run=args.dry_run)
+    return send_to_api(payload, dry_run=dry_run)
+
+
+# ── 메인 ─────────────────────────────────────────────────────────
+def main():
+    parser = argparse.ArgumentParser(description='Pitaya OS POS 브릿지')
+    parser.add_argument('date', nargs='?', default=None,
+                        help='동기화 날짜 YYYY-MM-DD (기본: 오늘)')
+    parser.add_argument('--range', nargs=2, metavar=('START', 'END'),
+                        help='날짜 범위 일괄 동기화 (예: --range 2026-01-01 2026-05-25)')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='DB 조회만 수행, 실제 전송 안 함')
+    args = parser.parse_args()
+
+    # 설정 검증
+    if not args.dry_run:
+        if not cfg.API_KEY:
+            log.error("POS_BRIDGE_KEY가 설정되지 않았습니다 (.env 파일 확인)")
+            sys.exit(1)
+        if not cfg.STORE_ID:
+            log.error("STORE_ID가 설정되지 않았습니다 (.env 파일 확인)")
+            sys.exit(1)
+
+    # 범위 동기화
+    if args.range:
+        try:
+            start_dt = datetime.strptime(args.range[0], '%Y-%m-%d').date()
+            end_dt   = datetime.strptime(args.range[1], '%Y-%m-%d').date()
+        except ValueError:
+            log.error("날짜 형식 오류 (YYYY-MM-DD)")
+            sys.exit(1)
+
+        total = (end_dt - start_dt).days + 1
+        log.info(f"범위 동기화 시작: {start_dt} ~ {end_dt} ({total}일)")
+
+        ok = fail = skip = 0
+        current = start_dt
+        while current <= end_dt:
+            ds = current.strftime('%Y-%m-%d')
+            success = sync_date(ds, args.dry_run)
+            if success:
+                ok += 1
+            else:
+                fail += 1
+                log.warning(f"[실패] {ds} — 계속 진행")
+            current += timedelta(days=1)
+            if not args.dry_run and current <= end_dt:
+                time.sleep(0.5)  # API 과부하 방지
+
+        log.info(f"범위 동기화 완료 — 성공 {ok}건 / 실패 {fail}건 / 총 {total}건")
+        sys.exit(0 if fail == 0 else 1)
+
+    # 단일 날짜 동기화
+    target_date = args.date or date.today().strftime('%Y-%m-%d')
+    try:
+        datetime.strptime(target_date, '%Y-%m-%d')
+    except ValueError:
+        log.error(f"날짜 형식 오류: {target_date} (YYYY-MM-DD 형식 필요)")
+        sys.exit(1)
+
+    success = sync_date(target_date, args.dry_run)
     log.info("======== 완료 ========")
     sys.exit(0 if success else 1)
 

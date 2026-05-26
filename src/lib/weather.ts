@@ -64,20 +64,28 @@ export function getStoreCoords(regionSido?: string): { lat: number; lng: number 
 export async function fetchWeather(
   dateStr: string,
   coords: { lat: number; lng: number } = DEFAULT_COORDS
-): Promise<{ condition: string; tempMax: number; tempMin: number } | null> {
+): Promise<{ condition: string; tempMax: number; tempMin: number; rainMm?: number } | null> {
   try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lng}&daily=temperature_2m_max,temperature_2m_min,weathercode&timezone=Asia%2FSeoul&start_date=${dateStr}&end_date=${dateStr}`;
+    const today = new Date().toISOString().slice(0, 10);
+    const baseUrl = dateStr < today
+      ? 'https://archive-api.open-meteo.com/v1/archive'
+      : 'https://api.open-meteo.com/v1/forecast';
+    const url = `${baseUrl}?latitude=${coords.lat}&longitude=${coords.lng}` +
+      `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode` +
+      `&timezone=Asia%2FSeoul&start_date=${dateStr}&end_date=${dateStr}`;
     const res = await fetch(url);
     if (!res.ok) return null;
     const json = await res.json();
     const code = json.daily?.weathercode?.[0];
     const tempMax = json.daily?.temperature_2m_max?.[0];
     const tempMin = json.daily?.temperature_2m_min?.[0];
+    const rainMm  = json.daily?.precipitation_sum?.[0];
     if (code === undefined) return null;
     return {
       condition: getWeatherCondition(code),
       tempMax: Math.round(tempMax ?? 0),
       tempMin: Math.round(tempMin ?? 0),
+      rainMm:  Math.round((rainMm ?? 0) * 10) / 10,
     };
   } catch {
     return null;

@@ -1,0 +1,442 @@
+/**
+ * Pitaya OS - POS 브릿지 v2
+ * 포스 PC(Windows) MSSQL → /api/pos/sync 전송
+ *
+ * 실행 방법:
+ *   node bridge.js                              # 오늘 데이터 1회 전송
+ *   node bridge.js today                        # 오늘 데이터 1회 전송
+ *   node bridge.js realtime                     # 오늘 데이터 5분마다 반복
+ *   node bridge.js date 2026-05-20              # 특정 날짜 전송
+ *   node bridge.js migrate 2026-01-01 2026-05-25  # 기간 마이그레이션
+ *   node bridge.js --dry-run                    # 조회만, 전송 안 함
+ *
+ * 사전 설치:
+ *   npm install mssql axios dotenv
+ */
+
+'use strict';
+
+require('dotenv').config();
+const sql   = require('mssql');
+const axios = require('axios');
+
+// ── 설정 ──────────────────────────────────────────────────────────
+const API_URL  = process.env.PITAYA_API_URL || 'https://pitaya-osv1.vercel.app/api/pos/sync';
+const API_KEY  = process.env.POS_BRIDGE_KEY || '';
+const STORE_ID = process.env.STORE_ID       || '';
+
+const DB_CONFIG = {
+  server:   process.env.DB_SERVER   || 'localhost',
+  port:     parseInt(process.env.DB_PORT || '1433'),
+  database: process.env.DB_DATABASE || 'POS_DB',
+  user:     process.env.DB_USER     || 'sa',
+  password: process.env.DB_PASSWORD || '',
+  options: {
+    encrypt:                  false,
+    trustServerCertificate:   true,
+    cryptoCredentialsDetails: { minVersion: 'TLSv1' },
+    connectTimeout:           15000,
+  },
+};
+
+const REALTIME_INTERVAL_MS = 5 * 60 * 1000; // 5분
+
+// ── 유틸 ──────────────────────────────────────────────────────────
+const toInt = v => (v == null ? 0 : parseInt(v, 10) || 0);
+
+function now() {
+  return new Date().toISOString().slice(0, 19).replace('T', ' ');
+}
+function log(msg)  { console.log(`[${now()}] ${msg}`); }
+function warn(msg) { console.warn(`[${now()}] ⚠️  ${msg}`); }
+function err(msg)  { console.error(`[${now()}] ❌ ${msg}`); }
+
+// YYYYMM 추출 (SaT_202605 형식 테이블명용)
+function ym(dateStr) {
+  return dateStr.slice(0, 7).replace('-', '');
+}
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+// ── DB 연결 ───────────────────────────────────────────────────────
+let pool = null;
+
+async function getPool() {
+  if (pool) return pool;
+  pool = await sql.connect(DB_CONFIG);
+  return pool;
+}
+
+async function closePool() {
+  if (pool) { await pool.close(); pool = null; }
+}
+
+// ── 매출 헤더 조회 (SaT_YYYYMM) ──────────────────────────────────
+async function fetchHeaders(dateStr) {
+  const table = `SaT_${ym(dateStr)}`;
+  const p = await getPool();
+  const result = await p.request()
+    .input('date', sql.VarChar(10), dateStr)
+    .query(`
+      SELECT
+        Sale_Date,
+        SUM(TSell_Pri)  AS totalSale,
+        SUM(Card_Pri)   AS cardSale,
+        SUM(Cash_Pri)   AS cashSale,
+        SUM(ProFit_Pri) AS profitSale,
+        COUNT(*)        AS tranCount
+      FROM ${table}
+      WHERE Sale_Date = @date
+      GROUP BY Sale_Date
+    `);
+
+  if (!result.recordset.length) return [];
+  const r = result.recordset[0];
+  return [{
+    totalSale:  toInt(r.totalSale),
+    cardSale:   toInt(r.cardSale),
+    cashSale:   toInt(r.cashSale),
+    profitPri:  toInt(r.profitSale),
+    transCount: toInt(r.tranCount),
+  }];
+}
+
+// ── 매출 상세 조회 (SaD_YYYYMM) ──────────────────────────────────
+async function fetchDetails(dateStr) {
+  const table = `SaD_${ym(dateStr)}`;
+  const p = await getPool();
+  const result = await p.request()
+    .input('date', sql.VarChar(10), dateStr)
+    .query(`
+      SELECT
+        Sale_Num,
+        Sale_Date,
+        Barcode,
+        G_Name,
+        S_Code,
+        S_Name,
+        Sale_Count,
+        Sell_Pri,
+        TSell_Pri,
+        Pur_Pri,
+        Profit_Pri
+      FROM ${table}
+      WHERE Sale_Date = @date
+        AND Sale_YN = 1
+    `);
+
+  return result.recordset.map(r => ({
+    barcode:      String(r.Barcode     || ''),
+    goodsName:    String(r.G_Name      || ''),
+    categoryCode: String(r.S_Code      || ''),
+    categoryName: String(r.S_Name      || ''),
+    saleCount:    toInt(r.Sale_Count),
+    sellPrice:    toInt(r.Sell_Pri),
+    totalPrice:   toInt(r.TSell_Pri),
+    purPrice:     toInt(r.Pur_Pri),
+    profitPrice:  toInt(r.Profit_Pri),
+  }));
+}
+
+// ── 일마감 조회 (Finish_Total) — 다중 POS 전체 합산 ──────────────
+async function fetchFinish(dateStr) {
+  const p = await getPool();
+  const result = await p.request()
+    .input('date', sql.VarChar(10), dateStr)
+    .query(`
+      SELECT
+        SUM(S_ToSale)   AS totalSale,
+        SUM(S_Sale)     AS netSale,
+        SUM(S_CashSale) AS cashSale,
+        SUM(S_CardSale) AS cardSale,
+        SUM(S_ToReCnt)  AS returnCount,
+        SUM(S_ToReSale) AS returnSale,
+        SUM(S_CusPoint) AS cusPoint
+      FROM Finish_Total
+      WHERE S_SaleDate = @date
+    `);
+
+  if (!result.recordset.length) return null;
+  const r = result.recordset[0];
+  if (!toInt(r.totalSale)) return null; // 미마감(0값)은 null 반환
+
+  return {
+    totalSale:   toInt(r.totalSale),
+    netSale:     toInt(r.netSale) || toInt(r.totalSale),
+    cashSale:    toInt(r.cashSale),
+    cardSale:    toInt(r.cardSale),
+    returnCount: toInt(r.returnCount),
+    returnSale:  toInt(r.returnSale),
+    cusPoint:    toInt(r.cusPoint),
+  };
+}
+
+// ── 날씨 조회 (open-meteo 무료 API) ──────────────────────────────
+async function fetchWeather(dateStr) {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const base = dateStr < today
+      ? 'https://archive-api.open-meteo.com/v1/archive'
+      : 'https://api.open-meteo.com/v1/forecast';
+
+    const url = `${base}?latitude=37.5509&longitude=126.8495` +
+      `&start_date=${dateStr}&end_date=${dateStr}` +
+      `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode` +
+      `&timezone=Asia%2FSeoul`;
+
+    const res = await axios.get(url, { timeout: 10000 });
+    const d = res.data.daily;
+    if (!d) return null;
+
+    const code = d.weathercode?.[0] ?? 0;
+    const condition =
+      code === 0 ? '맑음' :
+      code <= 3  ? '구름' :
+      code <= 48 ? '안개' :
+      code <= 67 ? '비'   :
+      code <= 77 ? '눈'   :
+      code <= 82 ? '소나기' : '흐림';
+
+    return {
+      tempMax:     Math.round(d.temperature_2m_max?.[0] ?? 0),
+      tempMin:     Math.round(d.temperature_2m_min?.[0] ?? 0),
+      rainMm:      Math.round((d.precipitation_sum?.[0] ?? 0) * 10) / 10,
+      condition,
+      weatherCode: code,
+    };
+  } catch (e) {
+    warn(`날씨 조회 실패 [${dateStr}]: ${e.message}`);
+    return null;
+  }
+}
+
+// ── API 전송 ──────────────────────────────────────────────────────
+async function sendToApi(payload) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await axios.post(API_URL, payload, {
+        headers: {
+          Authorization:  `Bearer ${API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 30000,
+      });
+
+      if (res.data?.success) {
+        const s = res.data.saved || {};
+        log(`✅ 전송 성공 | 헤더:${s.headers}건 상세:${s.details}건 마감:${s.finish} 리포트:${s.dailyReport}`);
+        return true;
+      }
+      warn(`응답 오류: ${JSON.stringify(res.data)}`);
+    } catch (e) {
+      warn(`네트워크 오류 (${attempt}/3): ${e.message}`);
+      if (attempt < 3) await sleep(5000);
+    }
+  }
+  return false;
+}
+
+// ── 단일 날짜 동기화 ──────────────────────────────────────────────
+async function syncDate(dateStr, dryRun) {
+  log(`-------- ${dateStr} 동기화 시작 --------`);
+
+  let headers, details, finish, weather;
+  try {
+    [headers, details, finish, weather] = await Promise.all([
+      fetchHeaders(dateStr),
+      fetchDetails(dateStr),
+      fetchFinish(dateStr),
+      fetchWeather(dateStr),
+    ]);
+  } catch (e) {
+    err(`DB 조회 실패 [${dateStr}]: ${e.message}`);
+    return false;
+  }
+
+  const satTotal = headers[0]?.totalSale || 0;
+  const isClosed = !!(finish && finish.totalSale > 0);
+
+  log(
+    `DB 조회 완료 | SaT합계:${satTotal.toLocaleString()}원 ` +
+    `품목:${details.length}건 ` +
+    `일마감:${isClosed ? `${finish.totalSale.toLocaleString()}원 ✓` : '미마감'} ` +
+    `날씨:${weather ? `${weather.condition} ${weather.tempMin}°~${weather.tempMax}°` : '-'}`
+  );
+
+  // 헤더도 없고 상세도 없고 마감도 없으면 전송 건너뜀
+  if (!headers.length && !details.length && !finish) {
+    warn(`${dateStr} 데이터 없음 — 건너뜀`);
+    return true;
+  }
+
+  const payload = {
+    storeId:  STORE_ID,
+    date:     dateStr,
+    headers,
+    details,
+    finish,
+    isClosed,
+    weather,
+    syncedAt: new Date().toISOString(),
+  };
+
+  if (dryRun) {
+    log('[DRY-RUN] 전송 생략. 페이로드 요약:');
+    console.log(`  날짜: ${dateStr}`);
+    console.log(`  헤더: ${headers.length}건 | 총매출: ${satTotal.toLocaleString()}원`);
+    console.log(`  상세: ${details.length}건`);
+    console.log(`  일마감: ${isClosed ? '완료' : '미마감'}`);
+    console.log(`  날씨: ${weather ? `${weather.condition} ${weather.tempMin}°~${weather.tempMax}° 강수${weather.rainMm}mm` : '조회불가'}`);
+    if (details.length > 0) {
+      console.log('  상위 품목 3개:');
+      details.slice(0, 3).forEach(d =>
+        console.log(`    [${d.categoryName}] ${d.goodsName} × ${d.saleCount}개 = ${d.totalPrice.toLocaleString()}원`)
+      );
+    }
+    return true;
+  }
+
+  return await sendToApi(payload);
+}
+
+// ── 모드별 실행 ───────────────────────────────────────────────────
+
+// 오늘 1회
+async function runToday(dryRun) {
+  const dateStr = new Date().toISOString().slice(0, 10);
+  log(`======== 오늘 동기화: ${dateStr} ========`);
+  const ok = await syncDate(dateStr, dryRun);
+  log(`======== 완료 ${ok ? '✅' : '❌'} ========`);
+  return ok;
+}
+
+// 실시간 반복 (5분)
+async function runRealtime(dryRun) {
+  log(`======== 실시간 모드 시작 (${REALTIME_INTERVAL_MS / 60000}분 간격) ========`);
+  log('종료하려면 Ctrl+C');
+  while (true) {
+    await runToday(dryRun);
+    log(`다음 전송까지 ${REALTIME_INTERVAL_MS / 60000}분 대기...`);
+    await sleep(REALTIME_INTERVAL_MS);
+  }
+}
+
+// 특정 날짜
+async function runDate(dateStr, dryRun) {
+  log(`======== 날짜 지정 동기화: ${dateStr} ========`);
+  const ok = await syncDate(dateStr, dryRun);
+  log(`======== 완료 ${ok ? '✅' : '❌'} ========`);
+  return ok;
+}
+
+// 기간 마이그레이션
+async function runMigrate(startStr, endStr, dryRun) {
+  const start = new Date(startStr);
+  const end   = new Date(endStr);
+  const total = Math.round((end - start) / 86400000) + 1;
+
+  log(`======== 마이그레이션 시작: ${startStr} ~ ${endStr} (총 ${total}일) ========`);
+
+  let ok = 0, fail = 0, skip = 0;
+
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const dateStr = d.toISOString().slice(0, 10);
+    const done    = ok + fail + skip + 1;
+    const pct     = Math.round((done / total) * 100);
+    process.stdout.write(`\r[${pct}%] ${done}/${total} 처리 중... 현재: ${dateStr}   `);
+
+    const success = await syncDate(dateStr, dryRun);
+    if (success) { ok++; } else { fail++; }
+
+    if (!dryRun && d < end) await sleep(500);
+  }
+
+  process.stdout.write('\n');
+  log(`======== 마이그레이션 완료 ========`);
+  log(`성공: ${ok}건 | 실패: ${fail}건 | 총: ${total}건`);
+  if (fail > 0) warn(`실패한 날짜는 개별적으로 재시도: node bridge.js date YYYY-MM-DD`);
+  return fail === 0;
+}
+
+// ── 메인 ─────────────────────────────────────────────────────────
+async function main() {
+  const argv    = process.argv.slice(2);
+  const dryRun  = argv.includes('--dry-run');
+  const args    = argv.filter(a => a !== '--dry-run');
+  const mode    = args[0] || 'today';
+
+  // 설정 검증 (dry-run이 아닐 때만)
+  if (!dryRun) {
+    if (!API_KEY)  { err('POS_BRIDGE_KEY 미설정 (.env 파일 확인)'); process.exit(1); }
+    if (!STORE_ID) { err('STORE_ID 미설정 (.env 파일 확인)');       process.exit(1); }
+  }
+
+  log(`Pitaya OS 포스 브릿지 시작 | storeId=${STORE_ID} | 모드=${mode}${dryRun ? ' [DRY-RUN]' : ''}`);
+
+  // DB 연결 확인
+  try {
+    await getPool();
+    log(`DB 연결 성공 (${DB_CONFIG.server}:${DB_CONFIG.port}/${DB_CONFIG.database})`);
+  } catch (e) {
+    err(`DB 연결 실패: ${e.message}`);
+    process.exit(1);
+  }
+
+  let success = true;
+
+  try {
+    switch (mode) {
+      case 'today':
+        success = await runToday(dryRun);
+        break;
+
+      case 'realtime':
+        await runRealtime(dryRun); // 종료 안 됨 (Ctrl+C)
+        break;
+
+      case 'date': {
+        const dateStr = args[1];
+        if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+          err('날짜 형식 오류. 사용법: node bridge.js date YYYY-MM-DD');
+          process.exit(1);
+        }
+        success = await runDate(dateStr, dryRun);
+        break;
+      }
+
+      case 'migrate': {
+        const startStr = args[1];
+        const endStr   = args[2];
+        if (!startStr || !endStr ||
+            !/^\d{4}-\d{2}-\d{2}$/.test(startStr) ||
+            !/^\d{4}-\d{2}-\d{2}$/.test(endStr)) {
+          err('사용법: node bridge.js migrate YYYY-MM-DD YYYY-MM-DD');
+          process.exit(1);
+        }
+        success = await runMigrate(startStr, endStr, dryRun);
+        break;
+      }
+
+      default:
+        // 첫 번째 인자가 날짜 형식이면 date 모드로
+        if (/^\d{4}-\d{2}-\d{2}$/.test(mode)) {
+          success = await runDate(mode, dryRun);
+        } else {
+          err(`알 수 없는 모드: ${mode}`);
+          console.log('사용법: node bridge.js [today|realtime|date YYYY-MM-DD|migrate START END] [--dry-run]');
+          process.exit(1);
+        }
+    }
+  } finally {
+    await closePool();
+  }
+
+  process.exit(success ? 0 : 1);
+}
+
+main().catch(e => {
+  err(`치명적 오류: ${e.message}`);
+  process.exit(1);
+});

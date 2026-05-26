@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal } from 'lucide-react';
+import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun } from 'lucide-react';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -18,6 +18,14 @@ export default function SettingsPage() {
   const { currentStore, storesLoaded } = useStore();
   const [menuAccess, setMenuAccess] = useState<MenuAccess | null>(null);
   const [accessLoaded, setAccessLoaded] = useState(false);
+
+  const [migrating, setMigrating]   = useState(false);
+  const [migrateResult, setMigrateResult] = useState<{ migrated: number; skipped: number; message: string } | null>(null);
+  const [migrateError, setMigrateError]   = useState<string | null>(null);
+
+  const [backfilling, setBackfilling]     = useState(false);
+  const [backfillResult, setBackfillResult] = useState<{ updated: number; failed: number; message: string } | null>(null);
+  const [backfillError, setBackfillError]   = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.uid || !storesLoaded) return;
@@ -82,6 +90,53 @@ export default function SettingsPage() {
     ? allMenus.filter(m => menuAccess[m.key])
     : [];
 
+  const isMasterOrAdmin = ['master', 'superuser', 'admin'].includes(currentStore?.role || '');
+  const isMasterOrSuperuser = ['master', 'superuser'].includes(currentStore?.role || '');
+
+  const handleBackfill = async () => {
+    if (!currentStore?.storeId) return;
+    setBackfilling(true);
+    setBackfillResult(null);
+    setBackfillError(null);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/admin/backfill-weather-news', {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storeId: currentStore.storeId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '백필 실패');
+      setBackfillResult({ updated: data.updated, failed: data.failed, message: data.message });
+    } catch (e: any) {
+      setBackfillError(e.message || '오류 발생');
+    } finally {
+      setBackfilling(false);
+    }
+  };
+
+  const handleMigrate = async () => {
+    if (!currentStore?.storeId) return;
+    setMigrating(true);
+    setMigrateResult(null);
+    setMigrateError(null);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/admin/migrate-pos-to-reports', {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storeId: currentStore.storeId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '마이그레이션 실패');
+      setMigrateResult({ migrated: data.migrated, skipped: data.skipped, message: data.message });
+    } catch (e: any) {
+      setMigrateError(e.message || '오류 발생');
+    } finally {
+      setMigrating(false);
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto p-6">
       <div className="mb-8">
@@ -118,6 +173,98 @@ export default function SettingsPage() {
                 <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-teal-400 transition-colors" />
               </Link>
             ))
+          )}
+
+          {/* 데이터 관리 섹션 — master/admin만 표시 */}
+          {isMasterOrAdmin && (
+            <div className="mt-6 pt-6 border-t border-slate-800">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">데이터 관리</p>
+              <div className="space-y-3">
+                {/* POS 데이터 마이그레이션 */}
+                <div className="bg-slate-900 border border-slate-700 rounded-xl p-5">
+                  <div className="flex items-start gap-4">
+                    <div className="bg-slate-800 p-3 rounded-xl flex-shrink-0">
+                      <Database className="w-5 h-5 text-orange-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-bold">포스 데이터 매출 조회 반영</p>
+                      <p className="text-slate-400 text-sm mt-0.5">
+                        기존 POS 동기화 데이터를 매출 보고서 조회 화면에 반영합니다.
+                        수동 입력 데이터가 있는 날짜는 건너뜁니다.
+                      </p>
+
+                      {migrateResult && (
+                        <div className="mt-3 p-3 bg-teal-900/30 border border-teal-500/30 rounded-lg text-sm text-teal-300">
+                          ✅ {migrateResult.message}
+                          <span className="ml-2 text-slate-400 text-xs">
+                            (반영 {migrateResult.migrated}건 / 스킵 {migrateResult.skipped}건)
+                          </span>
+                        </div>
+                      )}
+                      {migrateError && (
+                        <div className="mt-3 p-3 bg-red-900/30 border border-red-500/30 rounded-lg text-sm text-red-300">
+                          ❌ {migrateError}
+                        </div>
+                      )}
+
+                      <button
+                        onClick={handleMigrate}
+                        disabled={migrating}
+                        className="mt-3 flex items-center gap-2 px-4 py-2 bg-orange-700/40 hover:bg-orange-700/60 border border-orange-500/30 text-orange-300 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        {migrating
+                          ? <><Loader2 className="w-4 h-4 animate-spin" /> 처리 중...</>
+                          : <><Database className="w-4 h-4" /> 지금 반영하기 (1회성)</>
+                        }
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 날씨/뉴스 백필 — master/superuser만 */}
+                {isMasterOrSuperuser && (
+                  <div className="bg-slate-900 border border-slate-700 rounded-xl p-5">
+                    <div className="flex items-start gap-4">
+                      <div className="bg-slate-800 p-3 rounded-xl flex-shrink-0">
+                        <CloudSun className="w-5 h-5 text-sky-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-bold">날씨/뉴스 데이터 채우기</p>
+                        <p className="text-slate-400 text-sm mt-0.5">
+                          POS 보고서 중 날씨·뉴스 정보가 없는 항목을 채웁니다.
+                          네이버 뉴스 API 키가 등록된 경우 뉴스도 함께 저장됩니다.
+                        </p>
+
+                        {backfillResult && (
+                          <div className="mt-3 p-3 bg-teal-900/30 border border-teal-500/30 rounded-lg text-sm text-teal-300">
+                            ✅ {backfillResult.message}
+                            <span className="ml-2 text-slate-400 text-xs">
+                              (업데이트 {backfillResult.updated}건 / 실패 {backfillResult.failed}건)
+                            </span>
+                          </div>
+                        )}
+                        {backfillError && (
+                          <div className="mt-3 p-3 bg-red-900/30 border border-red-500/30 rounded-lg text-sm text-red-300">
+                            ❌ {backfillError}
+                          </div>
+                        )}
+
+                        <button
+                          onClick={handleBackfill}
+                          disabled={backfilling}
+                          className="mt-3 flex items-center gap-2 px-4 py-2 bg-sky-700/40 hover:bg-sky-700/60 border border-sky-500/30 text-sky-300 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          {backfilling
+                            ? <><Loader2 className="w-4 h-4 animate-spin" /> 처리 중...</>
+                            : <><CloudSun className="w-4 h-4" /> 날씨/뉴스 채우기</>
+                          }
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           )}
         </div>
       )}
