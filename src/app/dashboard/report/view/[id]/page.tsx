@@ -5,15 +5,31 @@ import { db } from '@/lib/firebase/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import {
   ArrowLeft, ShoppingCart, TrendingUp,
-  Users, RotateCcw, Loader2
+  Users, RotateCcw, Loader2, Tag, Pencil,
+  ChevronDown, ChevronUp, Clock,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+
+const WEATHER_ICONS: Record<string, string> = {
+  '맑음': '☀️', '구름': '⛅', '안개': '🌫️', '비': '🌧️',
+  '눈': '❄️', '소나기': '🌦️', '뇌우': '⛈️',
+};
+
+function fmtTs(ts: any): string {
+  if (!ts) return '-';
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleString('ko-KR', {
+    month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
 
 export default function ReportDetailPage() {
   const { id } = useParams();
   const [report, setReport] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     const fetchReport = async () => {
@@ -34,6 +50,8 @@ export default function ReportDetailPage() {
     <div className="p-6 text-slate-400">보고서를 찾을 수 없습니다.</div>
   );
 
+  const editHistory: any[] = Array.isArray(report.editHistory) ? [...report.editHistory].reverse() : [];
+
   return (
     <div className="p-6 max-w-5xl mx-auto">
 
@@ -45,25 +63,42 @@ export default function ReportDetailPage() {
       </Link>
 
       {/* 헤더 */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">
-          {report.reportDate
-            ? new Date(report.reportDate).toLocaleDateString('ko-KR', {
-                year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
-              })
-            : report.serialNumber
-          }
-        </h1>
-        <p className="text-slate-500 text-sm font-mono mt-1">{report.serialNumber}</p>
+      <div className="flex items-start justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-white">
+            {report.reportDate
+              ? new Date(report.reportDate + 'T00:00:00').toLocaleDateString('ko-KR', {
+                  year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
+                })
+              : report.serialNumber
+            }
+          </h1>
+          <p className="text-slate-500 text-sm font-mono mt-1">{report.serialNumber}</p>
+          {report.lastModifiedAt && (
+            <p className="text-slate-500 text-xs mt-1 flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              마지막 수정: {fmtTs(report.lastModifiedAt)}
+              {report.lastModifiedBy?.name && ` · ${report.lastModifiedBy.name}`}
+            </p>
+          )}
+        </div>
+        <Link
+          href={`/dashboard/report/input?editDate=${report.reportDate}`}
+          className="flex items-center gap-2 bg-amber-700/40 hover:bg-amber-700/60 border border-amber-500/30 text-amber-400 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+        >
+          <Pencil className="w-4 h-4" />
+          이 보고서 수정
+        </Link>
       </div>
 
       {/* 요약 카드 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {[
-          { label: '총 매출', value: `${(report.totalSales || 0).toLocaleString()}원`, color: 'text-teal-400', icon: <TrendingUp className="w-5 h-5" /> },
-          { label: '순 매출', value: `${(report.netSales || 0).toLocaleString()}원`, color: 'text-emerald-400', icon: <TrendingUp className="w-5 h-5" /> },
-          { label: '객수', value: `${report.customerCount || 0}명`, color: 'text-blue-400', icon: <Users className="w-5 h-5" /> },
-          { label: '반품', value: `${(report.returnAmount || 0).toLocaleString()}원`, color: 'text-red-400', icon: <RotateCcw className="w-5 h-5" /> },
+          { label: '총 매출',  value: `${(report.totalSales   || 0).toLocaleString()}원`, color: 'text-teal-400',    icon: <TrendingUp className="w-5 h-5" /> },
+          { label: '순 매출',  value: `${(report.netSales     || 0).toLocaleString()}원`, color: 'text-emerald-400', icon: <TrendingUp className="w-5 h-5" /> },
+          { label: '객수',     value: `${report.customerCount || 0}명`,                   color: 'text-blue-400',   icon: <Users      className="w-5 h-5" /> },
+          { label: '반품',     value: `${(report.returnAmount || 0).toLocaleString()}원`, color: 'text-red-400',    icon: <RotateCcw  className="w-5 h-5" /> },
+          { label: '할인',     value: `${(report.discountAmount || 0).toLocaleString()}원`, color: 'text-yellow-400', icon: <Tag       className="w-5 h-5" /> },
         ].map(card => (
           <div key={card.label} className="bg-slate-900 border border-slate-700 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
@@ -77,13 +112,13 @@ export default function ReportDetailPage() {
 
       {/* 날씨/이슈/프로모션 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {/* 날씨 카드 */}
+        {/* 날씨 */}
         <div className="bg-slate-900 border border-slate-700 rounded-xl p-4">
           <p className="text-slate-400 text-xs mb-2">날씨</p>
           {typeof report.weather === 'object' && report.weather ? (
             <div className="flex items-center gap-2">
               <span className="text-2xl">
-                {{'맑음':'☀️','구름':'⛅','안개':'🌫️','비':'🌧️','눈':'❄️','소나기':'🌦️','뇌우':'⛈️'}[report.weather.condition as string] || '🌡️'}
+                {WEATHER_ICONS[report.weather.condition as string] || '🌡️'}
               </span>
               <div>
                 <p className="text-white font-medium">{report.weather.condition}</p>
@@ -95,7 +130,7 @@ export default function ReportDetailPage() {
           )}
         </div>
 
-        {/* 이슈 카드 */}
+        {/* 이슈 */}
         <div className="bg-slate-900 border border-slate-700 rounded-xl p-4">
           <p className="text-slate-400 text-xs mb-2">이슈</p>
           {Array.isArray(report.issues) && report.issues.length > 0 ? (
@@ -120,7 +155,7 @@ export default function ReportDetailPage() {
           )}
         </div>
 
-        {/* 프로모션 카드 */}
+        {/* 프로모션 */}
         <div className="bg-slate-900 border border-slate-700 rounded-xl p-4">
           <p className="text-slate-400 text-xs mb-2">프로모션/이벤트</p>
           {Array.isArray(report.promotions) && report.promotions.length > 0 ? (
@@ -138,7 +173,7 @@ export default function ReportDetailPage() {
       </div>
 
       {/* 품목별 매출 테이블 */}
-      <div className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
+      <div className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden mb-6">
         <div className="px-6 py-4 border-b border-slate-700">
           <h2 className="text-white font-bold flex items-center gap-2">
             <ShoppingCart className="w-4 h-4 text-teal-400" />
@@ -211,6 +246,79 @@ export default function ReportDetailPage() {
           </table>
         </div>
       </div>
+
+      {/* 수정 이력 */}
+      {editHistory.length > 0 && (
+        <div className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
+          <button
+            onClick={() => setHistoryOpen(v => !v)}
+            className="w-full px-6 py-4 flex items-center justify-between hover:bg-slate-800/50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-400" />
+              <span className="text-white font-bold">수정 이력</span>
+              <span className="bg-amber-900/40 border border-amber-500/30 text-amber-400 text-xs px-2 py-0.5 rounded-full">
+                {editHistory.length}회
+              </span>
+            </div>
+            {historyOpen
+              ? <ChevronUp className="w-4 h-4 text-slate-400" />
+              : <ChevronDown className="w-4 h-4 text-slate-400" />
+            }
+          </button>
+
+          {historyOpen && (
+            <div className="border-t border-slate-700 divide-y divide-slate-800">
+              {editHistory.map((entry: any, i: number) => (
+                <div key={i} className="px-6 py-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="bg-slate-700 text-slate-300 text-xs px-2 py-0.5 rounded-full font-mono">
+                        #{editHistory.length - i}차 수정
+                      </span>
+                      <span className="text-slate-300 text-sm font-medium">
+                        {entry.editedBy?.name || '알 수 없음'}
+                      </span>
+                    </div>
+                    <span className="text-slate-500 text-xs flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {fmtTs(entry.editedAt)}
+                    </span>
+                  </div>
+
+                  {/* 수정 전 스냅샷 */}
+                  {entry.snapshot && (
+                    <div className="bg-slate-800/60 rounded-lg p-3">
+                      <p className="text-slate-500 text-xs mb-2">수정 전 값</p>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                        {[
+                          { label: '총매출',  val: entry.snapshot.totalSales,    color: 'text-teal-400' },
+                          { label: '순매출',  val: entry.snapshot.netSales,      color: 'text-emerald-400' },
+                          { label: '객수',    val: entry.snapshot.customerCount, color: 'text-blue-400', suffix: '명' },
+                          { label: '반품',    val: entry.snapshot.returnAmount,  color: 'text-red-400' },
+                          { label: '할인',    val: entry.snapshot.discountAmount,color: 'text-yellow-400' },
+                        ].map(f => (
+                          <div key={f.label} className="flex flex-col gap-0.5">
+                            <span className="text-slate-500">{f.label}</span>
+                            <span className={`font-medium ${f.color}`}>
+                              {f.val != null
+                                ? f.suffix
+                                  ? `${f.val}${f.suffix}`
+                                  : `${Number(f.val).toLocaleString()}원`
+                                : '-'
+                              }
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

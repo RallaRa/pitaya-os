@@ -6,6 +6,7 @@ import { db } from '@/lib/firebase/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import {
   ShoppingCart, ChevronRight, Loader2, Calendar, Search,
+  TrendingUp, Users, RotateCcw, Tag, Pencil,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -13,12 +14,6 @@ interface WeatherData {
   condition: string;
   tempMax: number;
   tempMin: number;
-}
-
-interface IssueItem {
-  title: string;
-  url?: string;
-  source?: string;
 }
 
 interface DailyReport {
@@ -35,9 +30,10 @@ interface DailyReport {
   promotions?: string[];
   promotion?: string;
   weather?: WeatherData | string | null;
-  issues?: IssueItem[] | string | null;
+  issues?: any[] | string | null;
   items: any[];
   createdAt: any;
+  editHistory?: any[];
 }
 
 type Preset = 'week' | 'month' | 'lastMonth' | 'custom';
@@ -83,9 +79,7 @@ export default function ReportViewPage() {
 
   const [preset, setPreset] = useState<Preset>('month');
   const initRange = getThisMonth();
-  // 실제 쿼리에 사용된 범위
   const [queriedRange, setQueriedRange] = useState(initRange);
-  // 직접입력 input 값
   const [customStart, setCustomStart] = useState(initRange.start);
   const [customEnd, setCustomEnd] = useState(initRange.end);
 
@@ -115,17 +109,15 @@ export default function ReportViewPage() {
     }
   }, [currentStore?.storeId]);
 
-  // 쿼리 범위가 바뀔 때마다 fetch
   useEffect(() => {
     fetchReports(queriedRange.start, queriedRange.end);
   }, [queriedRange, fetchReports]);
 
   const handlePreset = (p: Preset) => {
     setPreset(p);
-    if (p === 'week')      { const r = getThisWeek();   setQueriedRange(r); }
-    if (p === 'month')     { const r = getThisMonth();  setQueriedRange(r); }
-    if (p === 'lastMonth') { const r = getLastMonth();  setQueriedRange(r); }
-    // custom: 조회 버튼 클릭 시에만 fetch
+    if (p === 'week')      { setQueriedRange(getThisWeek()); }
+    if (p === 'month')     { setQueriedRange(getThisMonth()); }
+    if (p === 'lastMonth') { setQueriedRange(getLastMonth()); }
   };
 
   const handleCustomSearch = () => {
@@ -133,12 +125,12 @@ export default function ReportViewPage() {
     setQueriedRange({ start: customStart, end: customEnd });
   };
 
-  // 합계
-  const totalSales    = reports.reduce((s, r) => s + (r.totalSales    || 0), 0);
-  const totalCustomer = reports.reduce((s, r) => s + (r.customerCount || 0), 0);
-  const totalItem     = reports.reduce((s, r) => s + (r.itemCount || r.items?.length || 0), 0);
-  const totalReturn   = reports.reduce((s, r) => s + (r.returnAmount  || 0), 0);
-  const avgSales      = reports.length > 0 ? Math.round(totalSales / reports.length) : 0;
+  const totalSales      = reports.reduce((s, r) => s + (r.totalSales    || 0), 0);
+  const totalNetSales   = reports.reduce((s, r) => s + (r.netSales      || 0), 0);
+  const totalCustomer   = reports.reduce((s, r) => s + (r.customerCount || 0), 0);
+  const totalReturn     = reports.reduce((s, r) => s + (r.returnAmount  || 0), 0);
+  const totalDiscount   = reports.reduce((s, r) => s + (r.discountAmount|| 0), 0);
+  const avgSales        = reports.length > 0 ? Math.round(totalSales / reports.length) : 0;
 
   return (
     <div className="p-4 md:p-6 max-w-full">
@@ -156,8 +148,6 @@ export default function ReportViewPage() {
       {/* 기간 선택 */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-5 space-y-3">
         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">기간 선택</p>
-
-        {/* 프리셋 버튼 */}
         <div className="flex flex-wrap gap-2">
           {(['week', 'month', 'lastMonth', 'custom'] as Preset[]).map(p => (
             <button
@@ -174,7 +164,6 @@ export default function ReportViewPage() {
           ))}
         </div>
 
-        {/* 직접입력 UI */}
         {preset === 'custom' && (
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <input
@@ -201,13 +190,11 @@ export default function ReportViewPage() {
         )}
       </div>
 
-      {/* 로딩 */}
       {isLoading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="w-6 h-6 text-teal-400 animate-spin" />
         </div>
 
-      /* 데이터 없음 */
       ) : reports.length === 0 ? (
         <div className="text-center py-20 text-slate-500">
           <ShoppingCart className="w-12 h-12 mx-auto mb-4 opacity-30" />
@@ -218,22 +205,48 @@ export default function ReportViewPage() {
           </Link>
         </div>
 
-      /* 테이블 */
       ) : (
         <>
           {/* 기간 요약 카드 */}
-          <div className="grid grid-cols-3 gap-3 mb-5">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <p className="text-xs text-slate-500 mb-1">총 매출</p>
+              <div className="flex items-center gap-1.5 mb-1">
+                <TrendingUp className="w-3.5 h-3.5 text-teal-400" />
+                <p className="text-xs text-slate-500">총 매출</p>
+              </div>
               <p className="text-lg font-bold text-teal-400">{totalSales.toLocaleString()}원</p>
             </div>
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <p className="text-xs text-slate-500 mb-1">평균 일매출</p>
+              <div className="flex items-center gap-1.5 mb-1">
+                <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                <p className="text-xs text-slate-500">총 순매출</p>
+              </div>
+              <p className="text-lg font-bold text-emerald-400">{totalNetSales.toLocaleString()}원</p>
+            </div>
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Users className="w-3.5 h-3.5 text-blue-400" />
+                <p className="text-xs text-slate-500">평균 일매출</p>
+              </div>
               <p className="text-lg font-bold text-blue-400">{avgSales.toLocaleString()}원</p>
             </div>
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <p className="text-xs text-slate-500 mb-1">총 고객수</p>
-              <p className="text-lg font-bold text-purple-400">{totalCustomer.toLocaleString()}명</p>
+              <div className="flex items-center gap-1.5 mb-1">
+                <RotateCcw className="w-3.5 h-3.5 text-red-400" />
+                <p className="text-xs text-slate-500">총 반품</p>
+              </div>
+              <p className="text-lg font-bold text-red-400">
+                {totalReturn > 0 ? `${totalReturn.toLocaleString()}원` : '-'}
+              </p>
+            </div>
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Tag className="w-3.5 h-3.5 text-yellow-400" />
+                <p className="text-xs text-slate-500">총 할인</p>
+              </div>
+              <p className="text-lg font-bold text-yellow-400">
+                {totalDiscount > 0 ? `${totalDiscount.toLocaleString()}원` : '-'}
+              </p>
             </div>
           </div>
 
@@ -243,13 +256,14 @@ export default function ReportViewPage() {
                 <tr className="bg-slate-800 border-b border-slate-700">
                   <th className="px-4 py-3 text-left   text-slate-400 text-sm font-medium whitespace-nowrap">날짜</th>
                   <th className="px-4 py-3 text-right  text-slate-400 text-sm font-medium whitespace-nowrap">총매출</th>
+                  <th className="px-4 py-3 text-right  text-slate-400 text-sm font-medium whitespace-nowrap">순매출</th>
                   <th className="px-4 py-3 text-right  text-slate-400 text-sm font-medium whitespace-nowrap">객수</th>
-                  <th className="px-4 py-3 text-right  text-slate-400 text-sm font-medium whitespace-nowrap">건수</th>
                   <th className="px-4 py-3 text-right  text-slate-400 text-sm font-medium whitespace-nowrap">반품</th>
+                  <th className="px-4 py-3 text-right  text-slate-400 text-sm font-medium whitespace-nowrap">할인</th>
                   <th className="px-4 py-3 text-center text-slate-400 text-sm font-medium whitespace-nowrap">날씨</th>
-                  <th className="px-4 py-3 text-center text-slate-400 text-sm font-medium whitespace-nowrap">최저/최고</th>
                   <th className="px-4 py-3 text-left   text-slate-400 text-sm font-medium whitespace-nowrap">이슈/프로모션</th>
-                  <th className="px-4 py-3 text-center text-slate-400 text-sm font-medium whitespace-nowrap">상세</th>
+                  <th className="px-4 py-3 text-center text-slate-400 text-sm font-medium whitespace-nowrap">수정이력</th>
+                  <th className="px-4 py-3 text-center text-slate-400 text-sm font-medium whitespace-nowrap">액션</th>
                 </tr>
               </thead>
               <tbody>
@@ -277,23 +291,32 @@ export default function ReportViewPage() {
                       </Link>
                     </td>
 
+                    {/* 순매출 */}
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <span className="text-emerald-400 font-bold text-sm">
+                        {(report.netSales || 0).toLocaleString()}원
+                      </span>
+                    </td>
+
                     {/* 객수 */}
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       <span className="text-blue-400 font-bold text-sm">{report.customerCount || 0}명</span>
                     </td>
 
-                    {/* 건수 */}
+                    {/* 반품 */}
                     <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <span className="text-purple-400 font-bold text-sm">
-                        {report.itemCount || report.items?.length || 0}건
+                      <span className={`text-sm font-medium ${(report.returnAmount || 0) > 0 ? 'text-red-400' : 'text-slate-600'}`}>
+                        {(report.returnAmount || 0) > 0
+                          ? `${(report.returnAmount || 0).toLocaleString()}원`
+                          : '-'}
                       </span>
                     </td>
 
-                    {/* 반품 */}
+                    {/* 할인 */}
                     <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <span className={`text-sm font-medium ${(report.returnAmount || 0) > 0 ? 'text-red-400' : 'text-slate-500'}`}>
-                        {(report.returnAmount || 0) > 0
-                          ? `${(report.returnAmount || 0).toLocaleString()}원`
+                      <span className={`text-sm font-medium ${(report.discountAmount || 0) > 0 ? 'text-yellow-400' : 'text-slate-600'}`}>
+                        {(report.discountAmount || 0) > 0
+                          ? `${(report.discountAmount || 0).toLocaleString()}원`
                           : '-'}
                       </span>
                     </td>
@@ -302,22 +325,13 @@ export default function ReportViewPage() {
                     <td className="px-4 py-3 text-center whitespace-nowrap">
                       <span className="text-slate-300 text-sm">
                         {typeof report.weather === 'object' && report.weather
-                          ? report.weather.condition
+                          ? `${report.weather.condition} ${report.weather.tempMin}°~${report.weather.tempMax}°`
                           : (report.weather as string) || '-'}
                       </span>
                     </td>
 
-                    {/* 기온 */}
-                    <td className="px-4 py-3 text-center whitespace-nowrap">
-                      <span className="text-slate-300 text-sm">
-                        {typeof report.weather === 'object' && report.weather
-                          ? `${report.weather.tempMin}°↑${report.weather.tempMax}°`
-                          : '-'}
-                      </span>
-                    </td>
-
                     {/* 이슈/프로모션 */}
-                    <td className="px-4 py-3 max-w-[220px]">
+                    <td className="px-4 py-3 max-w-[200px]">
                       <div className="space-y-1">
                         {Array.isArray(report.issues) && report.issues.length > 0 && (
                           <p className="text-yellow-400 text-xs truncate">🔔 {report.issues[0]?.title}</p>
@@ -337,12 +351,33 @@ export default function ReportViewPage() {
                       </div>
                     </td>
 
-                    {/* 상세 */}
-                    <td className="px-4 py-3 text-center">
-                      <Link href={`/dashboard/report/view/${report.id}`}
-                        className="inline-flex items-center gap-1 bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1.5 rounded-lg text-xs transition-colors">
-                        상세 <ChevronRight className="w-3 h-3" />
-                      </Link>
+                    {/* 수정이력 */}
+                    <td className="px-4 py-3 text-center whitespace-nowrap">
+                      {(report.editHistory?.length ?? 0) > 0 ? (
+                        <span className="inline-flex items-center gap-1 bg-amber-900/30 border border-amber-500/30 text-amber-400 text-xs px-2 py-0.5 rounded-full">
+                          <Pencil className="w-3 h-3" />
+                          {report.editHistory!.length}회
+                        </span>
+                      ) : (
+                        <span className="text-slate-600 text-xs">-</span>
+                      )}
+                    </td>
+
+                    {/* 액션 */}
+                    <td className="px-4 py-3 text-center whitespace-nowrap">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <Link href={`/dashboard/report/view/${report.id}`}
+                          className="inline-flex items-center gap-1 bg-slate-700 hover:bg-slate-600 text-slate-300 px-2.5 py-1.5 rounded-lg text-xs transition-colors">
+                          상세 <ChevronRight className="w-3 h-3" />
+                        </Link>
+                        <Link
+                          href={`/dashboard/report/input?editDate=${report.reportDate}`}
+                          className="inline-flex items-center gap-1 bg-amber-900/40 hover:bg-amber-800/60 text-amber-400 px-2.5 py-1.5 rounded-lg text-xs transition-colors"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          수정
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -357,14 +392,17 @@ export default function ReportViewPage() {
                   <td className="px-4 py-3 text-right text-teal-400 font-bold text-sm">
                     {totalSales.toLocaleString()}원
                   </td>
+                  <td className="px-4 py-3 text-right text-emerald-400 font-bold text-sm">
+                    {totalNetSales.toLocaleString()}원
+                  </td>
                   <td className="px-4 py-3 text-right text-blue-400 font-bold text-sm">
                     {totalCustomer}명
                   </td>
-                  <td className="px-4 py-3 text-right text-purple-400 font-bold text-sm">
-                    {totalItem}건
-                  </td>
                   <td className="px-4 py-3 text-right text-red-400 font-bold text-sm">
                     {totalReturn > 0 ? `${totalReturn.toLocaleString()}원` : '-'}
+                  </td>
+                  <td className="px-4 py-3 text-right text-yellow-400 font-bold text-sm">
+                    {totalDiscount > 0 ? `${totalDiscount.toLocaleString()}원` : '-'}
                   </td>
                   <td colSpan={4} className="px-4 py-3 text-right text-slate-400 text-xs">
                     일평균 <span className="text-blue-300 font-semibold">{avgSales.toLocaleString()}원</span>

@@ -8,6 +8,7 @@ import { Bot, User, Loader2, DollarSign, Users, Hash, Save, CheckCircle2, Pencil
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import { WEATHER_ICONS, getStoreCoords, fetchWeather } from '@/lib/weather';
+import { useSearchParams } from 'next/navigation';
 
 // --- 타입 정의 영역 ---
 type Message = {
@@ -39,6 +40,7 @@ type AttachedFileType = 'image' | 'excel';
 export default function ReportInputPage() {
   const { user } = useAuth();
   const { currentStore } = useStore();
+  const searchParams = useSearchParams();
   const [messages, setMessages] = useState<Message[]>([
     { id: 1, role: 'ai', text: "안녕하세요 대표님! 마감 내용을 입력하시거나, 분석할 매출 데이터(엑셀) 및 거래명세서(사진)를 업로드해주세요." }
   ]);
@@ -77,6 +79,15 @@ export default function ReportInputPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading, extractedData]);
+
+  // URL ?editDate= 파라미터로 진입 시 자동으로 수정 모드 활성화
+  useEffect(() => {
+    const dateParam = searchParams.get('editDate');
+    if (dateParam) {
+      setEditMode(true);
+      setEditDate(dateParam);
+    }
+  }, [searchParams]);
 
   // 날씨 프리뷰: extractedData의 reportDate가 생기면 매장 지역 기준으로 날씨 조회
   useEffect(() => {
