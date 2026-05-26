@@ -13,12 +13,12 @@ function authenticate(req: Request): boolean {
 
 // ── 타입 ──────────────────────────────────────────────────────────
 interface SyncBody {
-  storeId: string;
-  date: string;           // "YYYY-MM-DD"
-  headers?: SatHeader[];  // SaT 매출헤더
-  details?: SadDetail[];  // SaD 매출상세
-  finish?: FinishTotal;   // Finish_Total 일마감
-  syncedAt: string;       // ISO 날짜문자열
+  storeId?: string;         // 미전송 시 POS_STORE_ID 환경변수 폴백
+  date: string;             // "YYYY-MM-DD"
+  headers?: SatHeader[] | null;
+  details?: SadDetail[] | null;
+  finish?: FinishTotal | null;
+  syncedAt: string;         // ISO 날짜문자열
 }
 
 interface SatHeader {
@@ -67,11 +67,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const { storeId, date, headers = [], details = [], finish, syncedAt } = body;
+  const storeId   = body.storeId || process.env.POS_STORE_ID || '';
+  const { date, syncedAt } = body;
+  const headers  = Array.isArray(body.headers)  ? body.headers  : [];
+  const details  = Array.isArray(body.details)  ? body.details  : [];
+  const finish   = body.finish ?? null;
 
   if (!storeId || !date || !syncedAt) {
     return NextResponse.json(
-      { error: 'storeId, date, syncedAt are required' },
+      { error: 'storeId(or POS_STORE_ID env), date, syncedAt are required' },
       { status: 400 },
     );
   }
