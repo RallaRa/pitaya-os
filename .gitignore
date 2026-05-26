@@ -46,3 +46,7 @@ __pycache__/
 *.pyc
 step*.py
 test_project/
+# POS 브릿지
+pos_bridge/.env
+pos_bridge/bridge.log
+pos_bridge/__pycache__/
