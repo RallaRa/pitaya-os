@@ -98,7 +98,8 @@ async function autoCheckSection(storeId: string, dateStr: string, sectionKey: st
   }
 }
 
-// UTC 5,11,23 → KST 14,20,08 에 실행됨
+// UTC 11 → KST 20 에 실행됨 (단 1회 — Hobby plan 제한)
+// KST 20시 기준: 중간점검(>=14) + 마감점검(>=20) 모두 처리
 export async function POST(req: Request) {
   const secret = req.headers.get('x-cron-secret');
   if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
@@ -107,43 +108,41 @@ export async function POST(req: Request) {
 
   const { hour, dateStr } = kstNow();
 
-  // KST 14시 → 중간점검(작업중) 자동 완성
-  const isMidday  = hour === 14;
-  // KST 20시 → 마감점검(작업후) 자동 완성
-  const isEvening = hour === 20;
+  const sectionsToProcess: { key: string; name: string }[] = [];
+  if (hour >= 14) sectionsToProcess.push({ key: '중간점검', name: '위생상태(작업중)' });
+  if (hour >= 20) sectionsToProcess.push({ key: '마감점검', name: '위생상태(작업후)' });
 
-  if (!isMidday && !isEvening) {
-    return NextResponse.json({ ok: true, skipped: true, reason: `kstHour=${hour} (not 14 or 20)` });
+  if (sectionsToProcess.length === 0) {
+    return NextResponse.json({ ok: true, skipped: true, reason: `kstHour=${hour} (not >= 14)` });
   }
 
-  const sectionKey  = isMidday ? '중간점검' : '마감점검';
-  const sectionName = isMidday ? '위생상태(작업중)' : '위생상태(작업후)';
-  const storesSnap  = await adminDb.collection('stores').get();
+  const storesSnap = await adminDb.collection('stores').get();
   let processed = 0;
 
   for (const storeDoc of storesSnap.docs) {
     const storeId = storeDoc.id;
-    try {
-      // 이미 완료된 섹션이면 건너뜀
-      const checkSnap = await adminDb
-        .collection('hygiene_checklists')
-        .where('storeId', '==', storeId)
-        .where('checkDate', '==', dateStr)
-        .limit(1)
-        .get();
+    for (const { key: sectionKey, name: sectionName } of sectionsToProcess) {
+      try {
+        const checkSnap = await adminDb
+          .collection('hygiene_checklists')
+          .where('storeId', '==', storeId)
+          .where('checkDate', '==', dateStr)
+          .limit(1)
+          .get();
 
-      const existing = checkSnap.empty ? null : checkSnap.docs[0].data();
-      if (existing?.sections?.[sectionKey]?.completed === true) continue;
+        const existing = checkSnap.empty ? null : checkSnap.docs[0].data();
+        if (existing?.sections?.[sectionKey]?.completed === true) continue;
 
-      await autoCheckSection(storeId, dateStr, sectionKey);
-      await sendNotificationsToStore(
-        storeId,
-        `✅ ${sectionName} 자동완성되었습니다`,
-        '/dashboard/hygiene',
-      );
-      processed++;
-    } catch {}
+        await autoCheckSection(storeId, dateStr, sectionKey);
+        await sendNotificationsToStore(
+          storeId,
+          `✅ ${sectionName} 자동완성되었습니다`,
+          '/dashboard/hygiene',
+        );
+        processed++;
+      } catch {}
+    }
   }
 
-  return NextResponse.json({ ok: true, dateStr, kstHour: hour, sectionKey, processed });
+  return NextResponse.json({ ok: true, dateStr, kstHour: hour, sections: sectionsToProcess.map(s => s.key), processed });
 }
