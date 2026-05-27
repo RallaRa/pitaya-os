@@ -5,6 +5,9 @@
     { "path": "/api/cron/daily-prediction",       "schedule": "0 6 * * *" },
     { "path": "/api/cron/order-notification",     "schedule": "0 8 * * *" },
     { "path": "/api/cron/sync-order-calendar",    "schedule": "0 6 * * 1" },
-    { "path": "/api/cron/recalibrate-variables",  "schedule": "0 7 * * 1" }
+    { "path": "/api/cron/recalibrate-variables",    "schedule": "0 7 * * 1" },
+    { "path": "/api/cron/generate-partner-analysis","schedule": "0 6 * * *" },
+    { "path": "/api/cron/hygiene-alert",            "schedule": "*/5 2-3 * * *" },
+    { "path": "/api/cron/hygiene-auto-check",       "schedule": "0 5,11,23 * * *" }
   ]
 }

@@ -9,6 +9,7 @@ const DEFAULT_PERMISSIONS = {
   yesterday_analysis: { master: true, admin: true,  user: true,  staff: false },
   quick_menu:         { master: true, admin: true,  user: true,  staff: true  },
   ai_insight:         { master: true, admin: true,  user: false, staff: false },
+  total_partner:      { master: true, admin: true,  user: false, staff: false },
 };
 
 export async function GET(req: Request) {

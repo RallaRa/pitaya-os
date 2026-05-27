@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { isSuperuserEmail } from '@/lib/auth/permissions';
 
 export async function GET(req: Request) {
   try {
@@ -59,8 +60,9 @@ export async function POST(req: Request) {
     const existingDoc = await adminDb.collection('users').doc(uid).get();
     const existingData = existingDoc.exists ? existingDoc.data() : null;
 
-    const finalRole = email === 'hipona00@gmail.com' ? 'superuser' : (role || existingData?.role || 'staff');
-    const finalGroupId = email === 'hipona00@gmail.com' ? 'master' : (existingData?.groupId || 'staff');
+    const isSU = isSuperuserEmail(email);
+    const finalRole = isSU ? 'superuser' : (role || existingData?.role || 'staff');
+    const finalGroupId = isSU ? 'master' : (existingData?.groupId || 'staff');
 
     await adminDb.collection('users').doc(uid).set({
       uid,

@@ -18,6 +18,7 @@ import YesterdayWidget      from '@/components/widgets/YesterdayWidget';
 import QuickMenuWidget      from '@/components/widgets/QuickMenuWidget';
 import AiInsightWidget        from '@/components/widgets/AiInsightWidget';
 import SalesPredictionWidget  from '@/components/widgets/SalesPredictionWidget';
+import TotalPartnerWidget     from '@/components/widgets/TotalPartnerWidget';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 /* ── 타입 ── */
@@ -74,6 +75,12 @@ const WIDGET_META: WidgetMeta[] = [
     title: 'AI 매출 예측',
     defaultItem: { i: 'sales_prediction', x: 0, y: 4, w: 12, h: 4, minW: 8, minH: 3, maxW: 12, maxH: 6 },
     permKey: 'sales_prediction',
+  },
+  {
+    id: 'total_partner',
+    title: 'AI 토탈 운영파트너',
+    defaultItem: { i: 'total_partner', x: 0, y: 8, w: 12, h: 6, minW: 8, minH: 5, maxW: 12, maxH: 10 },
+    permKey: 'total_partner',
   },
 ];
 
@@ -273,6 +280,7 @@ export default function DashboardPage() {
       case 'quick_menu':         return <QuickMenuWidget      editMode={editMode} onRemove={() => removeWidget(id)} />;
       case 'ai_insight':         return <AiInsightWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
       case 'sales_prediction':   return <SalesPredictionWidget  editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
+      case 'total_partner':      return <TotalPartnerWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
       default:                   return null;
     }
   };

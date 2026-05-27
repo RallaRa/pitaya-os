@@ -9,6 +9,8 @@ import { useStore } from '@/context/StoreContext';
 import Sidebar from '@/components/Sidebar';
 import NotificationHub from '@/components/NotificationHub';
 
+const SUPERUSER_EMAIL = process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || '';
+
 export default function DashboardLayout({
   children,
 }: {
@@ -45,8 +47,16 @@ export default function DashboardLayout({
     );
   }
 
+  const isSuperuser = SUPERUSER_EMAIL && user?.email?.toLowerCase() === SUPERUSER_EMAIL.toLowerCase();
+
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
+      {/* 슈퍼유저 배너 */}
+      {isSuperuser && (
+        <div className="shrink-0 bg-purple-900/80 border-b border-purple-700/60 text-purple-200 text-xs text-center py-1 px-4 tracking-wide">
+          👑 슈퍼유저 모드 — 모든 매장 및 권한에 접근 가능합니다
+        </div>
+      )}
       {/* 모바일 상단 헤더 */}
       <header className="md:hidden flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800 shrink-0">
         <Link href="/dashboard" className="text-teal-400 hover:text-teal-300 font-bold text-lg transition-colors">Pitaya OS</Link>

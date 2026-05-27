@@ -990,6 +990,342 @@ function SearchModal({
   );
 }
 
+/* ═══════════════════════ LEAVE PANEL ═══════════════════════ */
+const LEAVE_TYPE_LABELS: Record<string, string> = {
+  annual: '연차', half_am: '반차(오전)', half_pm: '반차(오후)',
+};
+const DAYOFF_TYPE_LABELS: Record<string, string> = {
+  regular: '정기휴무', substitute: '대체휴무', unpaid: '무급휴무',
+};
+const STATUS_STYLE: Record<string, { label: string; cls: string }> = {
+  pending:  { label: '대기중', cls: 'bg-yellow-900/40 text-yellow-300 border border-yellow-700/40' },
+  approved: { label: '승인됨', cls: 'bg-green-900/40 text-green-300 border border-green-700/40' },
+  rejected: { label: '거절됨', cls: 'bg-red-900/40 text-red-300 border border-red-700/40' },
+};
+
+function LeavePanel({
+  uid, storeId, user, isAdmin, leaves, dayoffs, onReload, showToast,
+}: {
+  uid: string; storeId: string; user: any; isAdmin: boolean;
+  leaves: any[]; dayoffs: any[];
+  onReload: () => void; showToast: (msg: string, ok?: boolean) => void;
+}) {
+  const [modal,           setModal]           = useState<'leave' | 'dayoff' | null>(null);
+  const [leaveForm,       setLeaveForm]       = useState({ type: 'annual', startDate: '', endDate: '', reason: '' });
+  const [dayoffForm,      setDayoffForm]      = useState({ type: 'regular', dates: [] as string[], reason: '' });
+  const [dayoffDateInput, setDayoffDateInput] = useState('');
+  const [submitting,      setSubmitting]      = useState(false);
+
+  const myLeaves  = leaves.filter(l => isAdmin || l.userId === uid);
+  const myDayoffs = dayoffs.filter(d => isAdmin || d.userId === uid);
+
+  const submitLeave = async () => {
+    if (!leaveForm.startDate || !leaveForm.endDate) { showToast('날짜를 선택해주세요', false); return; }
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/hr/leave', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: uid, userName: user?.displayName || user?.email || uid,
+          userEmail: user?.email || '', storeId,
+          type: leaveForm.type, startDate: leaveForm.startDate,
+          endDate: leaveForm.endDate, reason: leaveForm.reason,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      showToast('연차 신청이 완료되었습니다');
+      setModal(null);
+      setLeaveForm({ type: 'annual', startDate: '', endDate: '', reason: '' });
+      onReload();
+    } catch (e: any) {
+      showToast(e.message || '신청 실패', false);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitDayoff = async () => {
+    if (!dayoffForm.dates.length) { showToast('날짜를 선택해주세요', false); return; }
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/hr/dayoff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: uid, userName: user?.displayName || user?.email || uid,
+          userEmail: user?.email || '', storeId,
+          type: dayoffForm.type, dates: dayoffForm.dates, reason: dayoffForm.reason,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      showToast('휴무 신청이 완료되었습니다');
+      setModal(null);
+      setDayoffForm({ type: 'regular', dates: [], reason: '' });
+      onReload();
+    } catch (e: any) {
+      showToast(e.message || '신청 실패', false);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const approve = async (type: 'leave' | 'dayoff', id: string, status: 'approved' | 'rejected') => {
+    try {
+      const url = type === 'leave' ? '/api/hr/leave' : '/api/hr/dayoff';
+      const res = await fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, status, approvedBy: uid, approvedByName: user?.displayName }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      showToast(status === 'approved' ? '승인되었습니다' : '거절되었습니다');
+      onReload();
+    } catch (e: any) {
+      showToast(e.message || '처리 실패', false);
+    }
+  };
+
+  const cancel = async (type: 'leave' | 'dayoff', id: string) => {
+    try {
+      const url = type === 'leave'
+        ? `/api/hr/leave?id=${id}&userId=${uid}`
+        : `/api/hr/dayoff?id=${id}&userId=${uid}`;
+      const res = await fetch(url, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      showToast('취소되었습니다');
+      onReload();
+    } catch (e: any) {
+      showToast(e.message || '취소 실패', false);
+    }
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 space-y-6 h-full">
+      {/* 연차 */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-slate-300 font-semibold text-sm">연차 신청 내역</h3>
+          <button
+            onClick={() => { setLeaveForm({ type: 'annual', startDate: '', endDate: '', reason: '' }); setModal('leave'); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600/20 border border-green-500/30 text-green-300 rounded-lg text-xs hover:bg-green-600/30"
+          >
+            <Plus className="w-3.5 h-3.5" /> 연차 신청
+          </button>
+        </div>
+        {myLeaves.length === 0 ? (
+          <div className="text-slate-600 text-sm text-center py-6 bg-slate-800/30 rounded-xl">신청 내역이 없습니다</div>
+        ) : (
+          <div className="space-y-2">
+            {myLeaves.map(l => (
+              <div key={l.id} className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    {isAdmin && <p className="text-slate-400 text-xs mb-0.5">{l.userName}</p>}
+                    <p className="text-slate-200 text-sm font-medium">{LEAVE_TYPE_LABELS[l.type] || l.type}</p>
+                    <p className="text-slate-500 text-xs">{l.startDate} ~ {l.endDate}</p>
+                    {l.reason && <p className="text-slate-600 text-xs mt-1 truncate">{l.reason}</p>}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border ${STATUS_STYLE[l.status]?.cls || 'bg-slate-700 text-slate-400 border-slate-600'}`}>
+                      {STATUS_STYLE[l.status]?.label || l.status}
+                    </span>
+                    {isAdmin && l.status === 'pending' && (
+                      <div className="flex gap-1">
+                        <button onClick={() => approve('leave', l.id, 'approved')}
+                          className="w-6 h-6 rounded-full bg-green-700 hover:bg-green-600 flex items-center justify-center">
+                          <Check className="w-3.5 h-3.5 text-white" />
+                        </button>
+                        <button onClick={() => approve('leave', l.id, 'rejected')}
+                          className="w-6 h-6 rounded-full bg-red-800 hover:bg-red-700 flex items-center justify-center">
+                          <X className="w-3.5 h-3.5 text-white" />
+                        </button>
+                      </div>
+                    )}
+                    {l.userId === uid && l.status === 'pending' && (
+                      <button onClick={() => cancel('leave', l.id)} className="text-xs text-slate-500 hover:text-red-400">취소</button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 휴무 */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-slate-300 font-semibold text-sm">휴무 신청 내역</h3>
+          <button
+            onClick={() => { setDayoffForm({ type: 'regular', dates: [], reason: '' }); setModal('dayoff'); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/20 border border-blue-500/30 text-blue-300 rounded-lg text-xs hover:bg-blue-600/30"
+          >
+            <Plus className="w-3.5 h-3.5" /> 휴무 신청
+          </button>
+        </div>
+        {myDayoffs.length === 0 ? (
+          <div className="text-slate-600 text-sm text-center py-6 bg-slate-800/30 rounded-xl">신청 내역이 없습니다</div>
+        ) : (
+          <div className="space-y-2">
+            {myDayoffs.map(d => (
+              <div key={d.id} className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    {isAdmin && <p className="text-slate-400 text-xs mb-0.5">{d.userName}</p>}
+                    <p className="text-slate-200 text-sm font-medium">{DAYOFF_TYPE_LABELS[d.type] || d.type}</p>
+                    <p className="text-slate-500 text-xs truncate">{(d.dates || []).join(', ')}</p>
+                    {d.reason && <p className="text-slate-600 text-xs mt-1 truncate">{d.reason}</p>}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border ${STATUS_STYLE[d.status]?.cls || 'bg-slate-700 text-slate-400 border-slate-600'}`}>
+                      {STATUS_STYLE[d.status]?.label || d.status}
+                    </span>
+                    {isAdmin && d.status === 'pending' && (
+                      <div className="flex gap-1">
+                        <button onClick={() => approve('dayoff', d.id, 'approved')}
+                          className="w-6 h-6 rounded-full bg-green-700 hover:bg-green-600 flex items-center justify-center">
+                          <Check className="w-3.5 h-3.5 text-white" />
+                        </button>
+                        <button onClick={() => approve('dayoff', d.id, 'rejected')}
+                          className="w-6 h-6 rounded-full bg-red-800 hover:bg-red-700 flex items-center justify-center">
+                          <X className="w-3.5 h-3.5 text-white" />
+                        </button>
+                      </div>
+                    )}
+                    {d.userId === uid && d.status === 'pending' && (
+                      <button onClick={() => cancel('dayoff', d.id)} className="text-xs text-slate-500 hover:text-red-400">취소</button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 연차 신청 모달 */}
+      {modal === 'leave' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setModal(null)} />
+          <div className="relative bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-slate-800">
+              <h3 className="text-slate-100 font-bold">연차 신청</h3>
+              <button onClick={() => setModal(null)} className="text-slate-500 hover:text-white p-1"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">연차 유형</label>
+                <select value={leaveForm.type} onChange={e => setLeaveForm(f => ({ ...f, type: e.target.value }))}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                  <option value="annual">연차</option>
+                  <option value="half_am">반차 (오전)</option>
+                  <option value="half_pm">반차 (오후)</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">시작일</label>
+                  <input type="date" value={leaveForm.startDate}
+                    onChange={e => setLeaveForm(f => ({ ...f, startDate: e.target.value }))}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200" />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">종료일</label>
+                  <input type="date" value={leaveForm.endDate}
+                    onChange={e => setLeaveForm(f => ({ ...f, endDate: e.target.value }))}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">사유 (선택)</label>
+                <textarea value={leaveForm.reason} onChange={e => setLeaveForm(f => ({ ...f, reason: e.target.value }))}
+                  rows={3} placeholder="사유를 입력해주세요"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 resize-none" />
+              </div>
+            </div>
+            <div className="p-5 border-t border-slate-800 flex gap-2 justify-end">
+              <button onClick={() => setModal(null)} className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200">취소</button>
+              <button onClick={submitLeave} disabled={submitting}
+                className="px-4 py-2 text-sm bg-green-600 hover:bg-green-500 text-white rounded-lg disabled:opacity-50">
+                {submitting ? '신청중...' : '신청하기'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 휴무 신청 모달 */}
+      {modal === 'dayoff' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setModal(null)} />
+          <div className="relative bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between p-5 border-b border-slate-800">
+              <h3 className="text-slate-100 font-bold">휴무 신청</h3>
+              <button onClick={() => setModal(null)} className="text-slate-500 hover:text-white p-1"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">휴무 유형</label>
+                <select value={dayoffForm.type} onChange={e => setDayoffForm(f => ({ ...f, type: e.target.value }))}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
+                  <option value="regular">정기휴무</option>
+                  <option value="substitute">대체휴무</option>
+                  <option value="unpaid">무급휴무</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">날짜 추가</label>
+                <div className="flex gap-2">
+                  <input type="date" value={dayoffDateInput} onChange={e => setDayoffDateInput(e.target.value)}
+                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200" />
+                  <button
+                    onClick={() => {
+                      if (dayoffDateInput && !dayoffForm.dates.includes(dayoffDateInput)) {
+                        setDayoffForm(f => ({ ...f, dates: [...f.dates, dayoffDateInput].sort() }));
+                        setDayoffDateInput('');
+                      }
+                    }}
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm"
+                  >추가</button>
+                </div>
+                {dayoffForm.dates.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {dayoffForm.dates.map(d => (
+                      <span key={d} className="flex items-center gap-1 px-2 py-0.5 bg-blue-900/40 text-blue-300 text-xs rounded-full border border-blue-700/40">
+                        {d}
+                        <button onClick={() => setDayoffForm(f => ({ ...f, dates: f.dates.filter(x => x !== d) }))}
+                          className="hover:text-red-400"><X className="w-3 h-3" /></button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">사유 (선택)</label>
+                <textarea value={dayoffForm.reason} onChange={e => setDayoffForm(f => ({ ...f, reason: e.target.value }))}
+                  rows={3} placeholder="사유를 입력해주세요"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 resize-none" />
+              </div>
+            </div>
+            <div className="p-5 border-t border-slate-800 flex gap-2 justify-end">
+              <button onClick={() => setModal(null)} className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200">취소</button>
+              <button onClick={submitDayoff} disabled={submitting}
+                className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg disabled:opacity-50">
+                {submitting ? '신청중...' : '신청하기'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ═══════════════════════ MAIN APP ═══════════════════════ */
 export default function CalendarApp() {
   const { user }         = useAuth();
@@ -1001,7 +1337,7 @@ export default function CalendarApp() {
 
   // ── 뷰 상태 ──
   const [view,   setView]   = useState<ViewMode>('month');
-  const [mainTab, setMainTab] = useState<'calendar' | 'todo'>('calendar');
+  const [mainTab, setMainTab] = useState<'calendar' | 'todo' | 'leave'>('calendar');
   const [cursor, setCursor] = useState(new Date());
 
   // ── 데이터 ──
@@ -1024,10 +1360,23 @@ export default function CalendarApp() {
   const [showCalList, setShowCalList] = useState(true);
   const [showMiniCal, setShowMiniCal] = useState(true);
 
+  // ── 연차/휴무 ──
+  const [isAdmin,  setIsAdmin]  = useState(false);
+  const [leaves,   setLeaves]   = useState<any[]>([]);
+  const [dayoffs,  setDayoffs]  = useState<any[]>([]);
+
   const showToast = useCallback((msg: string, ok = true) => {
     setToast({ msg, ok });
     setTimeout(() => setToast(null), 3500);
   }, []);
+
+  useEffect(() => {
+    if (!uid) return;
+    fetch(`/api/permissions?type=myAccess&uid=${uid}${storeId ? `&storeId=${storeId}` : ''}`)
+      .then(r => r.json())
+      .then(d => { setIsAdmin(['master', 'admin', 'owner'].includes(d.role || '')); })
+      .catch(() => {});
+  }, [uid, storeId]);
 
   /* ── 데이터 로드 ── */
   const loadCalendars = useCallback(async () => {
@@ -1121,9 +1470,28 @@ export default function CalendarApp() {
     } catch {}
   }, [uid, storeId]);
 
+  const loadLeaves = useCallback(async () => {
+    if (!uid) return;
+    try {
+      const monthKey = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
+      const [lRes, dRes] = await Promise.all([
+        isAdmin
+          ? fetch(`/api/hr/leave?storeId=${storeId}&month=${monthKey}`)
+          : fetch(`/api/hr/leave?userId=${uid}&month=${monthKey}`),
+        isAdmin
+          ? fetch(`/api/hr/dayoff?storeId=${storeId}&month=${monthKey}`)
+          : fetch(`/api/hr/dayoff?userId=${uid}&month=${monthKey}`),
+      ]);
+      const [lData, dData] = await Promise.all([lRes.json(), dRes.json()]);
+      setLeaves(lData.requests || []);
+      setDayoffs(dData.requests || []);
+    } catch {}
+  }, [uid, storeId, cursor, isAdmin]);
+
   useEffect(() => { loadCalendars(); }, [loadCalendars]);
   useEffect(() => { loadEvents(); },   [loadEvents]);
   useEffect(() => { loadTodos(); },    [loadTodos]);
+  useEffect(() => { loadLeaves(); },   [loadLeaves]);
 
   /* ── 필터된 이벤트 (숨겨진 캘린더 제거) ── */
   const filteredEvents = useMemo(() => {
@@ -1426,6 +1794,12 @@ export default function CalendarApp() {
               }`}>
               <CheckSquare className="w-3.5 h-3.5" /> 할 일
             </button>
+            <button onClick={() => setMainTab('leave')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                mainTab === 'leave' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}>
+              <FileText className="w-3.5 h-3.5" /> 내 신청
+            </button>
           </div>
 
           {mainTab === 'calendar' && (
@@ -1563,6 +1937,17 @@ export default function CalendarApp() {
             <TodoPanel
               todos={todos} storeId={storeId} uid={uid}
               onTodosChange={loadTodos}
+            />
+          </div>
+        )}
+
+        {/* 내 신청 탭 */}
+        {mainTab === 'leave' && (
+          <div className="flex-1 overflow-hidden">
+            <LeavePanel
+              uid={uid} storeId={storeId} user={user}
+              isAdmin={isAdmin} leaves={leaves} dayoffs={dayoffs}
+              onReload={loadLeaves} showToast={showToast}
             />
           </div>
         )}

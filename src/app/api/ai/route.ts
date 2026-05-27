@@ -4,13 +4,14 @@ import OpenAI from 'openai';
 import Groq from 'groq-sdk';
 import { NextResponse } from 'next/server';
 import { trackUsage, trackTokens } from '@/lib/trackUsage';
+import { SYSTEM_PROMPT } from '@/lib/aiSystemPrompt';
 
 type GroqModel = 'groq-mixtral' | 'groq-llama';
-type ModelChoice = 'auto' | 'gemini' | 'claude' | 'gpt' | GroqModel;
+type ModelChoice = 'auto' | 'gemini' | 'claude' | 'gpt' | 'groq' | GroqModel;
 
 const SYSTEM_INSTRUCTIONS: Record<string, string> = {
-  default: '당신은 Pitaya OS의 AI 경영 비서입니다. 소상공인 매장(정육점·식품점 등) 운영을 전문적으로 돕습니다. 매출 분석, 재고 관리, 가격 전략, 직원 관리, 경영 상담, 시장 트렌드 등을 안내합니다. 친절하고 실용적인 답변을 제공하며 필요 시 마크다운을 활용합니다.',
-  analyst: '당신은 Pitaya OS의 AI 데이터 분석가입니다. 매출, 재고 등 수치와 팩트 기반으로 명확하게 요약 답변합니다.',
+  default:  SYSTEM_PROMPT,
+  analyst:  '당신은 Pitaya OS의 AI 데이터 분석가입니다. 매출, 재고 등 수치와 팩트 기반으로 명확하게 요약 답변합니다.',
 };
 
 /* ── 축산물 이력번호 감지 및 조회 ── */
@@ -180,11 +181,10 @@ async function callGroq(message: string, history: any[], system: string, groqMod
 export async function GET() {
   return NextResponse.json({
     models: [
-      { id: 'gemini',       name: 'Gemini 2.5 Flash',  provider: 'Google',    emoji: '⚡', active: hasKey.gemini() },
-      { id: 'claude',       name: 'Claude Sonnet 4.6',  provider: 'Anthropic', emoji: '🧠', active: hasKey.claude() },
-      { id: 'gpt',          name: 'GPT-4o',             provider: 'OpenAI',    emoji: '👔', active: hasKey.gpt()    },
-      { id: 'groq-mixtral', name: 'Groq Llama3 8B',    provider: 'Groq',      emoji: '🚀', active: hasKey.groq()   },
-      { id: 'groq-llama',   name: 'Groq Llama3 70B',   provider: 'Groq',      emoji: '🦙', active: hasKey.groq()   },
+      { id: 'gemini', name: 'Gemini 2.5 Flash',  provider: 'Google',    emoji: '⚡', active: hasKey.gemini() },
+      { id: 'claude', name: 'Claude Sonnet 4.6', provider: 'Anthropic', emoji: '🧠', active: hasKey.claude() },
+      { id: 'gpt',    name: 'GPT-4o',             provider: 'OpenAI',    emoji: '👔', active: hasKey.gpt()    },
+      { id: 'groq',   name: 'Groq Llama3 70B',   provider: 'Groq',      emoji: '🟠', active: hasKey.groq()   },
     ],
   });
 }
@@ -214,7 +214,11 @@ export async function POST(req: Request) {
     // ── 모델 결정 ──
     let resolved: ModelChoice;
 
-    if (modelChoice === 'auto') {
+    // `groq` 단일 ID → groq-llama 로 매핑
+    const effectiveChoice: ModelChoice =
+      (modelChoice as string) === 'groq' ? 'groq-llama' : modelChoice;
+
+    if (effectiveChoice === 'auto') {
       const hasImage     = /data:image\/[a-z]+;base64,/.test(message);
       const hasAnalytics = /표|분석|JSON|코드|데이터/.test(message);
 
@@ -230,13 +234,30 @@ export async function POST(req: Request) {
         resolved = 'gemini';
       }
     } else {
-      resolved = modelChoice;
+      resolved = effectiveChoice;
     }
 
-    // ── Fail-Safe ──
-    if (resolved === 'claude'       && !hasKey.claude()) resolved = hasKey.groq() ? 'groq-llama' : 'gemini';
-    if (resolved === 'gpt'          && !hasKey.gpt())    resolved = hasKey.groq() ? 'groq-llama' : 'gemini';
-    if ((resolved === 'groq-mixtral' || resolved === 'groq-llama') && !hasKey.groq()) resolved = 'gemini';
+    // ── Fail-Safe / Key 검증 ──
+    if (effectiveChoice === 'auto') {
+      // auto 모드: 키 없으면 조용히 다른 모델로 fallback
+      if (resolved === 'claude'       && !hasKey.claude()) resolved = hasKey.groq() ? 'groq-llama' : 'gemini';
+      if (resolved === 'gpt'          && !hasKey.gpt())    resolved = hasKey.groq() ? 'groq-llama' : 'gemini';
+      if ((resolved === 'groq-mixtral' || resolved === 'groq-llama') && !hasKey.groq()) resolved = 'gemini';
+    } else {
+      // 명시적 모델 선택: 키 없으면 에러 반환 (조용한 Gemini fallback 금지)
+      const keyMissing =
+        (resolved === 'claude'       && !hasKey.claude()) ||
+        (resolved === 'gpt'          && !hasKey.gpt())    ||
+        ((resolved === 'groq-mixtral' || resolved === 'groq-llama') && !hasKey.groq());
+      if (keyMissing) {
+        const envKey = resolved === 'claude' ? 'ANTHROPIC_API_KEY' : resolved === 'gpt' ? 'OPENAI_API_KEY' : 'GROQ_API_KEY';
+        return NextResponse.json({
+          text: `⚠️ ${MODEL_NAMES[resolved]} API 키가 설정되지 않았습니다. (${envKey} 미설정)`,
+          usedModel: '',
+          error: 'api_key_missing',
+        }, { status: 503 });
+      }
+    }
     if (!hasKey.gemini() && resolved === 'gemini') {
       return NextResponse.json({ error: '사용 가능한 AI API 키가 없습니다.' }, { status: 500 });
     }
@@ -256,11 +277,13 @@ export async function POST(req: Request) {
         result = await callGemini(message, msgs, system);
       }
     } catch (callErr: any) {
-      if (resolved !== 'gemini') {
+      if (resolved !== 'gemini' && modelChoice === 'auto') {
+        // auto 모드 호출 실패 시 Gemini로 fallback
         console.warn(`[AI] ${resolved} 호출 실패 → Gemini 우회:`, callErr.message);
         result = await callGemini(message, msgs, system);
         finalModel = 'gemini';
       } else {
+        // 명시적 선택 실패 시 에러 반환
         throw callErr;
       }
     }

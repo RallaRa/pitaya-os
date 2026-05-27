@@ -1,39 +1,79 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import {
   Bot, User, Send, Plus, Trash2,
   Loader2, MessageSquare, ChevronLeft,
-  Edit2, Check, X
+  Edit2, Check, X, AlertCircle, Home,
 } from 'lucide-react';
 
-type ModelChoice = 'auto' | 'gemini' | 'claude' | 'gpt' | 'groq-mixtral' | 'groq-llama';
+// ── 모델 정의 ──────────────────────────────────────────────────────
+const MODELS = [
+  {
+    id:       'gemini',
+    name:     'Gemini',
+    subName:  '2.5 Flash',
+    emoji:    '⚡',
+    apiRoute: '/api/ai/gemini',
+    color:    'blue',
+    activeCls:   'bg-blue-600 text-white border-blue-600',
+    inactiveCls: 'bg-slate-800 text-blue-400 border-blue-500/30 hover:bg-blue-500/10',
+    badgeCls:    'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  },
+  {
+    id:       'claude',
+    name:     'Claude',
+    subName:  'Sonnet 4.6',
+    emoji:    '🧠',
+    apiRoute: '/api/ai/claude',
+    color:    'purple',
+    activeCls:   'bg-purple-600 text-white border-purple-600',
+    inactiveCls: 'bg-slate-800 text-purple-400 border-purple-500/30 hover:bg-purple-500/10',
+    badgeCls:    'bg-purple-500/20 text-purple-400 border-purple-500/30',
+  },
+  {
+    id:       'gpt',
+    name:     'GPT-4o',
+    subName:  'OpenAI',
+    emoji:    '👔',
+    apiRoute: '/api/ai/gpt',
+    color:    'green',
+    activeCls:   'bg-green-600 text-white border-green-600',
+    inactiveCls: 'bg-slate-800 text-green-400 border-green-500/30 hover:bg-green-500/10',
+    badgeCls:    'bg-green-500/20 text-green-400 border-green-500/30',
+  },
+  {
+    id:       'groq',
+    name:     'Groq',
+    subName:  'Llama3 70B',
+    emoji:    '🟠',
+    apiRoute: '/api/ai/groq',
+    color:    'orange',
+    activeCls:   'bg-orange-600 text-white border-orange-600',
+    inactiveCls: 'bg-slate-800 text-orange-400 border-orange-500/30 hover:bg-orange-500/10',
+    badgeCls:    'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  },
+] as const;
 
-const MODEL_OPTIONS: { value: ModelChoice; emoji: string; label: string }[] = [
-  { value: 'auto',          emoji: '🤖', label: '자동 (권장)'      },
-  { value: 'gemini',        emoji: '⚡', label: 'Gemini 2.5'      },
-  { value: 'claude',        emoji: '🧠', label: 'Claude'           },
-  { value: 'gpt',           emoji: '👔', label: 'GPT-4o'           },
-  { value: 'groq-mixtral',  emoji: '🚀', label: 'Groq 8B (빠름)'  },
-  { value: 'groq-llama',    emoji: '🦙', label: 'Groq 70B'        },
-];
+type ModelId = typeof MODELS[number]['id'];
 
-const MODEL_BADGE: Record<string, { emoji: string; cls: string }> = {
-  'Gemini':        { emoji: '⚡', cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30'     },
-  'Claude':        { emoji: '🧠', cls: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
-  'GPT-4o':        { emoji: '👔', cls: 'bg-green-500/20 text-green-400 border-green-500/30'   },
-  'Groq Llama3 8B':  { emoji: '🚀', cls: 'bg-orange-500/20 text-orange-400 border-orange-500/30' },
-  'Groq Llama3 70B': { emoji: '🦙', cls: 'bg-amber-500/20 text-amber-400 border-amber-500/30'   },
+// usedModel 문자열 → badge 맵
+const BADGE_BY_USED: Record<string, typeof MODELS[number]> = {
+  'Gemini 2.5 Flash':  MODELS[0],
+  'Claude Sonnet 4.6': MODELS[1],
+  'GPT-4o':            MODELS[2],
+  'Groq Llama3 70B':   MODELS[3],
 };
 
+// ── 타입 ────────────────────────────────────────────────────────────
 interface Message {
   role: 'user' | 'model';
   content: string;
   timestamp: string;
   usedModel?: string;
-  isAuto?: boolean;
 }
 
 interface Conversation {
@@ -51,7 +91,6 @@ function normalizeMsg(msg: any): Message {
     content:   msg.content || msg.text || '',
     timestamp: msg.timestamp || msg.createdAt || new Date().toISOString(),
     usedModel: msg.usedModel,
-    isAuto:    msg.isAuto,
   };
 }
 
@@ -62,6 +101,7 @@ function toDate(val: any): Date {
   return new Date(val);
 }
 
+// ── 컴포넌트 ────────────────────────────────────────────────────────
 export default function AiChatPage() {
   const { user }         = useAuth();
   const { currentStore } = useStore();
@@ -75,17 +115,19 @@ export default function AiChatPage() {
   const [showSidebar,    setShowSidebar]    = useState(true);
   const [editingId,      setEditingId]      = useState<string | null>(null);
   const [editTitle,      setEditTitle]      = useState('');
-  const [selectedModel,  setSelectedModel]  = useState<ModelChoice>('auto');
-  const [activeModelIds, setActiveModelIds] = useState<Set<string>>(new Set());
+  const [selectedModel,  setSelectedModel]  = useState<ModelId>('gemini');
+  const [activeIds,      setActiveIds]      = useState<Set<string>>(new Set());
+  const [sendError,      setSendError]      = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // 활성 모델 조회 (API 키 설정 여부)
   useEffect(() => {
     fetch('/api/ai')
       .then(r => r.json())
       .then(d => {
         if (d.models) {
-          setActiveModelIds(new Set(d.models.filter((m: any) => m.active).map((m: any) => m.id)));
+          setActiveIds(new Set(d.models.filter((m: any) => m.active).map((m: any) => m.id)));
         }
       })
       .catch(() => {});
@@ -114,6 +156,7 @@ export default function AiChatPage() {
   const handleSelect = (conv: Conversation) => {
     setCurrentId(conv.id);
     setMessages((conv.messages || []).map(normalizeMsg));
+    setSendError(null);
     setShowSidebar(false);
   };
 
@@ -121,11 +164,15 @@ export default function AiChatPage() {
     setCurrentId(null);
     setMessages([]);
     setInput('');
+    setSendError(null);
     setShowSidebar(false);
   };
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
+    setSendError(null);
+
+    const model = MODELS.find(m => m.id === selectedModel)!;
 
     const userMsg: Message = {
       role:      'user',
@@ -140,23 +187,28 @@ export default function AiChatPage() {
     setIsLoading(true);
 
     try {
-      const res  = await fetch('/api/ai', {
+      const res = await fetch(model.apiRoute, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
           message: userMsg.content,
           history: historyForAI,
-          model:   selectedModel,
         }),
       });
       const data = await res.json();
+
+      if (data.error) {
+        setSendError(`${model.name} 오류: ${data.error}`);
+        setMessages(historyForAI); // 사용자 메시지 롤백
+        setInput(userMsg.content);
+        return;
+      }
 
       const aiMsg: Message = {
         role:      'model',
         content:   data.text || '응답을 받지 못했습니다.',
         timestamp: new Date().toISOString(),
-        usedModel: data.usedModel || '',
-        isAuto:    data.isAuto ?? false,
+        usedModel: data.usedModel || model.name,
       };
 
       const finalMessages = [...newMessages, aiMsg];
@@ -178,11 +230,9 @@ export default function AiChatPage() {
       await loadConversations();
 
     } catch (e: any) {
-      setMessages(prev => [...prev, {
-        role:      'model',
-        content:   `오류: ${e.message}`,
-        timestamp: new Date().toISOString(),
-      }]);
+      setSendError(`네트워크 오류: ${e.message}`);
+      setMessages(historyForAI);
+      setInput(userMsg.content);
     } finally {
       setIsLoading(false);
     }
@@ -192,7 +242,7 @@ export default function AiChatPage() {
     e.stopPropagation();
     if (!confirm('이 대화를 삭제하시겠습니까?')) return;
     await fetch(`/api/conversations?id=${id}`, { method: 'DELETE' });
-    if (currentId === id) { setCurrentId(null); setMessages([]); }
+    if (currentId === id) { setCurrentId(null); setMessages([]); setSendError(null); }
     await loadConversations();
   };
 
@@ -225,15 +275,15 @@ export default function AiChatPage() {
     const weekAgo   = new Date(today); weekAgo.setDate(weekAgo.getDate() - 7);
     const ts = (c: Conversation) => toDate(c.updatedAt);
     return {
-      '오늘':   convs.filter(c => ts(c).toDateString() === today.toDateString()),
-      '어제':   convs.filter(c => ts(c).toDateString() === yesterday.toDateString()),
+      '오늘':    convs.filter(c => ts(c).toDateString() === today.toDateString()),
+      '어제':    convs.filter(c => ts(c).toDateString() === yesterday.toDateString()),
       '이번 주': convs.filter(c => {
         const d = ts(c);
         return d > weekAgo
           && d.toDateString() !== today.toDateString()
           && d.toDateString() !== yesterday.toDateString();
       }),
-      '이전':   convs.filter(c => ts(c) <= weekAgo),
+      '이전':    convs.filter(c => ts(c) <= weekAgo),
     };
   };
 
@@ -335,6 +385,9 @@ export default function AiChatPage() {
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
+          <Link href="/dashboard" className="p-1 text-slate-500 hover:text-teal-400 transition-colors rounded-lg hover:bg-slate-800 shrink-0" title="홈으로">
+            <Home className="w-4 h-4" />
+          </Link>
           <Bot className="w-5 h-5 text-teal-400" />
           <div>
             <h1 className="text-white font-bold text-sm">
@@ -349,10 +402,12 @@ export default function AiChatPage() {
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <Bot className="w-16 h-16 text-teal-400/30 mb-4" />
-              <h2 className="text-white font-bold text-xl mb-2">무엇을 도와드릴까요?</h2>
-              <p className="text-slate-500 text-sm max-w-sm">
-                Pitaya OS AI 어시스턴트입니다.<br />
-                경영, 매출, 재고 등 무엇이든 물어보세요.
+              <h2 className="text-white font-bold text-xl mb-2">무엇을 분석해 드릴까요?</h2>
+              <p className="text-slate-500 text-sm max-w-sm leading-relaxed">
+                Pitaya OS 전담 AI 분석가입니다.<br />
+                <span className="text-slate-400">📊 매출·품목 데이터 분석</span><br />
+                <span className="text-slate-400">📖 메뉴·기능 사용법 안내</span><br />
+                <span className="text-slate-400">🔍 이력번호 축산물 조회</span>
               </p>
             </div>
           )}
@@ -381,17 +436,13 @@ export default function AiChatPage() {
                     </p>
                   </div>
 
-                  {/* usedModel 뱃지 */}
                   {msg.role === 'model' && msg.usedModel && (() => {
-                    const badge = MODEL_BADGE[msg.usedModel];
-                    const label = msg.isAuto
-                      ? `🤖 자동 → ${badge?.emoji ?? ''} ${msg.usedModel}`
-                      : `${badge?.emoji ?? '🤖'} ${msg.usedModel}`;
+                    const m = BADGE_BY_USED[msg.usedModel];
                     return (
                       <span className={`self-start text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
-                        badge ? badge.cls : 'bg-slate-700 text-slate-400 border-slate-600'
+                        m ? m.badgeCls : 'bg-slate-700 text-slate-400 border-slate-600'
                       }`}>
-                        {label}
+                        {m?.emoji ?? '🤖'} {msg.usedModel}
                       </span>
                     );
                   })()}
@@ -426,26 +477,38 @@ export default function AiChatPage() {
         {/* 입력 영역 */}
         <div className="bg-slate-900 border-t border-slate-700 p-4 space-y-3">
 
+          {/* 에러 배너 */}
+          {sendError && (
+            <div className="flex items-center gap-2 bg-red-900/30 border border-red-700/50 rounded-xl px-3 py-2 text-sm text-red-400">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span className="flex-1">{sendError}</span>
+              <button onClick={() => setSendError(null)} className="text-red-400 hover:text-red-200 shrink-0">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           {/* 모델 선택 */}
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-xs text-slate-500 mr-1">모델:</span>
-            {MODEL_OPTIONS.map(opt => {
-              const isActive = opt.value === 'auto' || activeModelIds.size === 0 || activeModelIds.has(opt.value);
+            {MODELS.map(m => {
+              const isActive = activeIds.size === 0 || activeIds.has(m.id);
+              const isSelected = selectedModel === m.id;
               return (
                 <button
-                  key={opt.value}
-                  onClick={() => setSelectedModel(opt.value)}
-                  title={!isActive ? 'API 키 미설정' : undefined}
-                  className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors relative ${
-                    selectedModel === opt.value
-                      ? 'bg-teal-500 text-slate-950'
-                      : isActive
-                        ? 'bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700'
-                        : 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed opacity-50'
-                  }`}
+                  key={m.id}
+                  onClick={() => { if (isActive) setSelectedModel(m.id); }}
+                  title={!isActive ? `API 키 미설정 (Vercel 환경변수 확인)` : `${m.name} ${m.subName}`}
+                  disabled={!isActive}
+                  className={`
+                    flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
+                    border transition-all
+                    ${isSelected ? m.activeCls : isActive ? m.inactiveCls : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed opacity-40'}
+                  `}
                 >
-                  {opt.emoji} {opt.label}
-                  {!isActive && <span className="ml-0.5 text-[9px]">🔒</span>}
+                  <span>{m.emoji}</span>
+                  <span>{m.name}</span>
+                  <span className={`text-[10px] font-normal ${isSelected ? 'opacity-80' : 'opacity-60'}`}>{m.subName}</span>
+                  {!isActive && <span className="text-[9px]">🔒</span>}
                 </button>
               );
             })}
@@ -457,7 +520,10 @@ export default function AiChatPage() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); handleSend(); }
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  handleSend();
+                }
               }}
               placeholder="메시지를 입력하세요... (Enter 전송, Shift+Enter 줄바꿈)"
               rows={1}

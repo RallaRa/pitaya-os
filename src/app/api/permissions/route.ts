@@ -3,6 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { DEFAULT_PERMISSIONS, ALL_MENUS, Role } from '@/lib/permissions';
 import { verifyToken, getActualGroupId, isAdminGroup, isMasterGroup } from '@/lib/authVerify';
+import { isSuperuserEmail } from '@/lib/auth/permissions';
 
 type MenuAccess = {
   ai: boolean; sales: boolean; purchase: boolean; report: boolean;
@@ -10,6 +11,7 @@ type MenuAccess = {
   permissionGroup: boolean; memberGroup: boolean; hygiene: boolean;
   hrCalendar: boolean; scaleCode: boolean;
   salesForecast: boolean; suppliers: boolean; predictionVariables: boolean;
+  customers: boolean; predictionHistory: boolean;
 };
 
 const ALL_FALSE: MenuAccess = {
@@ -18,6 +20,7 @@ const ALL_FALSE: MenuAccess = {
   permissionGroup: false, memberGroup: false, hygiene: false,
   hrCalendar: false, scaleCode: false,
   salesForecast: false, suppliers: false, predictionVariables: false,
+  customers: false, predictionHistory: false,
 };
 
 const STAFF_ACCESS: MenuAccess = {
@@ -26,6 +29,7 @@ const STAFF_ACCESS: MenuAccess = {
   permissionGroup: false, memberGroup: false, hygiene: true,
   hrCalendar: true, scaleCode: false,
   salesForecast: false, suppliers: false, predictionVariables: false,
+  customers: false, predictionHistory: false,
 };
 
 const SYSTEM_GROUPS = [
@@ -33,35 +37,35 @@ const SYSTEM_GROUPS = [
     groupId: 'master',
     storeId: 'global',
     groupName: 'Master',
-    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: true, memberGroup: true, hygiene: true, hrCalendar: true, scaleCode: true, salesForecast: true, suppliers: true, predictionVariables: true },
+    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: true, memberGroup: true, hygiene: true, hrCalendar: true, scaleCode: true, salesForecast: true, suppliers: true, predictionVariables: true, customers: true, predictionHistory: true },
     isSystem: true,
   },
   {
     groupId: 'admin',
     storeId: 'global',
     groupName: '관리자',
-    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: true, salesForecast: true, suppliers: true, predictionVariables: false },
+    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: true, salesForecast: true, suppliers: true, predictionVariables: false, customers: true, predictionHistory: true },
     isSystem: true,
   },
   {
     groupId: 'user',
     storeId: 'global',
     groupName: '사용자',
-    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: false, salesForecast: true, suppliers: false, predictionVariables: false },
+    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: false, salesForecast: true, suppliers: false, predictionVariables: false, customers: false, predictionHistory: false },
     isSystem: true,
   },
   {
     groupId: 'staff',
     storeId: 'global',
     groupName: '직원',
-    menuAccess: { ai: true, sales: true, purchase: false, report: false, messenger: true, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: false, salesForecast: false, suppliers: false, predictionVariables: false },
+    menuAccess: { ai: true, sales: true, purchase: false, report: false, messenger: true, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: false, salesForecast: false, suppliers: false, predictionVariables: false, customers: false, predictionHistory: false },
     isSystem: true,
   },
   {
     groupId: 'guest',
     storeId: 'global',
     groupName: '게스트',
-    menuAccess: { ai: true, sales: false, purchase: false, report: false, messenger: false, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: false, hrCalendar: false, scaleCode: false, salesForecast: false, suppliers: false, predictionVariables: false },
+    menuAccess: { ai: true, sales: false, purchase: false, report: false, messenger: false, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: false, hrCalendar: false, scaleCode: false, salesForecast: false, suppliers: false, predictionVariables: false, customers: false, predictionHistory: false },
     isSystem: true,
   },
 ];
@@ -110,8 +114,8 @@ export async function GET(req: Request) {
       const userDoc = await adminDb.collection('users').doc(uid).get();
       const userData = userDoc.exists ? userDoc.data() : null;
 
-      // hipona00@gmail.com은 항상 master 강제
-      if (userData?.email === 'hipona00@gmail.com') {
+      // 슈퍼유저 이메일은 항상 master 강제
+      if (isSuperuserEmail(userData?.email)) {
         if (userData?.groupId !== 'master') {
           await adminDb.collection('users').doc(uid).update({ groupId: 'master' });
         }

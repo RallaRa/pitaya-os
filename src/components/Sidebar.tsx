@@ -5,16 +5,19 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Settings, MessageCircle, ShoppingCart, Sparkles,
-  BarChart2, TrendingUp, ClipboardCheck, X, LogOut,
-  Circle, CalendarDays, Tag, Scale, LineChart, Building2, SlidersHorizontal,
+  BarChart2, ClipboardCheck, X,
+  Circle, CalendarDays, Tag, Scale, LineChart, Building2, SlidersHorizontal, Users, Crown, History, ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import NotificationHub from '@/components/NotificationHub';
 import ResourceMonitor from '@/components/ResourceMonitor';
+import UserProfileModal from '@/components/UserProfileModal';
 import { db } from '@/lib/firebase/firebase';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
+
+const SUPERUSER_EMAIL = process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || '';
 
 type MenuAccess = {
   ai: boolean; sales: boolean; purchase: boolean; report: boolean;
@@ -22,6 +25,7 @@ type MenuAccess = {
   permissionGroup: boolean; memberGroup: boolean; hygiene: boolean;
   hrCalendar: boolean; scaleCode: boolean;
   salesForecast: boolean; suppliers: boolean; predictionVariables: boolean;
+  customers: boolean; predictionHistory: boolean;
 };
 
 const ALL_FALSE: MenuAccess = {
@@ -30,6 +34,7 @@ const ALL_FALSE: MenuAccess = {
   permissionGroup: false, memberGroup: false, hygiene: false,
   hrCalendar: false, scaleCode: false,
   salesForecast: false, suppliers: false, predictionVariables: false,
+  customers: false, predictionHistory: false,
 };
 
 interface AiModel {
@@ -46,22 +51,22 @@ interface SidebarProps {
 }
 
 const AI_PROVIDER_STYLE: Record<string, string> = {
-  gemini:         'text-blue-400   border-blue-500/30   bg-blue-500/10',
-  claude:         'text-purple-400 border-purple-500/30 bg-purple-500/10',
-  gpt:            'text-green-400  border-green-500/30  bg-green-500/10',
-  'groq-mixtral': 'text-orange-400 border-orange-500/30 bg-orange-500/10',
-  'groq-llama':   'text-amber-400  border-amber-500/30  bg-amber-500/10',
+  gemini: 'text-blue-400   border-blue-500/30   bg-blue-500/10',
+  claude: 'text-purple-400 border-purple-500/30 bg-purple-500/10',
+  gpt:    'text-green-400  border-green-500/30  bg-green-500/10',
+  groq:   'text-orange-400 border-orange-500/30 bg-orange-500/10',
 };
 
 export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { currentStore } = useStore();
 
   const [menuAccess,    setMenuAccess]    = useState<MenuAccess>(ALL_FALSE);
   const [accessLoading, setAccessLoading] = useState(true);
   const [aiModels,      setAiModels]      = useState<AiModel[]>([]);
   const [unreadCount,   setUnreadCount]   = useState(0);
+  const [showProfile,   setShowProfile]   = useState(false);
 
   /* 메뉴 권한 */
   useEffect(() => {
@@ -111,7 +116,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const mainMenus = [
     { key: 'ai' as const,        href: '/dashboard/ai',                    icon: <Sparkles className="w-4 h-4" />,       label: 'AI 대화모드' },
     { key: 'messenger' as const, href: '/dashboard/messenger',             icon: <MessageCircle className="w-4 h-4" />,  label: '메신저',      badge: unreadCount },
-    { key: 'sales' as const,     href: '/dashboard/report/input',          icon: <TrendingUp className="w-4 h-4" />,     label: 'AI 매출관리' },
     { key: 'hygiene' as const,   href: '/dashboard/hygiene',               icon: <ClipboardCheck className="w-4 h-4" />, label: '위생 점검일지' },
     { key: 'purchase' as const,  href: '/dashboard/report/purchases/input', icon: <ShoppingCart className="w-4 h-4" />,  label: 'AI 매입관리' },
     { key: 'report' as const,      href: '/dashboard/report/view',           icon: <BarChart2 className="w-4 h-4" />,      label: '일마감내역' },
@@ -120,13 +124,15 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { key: 'salesForecast' as const,         href: '/dashboard/sales-forecast',                      icon: <LineChart          className="w-4 h-4" />, label: '품목별 매출 추이' },
     { key: 'suppliers' as const,             href: '/dashboard/suppliers',                           icon: <Building2          className="w-4 h-4" />, label: '거래처 관리' },
     { key: 'predictionVariables' as const,   href: '/dashboard/settings/prediction-variables',       icon: <SlidersHorizontal  className="w-4 h-4" />, label: 'AI 예측 변수' },
+    { key: 'customers' as const,             href: '/dashboard/customers',                            icon: <Users              className="w-4 h-4" />, label: '고객 관리' },
+    { key: 'predictionHistory' as const,     href: '/dashboard/prediction-history',                   icon: <History            className="w-4 h-4" />, label: 'AI 예측 히스토리' },
   ];
 
   const visibleMenus = accessLoading ? [] : mainMenus.filter(m => menuAccess[m.key]);
 
   /* ── 공통 사이드바 콘텐츠 ── */
   const sidebarContent = (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
 
       {/* 스크롤 영역 */}
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
@@ -193,9 +199,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                 설정
               </Link>
 
-              <div className="hidden md:flex items-center gap-3 px-3 py-2.5 rounded-xl text-slate-400 hover:bg-slate-800 transition-all cursor-pointer text-sm">
-                <NotificationHub />
-                <span>알림</span>
+              <div className="hidden md:block">
+                <NotificationHub label="알림" />
               </div>
             </>
           )}
@@ -235,30 +240,41 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       {/* 리소스 모니터 (접이식) */}
       <ResourceMonitor />
 
-      {/* 하단: 유저 + 로그아웃 */}
-      <div className="p-4 border-t border-slate-800">
-        {user && (
-          <div className="flex items-center gap-3 mb-3 px-2">
-            {user.photoURL ? (
-              <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full border border-slate-700 shrink-0" />
-            ) : (
-              <div className="w-8 h-8 rounded-full bg-teal-700 flex items-center justify-center text-xs font-bold text-white shrink-0">
-                {user.displayName?.slice(0, 1) || 'U'}
+      {/* 하단: 유저 프로필 (클릭 → 모달) */}
+      <div className="p-3 border-t border-slate-800 shrink-0">
+        {user && (() => {
+          const isSU = SUPERUSER_EMAIL && user.email?.toLowerCase() === SUPERUSER_EMAIL.toLowerCase();
+          return (
+            <button
+              onClick={() => { onClose?.(); setShowProfile(true); }}
+              className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-xl transition-all text-left group ${
+                isSU
+                  ? 'bg-purple-900/30 border border-purple-700/40 hover:bg-purple-900/50'
+                  : 'hover:bg-slate-800'
+              }`}
+            >
+              <div className="relative shrink-0">
+                {user.photoURL ? (
+                  <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full border border-slate-700" />
+                ) : (
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white ${isSU ? 'bg-purple-700' : 'bg-teal-700'}`}>
+                    {user.displayName?.slice(0, 1) || 'U'}
+                  </div>
+                )}
+                {isSU && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-400 rounded-full flex items-center justify-center">
+                    <Crown className="w-2.5 h-2.5 text-yellow-900" />
+                  </span>
+                )}
               </div>
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="text-slate-200 text-xs font-medium truncate">{user.displayName || user.email}</p>
-              <p className="text-slate-500 text-[10px] truncate">{currentStore?.storeName || '매장 없음'}</p>
-            </div>
-          </div>
-        )}
-        <button
-          onClick={async () => { onClose?.(); await logout(); }}
-          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-slate-400 hover:bg-red-900/20 hover:text-red-400 transition-colors text-sm"
-        >
-          <LogOut className="w-4 h-4 shrink-0" />
-          로그아웃
-        </button>
+              <div className="flex-1 min-w-0">
+                <p className={`text-xs font-medium truncate ${isSU ? 'text-purple-200' : 'text-slate-200'}`}>{user.displayName || user.email}</p>
+                <p className="text-slate-500 text-[10px] truncate">{isSU ? '슈퍼유저' : (currentStore?.storeName || '매장 없음')}</p>
+              </div>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400 shrink-0 transition-colors" />
+            </button>
+          );
+        })()}
       </div>
     </div>
   );
@@ -307,6 +323,9 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           {sidebarContent}
         </aside>
       </div>
+
+      {/* 프로필 모달 */}
+      {showProfile && <UserProfileModal onClose={() => setShowProfile(false)} />}
     </>
   );
 }

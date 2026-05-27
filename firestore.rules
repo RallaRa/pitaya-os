@@ -108,6 +108,63 @@ service cloud.firestore {
     }
 
     // ──────────────────────────────────────────
+    // pos_customers: 인증된 유저 읽기, 서버만 쓰기
+    // (PII는 암호화 저장, 복호화는 API로만)
+    // ──────────────────────────────────────────
+    match /pos_customers/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ──────────────────────────────────────────
+    // pos_customer_sales: 인증된 유저 읽기, 서버만 쓰기
+    // ──────────────────────────────────────────
+    match /pos_customer_sales/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ──────────────────────────────────────────
+    // customer_decrypt_logs: 읽기 전용 (감사 로그)
+    // ──────────────────────────────────────────
+    match /customer_decrypt_logs/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ──────────────────────────────────────────
+    // pos_sales_header / pos_sales_detail / pos_finish_total / pos_sync_log
+    // ──────────────────────────────────────────
+    match /pos_sales_header/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /pos_sales_detail/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /pos_finish_total/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /pos_sync_log/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ──────────────────────────────────────────
+    // ai_partner_predictions / ai_partner_accuracy
+    // ──────────────────────────────────────────
+    match /ai_partner_predictions/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /ai_partner_accuracy/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ──────────────────────────────────────────
     // 정의되지 않은 컬렉션 — 전면 차단
     // ──────────────────────────────────────────
     match /{document=**} {

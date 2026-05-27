@@ -16,12 +16,20 @@ export async function GET(req: Request) {
   const sinceStr = toYMD(since);
 
   try {
-    let q: FirebaseFirestore.Query = adminDb.collection('daily_reports')
-      .where('reportDate', '>=', sinceStr)
-      .orderBy('reportDate', 'asc');
-    if (storeId) q = q.where('storeId', '==', storeId);
+    // 기존 복합 인덱스: (storeId ASC, reportDate DESC)에 맞춰 쿼리 구성
+    let q: FirebaseFirestore.Query;
+    if (storeId) {
+      q = adminDb.collection('daily_reports')
+        .where('storeId', '==', storeId)
+        .where('reportDate', '>=', sinceStr)
+        .orderBy('reportDate', 'desc');
+    } else {
+      q = adminDb.collection('daily_reports')
+        .where('reportDate', '>=', sinceStr)
+        .orderBy('reportDate', 'asc');
+    }
 
-    const snap = await q.limit(90).get();
+    const snap = await q.limit(500).get();
 
     // 날짜별 품목별 집계
     const dateMap: Record<string, Record<string, number>> = {};

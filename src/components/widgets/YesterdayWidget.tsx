@@ -58,7 +58,7 @@ export default function YesterdayWidget({
           {data.noData ? (
             <div className="flex flex-col items-center justify-center h-24 gap-2">
               <p className="text-slate-500 text-xs text-center">전일 판매 데이터가 없습니다</p>
-              <p className="text-slate-600 text-[10px] text-center">AI 매출관리에서 데이터를 입력하면<br/>여기서 자동으로 분석됩니다</p>
+              <p className="text-slate-600 text-[10px] text-center">POS 연동 또는 일마감 입력 후<br/>자동으로 분석됩니다</p>
             </div>
           ) : (
             <>

@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import {
-  ClipboardCheck, TrendingUp, MessageCircle, ShoppingCart,
-  Plus, X, GripVertical, BarChart2, Calendar, Sparkles,
+  ClipboardCheck, MessageCircle, ShoppingCart,
+  Plus, X, BarChart2, Calendar, Sparkles, LineChart,
 } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
 
@@ -12,34 +12,34 @@ interface MenuItem { label: string; href: string; icon: string; }
 
 const ALL_MENUS: MenuItem[] = [
   { label: '위생 점검일지', href: '/dashboard/hygiene',                icon: 'clipboard' },
-  { label: 'AI 매출관리',   href: '/dashboard/report/input',           icon: 'trending'  },
   { label: '메신저',        href: '/dashboard/messenger',              icon: 'message'   },
   { label: 'AI 매입관리',   href: '/dashboard/report/purchases/input', icon: 'cart'      },
   { label: '일마감내역',    href: '/dashboard/report/view',            icon: 'bar'       },
   { label: '캘린더',        href: '/dashboard/hr/calendar',            icon: 'calendar'  },
   { label: 'AI 대화',       href: '/dashboard/ai',                     icon: 'sparkles'  },
+  { label: '매출 추이',     href: '/dashboard/sales-forecast',         icon: 'linechart' },
 ];
 
-const DEFAULT_ACTIVE = ['clipboard', 'trending', 'message', 'cart'];
+const DEFAULT_ACTIVE = ['clipboard', 'message', 'cart', 'bar'];
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   clipboard: <ClipboardCheck className="w-5 h-5" />,
-  trending:  <TrendingUp    className="w-5 h-5" />,
   message:   <MessageCircle className="w-5 h-5" />,
   cart:      <ShoppingCart  className="w-5 h-5" />,
   bar:       <BarChart2     className="w-5 h-5" />,
   calendar:  <Calendar      className="w-5 h-5" />,
   sparkles:  <Sparkles      className="w-5 h-5" />,
+  linechart: <LineChart     className="w-5 h-5" />,
 };
 
 const ICON_COLOR: Record<string, string> = {
   clipboard: 'text-teal-400   bg-teal-500/10   hover:bg-teal-500/20',
-  trending:  'text-green-400  bg-green-500/10  hover:bg-green-500/20',
   message:   'text-blue-400   bg-blue-500/10   hover:bg-blue-500/20',
   cart:      'text-orange-400 bg-orange-500/10 hover:bg-orange-500/20',
   bar:       'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20',
   calendar:  'text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20',
   sparkles:  'text-pink-400   bg-pink-500/10   hover:bg-pink-500/20',
+  linechart: 'text-green-400  bg-green-500/10  hover:bg-green-500/20',
 };
 
 export default function QuickMenuWidget({

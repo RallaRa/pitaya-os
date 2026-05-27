@@ -38,7 +38,12 @@ const PRESET_LABELS: Record<Preset, string> = {
 };
 
 // ── 날짜 유틸 ─────────────────────────────────────────────────────
-function toYMD(d: Date) { return d.toISOString().split('T')[0]; }
+function toYMD(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 function getThisWeek() {
   const today = new Date();
@@ -116,7 +121,7 @@ function buildDateMap(docs: any[], storeId: string): Map<string, number> {
     if (!existing || score(d) > score(existing)) byDate.set(d.reportDate, d);
   }
   const result = new Map<string, number>();
-  for (const [date, dr] of byDate) result.set(date, dr.netSales ?? dr.totalSales ?? 0);
+  for (const [date, dr] of byDate) result.set(date, dr.netSales ?? dr.netSale ?? dr.totalSales ?? 0);
   return result;
 }
 
@@ -201,7 +206,7 @@ export default function ReportViewPage() {
         reportDate:     dr.reportDate    ?? '',
         serialNumber:   dr.serialNumber  ?? '',
         totalSales:     dr.totalSales    ?? 0,
-        netSales:       dr.netSales      ?? 0,
+        netSales:       dr.netSales ?? dr.netSale ?? dr.totalSales ?? 0,
         customerCount:  dr.customerCount ?? 0,
         returnAmount:   dr.returnAmount  ?? 0,
         discountAmount: dr.discountAmount ?? 0,
@@ -490,6 +495,10 @@ export default function ReportViewPage() {
                 {reports.map((report, idx) => {
                   const isPOS = report.source === 'pos_bridge' || report.source === 'pos_bridge_migration';
 
+                  const dow = report.reportDate ? new Date(report.reportDate + 'T00:00:00').getDay() : -1;
+                  const DOW_LABELS = ['일','월','화','수','목','금','토'];
+                  const dowColor = dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : 'text-slate-300';
+
                   const pmDate   = subtractOneMonth(report.reportDate);
                   const pyDate   = getPrevYearDate(report.reportDate);
                   const pmSales  = prevMonthMap.get(pmDate);
@@ -504,12 +513,15 @@ export default function ReportViewPage() {
                       {/* 날짜 */}
                       <td className="px-3 py-3 whitespace-nowrap">
                         <div className="flex items-center gap-1.5 mb-0.5">
-                          <p className="text-white font-medium text-sm">
+                          <p className="text-white font-medium text-sm flex items-center gap-1">
                             {report.reportDate
                               ? new Date(report.reportDate + 'T00:00:00').toLocaleDateString('ko-KR', {
-                                  month: 'long', day: 'numeric', weekday: 'short',
+                                  month: 'long', day: 'numeric',
                                 })
                               : '-'}
+                            {dow >= 0 && (
+                              <span className={`text-xs font-bold ${dowColor}`}>({DOW_LABELS[dow]})</span>
+                            )}
                           </p>
                           {isPOS ? (
                             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-900/40 border border-red-500/30 text-red-400">🔴</span>
@@ -540,10 +552,17 @@ export default function ReportViewPage() {
 
                       {/* 전월 대비 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
-                        {pmChg ? (
+                        {pmSales != null ? (
                           <div>
-                            <span className={`text-xs font-bold ${pmChg.color}`}>{pmChg.text}</span>
-                            <p className="text-slate-600 text-[10px]">{pmDate.slice(5)} 대비</p>
+                            <p className="text-slate-400 text-xs">{pmSales.toLocaleString()}원</p>
+                            {pmChg ? (
+                              <>
+                                <span className={`text-xs font-bold ${pmChg.color}`}>{pmChg.text}</span>
+                                <p className="text-slate-600 text-[10px]">{pmDate.slice(5)} 대비</p>
+                              </>
+                            ) : (
+                              <p className="text-slate-600 text-[10px]">{pmDate.slice(5)}</p>
+                            )}
                           </div>
                         ) : (
                           <span className="text-slate-600 text-xs">-</span>
@@ -552,12 +571,21 @@ export default function ReportViewPage() {
 
                       {/* 전년 대비 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
-                        {pyChg ? (
+                        {pySales != null ? (
                           <div>
-                            <span className={`text-xs font-bold ${pyChg.color}`}>{pyChg.text}</span>
-                            <p className="text-slate-600 text-[10px]">
-                              {pyDate.slice(0, 4)}년 {yearMode === 'weekday' ? '동요일' : pyDate.slice(5)} 대비
-                            </p>
+                            <p className="text-slate-400 text-xs">{pySales.toLocaleString()}원</p>
+                            {pyChg ? (
+                              <>
+                                <span className={`text-xs font-bold ${pyChg.color}`}>{pyChg.text}</span>
+                                <p className="text-slate-600 text-[10px]">
+                                  {pyDate.slice(0, 4)}년 {yearMode === 'weekday' ? '동요일' : pyDate.slice(5)} 대비
+                                </p>
+                              </>
+                            ) : (
+                              <p className="text-slate-600 text-[10px]">
+                                {pyDate.slice(0, 4)}년 {yearMode === 'weekday' ? '동요일' : pyDate.slice(5)}
+                              </p>
+                            )}
                           </div>
                         ) : (
                           <span className="text-slate-600 text-xs">-</span>

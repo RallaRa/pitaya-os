@@ -7,6 +7,15 @@ import { Loader2, CheckCircle, Eye, Save } from 'lucide-react';
 import { useStore } from '@/context/StoreContext';
 import { useAuth } from '@/context/AuthContext';
 import { HYGIENE_SECTIONS, TOTAL_ITEMS } from '@/lib/hygieneChecklist';
+import { db } from '@/lib/firebase/firebase';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+
+// 섹션 표시키 → HYGIENE_SECTIONS category 매핑
+const SECTION_CATEGORY: Record<string, string> = {
+  작업전:   '위생상태(작업전)',
+  중간점검: '위생상태(작업중)',
+  마감점검: '위생상태(작업후)',
+};
 
 interface CheckItemState {
   evaluation: '적정' | '부적정' | null;
@@ -33,6 +42,77 @@ function HygieneChecklistContent() {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
   };
+
+  // 섹션 자동 체크 (클라이언트 → Firestore 직접 업데이트)
+  const autoCheckSection = useCallback(async (
+    sectionKey: string,
+    isAuto: boolean,
+  ) => {
+    if (!currentStore?.storeId) return;
+    const kstToday = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const category = SECTION_CATEGORY[sectionKey];
+    if (!category) return;
+    const section = HYGIENE_SECTIONS.find(s => s.category === category);
+    if (!section) return;
+
+    const byName = isAuto ? '자동완성' : (user?.displayName || user?.email || '');
+    const ts     = serverTimestamp();
+
+    const updates: Record<string, unknown> = {
+      [`sections.${sectionKey}.completed`]:   true,
+      [`sections.${sectionKey}.completedBy`]: byName,
+      [`sections.${sectionKey}.completedAt`]: ts,
+      [`autoChecks.${sectionKey}`]: { auto: isAuto, at: ts },
+      updatedAt: ts,
+    };
+    section.items.forEach((_, idx) => {
+      updates[`sections.${sectionKey}.items.${idx}.checked`]   = true;
+      updates[`sections.${sectionKey}.items.${idx}.checkedBy`] = byName;
+      updates[`sections.${sectionKey}.items.${idx}.checkedAt`] = ts;
+    });
+
+    const docRef = doc(db, 'hygiene_checklists', `${currentStore.storeId}_${kstToday}`);
+    await setDoc(docRef, updates, { merge: true });
+
+    // 로컬 UI 상태도 적정으로 업데이트
+    setChecklistState(prev => {
+      const next = { ...prev };
+      const catState = { ...(next[category] || {}) };
+      section.items.forEach((_, ii) => {
+        catState[ii] = { ...(catState[ii] || { evaluation: null, notes: '' }), evaluation: '적정' };
+      });
+      next[category] = catState;
+      return next;
+    });
+  }, [currentStore?.storeId, user]);
+
+  // 페이지 진입 시 KST 11시 이후이면 작업전 자동 체크
+  useEffect(() => {
+    const handleEntry = async () => {
+      if (!currentStore?.storeId || !user?.uid) return;
+      const kstNow   = new Date(Date.now() + 9 * 60 * 60 * 1000);
+      const kstHour  = kstNow.getUTCHours();
+      const kstToday = kstNow.toISOString().slice(0, 10);
+      if (kstHour < 11) return;
+
+      const docRef = doc(db, 'hygiene_checklists', `${currentStore.storeId}_${kstToday}`);
+      const snap   = await getDoc(docRef);
+      const data   = snap.data();
+
+      if (data?.sections?.작업전?.completed || data?.notifications?.morning === false) return;
+
+      await autoCheckSection('작업전', false);
+
+      await setDoc(docRef, {
+        notifications:   { morning: false },
+        lastEntryUser:   user.uid,
+        lastEntryName:   user.displayName || user.email || '',
+        lastEntryAt:     serverTimestamp(),
+      }, { merge: true });
+    };
+    handleEntry().catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStore?.storeId, user?.uid]);
 
   useEffect(() => {
     if (user?.displayName) setInspectorName(user.displayName);

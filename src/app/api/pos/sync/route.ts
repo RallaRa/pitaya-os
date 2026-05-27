@@ -13,12 +13,20 @@ function authenticate(req: Request): boolean {
 }
 
 // ── 타입 ──────────────────────────────────────────────────────────
+interface CustomerSale {
+  Cus_Code:   string;
+  Sale_Date:  string;
+  totalSale:  number;
+  visitCount: number;
+}
+
 interface SyncBody {
   storeId?: string;
   date: string;
   headers?: SatHeader[] | null;
   details?: SadDetail[] | null;
   finish?: FinishTotal | null;
+  customerSales?: CustomerSale[] | null;
   syncedAt: string;
 }
 
@@ -120,16 +128,22 @@ async function syncToDailyReports(params: {
   const satTotal    = headerDoc.totalSale ?? 0;
   const finishTotal = finish?.totalSale   ?? 0;
   const totalSales  = satTotal;
-  const netSales    = finish?.netSale     ?? satTotal;
+
+  // isClosed: Finish_Total이 있고 SaT 합계와 1000원 이내 오차
+  const isClosed = finish !== null && finishTotal > 0 && Math.abs(finishTotal - satTotal) < 1000;
+
+  // netSales: finish.netSale이 satTotal의 50% 이상일 때만 신뢰 (S_NetSale 단일POS 오류 방지)
+  // 미달이거나 finish 없으면 SaT 합계(다중POS 합산) 사용
+  const rawNetSale = finish?.netSale ?? 0;
+  const netSales = rawNetSale > 0 && satTotal > 0 && rawNetSale >= satTotal * 0.5
+    ? rawNetSale
+    : satTotal;
   const cashSale    = finish?.cashSale    ?? headerDoc.cashSale  ?? 0;
   const cardSale    = finish?.cardSale    ?? headerDoc.cardSale  ?? 0;
   const returnSale  = finish?.returnSale  ?? 0;
   const returnCount = finish?.returnCount ?? 0;
   const transCount  = headerDoc.transCount ?? 0;
   const cusPoint    = finish?.cusPoint    ?? 0;
-
-  // 일마감 여부: Finish_Total이 있고 SaT 합계와 1000원 이내 오차
-  const isClosed = finish !== null && finishTotal > 0 && Math.abs(finishTotal - satTotal) < 1000;
 
   // 품목별 items 변환
   const items = details.map(d => ({
@@ -214,11 +228,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const storeId  = body.storeId || process.env.POS_STORE_ID || '';
+  const storeId      = body.storeId || process.env.POS_STORE_ID || '';
   const { date, syncedAt } = body;
-  const headers  = Array.isArray(body.headers)  ? body.headers  : [];
-  const details  = Array.isArray(body.details)  ? body.details  : [];
-  const finish   = body.finish ?? null;
+  const headers      = Array.isArray(body.headers)       ? body.headers       : [];
+  const details      = Array.isArray(body.details)       ? body.details       : [];
+  const finish       = body.finish ?? null;
+  const customerSales = Array.isArray(body.customerSales) ? body.customerSales : [];
 
   if (!storeId || !date || !syncedAt) {
     return NextResponse.json(
@@ -303,12 +318,32 @@ export async function POST(req: Request) {
     hasFinish = true;
   }
 
-  // 4. 동기화 로그
+  // 4. 고객 구매이력 (당일 방문 고객)
+  for (const cs of customerSales) {
+    const code = String(cs.Cus_Code || '').trim();
+    if (!code) continue;
+    batch.set(
+      adminDb.collection('pos_customer_sales').doc(`${storeId}_${code}_${date}`),
+      {
+        cusCode:    code,
+        storeId,
+        date,
+        totalSale:  Number(cs.totalSale  || 0),
+        visitCount: Number(cs.visitCount || 0),
+        syncedAt,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  }
+
+  // 5. 동기화 로그
   batch.set(adminDb.collection('pos_sync_log').doc(), {
     storeId, date,
-    headerCount:  headers.length,
-    detailCount:  details.length,
+    headerCount:    headers.length,
+    detailCount:    details.length,
     hasFinish,
+    customerCount:  customerSales.length,
     syncedAt,
     status: 'success',
     createdAt: FieldValue.serverTimestamp(),

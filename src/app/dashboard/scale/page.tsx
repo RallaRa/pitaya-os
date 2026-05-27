@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import Link from 'next/link';
 import * as XLSX from 'xlsx';
 import {
   Send, Download, Printer, Eye, X, Search, Trash2,
   Pencil, Check, AlertCircle, Bot, User, Loader2,
   RefreshCw, Scale, ChevronDown, Plus, Table2,
-  MessageSquare,
+  MessageSquare, Home,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -387,6 +388,9 @@ export default function ScaleCodePage() {
         {/* 헤더 */}
         <div className="px-4 md:px-6 py-4 border-b border-slate-800 flex items-center justify-between gap-3 flex-wrap shrink-0">
           <div className="flex items-center gap-3">
+            <Link href="/dashboard" className="p-1.5 text-slate-500 hover:text-teal-400 transition-colors rounded-lg hover:bg-slate-800 shrink-0" title="홈으로">
+              <Home className="w-4 h-4" />
+            </Link>
             <Scale className="w-5 h-5 text-teal-400" />
             <div>
               <h1 className="text-slate-100 font-bold text-lg">저울 코드 관리</h1>

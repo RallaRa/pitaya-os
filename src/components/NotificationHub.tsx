@@ -42,7 +42,12 @@ function timeAgo(ts: any): string {
   return `${Math.floor(hrs / 24)}일 전`;
 }
 
-export default function NotificationHub() {
+interface NotificationHubProps {
+  label?: string;
+  buttonClassName?: string;
+}
+
+export default function NotificationHub({ label, buttonClassName }: NotificationHubProps = {}) {
   const { user } = useAuth();
   const router   = useRouter();
 
@@ -114,18 +119,39 @@ export default function NotificationHub() {
 
   return (
     <div className="relative">
-      {/* 벨 버튼 */}
+      {/* 벨 버튼 — label 있으면 인라인(사이드바) 스타일, 없으면 아이콘 전용 */}
       <button
         ref={buttonRef}
         onClick={() => setIsOpen(prev => !prev)}
-        className="relative p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+        className={buttonClassName ?? (label
+          ? 'relative flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-all text-sm cursor-pointer'
+          : 'relative p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors'
+        )}
         aria-label="알림"
       >
-        <Bell className="w-5 h-5" />
-        {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-0.5">
-            {unreadCount > 99 ? '99+' : unreadCount}
-          </span>
+        {label ? (
+          /* 사이드바 인라인 모드: 벨 + 미읽음 뱃지를 relative span으로 묶기 */
+          <>
+            <span className="relative shrink-0">
+              <Bell className="w-4 h-4" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1.5 min-w-[16px] h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-0.5">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </span>
+            <span className="flex-1">{label}</span>
+          </>
+        ) : (
+          /* 아이콘 전용 모드 */
+          <>
+            <Bell className="w-5 h-5" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-0.5">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </>
         )}
       </button>
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun } from 'lucide-react';
+import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp } from 'lucide-react';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -26,6 +26,10 @@ export default function SettingsPage() {
   const [backfilling, setBackfilling]     = useState(false);
   const [backfillResult, setBackfillResult] = useState<{ updated: number; failed: number; message: string } | null>(null);
   const [backfillError, setBackfillError]   = useState<string | null>(null);
+
+  const [fixingNet, setFixingNet]       = useState(false);
+  const [fixNetResult, setFixNetResult] = useState<{ fixed: number; candidates: number; message: string; details: { reportDate: string; oldNetSales: number; newNetSales: number; source: string }[] } | null>(null);
+  const [fixNetError, setFixNetError]   = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.uid || !storesLoaded) return;
@@ -92,6 +96,28 @@ export default function SettingsPage() {
 
   const isMasterOrAdmin = ['master', 'superuser', 'admin'].includes(currentStore?.role || '');
   const isMasterOrSuperuser = ['master', 'superuser'].includes(currentStore?.role || '');
+
+  const handleFixNetSales = async (dryRun = false) => {
+    if (!currentStore?.storeId) return;
+    setFixingNet(true);
+    setFixNetResult(null);
+    setFixNetError(null);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/admin/fix-netsales', {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storeId: currentStore.storeId, dryRun }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '재계산 실패');
+      setFixNetResult(data);
+    } catch (e: any) {
+      setFixNetError(e.message || '오류 발생');
+    } finally {
+      setFixingNet(false);
+    }
+  };
 
   const handleBackfill = async () => {
     if (!currentStore?.storeId) return;
@@ -220,6 +246,70 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* 순매출 재계산 — master/superuser만 */}
+                {isMasterOrSuperuser && (
+                  <div className="bg-slate-900 border border-slate-700 rounded-xl p-5">
+                    <div className="flex items-start gap-4">
+                      <div className="bg-slate-800 p-3 rounded-xl flex-shrink-0">
+                        <TrendingUp className="w-5 h-5 text-emerald-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-bold">순매출 데이터 재계산</p>
+                        <p className="text-slate-400 text-sm mt-0.5">
+                          순매출이 총매출의 50% 미만인 이상 데이터를 POS 원본 기준으로 재계산합니다.
+                          먼저 미리보기로 대상을 확인하세요.
+                        </p>
+
+                        {fixNetResult && (
+                          <div className="mt-3 p-3 bg-emerald-900/30 border border-emerald-500/30 rounded-lg text-sm text-emerald-300">
+                            ✅ {fixNetResult.message}
+                            <span className="ml-2 text-slate-400 text-xs">
+                              (대상 {fixNetResult.candidates}건{fixNetResult.fixed > 0 ? ` / 수정 ${fixNetResult.fixed}건` : ''})
+                            </span>
+                            {fixNetResult.details?.length > 0 && (
+                              <div className="mt-2 space-y-0.5 max-h-32 overflow-y-auto">
+                                {fixNetResult.details.map((d, i) => (
+                                  <p key={i} className="text-[11px] text-slate-400 font-mono">
+                                    {d.reportDate}: {d.oldNetSales.toLocaleString()} → {d.newNetSales.toLocaleString()}원 ({d.source})
+                                  </p>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {fixNetError && (
+                          <div className="mt-3 p-3 bg-red-900/30 border border-red-500/30 rounded-lg text-sm text-red-300">
+                            ❌ {fixNetError}
+                          </div>
+                        )}
+
+                        <div className="mt-3 flex items-center gap-2">
+                          <button
+                            onClick={() => handleFixNetSales(true)}
+                            disabled={fixingNet}
+                            className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-300 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+                          >
+                            {fixingNet
+                              ? <><Loader2 className="w-4 h-4 animate-spin" /> 처리 중...</>
+                              : '미리보기'
+                            }
+                          </button>
+                          <button
+                            onClick={() => handleFixNetSales(false)}
+                            disabled={fixingNet}
+                            className="flex items-center gap-2 px-4 py-2 bg-emerald-700/40 hover:bg-emerald-700/60 border border-emerald-500/30 text-emerald-300 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+                          >
+                            {fixingNet
+                              ? <><Loader2 className="w-4 h-4 animate-spin" /> 처리 중...</>
+                              : <><TrendingUp className="w-4 h-4" /> 재계산 실행</>
+                            }
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* 날씨/뉴스 백필 — master/superuser만 */}
                 {isMasterOrSuperuser && (

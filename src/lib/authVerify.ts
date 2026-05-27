@@ -1,11 +1,13 @@
 import { adminAuth, adminDb } from '@/lib/firebase/admin';
+import { isSuperuserEmail } from '@/lib/auth/permissions';
 
 export interface VerifiedUser {
   uid: string;
+  email?: string;
 }
 
 /**
- * Authorization: Bearer <idToken> 헤더를 검증하고 uid를 반환합니다.
+ * Authorization: Bearer <idToken> 헤더를 검증하고 uid + email을 반환합니다.
  * 토큰이 없거나 유효하지 않으면 null을 반환합니다.
  */
 export async function verifyToken(req: Request): Promise<VerifiedUser | null> {
@@ -14,7 +16,7 @@ export async function verifyToken(req: Request): Promise<VerifiedUser | null> {
   const token = authHeader.slice(7);
   try {
     const decoded = await adminAuth.verifyIdToken(token);
-    return { uid: decoded.uid };
+    return { uid: decoded.uid, email: decoded.email };
   } catch {
     return null;
   }
@@ -22,13 +24,13 @@ export async function verifyToken(req: Request): Promise<VerifiedUser | null> {
 
 /**
  * 검증된 uid의 실제 권한 그룹을 Firestore에서 조회합니다.
- * superuser 이메일(hipona00@gmail.com)은 항상 'master' 반환.
+ * superuser 이메일은 항상 'master' 반환.
  */
 export async function getActualGroupId(uid: string, storeId?: string | null): Promise<string> {
   const userDoc = await adminDb.collection('users').doc(uid).get();
   const userData = userDoc.exists ? userDoc.data() : null;
 
-  if (userData?.email === 'hipona00@gmail.com') return 'master';
+  if (isSuperuserEmail(userData?.email)) return 'master';
 
   if (storeId) {
     const mapSnap = await adminDb.collection('user_store_map')
