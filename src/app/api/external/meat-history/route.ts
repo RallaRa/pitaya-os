@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { verifyToken } from '@/lib/authVerify';
 
 const API_KEY  = process.env.PUBLIC_DATA_API_KEY;
 const BASE     = 'http://apis.data.go.kr/1390802/MeatTraceInfoService';
@@ -25,6 +26,9 @@ async function fetchXml(endpoint: string, extra: Record<string, string>) {
 }
 
 export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   if (!API_KEY) {
     return NextResponse.json({ error: 'PUBLIC_DATA_API_KEY 미설정' }, { status: 500 });
   }

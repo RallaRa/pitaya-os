@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
+import { verifyToken } from '@/lib/authVerify';
 
 const API_KEY = process.env.PUBLIC_DATA_API_KEY;
 const BASE_URL = 'http://apis.data.go.kr/1390802/AucDrgtService/getAucDrgtList';
 
-export async function GET() {
+export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   if (!API_KEY) {
     return NextResponse.json(
       { error: 'API 키 미설정', auction: null },

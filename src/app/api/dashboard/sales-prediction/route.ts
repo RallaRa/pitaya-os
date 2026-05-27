@@ -3,6 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getStoreCoords, getWeatherCondition, WEATHER_ICONS } from '@/lib/weather';
+import { verifyToken } from '@/lib/authVerify';
 
 function toYMD(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -35,6 +36,9 @@ async function fetchWeatherForecast(coords: {lat:number;lng:number}) {
 }
 
 export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const storeId = searchParams.get('storeId') || '';
   const refresh = searchParams.get('refresh') === '1';

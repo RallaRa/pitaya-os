@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { verifyToken } from '@/lib/authVerify';
 
 export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const uid = searchParams.get('uid');
   if (!uid) return NextResponse.json({ layout: null });
@@ -17,6 +21,9 @@ export async function GET(req: Request) {
 }
 
 export async function PUT(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     const { uid, layout, activeWidgets } = await req.json();
     if (!uid) return NextResponse.json({ error: 'uid required' }, { status: 400 });

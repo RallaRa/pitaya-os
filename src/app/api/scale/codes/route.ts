@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { verifyToken } from '@/lib/authVerify';
 
 function getCategory(name: string): string {
   if (/한우/.test(name))               return '한우';
@@ -39,6 +40,9 @@ const SAMPLE_DATA = [
 ];
 
 export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const storeId = searchParams.get('storeId') || '';
 
@@ -111,6 +115,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     const body = await req.json();
     const { storeId, items, createdBy } = body;
@@ -159,6 +166,9 @@ export async function POST(req: Request) {
 }
 
 export async function PUT(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     const body = await req.json();
     const { id, name, code } = body;
@@ -176,6 +186,9 @@ export async function PUT(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const id      = searchParams.get('id');
   const storeId = searchParams.get('storeId');

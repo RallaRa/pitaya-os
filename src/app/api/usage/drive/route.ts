@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { GoogleAuth } from 'google-auth-library';
+import { verifyToken } from '@/lib/authVerify';
 
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.metadata.readonly';
 
@@ -22,7 +23,10 @@ async function getAccessToken(): Promise<string | null> {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     // 1차: 환경변수 GOOGLE_DRIVE_ACCESS_TOKEN (수동 OAuth 토큰)
     let accessToken: string | null = process.env.GOOGLE_DRIVE_ACCESS_TOKEN || null;

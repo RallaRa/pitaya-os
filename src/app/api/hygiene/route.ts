@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { verifyToken } from '@/lib/authVerify';
 
 function calcStatus(passed: number, total: number): 'pass' | 'partial' | 'fail' {
   if (total === 0) return 'fail';
@@ -10,6 +11,9 @@ function calcStatus(passed: number, total: number): 'pass' | 'partial' | 'fail' 
 }
 
 export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const storeId   = searchParams.get('storeId');
   const date      = searchParams.get('date');
@@ -48,6 +52,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     const {
       storeId, uid, inspectorName, checkDate,

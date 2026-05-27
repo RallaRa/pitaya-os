@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { verifyToken } from '@/lib/authVerify';
 
 function suppliersCol(storeId: string) {
   return adminDb.collection('suppliers').doc(storeId).collection('list');
@@ -11,6 +12,9 @@ function historyCol(storeId: string, supplierId: string) {
 }
 
 export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const storeId = searchParams.get('storeId') || '';
   const supplierId = searchParams.get('supplierId');
@@ -29,6 +33,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     const body = await req.json();
     const { storeId, supplier, changedBy } = body;
@@ -59,6 +66,9 @@ export async function POST(req: Request) {
 }
 
 export async function PUT(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     const body = await req.json();
     const { storeId, supplierId, updates, changedBy, changeMemo, changeSource, rollbackVersion } = body;
@@ -119,6 +129,9 @@ export async function PUT(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const storeId = searchParams.get('storeId') || '';
   const supplierId = searchParams.get('supplierId') || '';

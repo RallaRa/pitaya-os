@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
+import { verifyToken } from '@/lib/authVerify';
 
 const SYSTEM_PROMPT = `너는 정육점 저울 코드 관리 도우미야.
 사용자 입력을 분석해서 반드시 아래 JSON만 반환해.
@@ -33,6 +34,9 @@ const SYSTEM_PROMPT = `너는 정육점 저울 코드 관리 도우미야.
 - message는 항상 친절한 한국어로`;
 
 export async function POST(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     const { message, history } = await req.json();
     if (!message?.trim()) return NextResponse.json({ error: '메시지를 입력해주세요' }, { status: 400 });

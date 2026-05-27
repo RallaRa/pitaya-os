@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { verifyToken } from '@/lib/authVerify';
 
 const DEFAULT_VARIABLES = [
   { id:'temp_high',   name:'고온 (30°↑)',      category:'temperature',    active:true,  condition:{metric:'tempMax',operator:'>=',value:30},  itemEffects:{}, description:'폭염일 냉삼겹·아이스크림 등 수요↑', dataSource:'기상청', sampleCount:0 },
@@ -16,6 +17,9 @@ const DEFAULT_VARIABLES = [
 ];
 
 export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const storeId = searchParams.get('storeId') || 'global';
   try {
@@ -36,6 +40,9 @@ export async function GET(req: Request) {
 }
 
 export async function PUT(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     const { storeId = 'global', variables } = await req.json();
     await adminDb.collection('weather_impact_variables').doc(storeId).set({

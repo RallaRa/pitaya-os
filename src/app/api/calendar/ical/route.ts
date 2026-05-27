@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
+import { verifyToken } from '@/lib/authVerify';
 
 // iCal 내보내기
 export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const userId  = searchParams.get('userId');
   const storeId = searchParams.get('storeId');
@@ -98,6 +102,9 @@ export async function GET(req: Request) {
 
 // iCal 가져오기 (.ics 파싱)
 export async function POST(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     const formData = await req.formData();
     const file     = formData.get('file') as File | null;

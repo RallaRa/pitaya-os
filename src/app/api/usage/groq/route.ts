@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
+import { verifyToken } from '@/lib/authVerify';
 
 const MONTHLY_TOKEN_LIMIT = 1_000_000; // 100만 토큰 / 월 기본값
 
-export async function GET() {
+export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   if (!process.env.GROQ_API_KEY) {
     return NextResponse.json({ available: false, reason: 'API 키 미설정' });
   }

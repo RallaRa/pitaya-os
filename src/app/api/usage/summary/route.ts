@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { adminDb, adminStorage } from '@/lib/firebase/admin';
+import { verifyToken } from '@/lib/authVerify';
 
 /* ── 내부 헬퍼: 개별 usage API 호출 (서버 내부 직접 임포트) ── */
 
@@ -176,7 +177,10 @@ async function fetchVercelDeploys() {
   } catch { return null; }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const [claude, gpt, groq, drive, storage, gemini, fsStats, vercel] = await Promise.all([
     fetchClaude(),
     fetchGPT(),

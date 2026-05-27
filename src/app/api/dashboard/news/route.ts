@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { verifyToken } from '@/lib/authVerify';
 
 interface NewsItem {
   title: string;
@@ -90,7 +91,10 @@ async function fetchGoogleNewsRSS(): Promise<NewsItem[]> {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   if (cache && Date.now() - cache.ts < CACHE_TTL) {
     return NextResponse.json({ news: cache.data, cached: true });
   }

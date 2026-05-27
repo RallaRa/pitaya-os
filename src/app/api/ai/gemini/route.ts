@@ -2,8 +2,11 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { NextResponse } from 'next/server';
 import { SYSTEM_PROMPT } from '@/lib/aiSystemPrompt';
 import { trackUsage } from '@/lib/trackUsage';
+import { verifyToken } from '@/lib/authVerify';
 
 export async function POST(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!apiKey) {
     return NextResponse.json(

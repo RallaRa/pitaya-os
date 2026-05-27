@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { verifyToken } from '@/lib/authVerify';
 
 const CLIENT_ID     = process.env.GOOGLE_CALENDAR_CLIENT_ID     || '';
 const CLIENT_SECRET = process.env.GOOGLE_CALENDAR_CLIENT_SECRET || '';
@@ -9,6 +10,9 @@ const REDIRECT_URI  = `${BASE_URL}/api/calendar/google/callback`;
 const SCOPE         = 'https://www.googleapis.com/auth/calendar';
 
 export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const action = searchParams.get('action');
   const uid    = searchParams.get('uid');
@@ -105,6 +109,9 @@ export async function GET(req: Request) {
 
 // 연동 해제
 export async function DELETE(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const uid = searchParams.get('uid');
   if (!uid) return NextResponse.json({ error: 'uid required' }, { status: 400 });

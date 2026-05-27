@@ -3,6 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getStoreCoords, getWeatherCondition } from '@/lib/weather';
+import { verifyToken } from '@/lib/authVerify';
 
 interface PartnerItem { rank: number; item: string; action: string; expectedSales: string; reason: string; badge: string; }
 
@@ -185,6 +186,9 @@ async function collectFirestoreData(storeId: string) {
 }
 
 export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const storeId = searchParams.get('storeId') || '';
   const refresh = searchParams.get('refresh') === '1';

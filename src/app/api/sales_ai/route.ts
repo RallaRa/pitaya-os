@@ -3,6 +3,7 @@ import { GoogleGenerativeAI, Part } from '@google/generative-ai';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { fetchWeather, getStoreCoords } from '@/lib/weather';
+import { verifyToken } from '@/lib/authVerify';
 
 function formatYMD(date: Date): string {
   const y = date.getFullYear();
@@ -82,6 +83,9 @@ async function generateSerialNumber(targetDateStr: string): Promise<string> {
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export async function POST(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     const body = await req.json();
 

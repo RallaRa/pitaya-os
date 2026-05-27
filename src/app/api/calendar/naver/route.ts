@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { verifyToken } from '@/lib/authVerify';
 
 const CLIENT_ID     = process.env.NAVER_CLIENT_ID     || '';
 const CLIENT_SECRET = process.env.NAVER_CLIENT_SECRET || '';
@@ -8,6 +9,9 @@ const BASE_URL      = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9000'
 const REDIRECT_URI  = `${BASE_URL}/api/calendar/naver/callback`;
 
 export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const action = searchParams.get('action');
   const uid    = searchParams.get('uid');
@@ -82,6 +86,9 @@ export async function GET(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const uid = searchParams.get('uid');
   if (!uid) return NextResponse.json({ error: 'uid required' }, { status: 400 });

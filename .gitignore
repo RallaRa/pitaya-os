@@ -2,6 +2,10 @@
 
 # dependencies
 /node_modules
+pos_bridge/node_modules/
+pos_bridge/package-lock.json
+bridge_copy.txt
+env_copy.txt
 /.pnp
 .pnp.*
 .yarn/*

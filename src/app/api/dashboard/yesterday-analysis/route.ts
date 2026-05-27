@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { verifyToken } from '@/lib/authVerify';
 
 const CACHE_TTL_MS = 3 * 60 * 60 * 1000; // 3시간 (수동 새로고침 반영을 위해 단축)
 
@@ -11,6 +12,9 @@ function toYMD(d: Date) {
 }
 
 export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const storeId = searchParams.get('storeId') || '';
   const refresh = searchParams.get('refresh') === '1'; // 강제 새로고침

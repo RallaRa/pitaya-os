@@ -2,10 +2,13 @@ import Groq from 'groq-sdk';
 import { NextResponse } from 'next/server';
 import { SYSTEM_PROMPT } from '@/lib/aiSystemPrompt';
 import { trackTokens } from '@/lib/trackUsage';
+import { verifyToken } from '@/lib/authVerify';
 
 const MODEL_ID = 'llama-3.3-70b-versatile';
 
 export async function POST(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   if (!process.env.GROQ_API_KEY) {
     return NextResponse.json(
       { error: 'GROQ_API_KEY 미설정 (Vercel 환경변수 확인)' },

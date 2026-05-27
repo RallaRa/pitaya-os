@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { verifyToken } from '@/lib/authVerify';
 
 function toYMD(d: Date) {
   return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
@@ -25,6 +26,9 @@ async function fetchHolidays14Days(apiKey: string): Promise<string[]> {
 }
 
 export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const storeId = searchParams.get('storeId') || '';
   const orderDays = (searchParams.get('orderDays') || '1,3').split(',').map(Number); // 발주 요일

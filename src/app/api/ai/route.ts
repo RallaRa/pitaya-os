@@ -5,6 +5,7 @@ import Groq from 'groq-sdk';
 import { NextResponse } from 'next/server';
 import { trackUsage, trackTokens } from '@/lib/trackUsage';
 import { SYSTEM_PROMPT } from '@/lib/aiSystemPrompt';
+import { verifyToken } from '@/lib/authVerify';
 
 type GroqModel = 'groq-mixtral' | 'groq-llama';
 type ModelChoice = 'auto' | 'gemini' | 'claude' | 'gpt' | 'groq' | GroqModel;
@@ -190,6 +191,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     const { message, persona, history, model: modelChoice = 'auto' } =
       await req.json() as { message: string; persona?: string; history?: any[]; model?: ModelChoice };

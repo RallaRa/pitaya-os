@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getStoreCoords, getWeatherCondition, WEATHER_ICONS } from '@/lib/weather';
 import { adminDb } from '@/lib/firebase/admin';
+import { verifyToken } from '@/lib/authVerify';
 
 export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const storeId = searchParams.get('storeId') || '';
 

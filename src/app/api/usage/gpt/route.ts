@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
+import { verifyToken } from '@/lib/authVerify';
 
 const MONTHLY_BUDGET_USD = 10; // 월 예산 $10 기본값
 // GPT-4o 토큰 비용: input $2.50/1M, output $10/1M
@@ -51,7 +52,10 @@ async function getFirestoreUsage(monthKey: string) {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json({ available: false, reason: 'API 키 미설정' });
   }
