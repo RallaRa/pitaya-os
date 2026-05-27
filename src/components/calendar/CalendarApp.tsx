@@ -15,6 +15,7 @@ import {
 } from '@hello-pangea/dnd';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
+import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import EventModal from './EventModal';
 import {
   CalEvent, TodoItem, CalendarList, TodoList,
@@ -1025,7 +1026,7 @@ function LeavePanel({
     try {
       const res = await fetch('/api/hr/leave', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({
           userId: uid, userName: user?.displayName || user?.email || uid,
           userEmail: user?.email || '', storeId,
@@ -1052,7 +1053,7 @@ function LeavePanel({
     try {
       const res = await fetch('/api/hr/dayoff', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({
           userId: uid, userName: user?.displayName || user?.email || uid,
           userEmail: user?.email || '', storeId,
@@ -1077,7 +1078,7 @@ function LeavePanel({
       const url = type === 'leave' ? '/api/hr/leave' : '/api/hr/dayoff';
       const res = await fetch(url, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ id, status, approvedBy: uid, approvedByName: user?.displayName }),
       });
       const data = await res.json();
@@ -1091,10 +1092,9 @@ function LeavePanel({
 
   const cancel = async (type: 'leave' | 'dayoff', id: string) => {
     try {
-      const url = type === 'leave'
-        ? `/api/hr/leave?id=${id}&userId=${uid}`
-        : `/api/hr/dayoff?id=${id}&userId=${uid}`;
-      const res = await fetch(url, { method: 'DELETE' });
+      const url = type === 'leave' ? `/api/hr/leave?id=${id}` : `/api/hr/dayoff?id=${id}`;
+      const headers = await getAuthHeaders();
+      const res = await fetch(url, { method: 'DELETE', headers });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       showToast('취소되었습니다');
@@ -1474,13 +1474,14 @@ export default function CalendarApp() {
     if (!uid) return;
     try {
       const monthKey = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
+      const headers = await getAuthHeaders();
       const [lRes, dRes] = await Promise.all([
         isAdmin
-          ? fetch(`/api/hr/leave?storeId=${storeId}&month=${monthKey}`)
-          : fetch(`/api/hr/leave?userId=${uid}&month=${monthKey}`),
+          ? fetch(`/api/hr/leave?storeId=${storeId}&month=${monthKey}`, { headers })
+          : fetch(`/api/hr/leave?userId=${uid}&month=${monthKey}`, { headers }),
         isAdmin
-          ? fetch(`/api/hr/dayoff?storeId=${storeId}&month=${monthKey}`)
-          : fetch(`/api/hr/dayoff?userId=${uid}&month=${monthKey}`),
+          ? fetch(`/api/hr/dayoff?storeId=${storeId}&month=${monthKey}`, { headers })
+          : fetch(`/api/hr/dayoff?userId=${uid}&month=${monthKey}`, { headers }),
       ]);
       const [lData, dData] = await Promise.all([lRes.json(), dRes.json()]);
       setLeaves(lData.requests || []);
