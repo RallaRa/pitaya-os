@@ -84,7 +84,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
   /* AI 모델 상태 */
   useEffect(() => {
-    fetch('/api/ai')
+    getAuthHeaders()
+      .then(headers => fetch('/api/ai', { headers }))
       .then(r => r.json())
       .then(d => { if (d.models) setAiModels(d.models); })
       .catch(() => {});

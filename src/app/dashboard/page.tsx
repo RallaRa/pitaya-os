@@ -19,7 +19,7 @@ import QuickMenuWidget      from '@/components/widgets/QuickMenuWidget';
 import AiInsightWidget        from '@/components/widgets/AiInsightWidget';
 import SalesPredictionWidget  from '@/components/widgets/SalesPredictionWidget';
 import TotalPartnerWidget     from '@/components/widgets/TotalPartnerWidget';
-import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 
 /* ── 타입 ── */
 type GridLayout = readonly LayoutItem[];
@@ -174,7 +174,8 @@ export default function DashboardPage() {
   /* 위젯 권한 조회 */
   useEffect(() => {
     const q = storeId ? `?storeId=${storeId}` : '';
-    fetch(`/api/dashboard/widget-permissions${q}`)
+    getAuthHeaders()
+      .then(headers => fetch(`/api/dashboard/widget-permissions${q}`, { headers }))
       .then(r => r.json())
       .then(d => setWidgetPerms(d.widgets || {}))
       .catch(() => {});
@@ -183,7 +184,8 @@ export default function DashboardPage() {
   /* 저장된 레이아웃 불러오기 */
   useEffect(() => {
     if (!uid) return;
-    fetch(`/api/dashboard/layout?uid=${uid}`)
+    getAuthHeaders()
+      .then(headers => fetch(`/api/dashboard/layout?uid=${uid}`, { headers }))
       .then(r => r.json())
       .then(d => {
         if (d.layout && d.activeWidgets) {
@@ -200,11 +202,13 @@ export default function DashboardPage() {
     if (!uid || !layoutLoaded) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      fetch('/api/dashboard/layout', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid, layout: [...layout], activeWidgets: widgets }),
-      }).catch(() => {});
+      getAuthJsonHeaders().then(headers =>
+        fetch('/api/dashboard/layout', {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({ uid, layout: [...layout], activeWidgets: widgets }),
+        })
+      ).catch(() => {});
     }, 1000);
   }, [uid, layoutLoaded]);
 

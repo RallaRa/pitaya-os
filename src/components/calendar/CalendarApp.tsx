@@ -625,7 +625,7 @@ function TodoPanel({
     try {
       await fetch('/api/calendar/todos', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({
           title: input.trim(), storeId, createdBy: uid,
           listId: 'default', subTasks: [], priority: 'medium',
@@ -642,7 +642,7 @@ function TodoPanel({
   const toggleComplete = async (todo: TodoItem) => {
     await fetch('/api/calendar/todos', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthJsonHeaders(),
       body: JSON.stringify({ id: todo.id, completed: !todo.completed }),
     });
     if (selectedTodo?.id === todo.id) setSelected(prev => prev ? { ...prev, completed: !prev.completed } : null);
@@ -653,7 +653,7 @@ function TodoPanel({
     if (!selectedTodo) return;
     await fetch('/api/calendar/todos', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthJsonHeaders(),
       body: JSON.stringify({ id: selectedTodo.id, ...updates }),
     });
     setSelected(prev => prev ? { ...prev, ...updates } : null);
@@ -661,7 +661,7 @@ function TodoPanel({
   };
 
   const deleteTodo = async (id: string) => {
-    await fetch(`/api/calendar/todos?id=${id}`, { method: 'DELETE' });
+    await fetch(`/api/calendar/todos?id=${id}`, { method: 'DELETE', headers: await getAuthHeaders() });
     if (selectedTodo?.id === id) setSelected(null);
     onTodosChange();
   };
@@ -688,10 +688,11 @@ function TodoPanel({
     const [moved] = reordered.splice(result.source.index, 1);
     reordered.splice(result.destination.index, 0, moved);
     // update order
+    const authHeaders = await getAuthJsonHeaders();
     await Promise.all(reordered.map((t, i) =>
       fetch('/api/calendar/todos', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({ id: t.id, order: i * 1000 }),
       })
     ));
@@ -1372,7 +1373,8 @@ export default function CalendarApp() {
 
   useEffect(() => {
     if (!uid) return;
-    fetch(`/api/permissions?type=myAccess&uid=${uid}${storeId ? `&storeId=${storeId}` : ''}`)
+    getAuthHeaders()
+      .then(headers => fetch(`/api/permissions?type=myAccess&uid=${uid}${storeId ? `&storeId=${storeId}` : ''}`, { headers }))
       .then(r => r.json())
       .then(d => { setIsAdmin(['master', 'admin', 'owner'].includes(d.role || '')); })
       .catch(() => {});
@@ -1382,7 +1384,7 @@ export default function CalendarApp() {
   const loadCalendars = useCallback(async () => {
     if (!uid) return;
     try {
-      const res = await fetch(`/api/calendar/calendars?storeId=${storeId}&uid=${uid}`);
+      const res = await fetch(`/api/calendar/calendars?storeId=${storeId}&uid=${uid}`, { headers: await getAuthHeaders() });
       const d   = await res.json();
       setCalendars(d.calendars || []);
     } catch {}
@@ -1395,12 +1397,13 @@ export default function CalendarApp() {
       const from = toDateStr(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1));
       const to   = toDateStr(new Date(cursor.getFullYear(), cursor.getMonth() + 2, 0));
 
+      const authHeaders = await getAuthHeaders();
       const [evRes, hrRes, extRes] = await Promise.all([
-        fetch(`/api/calendar/events?storeId=${storeId}&from=${from}&to=${to}`),
-        fetch(`/api/hr/events?storeId=${storeId}&month=${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`),
+        fetch(`/api/calendar/events?storeId=${storeId}&from=${from}&to=${to}`, { headers: authHeaders }),
+        fetch(`/api/hr/events?storeId=${storeId}&month=${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`, { headers: authHeaders }),
         Promise.allSettled([
-          fetch(`/api/calendar/google?action=events&uid=${uid}`),
-          fetch(`/api/calendar/naver?action=events&uid=${uid}`),
+          fetch(`/api/calendar/google?action=events&uid=${uid}`, { headers: authHeaders }),
+          fetch(`/api/calendar/naver?action=events&uid=${uid}`, { headers: authHeaders }),
         ]),
       ]);
 
@@ -1432,8 +1435,8 @@ export default function CalendarApp() {
       // 연차/휴무
       try {
         const monthKey = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
-        const leaveRes  = await fetch(`/api/hr/leave?storeId=${storeId}&month=${monthKey}`);
-        const dayoffRes = await fetch(`/api/hr/dayoff?storeId=${storeId}&month=${monthKey}`);
+        const leaveRes  = await fetch(`/api/hr/leave?storeId=${storeId}&month=${monthKey}`, { headers: authHeaders });
+        const dayoffRes = await fetch(`/api/hr/dayoff?storeId=${storeId}&month=${monthKey}`, { headers: authHeaders });
         const lData = await leaveRes.json();
         const dData = await dayoffRes.json();
 
@@ -1464,7 +1467,7 @@ export default function CalendarApp() {
   const loadTodos = useCallback(async () => {
     if (!uid) return;
     try {
-      const res = await fetch(`/api/calendar/todos?storeId=${storeId}&uid=${uid}`);
+      const res = await fetch(`/api/calendar/todos?storeId=${storeId}&uid=${uid}`, { headers: await getAuthHeaders() });
       const d   = await res.json();
       setTodos(d.todos || []);
     } catch {}
@@ -1509,7 +1512,7 @@ export default function CalendarApp() {
       const method = ev.id ? 'PUT' : 'POST';
       const res = await fetch('/api/calendar/events', {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ ...ev, storeId, createdBy: uid }),
       });
       const d = await res.json();
@@ -1527,7 +1530,7 @@ export default function CalendarApp() {
   const deleteEvent = useCallback(async (id: string) => {
     if (!confirm('이벤트를 삭제하시겠습니까?')) return;
     try {
-      await fetch(`/api/calendar/events?id=${id}`, { method: 'DELETE' });
+      await fetch(`/api/calendar/events?id=${id}`, { method: 'DELETE', headers: await getAuthHeaders() });
       showToast('삭제되었습니다');
       setPopoverEv(null);
       setShowEventModal(false);
@@ -1549,7 +1552,7 @@ export default function CalendarApp() {
     try {
       await fetch('/api/calendar/events', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({
           id: eventId, startDate: date, endDate: toDateStr(newEnd),
           ...(time ? { startTime: time } : {}),
@@ -1565,7 +1568,7 @@ export default function CalendarApp() {
     try {
       await fetch('/api/calendar/calendars', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ id: cal.id, visible: !cal.visible }),
       });
     } catch {}
@@ -1578,7 +1581,7 @@ export default function CalendarApp() {
     try {
       await fetch('/api/calendar/calendars', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ storeId, uid, name: name.trim(), color: '#4299e1' }),
       });
       loadCalendars();

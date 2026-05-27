@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Droplets } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
+import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -95,7 +96,7 @@ export default function WeatherWidget({
     setError(null);
     try {
       const q   = storeId ? `?storeId=${storeId}` : '';
-      const res = await fetch(`/api/dashboard/weather${q}`);
+      const res = await fetch(`/api/dashboard/weather${q}`, { headers: await getAuthHeaders() });
       const d   = await res.json();
       if (d.error) throw new Error(d.error);
       setData(d);

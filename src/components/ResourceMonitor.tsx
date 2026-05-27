@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 interface ServiceStat {
   id: string;
@@ -42,7 +43,7 @@ export default function ResourceMonitor() {
     if (showSpin) setRefreshing(true);
     else setLoading(true);
     try {
-      const res = await fetch('/api/usage/summary');
+      const res = await fetch('/api/usage/summary', { headers: await getAuthHeaders() });
       if (!res.ok) return;
       const data = await res.json();
       setServices(data.services || []);

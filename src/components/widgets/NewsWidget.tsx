@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ExternalLink } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
+import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 interface NewsItem { title: string; link: string; pubDate: string; source: string; }
 
@@ -16,7 +17,7 @@ export default function NewsWidget({ editMode, onRemove }: { editMode: boolean; 
     setLoading(true);
     setError(null);
     try {
-      const res  = await fetch('/api/dashboard/news');
+      const res  = await fetch('/api/dashboard/news', { headers: await getAuthHeaders() });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setNews(data.news || []);

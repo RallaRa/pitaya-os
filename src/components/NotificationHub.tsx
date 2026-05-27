@@ -6,6 +6,7 @@ import { Bell } from 'lucide-react';
 import { db } from '@/lib/firebase/firebase';
 import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
+import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 
 interface Notification {
   id: string;
@@ -71,7 +72,8 @@ export default function NotificationHub({ label, buttonClassName }: Notification
       setNotifications(docs.slice(0, 20));
     }, () => {
       // 규칙 에러 등 실패 시 API 폴백
-      fetch(`/api/notifications?uid=${user.uid}&limit=20`)
+      getAuthHeaders()
+        .then(headers => fetch(`/api/notifications?uid=${user.uid}&limit=20`, { headers }))
         .then(r => r.json())
         .then(data => { if (data.notifications) setNotifications(data.notifications); })
         .catch(() => {});
@@ -101,7 +103,7 @@ export default function NotificationHub({ label, buttonClassName }: Notification
     if (!n.isRead) {
       await fetch('/api/notifications', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ id: n.id }),
       });
     }
@@ -112,7 +114,7 @@ export default function NotificationHub({ label, buttonClassName }: Notification
     if (!user?.uid || unreadCount === 0) return;
     await fetch('/api/notifications', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthJsonHeaders(),
       body: JSON.stringify({ uid: user.uid, action: 'readAll' }),
     });
   }, [user?.uid, unreadCount]);

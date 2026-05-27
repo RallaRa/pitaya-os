@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Loader2, CheckCircle, Eye, Save } from 'lucide-react';
 import { useStore } from '@/context/StoreContext';
 import { useAuth } from '@/context/AuthContext';
+import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { HYGIENE_SECTIONS, TOTAL_ITEMS } from '@/lib/hygieneChecklist';
 import { db } from '@/lib/firebase/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
@@ -142,7 +143,8 @@ function HygieneChecklistContent() {
   useEffect(() => {
     if (!currentStore?.storeId) return;
     const targetDate = dateParam || new Date().toISOString().slice(0, 10);
-    fetch(`/api/hygiene?storeId=${currentStore.storeId}&date=${targetDate}`)
+    getAuthHeaders()
+      .then(headers => fetch(`/api/hygiene?storeId=${currentStore.storeId}&date=${targetDate}`, { headers }))
       .then(r => r.json())
       .then(data => {
         if (data.record) {

@@ -21,7 +21,10 @@ const sql   = require('mssql');
 const axios = require('axios');
 
 // ── 설정 ──────────────────────────────────────────────────────────
-const API_URL  = process.env.PITAYA_API_URL || 'https://pitaya-osv1.vercel.app/api/pos/sync';
+const API_BASE = (process.env.PITAYA_API_URL || 'https://pitaya-osv1.vercel.app/api/pos/sync')
+  .replace(/\/api\/pos\/sync$/, '');
+const API_URL  = `${API_BASE}/api/pos/sync`;
+const CUSTOMERS_API_URL = `${API_BASE}/api/pos/sync-customers`;
 const API_KEY  = process.env.POS_BRIDGE_KEY || '';
 const STORE_ID = process.env.STORE_ID       || '';
 
@@ -173,6 +176,86 @@ async function fetchFinish(dateStr) {
   };
 }
 
+// ── 고객 마스터 조회 (Cus_Mst) ───────────────────────────────────
+async function fetchCustomers() {
+  const p = await getPool();
+  const result = await p.request().query(`
+    SELECT
+      Cus_Code, Cus_Name, Cus_HP, Cus_Birth, Cus_Grade,
+      Cus_Point, Write_Date
+    FROM Cus_Mst
+    WHERE Cus_YN = 1
+  `);
+  return result.recordset.map(r => ({
+    Cus_Code:   String(r.Cus_Code  || '').trim(),
+    Cus_Name:   String(r.Cus_Name  || '').trim(),
+    Cus_HP:     String(r.Cus_HP    || '').trim(),
+    Cus_Birth:  String(r.Cus_Birth || '').trim(),
+    Cus_Grade:  String(r.Cus_Grade || '').trim(),
+    Cus_Point:  toInt(r.Cus_Point),
+    Write_Date: r.Write_Date
+      ? new Date(r.Write_Date).toISOString().slice(0, 10)
+      : '',
+  }));
+}
+
+// ── 당일 고객 구매이력 조회 (SaT_YYYYMM 기반) ────────────────────
+async function fetchCustomerSales(dateStr) {
+  const table = `SaT_${ym(dateStr)}`;
+  const p = await getPool();
+  try {
+    const result = await p.request()
+      .input('date', sql.VarChar(10), dateStr)
+      .query(`
+        SELECT
+          Cus_Code,
+          @date         AS Sale_Date,
+          SUM(TSell_Pri) AS totalSale,
+          COUNT(*)       AS visitCount
+        FROM ${table}
+        WHERE Sale_Date = @date
+          AND Cus_Code IS NOT NULL
+          AND Cus_Code <> ''
+        GROUP BY Cus_Code
+      `);
+    return result.recordset.map(r => ({
+      Cus_Code:   String(r.Cus_Code  || '').trim(),
+      Sale_Date:  dateStr,
+      totalSale:  toInt(r.totalSale),
+      visitCount: toInt(r.visitCount),
+    })).filter(r => r.Cus_Code);
+  } catch {
+    return [];
+  }
+}
+
+// ── 고객 마스터 전송 ──────────────────────────────────────────────
+async function sendCustomersToApi(customers) {
+  const CHUNK = 500;
+  let total = 0, failed = 0;
+  for (let i = 0; i < customers.length; i += CHUNK) {
+    const chunk = customers.slice(i, i + CHUNK);
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const res = await axios.post(CUSTOMERS_API_URL, {
+          storeId: STORE_ID,
+          customers: chunk,
+          syncedAt: new Date().toISOString(),
+        }, {
+          headers: { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
+          timeout: 60000,
+        });
+        if (res.data?.success) { total += res.data.saved || chunk.length; break; }
+        if (attempt === 3) failed += chunk.length;
+      } catch (e) {
+        if (attempt < 3) await sleep(5000);
+        else failed += chunk.length;
+      }
+    }
+  }
+  return { total, failed };
+}
+
 // ── 날씨 조회 (open-meteo 무료 API) ──────────────────────────────
 async function fetchWeather(dateStr) {
   try {
@@ -242,13 +325,14 @@ async function sendToApi(payload) {
 async function syncDate(dateStr, dryRun) {
   log(`-------- ${dateStr} 동기화 시작 --------`);
 
-  let headers, details, finish, weather;
+  let headers, details, finish, weather, customerSales;
   try {
-    [headers, details, finish, weather] = await Promise.all([
+    [headers, details, finish, weather, customerSales] = await Promise.all([
       fetchHeaders(dateStr),
       fetchDetails(dateStr),
       fetchFinish(dateStr),
       fetchWeather(dateStr),
+      fetchCustomerSales(dateStr),
     ]);
   } catch (e) {
     err(`DB 조회 실패 [${dateStr}]: ${e.message}`);
@@ -262,6 +346,7 @@ async function syncDate(dateStr, dryRun) {
     `DB 조회 완료 | SaT합계:${satTotal.toLocaleString()}원 ` +
     `품목:${details.length}건 ` +
     `일마감:${isClosed ? `${finish.totalSale.toLocaleString()}원 ✓` : '미마감'} ` +
+    `고객:${customerSales.length}명 ` +
     `날씨:${weather ? `${weather.condition} ${weather.tempMin}°~${weather.tempMax}°` : '-'}`
   );
 
@@ -279,6 +364,7 @@ async function syncDate(dateStr, dryRun) {
     finish,
     isClosed,
     weather,
+    customerSales,
     syncedAt: new Date().toISOString(),
   };
 
@@ -419,13 +505,38 @@ async function main() {
         break;
       }
 
+      case 'customers': {
+        log('======== 고객 마스터 전체 동기화 시작 ========');
+        let cusList;
+        try {
+          cusList = await fetchCustomers();
+        } catch (e) {
+          err(`고객 DB 조회 실패: ${e.message}`);
+          success = false;
+          break;
+        }
+        log(`고객 ${cusList.length}명 조회 완료`);
+        if (dryRun) {
+          log('[DRY-RUN] 전송 생략. 상위 3명:');
+          cusList.slice(0, 3).forEach(c =>
+            console.log(`  [${c.Cus_Code}] ${c.Cus_Name} | 등급:${c.Cus_Grade} | 포인트:${c.Cus_Point}`)
+          );
+        } else if (cusList.length > 0) {
+          const { total, failed } = await sendCustomersToApi(cusList);
+          log(`고객 동기화 완료 | 성공:${total}명 실패:${failed}명`);
+          success = failed === 0;
+        }
+        log(`======== 완료 ${success ? '✅' : '❌'} ========`);
+        break;
+      }
+
       default:
         // 첫 번째 인자가 날짜 형식이면 date 모드로
         if (/^\d{4}-\d{2}-\d{2}$/.test(mode)) {
           success = await runDate(mode, dryRun);
         } else {
           err(`알 수 없는 모드: ${mode}`);
-          console.log('사용법: node bridge.js [today|realtime|date YYYY-MM-DD|migrate START END] [--dry-run]');
+          console.log('사용법: node bridge.js [today|realtime|date YYYY-MM-DD|migrate START END|customers] [--dry-run]');
           process.exit(1);
         }
     }

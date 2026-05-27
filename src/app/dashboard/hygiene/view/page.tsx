@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/context/StoreContext';
 import { Loader2, Search, ClipboardCheck, ChevronDown, ChevronUp, PenLine } from 'lucide-react';
+import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { HYGIENE_SECTIONS } from '@/lib/hygieneChecklist';
 
 interface HygieneItem {
@@ -71,7 +72,8 @@ export default function HygieneViewPage() {
     setIsLoading(true);
     try {
       const res = await fetch(
-        `/api/hygiene?storeId=${currentStore.storeId}&startDate=${start}&endDate=${end}`
+        `/api/hygiene?storeId=${currentStore.storeId}&startDate=${start}&endDate=${end}`,
+        { headers: await getAuthHeaders() }
       );
       const data = await res.json();
       setRecords(data.records || []);

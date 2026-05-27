@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AlertTriangle, RefreshCw, Package, TrendingUp, TrendingDown, ChevronDown, ChevronUp, Truck } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
+import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 interface PartnerItem {
   rank: number; item: string; action: string;
@@ -174,18 +175,21 @@ export default function TotalPartnerWidget({ editMode, onRemove, storeId }: Prop
   const [showSrc,  setShowSrc]  = useState(false);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
-  const load = useCallback((force = false) => {
+  const load = useCallback(async (force = false) => {
     setLoading(true); setError(null);
     const q = storeId ? `?storeId=${storeId}` : '';
-    fetch(`/api/dashboard/total-partner${q}${force ? (q ? '&' : '?') + 'refresh=1' : ''}`)
-      .then(r => r.json())
-      .then(d => {
-        setData(d);
-        setUpdatedAt(new Date());
-        if (d.error) setError(d.error);
-      })
-      .catch(() => setError('데이터 로드 실패'))
-      .finally(() => setLoading(false));
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/dashboard/total-partner${q}${force ? (q ? '&' : '?') + 'refresh=1' : ''}`, { headers });
+      const d = await res.json();
+      setData(d);
+      setUpdatedAt(new Date());
+      if (d.error) setError(d.error);
+    } catch {
+      setError('데이터 로드 실패');
+    } finally {
+      setLoading(false);
+    }
   }, [storeId]);
 
   useEffect(() => { load(); }, [load]);

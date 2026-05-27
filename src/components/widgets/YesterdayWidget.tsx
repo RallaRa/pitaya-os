@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import WidgetWrapper from './WidgetWrapper';
+import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 interface Item { name: string; qty: number; amount: number; }
 interface YesterdayData { dateLabel: string; top: Item[]; bottom: Item[]; noData?: boolean; }
@@ -23,7 +24,7 @@ export default function YesterdayWidget({
       const params = new URLSearchParams();
       if (storeId)      params.set('storeId', storeId);
       if (forceRefresh) params.set('refresh', '1');
-      const res = await fetch(`/api/dashboard/yesterday-analysis?${params}`);
+      const res = await fetch(`/api/dashboard/yesterday-analysis?${params}`, { headers: await getAuthHeaders() });
       const d   = await res.json();
       if (d.error) throw new Error(d.error);
       setData(d);

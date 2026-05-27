@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AlertTriangle, ChevronDown, ChevronUp, RefreshCw, Target } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
+import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 interface PredictionItem {
   rank: number; item: string; expectedSales: number;
@@ -75,7 +76,7 @@ export default function SalesPredictionWidget({
       const params = new URLSearchParams();
       if (storeId) params.set('storeId', storeId);
       if (forceRefresh) params.set('refresh', '1');
-      const res = await fetch(`/api/dashboard/sales-prediction?${params}`);
+      const res = await fetch(`/api/dashboard/sales-prediction?${params}`, { headers: await getAuthHeaders() });
       const d = await res.json();
       if (d.error) throw new Error(d.error);
       setData(d); setUpdatedAt(new Date());
@@ -87,7 +88,7 @@ export default function SalesPredictionWidget({
     try {
       const params = new URLSearchParams();
       if (storeId) params.set('storeId', storeId);
-      const res = await fetch(`/api/order/check-delivery-gap?${params}`);
+      const res = await fetch(`/api/order/check-delivery-gap?${params}`, { headers: await getAuthHeaders() });
       setOrderInfo(await res.json());
     } catch {}
   }, [storeId]);

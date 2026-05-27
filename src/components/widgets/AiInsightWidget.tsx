@@ -6,6 +6,7 @@ import {
   TrendingUp, TrendingDown, Minus, RefreshCw,
   CheckCircle2, Circle, Database, ExternalLink,
 } from 'lucide-react';
+import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import {
   LineChart, Line, ResponsiveContainer, Tooltip,
 } from 'recharts';
@@ -89,9 +90,10 @@ export default function AiInsightWidget({
       if (storeId) q.set('storeId', storeId);
       if (force)   q.set('force', '1');
 
+      const headers = await getAuthHeaders();
       const [insightRes, trendRes] = await Promise.allSettled([
-        fetch(`/api/dashboard/ai-insight?${q}`).then(r => r.json()),
-        fetch(`/api/external/naver-trend${storeId ? `?storeId=${storeId}` : ''}`).then(r => r.json()),
+        fetch(`/api/dashboard/ai-insight?${q}`, { headers }).then(r => r.json()),
+        fetch(`/api/external/naver-trend${storeId ? `?storeId=${storeId}` : ''}`, { headers }).then(r => r.json()),
       ]);
 
       if (insightRes.status === 'fulfilled') setData(insightRes.value);
