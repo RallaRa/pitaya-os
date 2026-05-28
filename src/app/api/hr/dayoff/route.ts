@@ -21,12 +21,16 @@ async function sendNotification(targetUid: string, title: string, body: string, 
 
 async function getAdminUids(storeId: string): Promise<string[]> {
   if (!storeId) return [];
-  const snap = await adminDb.collection('store_members')
+  const snap = await adminDb.collection('user_store_map')
     .where('storeId', '==', storeId)
-    .where('role', 'in', ['owner', 'admin'])
-    .where('status', '==', 'approved')
+    .where('status', '==', 'active')
     .get();
-  return snap.docs.map(d => d.data().uid).filter(Boolean);
+  const uids: string[] = [];
+  for (const doc of snap.docs) {
+    const { uid, groupId } = doc.data();
+    if (['master', 'admin', 'owner'].includes(groupId || '')) uids.push(uid);
+  }
+  return uids;
 }
 
 export async function GET(req: Request) {

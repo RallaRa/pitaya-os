@@ -28,7 +28,7 @@ export async function GET(req: Request) {
       const r = d.data();
       return {
         cusCode:    r.cusCode,
-        nameMasked: maskName(r.nameEncrypted ? '(암호화됨)' : ''),
+        nameMasked: r.nameEncrypted ? '● 암호화됨' : maskName(r.name || ''),
         grade:      r.grade    || '',
         point:      r.point    || 0,
         writeDate:  r.writeDate || '',

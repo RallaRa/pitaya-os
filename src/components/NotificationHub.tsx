@@ -112,11 +112,13 @@ export default function NotificationHub({ label, buttonClassName }: Notification
 
   const handleReadAll = useCallback(async () => {
     if (!user?.uid || unreadCount === 0) return;
+    // 옵티미스틱 업데이트
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
     await fetch('/api/notifications', {
       method: 'PUT',
       headers: await getAuthJsonHeaders(),
       body: JSON.stringify({ uid: user.uid, action: 'readAll' }),
-    });
+    }).catch(() => {});
   }, [user?.uid, unreadCount]);
 
   return (

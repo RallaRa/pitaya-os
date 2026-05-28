@@ -14,11 +14,14 @@ export async function GET(req: Request) {
   const storeId = searchParams.get('storeId') || '';
   const base    = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9000';
 
+  const authHdr = req.headers.get('Authorization') || '';
+  const hdrs    = { Authorization: authHdr };
+
   // 3개 외부 API + Firestore 매출 병렬 fetch
   const [priceRes, auctionRes, trendRes, salesData] = await Promise.allSettled([
-    fetch(`${base}/api/external/meat-price`, { signal: AbortSignal.timeout(12000) }).then(r => r.json()),
-    fetch(`${base}/api/external/meat-auction`, { signal: AbortSignal.timeout(12000) }).then(r => r.json()),
-    fetch(`${base}/api/external/naver-trend${storeId ? `?storeId=${storeId}` : ''}`, { signal: AbortSignal.timeout(12000) }).then(r => r.json()),
+    fetch(`${base}/api/external/meat-price`, { headers: hdrs, signal: AbortSignal.timeout(12000) }).then(r => r.json()),
+    fetch(`${base}/api/external/meat-auction`, { headers: hdrs, signal: AbortSignal.timeout(12000) }).then(r => r.json()),
+    fetch(`${base}/api/external/naver-trend${storeId ? `?storeId=${storeId}` : ''}`, { headers: hdrs, signal: AbortSignal.timeout(12000) }).then(r => r.json()),
     (async () => {
       const since = new Date();
       since.setDate(since.getDate() - 30);

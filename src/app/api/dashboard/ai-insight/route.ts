@@ -39,11 +39,13 @@ export async function GET(req: Request) {
     } catch { /* ignore */ }
   }
 
-  // 외부 데이터 수집
-  const base = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9000';
+  // 외부 데이터 수집 (auth 토큰 전달)
+  const base    = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9000';
+  const authHdr = req.headers.get('Authorization') || '';
   let summaryData: any = {};
   try {
     const res = await fetch(`${base}/api/external/summary${storeId ? `?storeId=${storeId}` : ''}`, {
+      headers: { Authorization: authHdr },
       signal: AbortSignal.timeout(20000),
     });
     summaryData = await res.json();

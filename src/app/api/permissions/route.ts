@@ -120,8 +120,10 @@ export async function GET(req: Request) {
           await adminDb.collection('users').doc(uid).update({ groupId: 'master' });
         }
         const masterDoc = await adminDb.collection('permission_groups').doc('master').get();
-        const masterStored = masterDoc.exists ? masterDoc.data()?.menuAccess : SYSTEM_GROUPS[0].menuAccess;
-        return NextResponse.json({ groupId: 'master', menuAccess: { ...ALL_FALSE, ...masterStored } });
+        const masterStored = masterDoc.exists ? masterDoc.data()?.menuAccess : {};
+        // 시스템 기본값과 저장값을 병합 (새 메뉴키 누락 방지)
+        const masterAccess = { ...SYSTEM_GROUPS[0].menuAccess, ...masterStored };
+        return NextResponse.json({ groupId: 'master', menuAccess: masterAccess, role: 'master' });
       }
 
       let groupId: string | null = null;
