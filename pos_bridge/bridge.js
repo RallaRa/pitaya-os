@@ -146,6 +146,37 @@ async function fetchDetails(dateStr) {
 // ── 일마감 조회 (Finish_Total) — 다중 POS 전체 합산 ──────────────
 async function fetchFinish(dateStr) {
   const p = await getPool();
+
+  // POS별 상세 (로그용)
+  let perPos = [];
+  try {
+    const detail = await p.request()
+      .input('date2', sql.VarChar(10), dateStr)
+      .query(`
+        SELECT
+          Pos_No,
+          S_ToSale   AS totalSale,
+          S_Sale     AS netSale,
+          S_CashSale AS cashSale,
+          S_CardSale AS cardSale,
+          S_ToReCnt  AS returnCount,
+          S_ToReSale AS returnSale
+        FROM Finish_Total
+        WHERE S_SaleDate = @date2
+        ORDER BY Pos_No
+      `);
+    perPos = detail.recordset.map(r => ({
+      posNo:       String(r.Pos_No || ''),
+      totalSale:   toInt(r.totalSale),
+      netSale:     toInt(r.netSale),
+      cashSale:    toInt(r.cashSale),
+      cardSale:    toInt(r.cardSale),
+      returnCount: toInt(r.returnCount),
+      returnSale:  toInt(r.returnSale),
+    }));
+  } catch { /* Pos_No 컬럼 없는 경우 무시 */ }
+
+  // 전체 합산
   const result = await p.request()
     .input('date', sql.VarChar(10), dateStr)
     .query(`
@@ -163,7 +194,7 @@ async function fetchFinish(dateStr) {
 
   if (!result.recordset.length) return null;
   const r = result.recordset[0];
-  if (!toInt(r.totalSale)) return null; // 미마감(0값)은 null 반환
+  if (!toInt(r.totalSale)) return null;
 
   return {
     totalSale:   toInt(r.totalSale),
@@ -173,6 +204,7 @@ async function fetchFinish(dateStr) {
     returnCount: toInt(r.returnCount),
     returnSale:  toInt(r.returnSale),
     cusPoint:    toInt(r.cusPoint),
+    perPos,
   };
 }
 
@@ -371,9 +403,24 @@ async function syncDate(dateStr, dryRun) {
   if (dryRun) {
     log('[DRY-RUN] 전송 생략. 페이로드 요약:');
     console.log(`  날짜: ${dateStr}`);
-    console.log(`  헤더: ${headers.length}건 | 총매출: ${satTotal.toLocaleString()}원`);
+    console.log(`  헤더: ${headers.length}건 | SaT합계: ${satTotal.toLocaleString()}원`);
     console.log(`  상세: ${details.length}건`);
-    console.log(`  일마감: ${isClosed ? '완료' : '미마감'}`);
+    if (isClosed && finish) {
+      console.log(`  일마감: 완료`);
+      console.log(`  ┌ 합산 총매출:  ${finish.totalSale.toLocaleString()}원`);
+      console.log(`  ├ 합산 순매출:  ${finish.netSale.toLocaleString()}원`);
+      console.log(`  ├ 합산 현금:    ${finish.cashSale.toLocaleString()}원`);
+      console.log(`  ├ 합산 카드:    ${finish.cardSale.toLocaleString()}원`);
+      console.log(`  └ 합산 반품:    ${finish.returnSale.toLocaleString()}원`);
+      if (finish.perPos && finish.perPos.length > 0) {
+        console.log(`  POS별 상세:`);
+        finish.perPos.forEach(p =>
+          console.log(`    [POS ${p.posNo}] 총매출:${p.totalSale.toLocaleString()} 순매출:${p.netSale.toLocaleString()} 현금:${p.cashSale.toLocaleString()} 카드:${p.cardSale.toLocaleString()}원`)
+        );
+      }
+    } else {
+      console.log(`  일마감: 미마감`);
+    }
     console.log(`  날씨: ${weather ? `${weather.condition} ${weather.tempMin}°~${weather.tempMax}° 강수${weather.rainMm}mm` : '조회불가'}`);
     if (details.length > 0) {
       console.log('  상위 품목 3개:');
