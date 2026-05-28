@@ -14,7 +14,7 @@ import NotificationHub from '@/components/NotificationHub';
 import ResourceMonitor from '@/components/ResourceMonitor';
 import UserProfileModal from '@/components/UserProfileModal';
 import { db } from '@/lib/firebase/firebase';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc } from 'firebase/firestore';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 const SUPERUSER_EMAIL = process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || '';
@@ -64,11 +64,12 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
   const [menuAccess,    setMenuAccess]    = useState<MenuAccess>(ALL_FALSE);
   const [accessLoading, setAccessLoading] = useState(true);
+  const [groupId,       setGroupId]       = useState<string | null>(null);
   const [aiModels,      setAiModels]      = useState<AiModel[]>([]);
   const [unreadCount,   setUnreadCount]   = useState(0);
   const [showProfile,   setShowProfile]   = useState(false);
 
-  /* 메뉴 권한 */
+  /* 메뉴 권한 초기 로드 + groupId 취득 */
   useEffect(() => {
     if (!user?.uid) return;
     setAccessLoading(true);
@@ -77,10 +78,29 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     getAuthHeaders()
       .then(headers => fetch(url, { headers }))
       .then(r => r.json())
-      .then(d => { if (d.menuAccess) setMenuAccess(d.menuAccess); })
+      .then(d => {
+        if (d.menuAccess) setMenuAccess(d.menuAccess);
+        if (d.groupId)    setGroupId(d.groupId);
+      })
       .catch(() => setMenuAccess(ALL_FALSE))
       .finally(() => setAccessLoading(false));
   }, [user?.uid, currentStore?.storeId]);
+
+  /* 권한 그룹 실시간 감지 — 관리자가 권한 변경 시 즉시 반영 */
+  useEffect(() => {
+    if (!groupId) return;
+    const unsubscribe = onSnapshot(
+      doc(db, 'permission_groups', groupId),
+      snap => {
+        if (snap.exists()) {
+          const stored = snap.data()?.menuAccess || {};
+          setMenuAccess({ ...ALL_FALSE, ...stored });
+        }
+      },
+      () => { /* 권한 없으면 무시 */ },
+    );
+    return () => unsubscribe();
+  }, [groupId]);
 
   /* AI 모델 상태 */
   useEffect(() => {

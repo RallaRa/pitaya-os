@@ -52,6 +52,16 @@ interface SadDetail {
   [key: string]: any;
 }
 
+interface PosBreakdown {
+  posNo: string;
+  totalSale: number;
+  netSale: number;
+  cashSale?: number;
+  cardSale?: number;
+  returnCount?: number;
+  returnSale?: number;
+}
+
 interface FinishTotal {
   totalSale?: number;
   netSale?: number;
@@ -60,6 +70,7 @@ interface FinishTotal {
   returnCount?: number;
   returnSale?: number;
   cusPoint?: number;
+  perPos?: PosBreakdown[];
   [key: string]: any;
 }
 
@@ -123,6 +134,7 @@ async function syncToDailyReports(params: {
   syncedAt: string;
 }) {
   const { storeId, date, headerDoc, details, finish, syncedAt } = params;
+  const posBreakdown: PosBreakdown[] = finish?.perPos ?? [];
 
   // SaT 집계를 primary로 사용 (일마감 여부와 무관하게 실거래 반영)
   const satTotal    = headerDoc.totalSale ?? 0;
@@ -193,6 +205,7 @@ async function syncToDailyReports(params: {
     cusPoint,
     items,
     isClosed,
+    posBreakdown: posBreakdown.length > 0 ? posBreakdown : [],
     weather:    weather ?? null,
     news:       news    ?? null,
     issues:     [],
@@ -299,13 +312,14 @@ export async function POST(req: Request) {
       adminDb.collection('pos_finish_total').doc(`${storeId}_${date}`),
       {
         storeId, date,
-        totalSale:   finish.totalSale   ?? 0,
-        netSale:     finish.netSale     ?? 0,
-        cashSale:    finish.cashSale    ?? 0,
-        cardSale:    finish.cardSale    ?? 0,
-        returnCount: finish.returnCount ?? 0,
-        returnSale:  finish.returnSale  ?? 0,
-        cusPoint:    finish.cusPoint    ?? 0,
+        totalSale:    finish.totalSale   ?? 0,
+        netSale:      finish.netSale     ?? 0,
+        cashSale:     finish.cashSale    ?? 0,
+        cardSale:     finish.cardSale    ?? 0,
+        returnCount:  finish.returnCount ?? 0,
+        returnSale:   finish.returnSale  ?? 0,
+        cusPoint:     finish.cusPoint    ?? 0,
+        posBreakdown: finish.perPos      ?? [],
         syncedAt,
         updatedAt: FieldValue.serverTimestamp(),
       },

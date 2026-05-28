@@ -35,6 +35,10 @@ export default function SettingsPage() {
   const [recalcResult, setRecalcResult] = useState<{ fixed: number; total: number; message: string } | null>(null);
   const [recalcError, setRecalcError]   = useState<string | null>(null);
 
+  const [posBreakdownMigrating, setPosBreakdownMigrating] = useState(false);
+  const [posBreakdownResult, setPosBreakdownResult] = useState<{ updated: number; skipped: number; total: number; message: string } | null>(null);
+  const [posBreakdownError, setPosBreakdownError]   = useState<string | null>(null);
+
   useEffect(() => {
     if (!user?.uid || !storesLoaded) return;
     const storeId = currentStore?.storeId || '';
@@ -120,6 +124,28 @@ export default function SettingsPage() {
       setFixNetError(e.message || '오류 발생');
     } finally {
       setFixingNet(false);
+    }
+  };
+
+  const handlePosBreakdownMigrate = async () => {
+    if (!currentStore?.storeId) return;
+    setPosBreakdownMigrating(true);
+    setPosBreakdownResult(null);
+    setPosBreakdownError(null);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/admin/migrate-pos-breakdown', {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storeId: currentStore.storeId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '보강 실패');
+      setPosBreakdownResult({ updated: data.updated, skipped: data.skipped, total: data.total, message: data.message });
+    } catch (e: any) {
+      setPosBreakdownError(e.message || '오류 발생');
+    } finally {
+      setPosBreakdownMigrating(false);
     }
   };
 
@@ -373,6 +399,50 @@ export default function SettingsPage() {
                           {recalcing
                             ? <><Loader2 className="w-4 h-4 animate-spin" /> 처리 중...</>
                             : <><TrendingUp className="w-4 h-4" /> 순매출 재계산 실행</>
+                          }
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* POS별 내역 보강 — master/superuser만 */}
+                {isMasterOrSuperuser && (
+                  <div className="bg-slate-900 border border-slate-700 rounded-xl p-5">
+                    <div className="flex items-start gap-4">
+                      <div className="bg-slate-800 p-3 rounded-xl flex-shrink-0">
+                        <Database className="w-5 h-5 text-violet-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-bold">POS별 매출 내역 보강</p>
+                        <p className="text-slate-400 text-sm mt-0.5">
+                          일마감 내역에 POS 1~N 개별 매출이 표시되도록 기존 데이터를 보강합니다.
+                          보강 전 포스PC에서 <code className="bg-slate-800 px-1 rounded text-violet-300 text-xs">node bridge.js migrate 날짜범위</code>를
+                          먼저 실행하세요.
+                        </p>
+
+                        {posBreakdownResult && (
+                          <div className="mt-3 p-3 bg-violet-900/30 border border-violet-500/30 rounded-lg text-sm text-violet-300">
+                            ✅ {posBreakdownResult.message}
+                            <span className="ml-2 text-slate-400 text-xs">
+                              (전체 {posBreakdownResult.total}건 / 보강 {posBreakdownResult.updated}건 / 데이터없음 {posBreakdownResult.skipped}건)
+                            </span>
+                          </div>
+                        )}
+                        {posBreakdownError && (
+                          <div className="mt-3 p-3 bg-red-900/30 border border-red-500/30 rounded-lg text-sm text-red-300">
+                            ❌ {posBreakdownError}
+                          </div>
+                        )}
+
+                        <button
+                          onClick={handlePosBreakdownMigrate}
+                          disabled={posBreakdownMigrating}
+                          className="mt-3 flex items-center gap-2 px-4 py-2 bg-violet-700/40 hover:bg-violet-700/60 border border-violet-500/30 text-violet-300 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          {posBreakdownMigrating
+                            ? <><Loader2 className="w-4 h-4 animate-spin" /> 처리 중...</>
+                            : <><Database className="w-4 h-4" /> POS별 내역 보강 실행</>
                           }
                         </button>
                       </div>

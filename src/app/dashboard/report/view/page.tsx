@@ -13,6 +13,16 @@ import Link from 'next/link';
 // ── 타입 ──────────────────────────────────────────────────────────
 interface WeatherData { condition: string; tempMax: number; tempMin: number; }
 
+interface PosBreakdown {
+  posNo: string;
+  totalSale: number;
+  netSale: number;
+  cashSale?: number;
+  cardSale?: number;
+  returnCount?: number;
+  returnSale?: number;
+}
+
 interface ReportRow {
   id: string;
   reportDate: string;
@@ -29,6 +39,7 @@ interface ReportRow {
   source?: string;
   isClosed?: boolean;
   editHistory?: any[];
+  posBreakdown?: PosBreakdown[];
 }
 
 type Preset = 'week' | 'month' | 'lastMonth' | 'custom';
@@ -217,6 +228,7 @@ export default function ReportViewPage() {
         source:         dr.source     ?? 'manual',
         isClosed:       dr.isClosed,
         editHistory:    dr.editHistory ?? [],
+        posBreakdown:   Array.isArray(dr.posBreakdown) ? dr.posBreakdown : [],
       }));
       rows.sort((a, b) => b.reportDate.localeCompare(a.reportDate));
       setReports(rows);
@@ -536,18 +548,38 @@ export default function ReportViewPage() {
                       </td>
 
                       {/* 총매출 */}
-                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                      <td className="px-3 py-3 text-right">
                         <Link href={`/dashboard/report/view/${report.id}`}
-                          className="text-teal-400 hover:text-teal-300 font-bold text-sm hover:underline">
+                          className="text-teal-400 hover:text-teal-300 font-bold text-sm hover:underline whitespace-nowrap">
                           {(report.totalSales || 0).toLocaleString()}원
                         </Link>
+                        {(report.posBreakdown?.length ?? 0) >= 2 && (
+                          <div className="mt-1 space-y-0.5">
+                            {report.posBreakdown!.map(pos => (
+                              <div key={pos.posNo} className="flex items-center justify-end gap-1 text-[10px]">
+                                <span className="text-slate-600 bg-slate-800 px-1 rounded">POS{pos.posNo}</span>
+                                <span className="text-slate-400 font-mono">{pos.totalSale.toLocaleString()}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </td>
 
                       {/* 순매출 */}
-                      <td className="px-3 py-3 text-right whitespace-nowrap">
-                        <span className="text-emerald-400 font-bold text-sm">
+                      <td className="px-3 py-3 text-right">
+                        <span className="text-emerald-400 font-bold text-sm whitespace-nowrap">
                           {(report.netSales || 0).toLocaleString()}원
                         </span>
+                        {(report.posBreakdown?.length ?? 0) >= 2 && (
+                          <div className="mt-1 space-y-0.5">
+                            {report.posBreakdown!.map(pos => (
+                              <div key={pos.posNo} className="flex items-center justify-end gap-1 text-[10px]">
+                                <span className="text-slate-600 bg-slate-800 px-1 rounded">POS{pos.posNo}</span>
+                                <span className="text-slate-400 font-mono">{pos.netSale.toLocaleString()}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </td>
 
                       {/* 전월 대비 */}

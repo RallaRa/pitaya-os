@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '@/context/StoreContext';
 import { useAuth } from '@/context/AuthContext';
 import { UserCog, Loader2, Users, Check, Clock, ChevronDown, Save, X } from 'lucide-react';
+import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 
 interface PermissionGroup {
   groupId: string;
@@ -52,9 +53,10 @@ export default function MemberGroupPage() {
     setIsLoading(true);
     setError('');
     try {
+      const authHeaders = await getAuthJsonHeaders();
       const [groupsRes, usersRes] = await Promise.all([
-        fetch(`/api/permissions?type=groups&storeId=${currentStore.storeId}`),
-        fetch(`/api/users?storeId=${currentStore.storeId}`),
+        fetch(`/api/permissions?type=groups&storeId=${currentStore.storeId}`, { headers: authHeaders }),
+        fetch(`/api/users?storeId=${currentStore.storeId}`, { headers: authHeaders }),
       ]);
       const [groupsData, usersData] = await Promise.all([groupsRes.json(), usersRes.json()]);
       setGroups(groupsData.groups || []);
@@ -89,11 +91,12 @@ export default function MemberGroupPage() {
     setIsSaving(true);
     setError('');
     try {
+      const authHeaders = await getAuthJsonHeaders();
       await Promise.all(
         Object.entries(localChanges).map(([uid, groupId]) =>
           fetch('/api/users', {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
+            headers: authHeaders,
             body: JSON.stringify({
               action: 'assignGroup',
               uid,
