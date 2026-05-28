@@ -1,5 +1,6 @@
 'use client';
 
+import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -208,11 +209,11 @@ export default function MessengerPage() {
     if (!currentRoom) return;
     const myUid = user?.uid;
 
-    const markRead = () => {
+    const markRead = async () => {
       if (!myUid) return;
       fetch('/api/messenger/messages', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ action: 'readAll', roomId: currentRoom.id, uid: myUid }),
       }).catch(console.error);
     };
@@ -304,7 +305,7 @@ export default function MessengerPage() {
     setIsLoading(true);
     try {
       const res = await fetch('/api/messenger/rooms', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ uid: user?.uid, targetUid, storeId: currentStore?.storeId }),
       });
       const data = await res.json();
@@ -331,7 +332,7 @@ export default function MessengerPage() {
     setInput('');
     setReplyingTo(null);
     await fetch('/api/messenger/messages', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: await getAuthJsonHeaders(),
       body: JSON.stringify({
         roomId: currentRoom.id, senderUid: user.uid,
         senderName: user.displayName || user.email || '나', text, replyTo,
@@ -343,7 +344,7 @@ export default function MessengerPage() {
     if (!user?.uid) return;
     setReactionPickerMsgId(null);
     await fetch('/api/messenger/messages', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      method: 'PUT', headers: await getAuthJsonHeaders(),
       body: JSON.stringify({ action: 'react', messageId, emoji, uid: user.uid }),
     }).catch(console.error);
   };
@@ -352,7 +353,7 @@ export default function MessengerPage() {
   const handleDeleteMsg = async (messageId: string) => {
     if (!confirm('메시지를 삭제하시겠습니까?')) return;
     await fetch('/api/messenger/messages', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      method: 'PUT', headers: await getAuthJsonHeaders(),
       body: JSON.stringify({ action: 'delete', messageId }),
     }).catch(console.error);
   };
@@ -361,7 +362,7 @@ export default function MessengerPage() {
   const handleSaveEdit = async (messageId: string) => {
     if (!editText.trim()) return;
     await fetch('/api/messenger/messages', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      method: 'PUT', headers: await getAuthJsonHeaders(),
       body: JSON.stringify({ action: 'edit', messageId, text: editText.trim() }),
     }).catch(console.error);
     setEditingMsgId(null);
@@ -372,7 +373,7 @@ export default function MessengerPage() {
   const handleLeaveRoom = async () => {
     if (!currentRoom || !user?.uid) return;
     await fetch('/api/messenger/rooms', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      method: 'PUT', headers: await getAuthJsonHeaders(),
       body: JSON.stringify({ action: 'leave', roomId: currentRoom.id, uid: user.uid }),
     }).catch(console.error);
     setCurrentRoom(null);
@@ -385,7 +386,7 @@ export default function MessengerPage() {
     if (!currentRoom || myRole !== 'superuser') return;
     if (!confirm('대화방을 아카이브 처리하시겠습니까?')) return;
     await fetch('/api/messenger/rooms', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      method: 'PUT', headers: await getAuthJsonHeaders(),
       body: JSON.stringify({ action: 'delete', roomId: currentRoom.id }),
     }).catch(console.error);
     setCurrentRoom(null);
@@ -420,7 +421,7 @@ export default function MessengerPage() {
           async () => {
             const url = await getDownloadURL(task.snapshot.ref);
             await fetch('/api/messenger/messages', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              method: 'POST', headers: await getAuthJsonHeaders(),
               body: JSON.stringify({
                 roomId: currentRoom.id, senderUid: user.uid,
                 senderName: user.displayName || user.email || '나',

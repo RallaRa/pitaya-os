@@ -9,6 +9,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import { WEATHER_ICONS, getStoreCoords, fetchWeather } from '@/lib/weather';
 import { useSearchParams } from 'next/navigation';
+import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 
 // --- 타입 정의 영역 ---
 type Message = {
@@ -274,7 +275,7 @@ export default function ReportInputPage() {
     try {
       const response = await fetch('/api/sales_ai', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await getAuthJsonHeaders(),
           body: JSON.stringify(requestBody),
       });
 
@@ -381,7 +382,7 @@ const handleSaveToDB = async () => {
   try {
     const response = await fetch('/api/sales_ai', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthJsonHeaders(),
       body: JSON.stringify({
         action: 'save',
         extractedData,
@@ -428,7 +429,7 @@ const handleLoadReport = async () => {
   try {
     const res = await fetch('/api/sales_ai', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthJsonHeaders(),
       body: JSON.stringify({
         action: 'load',
         storeId: currentStore?.storeId || '',

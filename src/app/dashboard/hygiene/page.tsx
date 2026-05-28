@@ -1,5 +1,6 @@
 'use client';
 
+import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
@@ -280,7 +281,7 @@ function HygieneChecklistContent() {
 
     const res = await fetch('/api/hygiene', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthJsonHeaders(),
       body: JSON.stringify({
         storeId: currentStore.storeId,
         uid: user.uid,

@@ -27,7 +27,8 @@ export default function PermissionPage() {
   const isSuperuser = currentStore?.role === 'superuser';
 
   useEffect(() => {
-    fetch('/api/permissions')
+    getAuthJsonHeaders()
+      .then(headers => fetch('/api/permissions', { headers }))
       .then(r => r.json())
       .then(data => {
         setPermissions(data.permissions || {});

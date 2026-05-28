@@ -1,5 +1,6 @@
 'use client';
 
+import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '@/context/StoreContext';
 import { useAuth } from '@/context/AuthContext';
@@ -109,7 +110,7 @@ export default function KeywordsPage() {
     try {
       const res = await fetch('/api/keywords', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ storeId, keywordGroups: groups }),
       });
       if (!res.ok) throw new Error('저장 실패');

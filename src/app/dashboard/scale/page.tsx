@@ -1,5 +1,6 @@
 'use client';
 
+import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import * as XLSX from 'xlsx';
@@ -254,7 +255,7 @@ export default function ScaleCodePage() {
 
       const res = await fetch('/api/scale/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ message: msg, history }),
       });
       const data = await res.json();
@@ -272,7 +273,7 @@ export default function ScaleCodePage() {
       if (data.action === 'add' && data.items?.length) {
         const addRes = await fetch('/api/scale/codes', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await getAuthJsonHeaders(),
           body: JSON.stringify({ storeId, items: data.items, createdBy: uid }),
         });
         const addData = await addRes.json();
@@ -292,7 +293,7 @@ export default function ScaleCodePage() {
           if (existing) {
             await fetch('/api/scale/codes', {
               method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
+              headers: await getAuthJsonHeaders(),
               body: JSON.stringify({ id: existing.id, name: item.name }),
             });
           }
@@ -327,7 +328,7 @@ export default function ScaleCodePage() {
     try {
       await fetch('/api/scale/codes', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ id, name: editName.trim(), code: Number(editCode) }),
       });
       setEditingId(null);

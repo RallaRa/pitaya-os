@@ -253,7 +253,7 @@ export default function PermissionGroupPage() {
     try {
       const res = await fetch('/api/users', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({
           action: 'assignGroup',
           uid: targetUid,

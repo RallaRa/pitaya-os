@@ -1,5 +1,6 @@
 'use client';
 
+import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '@/context/StoreContext';
 import { useAuth } from '@/context/AuthContext';
@@ -145,7 +146,7 @@ export default function MembersPage() {
     try {
       const res = await fetch('/api/store', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ action: 'approve', targetUid, storeId: currentStore.storeId }),
       });
       const data = await res.json();
@@ -162,7 +163,7 @@ export default function MembersPage() {
     try {
       const res = await fetch('/api/store', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({
           action: 'reject',
           targetUid: rejectTarget.uid,
@@ -201,11 +202,12 @@ export default function MembersPage() {
     setIsSavingRoles(true);
     setError('');
     try {
+      const authHeaders = await getAuthJsonHeaders();
       await Promise.all(entries.map(([key, role]) => {
         const [targetUid, storeId] = key.split(':');
         return fetch('/api/store', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders,
           body: JSON.stringify({ action: 'changeRole', targetUid, storeId, role }),
         }).then(r => r.json().then(d => { if (!r.ok) throw new Error(d.error); }));
       }));
@@ -228,7 +230,7 @@ export default function MembersPage() {
     try {
       const res = await fetch('/api/store', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ action: 'remove', targetUid, storeId }),
       });
       const data = await res.json();

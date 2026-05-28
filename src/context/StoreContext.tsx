@@ -1,5 +1,6 @@
 'use client';
 import { createContext, useContext, useState, ReactNode } from 'react';
+import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 interface Store {
   storeId: string;
@@ -31,7 +32,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [storesLoaded, setStoresLoaded] = useState(false);
 
   const refreshStores = async (uid: string) => {
-    const res = await fetch(`/api/store?uid=${uid}`);
+    const headers = await getAuthHeaders();
+    const res = await fetch(`/api/store?uid=${uid}`, { headers });
     const data = await res.json();
     setMyStores(data.stores || []);
     setStoresLoaded(true);

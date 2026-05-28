@@ -1,5 +1,6 @@
 'use client';
 
+import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useRef, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -119,7 +120,7 @@ export default function PurchaseInputPage() {
     try {
       const res = await fetch('/api/purchases', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({
           fileContent: file?.content,
           fileName: file?.name,
@@ -144,7 +145,7 @@ export default function PurchaseInputPage() {
     try {
       const res = await fetch('/api/purchases', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({
           action: 'save',
           extractedData: parsedData,

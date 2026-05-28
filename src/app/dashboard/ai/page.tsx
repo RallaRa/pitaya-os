@@ -9,6 +9,7 @@ import {
   Loader2, MessageSquare, ChevronLeft,
   Edit2, Check, X, AlertCircle, Home,
 } from 'lucide-react';
+import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 
 // ── 모델 정의 ──────────────────────────────────────────────────────
 const MODELS = [
@@ -123,7 +124,8 @@ export default function AiChatPage() {
 
   // 활성 모델 조회 (API 키 설정 여부)
   useEffect(() => {
-    fetch('/api/ai')
+    getAuthHeaders()
+      .then(headers => fetch('/api/ai', { headers }))
       .then(r => r.json())
       .then(d => {
         if (d.models) {
@@ -139,7 +141,8 @@ export default function AiChatPage() {
     try {
       const params = new URLSearchParams({ uid: user.uid });
       if (currentStore?.storeId) params.set('storeId', currentStore.storeId);
-      const res  = await fetch(`/api/conversations?${params}`);
+      const headers = await getAuthHeaders();
+      const res  = await fetch(`/api/conversations?${params}`, { headers });
       const data = await res.json();
       setConversations(data.conversations || []);
     } finally {
@@ -189,7 +192,7 @@ export default function AiChatPage() {
     try {
       const res = await fetch(model.apiRoute, {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body:    JSON.stringify({
           message: userMsg.content,
           history: historyForAI,
@@ -217,7 +220,7 @@ export default function AiChatPage() {
       const title   = userMsg.content.slice(0, 20) + (userMsg.content.length > 20 ? '...' : '');
       const saveRes = await fetch('/api/conversations', {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body:    JSON.stringify({
           ...(currentId ? { conversationId: currentId } : { title }),
           uid:      user?.uid,
@@ -241,7 +244,7 @@ export default function AiChatPage() {
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm('이 대화를 삭제하시겠습니까?')) return;
-    await fetch(`/api/conversations?id=${id}`, { method: 'DELETE' });
+    await fetch(`/api/conversations?id=${id}`, { method: 'DELETE', headers: await getAuthHeaders() });
     if (currentId === id) { setCurrentId(null); setMessages([]); setSendError(null); }
     await loadConversations();
   };
@@ -256,7 +259,7 @@ export default function AiChatPage() {
     const conv = conversations.find(c => c.id === id);
     await fetch('/api/conversations', {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: await getAuthJsonHeaders(),
       body:    JSON.stringify({
         conversationId: id,
         uid:            user?.uid,

@@ -10,6 +10,7 @@ import {
   signOut,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase/firebase';
+import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -30,9 +31,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const checkAndRoute = async (uid: string) => {
     try {
+      const headers = await getAuthHeaders();
       const [activeRes, pendingRes] = await Promise.all([
-        fetch(`/api/store?uid=${uid}`),
-        fetch(`/api/store?uid=${uid}&status=pending`),
+        fetch(`/api/store?uid=${uid}`, { headers }),
+        fetch(`/api/store?uid=${uid}&status=pending`, { headers }),
       ]);
       const activeData = await activeRes.json();
       const pendingData = await pendingRes.json();
@@ -69,16 +71,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       // 세션 복원 시에도 groupId 동기화 (재로그인 없이도 최신 groupId 유지)
       if (currentUser) {
-        fetch('/api/users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            uid: currentUser.uid,
-            name: currentUser.displayName,
-            email: currentUser.email,
-            photoURL: currentUser.photoURL,
-          }),
-        }).catch(() => {});
+        getAuthJsonHeaders().then(headers =>
+          fetch('/api/users', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              uid: currentUser.uid,
+              name: currentUser.displayName,
+              email: currentUser.email,
+              photoURL: currentUser.photoURL,
+            }),
+          })
+        ).catch(() => {});
       }
     });
     return () => unsubscribe();
@@ -94,7 +98,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       await fetch('/api/users', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({
           uid: result.user.uid,
           name: result.user.displayName,
