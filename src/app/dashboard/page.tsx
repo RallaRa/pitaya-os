@@ -19,6 +19,8 @@ import QuickMenuWidget      from '@/components/widgets/QuickMenuWidget';
 import AiInsightWidget        from '@/components/widgets/AiInsightWidget';
 import SalesPredictionWidget  from '@/components/widgets/SalesPredictionWidget';
 import TotalPartnerWidget     from '@/components/widgets/TotalPartnerWidget';
+import TodaySalesWidget       from '@/components/widgets/TodaySalesWidget';
+import SalesCompareWidget     from '@/components/widgets/SalesCompareWidget';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 
 /* ── 타입 ── */
@@ -81,6 +83,18 @@ const WIDGET_META: WidgetMeta[] = [
     title: 'AI 토탈 운영파트너',
     defaultItem: { i: 'total_partner', x: 0, y: 8, w: 12, h: 6, minW: 8, minH: 5, maxW: 12, maxH: 10 },
     permKey: 'total_partner',
+  },
+  {
+    id: 'today_sales',
+    title: '당일 매출 현황',
+    defaultItem: { i: 'today_sales', x: 0, y: 0, w: 4, h: 5, minW: 3, minH: 4, maxW: 6, maxH: 8 },
+    permKey: 'today_sales',
+  },
+  {
+    id: 'sales_compare',
+    title: '매출 비교',
+    defaultItem: { i: 'sales_compare', x: 4, y: 0, w: 4, h: 5, minW: 3, minH: 4, maxW: 8, maxH: 8 },
+    permKey: 'sales_compare',
   },
 ];
 
@@ -293,6 +307,8 @@ export default function DashboardPage() {
       case 'ai_insight':         return <AiInsightWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
       case 'sales_prediction':   return <SalesPredictionWidget  editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
       case 'total_partner':      return <TotalPartnerWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
+      case 'today_sales':        return <TodaySalesWidget       editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
+      case 'sales_compare':      return <SalesCompareWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
       default:                   return null;
     }
   };

@@ -132,7 +132,7 @@ function buildDateMap(docs: any[], storeId: string): Map<string, number> {
     if (!existing || score(d) > score(existing)) byDate.set(d.reportDate, d);
   }
   const result = new Map<string, number>();
-  for (const [date, dr] of byDate) result.set(date, dr.netSales ?? dr.netSale ?? dr.totalSales ?? 0);
+  for (const [date, dr] of byDate) result.set(date, dr.netSales ?? dr.netSale ?? ((dr.totalSales ?? 0) - (dr.returnAmount ?? 0) - (dr.discountAmount ?? 0)));
   return result;
 }
 
@@ -217,7 +217,7 @@ export default function ReportViewPage() {
         reportDate:     dr.reportDate    ?? '',
         serialNumber:   dr.serialNumber  ?? '',
         totalSales:     dr.totalSales    ?? 0,
-        netSales:       dr.netSales ?? dr.netSale ?? dr.totalSales ?? 0,
+        netSales:       dr.netSales ?? dr.netSale ?? ((dr.totalSales ?? 0) - (dr.returnAmount ?? 0) - (dr.discountAmount ?? 0)),
         customerCount:  dr.customerCount ?? 0,
         returnAmount:   dr.returnAmount  ?? 0,
         discountAmount: dr.discountAmount ?? 0,
