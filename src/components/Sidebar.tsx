@@ -69,6 +69,10 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const [unreadCount,   setUnreadCount]   = useState(0);
   const [showProfile,   setShowProfile]   = useState(false);
 
+  interface SalesSummary { todayNet: number; todaySource: string; weekNet: number; }
+  const [sales,        setSales]        = useState<SalesSummary | null>(null);
+  const [salesLoading, setSalesLoading] = useState(false);
+
   /* 메뉴 권한 초기 로드 + groupId 취득 */
   useEffect(() => {
     if (!user?.uid) return;
@@ -127,6 +131,56 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       setUnreadCount(total);
     });
   }, [user?.uid]);
+
+  /* 매출 현황 실시간 — report 권한 있을 때만 */
+  useEffect(() => {
+    const storeId = currentStore?.storeId;
+    if (!storeId || !menuAccess.report) { setSales(null); return; }
+
+    const today = new Date().toISOString().split('T')[0];
+    const d = new Date();
+    const diff = d.getDay() === 0 ? -6 : 1 - d.getDay();
+    const weekStart = new Date(d);
+    weekStart.setDate(d.getDate() + diff);
+    const weekStartStr = weekStart.toISOString().split('T')[0];
+
+    setSalesLoading(true);
+
+    const scoreDoc = (doc: any) => {
+      if (doc.source === 'pos_bridge' && (doc.totalSales ?? 0) > 0) return Infinity;
+      if (doc.source === 'pos_bridge') return -1;
+      return doc.totalSales ?? 0;
+    };
+
+    const q = query(
+      collection(db, 'daily_reports'),
+      where('storeId', '==', storeId),
+      where('reportDate', '>=', weekStartStr),
+      where('reportDate', '<=', today),
+    );
+
+    const unsub = onSnapshot(q, snap => {
+      const byDate = new Map<string, any>();
+      snap.docs.forEach(d => {
+        const data = { id: d.id, ...d.data() as any };
+        if (data.storeId !== storeId) return;
+        const existing = byDate.get(data.reportDate);
+        if (!existing || scoreDoc(data) > scoreDoc(existing)) byDate.set(data.reportDate, data);
+      });
+
+      let weekNet = 0, todayNet = 0, todaySource = 'manual';
+      byDate.forEach((doc, date) => {
+        const net = doc.netSales ?? doc.netSale ?? 0;
+        weekNet += net;
+        if (date === today) { todayNet = net; todaySource = doc.source ?? 'manual'; }
+      });
+
+      setSales({ todayNet, todaySource, weekNet });
+      setSalesLoading(false);
+    }, () => setSalesLoading(false));
+
+    return () => unsub();
+  }, [currentStore?.storeId, menuAccess.report]);
 
   /* 페이지 이동 시 모바일 닫기 */
   useEffect(() => {
@@ -226,6 +280,42 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
             </>
           )}
         </nav>
+
+        {/* 매출 현황 */}
+        {!accessLoading && menuAccess.report && currentStore?.storeId && (
+          <div>
+            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-3 mb-2">매출 현황</p>
+            {salesLoading ? (
+              <div className="h-16 mx-1 bg-slate-800/60 rounded-xl animate-pulse" />
+            ) : (
+              <Link
+                href="/dashboard/report/view"
+                onClick={onClose}
+                className="block mx-1 bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 rounded-xl px-3 py-2.5 transition-colors"
+              >
+                <div className="flex items-center justify-between mb-0.5">
+                  <span className="text-[10px] text-slate-500">오늘</span>
+                  {sales && (
+                    sales.todaySource === 'pos_bridge' || sales.todaySource === 'pos_bridge_migration'
+                      ? <span className="text-[9px] text-red-400 font-medium">🔴 POS</span>
+                      : sales.todayNet > 0
+                        ? <span className="text-[9px] text-blue-400 font-medium">🔵 수동</span>
+                        : null
+                  )}
+                </div>
+                <p className={`font-bold text-base leading-tight ${sales && sales.todayNet > 0 ? 'text-teal-400' : 'text-slate-600'}`}>
+                  {sales && sales.todayNet > 0 ? `${sales.todayNet.toLocaleString()}원` : '입력 없음'}
+                </p>
+                {sales && sales.weekNet > 0 && (
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-700/50">
+                    <span className="text-[10px] text-slate-500">이번 주</span>
+                    <span className="text-[10px] text-slate-400 font-semibold tabular-nums">{sales.weekNet.toLocaleString()}원</span>
+                  </div>
+                )}
+              </Link>
+            )}
+          </div>
+        )}
 
         {/* AI 엔진 현황 */}
         <div>
