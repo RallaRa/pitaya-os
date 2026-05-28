@@ -1,41 +1,82 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
-import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '@/lib/firebase/firebase';
+import Image from 'next/image';
 
-/**
- * 파일명: app/page.tsx
- *
- * [기획 의도 및 철학]
- * 1. 프로젝트의 진입점으로, 사용자에게 서비스의 첫인상을 제공
- * 2. Pitaya OS의 아이덴티티를 나타내는 환영 메시지를 중앙에 명확하게 표시
- * 3. 향후 로그인 기능 구현 시, 이 페이지에서 자동으로 로그인 페이지로 이동시키는 로직 추가 예정
- */
 export default function RootPage() {
   const router = useRouter();
+  const [visible, setVisible] = useState(false);
+  const [showSplash, setShowSplash] = useState(false);
 
   useEffect(() => {
-    // 이 코드가 브라우저(클라이언트 사이드)에서만 실행되도록 보장합니다.
-    if (typeof window !== 'undefined') {
-      const timer = setTimeout(() => {
-        router.push('/login');
-      }, 1500);
+    // 이미 이번 세션에 스플래시를 봤으면 인증 상태만 확인 후 바로 이동
+    const seen = sessionStorage.getItem('splash_seen');
 
-      // 컴포넌트가 언마운트될 때 타이머를 정리합니다.
-      return () => clearTimeout(timer);
-    }
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // 로그인 상태 → 대시보드 바로
+        router.replace('/dashboard');
+        return;
+      }
+      // 비로그인
+      if (seen) {
+        router.replace('/login');
+        return;
+      }
+      // 스플래시 표시
+      setShowSplash(true);
+      sessionStorage.setItem('splash_seen', '1');
+    });
+
+    return () => unsubscribe();
   }, [router]);
 
+  // 스플래시가 마운트된 후 페이드인 트리거
+  useEffect(() => {
+    if (!showSplash) return;
+    const t = requestAnimationFrame(() => setVisible(true));
+    return () => cancelAnimationFrame(t);
+  }, [showSplash]);
+
+  // 3초 후 자동 이동
+  useEffect(() => {
+    if (!showSplash) return;
+    const t = setTimeout(() => router.replace('/login'), 3000);
+    return () => clearTimeout(t);
+  }, [showSplash, router]);
+
+  const goNow = () => router.replace('/login');
+
+  if (!showSplash) return null;
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-slate-100 font-sans">
-      <Link href="/login">
-        <h1 className="text-5xl font-extrabold text-teal-400 animate-pulse cursor-pointer">
-          Pitaya OS (여기를 클릭하여 수동으로 이동)
-        </h1>
-      </Link>
-      <p className="mt-4 text-lg text-slate-300">
-        첫 페이지입니다. 자동 이동이 실패하는 경우 위 텍스트를 클릭해보세요.
+    <div
+      onClick={goNow}
+      className="fixed inset-0 flex flex-col items-center justify-center cursor-pointer select-none"
+      style={{ backgroundColor: '#f9fafb' }}
+    >
+      <div
+        style={{
+          opacity: visible ? 1 : 0,
+          transition: 'opacity 0.5s ease-in',
+        }}
+        className="flex flex-col items-center gap-6"
+      >
+        <Image
+          src="/images/pitaya-logo.png"
+          alt="Pitaya OS"
+          width={320}
+          height={320}
+          priority
+          style={{ objectFit: 'contain' }}
+        />
+      </div>
+
+      <p className="absolute bottom-8 text-gray-300 text-xs">
+        다음 페이지로 자동 이동이 되지 않으면 클릭하세요
       </p>
     </div>
   );
