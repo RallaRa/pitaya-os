@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useRef, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
@@ -8,6 +9,8 @@ import {
   ShoppingCart, Upload, X, FileSpreadsheet, Send,
   CheckCircle, Loader2, Save, AlertCircle, Search, Beef,
 } from 'lucide-react';
+
+const AIPurchasePanel = dynamic(() => import('@/components/purchases/AIPurchasePanel'), { ssr: false });
 
 interface TraceInfo {
   found:          boolean;
@@ -172,7 +175,8 @@ export default function PurchaseInputPage() {
   const canAnalyze = (!!file || !!text.trim()) && !isLoading;
 
   return (
-    <div className="flex flex-col h-full bg-slate-950 text-slate-100 overflow-y-auto">
+    <div className="flex h-full min-h-screen bg-slate-950 text-slate-100">
+      <div className="flex-1 overflow-y-auto">
       <div className="max-w-3xl mx-auto w-full p-6 md:p-8 space-y-6">
 
         {/* 헤더 */}
@@ -432,6 +436,8 @@ export default function PurchaseInputPage() {
           </div>
         )}
       </div>
+      </div>
+      <AIPurchasePanel currentPage="register" currentData={parsedData || {}} />
     </div>
   );
 }

@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useStore } from '@/context/StoreContext';
 import { db } from '@/lib/firebase/firebase';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import {
   ShoppingCart, ChevronRight, Loader2, Calendar, Search,
   TrendingUp, Users, RotateCcw, Tag, Pencil, RefreshCw, AlertCircle,
@@ -149,6 +149,9 @@ export default function ReportViewPage() {
   const [reports, setReports]   = useState<ReportRow[]>([]);
   const [isLoading, setLoading] = useState(true);
   const [error, setError]       = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const unsubRef    = useRef<(() => void) | null>(null);
 
   // 비교 데이터
   const [prevMonthMap, setPrevMonthMap] = useState<Map<string, number>>(new Map());
@@ -269,10 +272,38 @@ export default function ReportViewPage() {
     }
   }, [currentStore?.storeId, storesLoaded, fetchComparison]);
 
-  useEffect(() => { fetchData(range.start, range.end); }, [range, fetchData]);
+  useEffect(() => {
+    fetchData(range.start, range.end).then(() => setLastUpdated(new Date()));
+  }, [range, fetchData]);
+
+  // 1분 자동 갱신
+  useEffect(() => {
+    intervalRef.current = setInterval(() => {
+      fetchData(range.start, range.end).then(() => setLastUpdated(new Date()));
+    }, 60 * 1000);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [range, fetchData]);
+
+  // 오늘 데이터 실시간 구독 (onSnapshot)
+  useEffect(() => {
+    if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
+    const storeId = currentStore?.storeId;
+    const today   = toYMD(new Date());
+    if (!storeId || today < range.start || today > range.end) return;
+
+    const q = query(
+      collection(db, 'daily_reports'),
+      where('storeId',    '==', storeId),
+      where('reportDate', '==', today),
+    );
+    unsubRef.current = onSnapshot(q, () => {
+      fetchData(range.start, range.end).then(() => setLastUpdated(new Date()));
+    }, () => {});
+    return () => { if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; } };
+  }, [currentStore?.storeId, range, fetchData]);
 
   useEffect(() => {
-    const onFocus = () => fetchData(range.start, range.end);
+    const onFocus = () => fetchData(range.start, range.end).then(() => setLastUpdated(new Date()));
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [range, fetchData]);
@@ -316,13 +347,26 @@ export default function ReportViewPage() {
           <h1 className="text-2xl font-bold text-teal-400 flex items-center gap-2">
             <Calendar className="w-6 h-6" />
             일마감내역
+            {(() => {
+              const today = toYMD(new Date());
+              return today >= range.start && today <= range.end ? (
+                <span className="text-xs font-normal px-2 py-0.5 bg-emerald-900/40 border border-emerald-500/30 text-emerald-400 rounded-full animate-pulse">
+                  🟢 실시간
+                </span>
+              ) : null;
+            })()}
           </h1>
           <p className="text-slate-400 text-sm mt-1">
             {currentStore?.storeName} · {range.start} ~ {range.end}
+            {lastUpdated && (
+              <span className="text-slate-600 text-xs ml-2">
+                · 마지막 갱신 {lastUpdated.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
+            )}
           </p>
         </div>
         <button
-          onClick={() => fetchData(range.start, range.end)}
+          onClick={() => fetchData(range.start, range.end).then(() => setLastUpdated(new Date()))}
           disabled={isLoading}
           className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-lg text-sm transition-colors disabled:opacity-50"
         >

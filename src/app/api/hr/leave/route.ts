@@ -10,10 +10,14 @@ async function isStoreAdmin(uid: string, storeId: string) {
   return ADMIN_ROLES.includes(role);
 }
 
-async function sendNotification(targetUid: string, title: string, body: string, link: string) {
+async function sendNotification(targetUid: string, title: string, body: string, link: string, type = 'leave_request') {
   await adminDb.collection('notifications').add({
-    targetUid, title, body, link,
-    type: 'hr_leave',
+    targetUid,
+    senderUid: '',
+    senderName: '',
+    type,
+    message: body,
+    link,
     isRead: false,
     createdAt: FieldValue.serverTimestamp(),
   });
@@ -145,11 +149,13 @@ export async function PUT(req: Request) {
 
     const label = status === 'approved' ? '승인' : '거절';
     const typeLabel = { annual: '연차', half_am: '반차(오전)', half_pm: '반차(오후)' }[data.type as string] || data.type;
+    const notifType = status === 'approved' ? 'leave_approved' : 'leave_rejected';
     await sendNotification(
       data.userId,
       `연차 ${label}`,
       `${data.startDate}~${data.endDate} ${typeLabel} 신청이 ${label}되었습니다.`,
       '/dashboard/hr/calendar',
+      notifType,
     );
 
     return NextResponse.json({ success: true });

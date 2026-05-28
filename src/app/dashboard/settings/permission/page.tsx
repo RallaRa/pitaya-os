@@ -18,20 +18,34 @@ const CATEGORIES = [...new Set(ALL_MENUS.map(m => m.category))];
 
 export default function PermissionPage() {
   const { currentStore } = useStore();
-  const [permissions, setPermissions] = useState<Record<string, Record<string, boolean>>>({});
+  const [permissions,      setPermissions]      = useState<Record<string, Record<string, boolean>>>({});
+  const [savedPermissions, setSavedPermissions] = useState<Record<string, Record<string, boolean>>>({});
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState('');
-  const [error, setError] = useState('');
+  const [isSaving, setIsSaving]   = useState(false);
+  const [saveMsg, setSaveMsg]     = useState('');
+  const [error, setError]         = useState('');
 
   const isSuperuser = currentStore?.role === 'superuser';
+
+  // 변경된 셀 목록 ("role:menuKey")
+  const changedCells = new Set<string>();
+  for (const role of ROLES.map(r => r.key)) {
+    for (const menu of ALL_MENUS) {
+      const cur  = permissions[role]?.[menu.key]      ?? true;
+      const prev = savedPermissions[role]?.[menu.key] ?? true;
+      if (cur !== prev) changedCells.add(`${role}:${menu.key}`);
+    }
+  }
+  const hasChanges = changedCells.size > 0;
 
   useEffect(() => {
     getAuthJsonHeaders()
       .then(headers => fetch('/api/permissions', { headers }))
       .then(r => r.json())
       .then(data => {
-        setPermissions(data.permissions || {});
+        const p = data.permissions || {};
+        setPermissions(p);
+        setSavedPermissions(JSON.parse(JSON.stringify(p)));
         setIsLoading(false);
       });
   }, []);
@@ -69,6 +83,7 @@ export default function PermissionPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      setSavedPermissions(JSON.parse(JSON.stringify(permissions)));
       setSaveMsg('✅ 권한 설정이 저장되었습니다.');
     } catch (e: any) {
       setError(e.message);
@@ -114,14 +129,22 @@ export default function PermissionPage() {
           </p>
         </div>
         {isSuperuser && (
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="flex items-center gap-2 bg-teal-600 hover:bg-teal-500 disabled:bg-slate-600 text-white px-6 py-2.5 rounded-xl font-bold transition-colors"
-          >
-            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {isSaving ? '저장 중...' : '저장'}
-          </button>
+          <div className="flex items-center gap-3">
+            {hasChanges && !isSaving && (
+              <span className="flex items-center gap-1.5 text-xs text-yellow-400 bg-yellow-900/30 border border-yellow-500/30 px-3 py-1.5 rounded-lg">
+                <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse inline-block" />
+                미저장 변경 {changedCells.size}건
+              </span>
+            )}
+            <button
+              onClick={handleSave}
+              disabled={isSaving || !hasChanges}
+              className="flex items-center gap-2 bg-teal-600 hover:bg-teal-500 disabled:bg-slate-700 disabled:text-slate-500 text-white px-6 py-2.5 rounded-xl font-bold transition-colors"
+            >
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {isSaving ? '저장 중...' : '저장'}
+            </button>
+          </div>
         )}
       </div>
 
@@ -162,22 +185,33 @@ export default function PermissionPage() {
                 </tr>
                 {ALL_MENUS
                   .filter(m => m.category === category)
-                  .map((menu, idx) => (
-                    <tr key={menu.key} className={`border-t border-slate-800 ${idx % 2 === 0 ? '' : 'bg-slate-800/20'}`}>
-                      <td className="px-6 py-4 text-slate-300 text-sm">{menu.label}</td>
-                      {ROLES.map(role => (
-                        <td key={role.key} className="px-4 py-4 text-center">
-                          <input
-                            type="checkbox"
-                            checked={permissions[role.key]?.[menu.key] ?? true}
-                            onChange={() => handleToggle(role.key, menu.key)}
-                            disabled={!isSuperuser || role.key === 'superuser'}
-                            className="w-5 h-5 rounded accent-teal-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
-                          />
+                  .map((menu, idx) => {
+                    const rowChanged = ROLES.some(r => changedCells.has(`${r.key}:${menu.key}`));
+                    return (
+                      <tr key={menu.key} className={`border-t border-slate-800 ${
+                        rowChanged ? 'bg-yellow-900/10 border-l-2 border-l-yellow-500/50' : idx % 2 === 0 ? '' : 'bg-slate-800/20'
+                      }`}>
+                        <td className="px-6 py-4 text-sm flex items-center gap-2">
+                          <span className={rowChanged ? 'text-yellow-300' : 'text-slate-300'}>{menu.label}</span>
+                          {rowChanged && <span className="text-[10px] text-yellow-500 font-medium">변경됨</span>}
                         </td>
-                      ))}
-                    </tr>
-                  ))
+                        {ROLES.map(role => {
+                          const cellChanged = changedCells.has(`${role.key}:${menu.key}`);
+                          return (
+                            <td key={role.key} className={`px-4 py-4 text-center ${cellChanged ? 'bg-yellow-900/20' : ''}`}>
+                              <input
+                                type="checkbox"
+                                checked={permissions[role.key]?.[menu.key] ?? true}
+                                onChange={() => handleToggle(role.key, menu.key)}
+                                disabled={!isSuperuser || role.key === 'superuser'}
+                                className="w-5 h-5 rounded accent-teal-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })
                 }
               </>
             ))}

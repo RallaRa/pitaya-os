@@ -8,7 +8,7 @@ const ResponsiveGridLayout = dynamic(
   () => import('react-grid-layout').then(m => ({ default: m.ResponsiveGridLayout })),
   { ssr: false }
 );
-import { Plus, LayoutGrid, Lock, RotateCcw } from 'lucide-react';
+import { Plus, LayoutGrid, Lock, RotateCcw, Crown } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import NewsWidget           from '@/components/widgets/NewsWidget';
@@ -22,6 +22,10 @@ import TotalPartnerWidget     from '@/components/widgets/TotalPartnerWidget';
 import TodaySalesWidget       from '@/components/widgets/TodaySalesWidget';
 import SalesCompareWidget     from '@/components/widgets/SalesCompareWidget';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { db } from '@/lib/firebase/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
+
+const SUPERUSER_EMAIL = process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || 'hipona00@gmail.com';
 
 /* ── 타입 ── */
 type GridLayout = readonly LayoutItem[];
@@ -149,6 +153,7 @@ export default function DashboardPage() {
 
   const uid     = user?.uid || '';
   const storeId = currentStore?.storeId || '';
+  const isSuperuser = !!(user?.email && user.email.toLowerCase() === SUPERUSER_EMAIL.toLowerCase());
 
   const [editMode,      setEditMode]      = useState(false);
   const [activeWidgets, setActiveWidgets] = useState<string[]>(DEFAULT_ACTIVE);
@@ -198,14 +203,15 @@ export default function DashboardPage() {
   /* 저장된 레이아웃 불러오기 */
   useEffect(() => {
     if (!uid) return;
+    const params = new URLSearchParams({ uid });
+    if (storeId) params.set('storeId', storeId);
     getAuthHeaders()
-      .then(headers => fetch(`/api/dashboard/layout?uid=${uid}`, { headers }))
+      .then(headers => fetch(`/api/dashboard/layout?${params}`, { headers }))
       .then(r => r.json())
       .then(d => {
         if (d.layout && d.activeWidgets) {
           let widgets: string[] = d.activeWidgets;
           let layout: LayoutItem[] = d.layout as LayoutItem[];
-          // 기존 저장 레이아웃에 total_partner 없으면 자동 추가
           if (!widgets.includes('total_partner')) {
             widgets = [...widgets, 'total_partner'];
             const meta = WIDGET_META.find(m => m.id === 'total_partner')!;
@@ -217,9 +223,34 @@ export default function DashboardPage() {
         setLayoutLoaded(true);
       })
       .catch(() => setLayoutLoaded(true));
-  }, [uid]);
+  }, [uid, storeId]);
 
-  /* 레이아웃 저장 (디바운스 1s) */
+  /* 마스터 레이아웃 실시간 동기화 (슈퍼유저 변경 시 모든 유저 반영) */
+  useEffect(() => {
+    if (!storeId || !layoutLoaded) return;
+    const unsubscribe = onSnapshot(
+      doc(db, 'dashboard_layouts', `${storeId}_master`),
+      snap => {
+        if (!snap.exists()) return;
+        const data = snap.data();
+        if (data?.layout && data?.activeWidgets) {
+          let widgets: string[] = data.activeWidgets;
+          let layout: LayoutItem[] = data.layout;
+          if (!widgets.includes('total_partner')) {
+            widgets = [...widgets, 'total_partner'];
+            const meta = WIDGET_META.find(m => m.id === 'total_partner')!;
+            layout = [...layout, { ...meta.defaultItem, y: Infinity }];
+          }
+          setLayouts({ lg: layout as GridLayout });
+          setActiveWidgets(widgets);
+        }
+      },
+      () => { /* 권한 없거나 문서 없으면 무시 */ },
+    );
+    return () => unsubscribe();
+  }, [storeId, layoutLoaded]);
+
+  /* 레이아웃 저장 (디바운스 1s, 슈퍼유저는 마스터로 저장) */
   const persistLayout = useCallback((layout: GridLayout, widgets: string[]) => {
     if (!uid || !layoutLoaded) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -228,11 +259,11 @@ export default function DashboardPage() {
         fetch('/api/dashboard/layout', {
           method: 'PUT',
           headers,
-          body: JSON.stringify({ uid, layout: [...layout], activeWidgets: widgets }),
+          body: JSON.stringify({ uid, layout: [...layout], activeWidgets: widgets, storeId: storeId || undefined }),
         })
       ).catch(() => {});
     }, 1000);
-  }, [uid, layoutLoaded]);
+  }, [uid, layoutLoaded, storeId]);
 
   /* 권한에 따라 표시 가능한 위젯 */
   const allowedIds = WIDGET_META.filter(m => {
@@ -331,11 +362,19 @@ export default function DashboardPage() {
   /* 데스크탑 그리드 */
   return (
     <div className="flex flex-col min-h-full bg-slate-950">
+      {/* 슈퍼유저 편집 모드 배너 */}
+      {editMode && isSuperuser && (
+        <div className="flex items-center gap-2 px-6 py-2 bg-purple-900/40 border-b border-purple-700/40 shrink-0">
+          <Crown className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+          <p className="text-purple-200 text-xs flex-1">레이아웃 편집 모드 — 변경사항이 모든 유저에게 적용됩니다</p>
+        </div>
+      )}
+
       {/* 툴바 */}
       <div className="flex items-center gap-2 px-6 py-3 border-b border-slate-800/60 shrink-0 flex-wrap">
         <h1 className="text-slate-400 text-xs font-semibold uppercase tracking-widest flex-1">대시보드</h1>
 
-        {editMode && (
+        {editMode && isSuperuser && (
           <>
             <button
               onClick={() => setShowAddModal(true)}
@@ -353,19 +392,21 @@ export default function DashboardPage() {
           </>
         )}
 
-        <button
-          onClick={() => setEditMode(v => !v)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
-            editMode
-              ? 'bg-teal-500 text-black font-semibold'
-              : 'bg-slate-800 hover:bg-slate-700 text-slate-400'
-          }`}
-        >
-          {editMode
-            ? <><Lock className="w-3.5 h-3.5" /> 편집 완료</>
-            : <><LayoutGrid className="w-3.5 h-3.5" /> 편집 모드</>
-          }
-        </button>
+        {isSuperuser && (
+          <button
+            onClick={() => setEditMode(v => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors ${
+              editMode
+                ? 'bg-purple-600 text-white font-semibold'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-400'
+            }`}
+          >
+            {editMode
+              ? <><Lock className="w-3.5 h-3.5" /> 편집 완료</>
+              : <><LayoutGrid className="w-3.5 h-3.5" /> 편집 모드</>
+            }
+          </button>
+        )}
       </div>
 
       {/* 그리드 영역 */}
@@ -397,8 +438,8 @@ export default function DashboardPage() {
             cols={{ lg: 12, md: 10, sm: 6 }}
             rowHeight={80}
             margin={[12, 12]}
-            dragConfig={{ enabled: editMode, handle: '.widget-drag-handle' }}
-            resizeConfig={{ enabled: editMode }}
+            dragConfig={{ enabled: editMode && isSuperuser, handle: '.widget-drag-handle' }}
+            resizeConfig={{ enabled: editMode && isSuperuser }}
             onLayoutChange={onLayoutChange}
             autoSize
           >
@@ -407,8 +448,8 @@ export default function DashboardPage() {
               if (!item) return null;
               return (
                 <div key={id} className="relative">
-                  {/* 드래그 핸들 (편집 모드에서만) */}
-                  {editMode && (
+                  {/* 드래그 핸들 (슈퍼유저 편집 모드에서만) */}
+                  {editMode && isSuperuser && (
                     <div className="widget-drag-handle absolute inset-x-0 top-0 h-8 z-10 cursor-grab active:cursor-grabbing" />
                   )}
                   {renderWidget(id)}

@@ -95,9 +95,10 @@ export default function MembersPage() {
     if (!currentStore?.storeId) return;
     setIsLoading(true);
     try {
+      const authHeaders = await getAuthJsonHeaders();
       const [pendingRes, activeRes] = await Promise.all([
-        fetch(`/api/store?storeId=${currentStore.storeId}&status=pending`),
-        fetch(`/api/store?storeId=${currentStore.storeId}&status=active`),
+        fetch(`/api/store?storeId=${currentStore.storeId}&status=pending`, { headers: authHeaders }),
+        fetch(`/api/store?storeId=${currentStore.storeId}&status=active`, { headers: authHeaders }),
       ]);
       const [pendingData, activeData] = await Promise.all([pendingRes.json(), activeRes.json()]);
       setPendingMembers(pendingData.members || []);
@@ -113,7 +114,8 @@ export default function MembersPage() {
 
   useEffect(() => {
     if (!user?.uid) return;
-    fetch(`/api/users?uid=${user.uid}`)
+    getAuthJsonHeaders()
+      .then(headers => fetch(`/api/users?uid=${user.uid}`, { headers }))
       .then(r => r.json())
       .then(data => {
         const globalRole = data.user?.role;
@@ -128,7 +130,7 @@ export default function MembersPage() {
     if (!memberStores[uid]) {
       setLoadingStores(uid);
       try {
-        const res = await fetch(`/api/store?uid=${uid}`);
+        const res = await fetch(`/api/store?uid=${uid}`, { headers: await getAuthJsonHeaders() });
         const data = await res.json();
         setMemberStores(prev => ({ ...prev, [uid]: data.stores || [] }));
       } catch {

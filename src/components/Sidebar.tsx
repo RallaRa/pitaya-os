@@ -6,7 +6,8 @@ import { usePathname } from 'next/navigation';
 import {
   Settings, MessageCircle, ShoppingCart, Sparkles,
   BarChart2, ClipboardCheck, X,
-  Circle, CalendarDays, Tag, Scale, LineChart, Building2, SlidersHorizontal, Users, Crown, History, ChevronRight,
+  Circle, CalendarDays, Tag, Scale, LineChart, Building2, SlidersHorizontal, Users, Crown, History, ChevronRight, ChevronDown,
+  FileText, TrendingUp, Truck, BookOpen, Hash,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -68,6 +69,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const [aiModels,      setAiModels]      = useState<AiModel[]>([]);
   const [unreadCount,   setUnreadCount]   = useState(0);
   const [showProfile,   setShowProfile]   = useState(false);
+  const [purchaseOpen,  setPurchaseOpen]  = useState(false);
 
   interface SalesSummary { todayNet: number; todaySource: string; weekNet: number; }
   const [sales,        setSales]        = useState<SalesSummary | null>(null);
@@ -188,11 +190,19 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
+  const purchaseSubMenus = [
+    { href: '/dashboard/report/purchases/input',        icon: <ShoppingCart className="w-3.5 h-3.5" />, label: '매입 등록' },
+    { href: '/dashboard/report/purchases/ledger',       icon: <BookOpen className="w-3.5 h-3.5" />,     label: '매입 원장' },
+    { href: '/dashboard/report/purchases/by-supplier',  icon: <Truck className="w-3.5 h-3.5" />,        label: '거래처별 매입' },
+    { href: '/dashboard/report/purchases/prices',       icon: <TrendingUp className="w-3.5 h-3.5" />,   label: '품목별 단가' },
+    { href: '/dashboard/report/purchases/trace-ledger', icon: <FileText className="w-3.5 h-3.5" />,     label: '거래내역서(법정)' },
+    { href: '/dashboard/report/purchases/trace-numbers',icon: <Hash className="w-3.5 h-3.5" />,         label: '이력번호 관리' },
+  ];
+
   const mainMenus = [
     { key: 'ai' as const,        href: '/dashboard/ai',                    icon: <Sparkles className="w-4 h-4" />,       label: 'AI 대화모드' },
     { key: 'messenger' as const, href: '/dashboard/messenger',             icon: <MessageCircle className="w-4 h-4" />,  label: '메신저',      badge: unreadCount },
     { key: 'hygiene' as const,   href: '/dashboard/hygiene',               icon: <ClipboardCheck className="w-4 h-4" />, label: '위생 점검일지' },
-    { key: 'purchase' as const,  href: '/dashboard/report/purchases/input', icon: <ShoppingCart className="w-4 h-4" />,  label: 'AI 매입관리' },
     { key: 'report' as const,      href: '/dashboard/report/view',           icon: <BarChart2 className="w-4 h-4" />,      label: '일마감내역' },
     { key: 'hrCalendar' as const,         href: '/dashboard/hr/calendar',                    icon: <CalendarDays className="w-4 h-4" />,  label: '캘린더' },
     { key: 'scaleCode' as const,          href: '/dashboard/scale',                          icon: <Scale className="w-4 h-4" />,         label: '저울 코드 관리' },
@@ -221,6 +231,49 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
             ))
           ) : (
             <>
+              {/* AI 매입관리 아코디언 (purchase 권한) */}
+              {menuAccess.purchase && (() => {
+                const purchaseActive = pathname.startsWith('/dashboard/report/purchases');
+                return (
+                  <div>
+                    <button
+                      onClick={() => setPurchaseOpen(o => !o)}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm w-full ${
+                        purchaseActive
+                          ? 'bg-teal-600/20 text-teal-300 font-semibold border border-teal-500/20'
+                          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      <span className={`shrink-0 ${purchaseActive ? 'text-teal-400' : ''}`}><ShoppingCart className="w-4 h-4" /></span>
+                      <span className="flex-1 text-left">AI 매입관리</span>
+                      <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${purchaseOpen || purchaseActive ? 'rotate-180' : ''}`} />
+                    </button>
+                    {(purchaseOpen || purchaseActive) && (
+                      <div className="ml-4 mt-0.5 space-y-0.5 border-l border-slate-700/60 pl-3">
+                        {purchaseSubMenus.map(sub => {
+                          const subActive = pathname === sub.href;
+                          return (
+                            <Link
+                              key={sub.href}
+                              href={sub.href}
+                              onClick={onClose}
+                              className={`flex items-center gap-2.5 px-2 py-2 rounded-lg transition-all text-xs ${
+                                subActive
+                                  ? 'bg-teal-600/20 text-teal-300 font-semibold'
+                                  : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'
+                              }`}
+                            >
+                              <span className={subActive ? 'text-teal-400' : ''}>{sub.icon}</span>
+                              {sub.label}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {visibleMenus.map(item => {
                 const active = pathname.startsWith(item.href);
                 return (

@@ -165,6 +165,63 @@ service cloud.firestore {
     }
 
     // ──────────────────────────────────────────
+    // dashboard_cache / predictions / weather_cache
+    // ──────────────────────────────────────────
+    match /dashboard_cache/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /predictions/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /weather_cache/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /naver_trend_keywords/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ──────────────────────────────────────────
+    // dashboard_layouts: 슈퍼유저만 쓰기
+    // ──────────────────────────────────────────
+    match /dashboard_layouts/{docId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.auth.token.email == 'hipona00@gmail.com';
+    }
+
+    // ──────────────────────────────────────────
+    // 매입관리 컬렉션
+    // ──────────────────────────────────────────
+    match /purchase_records/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /purchase_items/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /trace_records/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /item_aliases/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /item_match_logs/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /item_prices/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ──────────────────────────────────────────
     // 정의되지 않은 컬렉션 — 전면 차단
     // ──────────────────────────────────────────
     match /{document=**} {
