@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp } from 'lucide-react';
+import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2 } from 'lucide-react';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -104,6 +104,21 @@ export default function SettingsPage() {
 
   const isMasterOrAdmin = ['master', 'superuser', 'admin'].includes(currentStore?.role || '');
   const isMasterOrSuperuser = ['master', 'superuser'].includes(currentStore?.role || '');
+
+  const hrMenus = isMasterOrAdmin ? [
+    {
+      href: '/dashboard/settings/employees',
+      icon: <UserSquare className="w-5 h-5 text-cyan-400" />,
+      label: '사원정보',
+      description: '직원 인사기록카드 — 기본정보·급여·발령이력 통합 관리',
+    },
+    {
+      href: '/dashboard/settings/departments',
+      icon: <Building2 className="w-5 h-5 text-indigo-400" />,
+      label: '부서 관리',
+      description: '매장 부서 추가·수정·삭제',
+    },
+  ] : [];
 
   const handleFixNetSales = async (dryRun = false) => {
     if (!currentStore?.storeId) return;
@@ -233,7 +248,7 @@ export default function SettingsPage() {
           {visibleMenus.length === 0 && adminOnlyMenus.length === 0 ? (
             <p className="text-slate-500 text-sm text-center py-8">접근 가능한 설정 항목이 없습니다.</p>
           ) : (
-            [...visibleMenus, ...adminOnlyMenus].map((menu) => (
+            [...visibleMenus, ...hrMenus, ...adminOnlyMenus].map((menu) => (
               <Link
                 key={menu.href}
                 href={menu.href}
