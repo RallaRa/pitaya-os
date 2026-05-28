@@ -75,7 +75,7 @@ export default function YesterdayWidget({
                         <span className={`text-[10px] font-bold w-4 shrink-0 text-center ${RANK_COLOR[i] || 'text-slate-500'}`}>{i + 1}</span>
                         <span className="text-slate-200 text-xs flex-1 truncate">{item.name}</span>
                         <span className="text-slate-400 text-[10px] shrink-0">{item.qty.toLocaleString()}개</span>
-                        <span className="text-slate-500 text-[10px] shrink-0">{item.amount ? `${Math.round(item.amount / 1000)}K` : ''}</span>
+                        <span className="text-slate-500 text-[10px] shrink-0">{item.amount ? `${item.amount.toLocaleString()}원` : ''}</span>
                       </div>
                     ))}
                   </div>
