@@ -129,15 +129,11 @@ async function syncToDailyReports(params: {
   const finishTotal = finish?.totalSale   ?? 0;
   const totalSales  = satTotal;
 
-  // isClosed: Finish_Total이 있고 SaT 합계와 1000원 이내 오차
-  const isClosed = finish !== null && finishTotal > 0 && Math.abs(finishTotal - satTotal) < 1000;
+  // isClosed: Finish_Total이 존재하면 마감으로 판단 (다중POS SUM 신뢰)
+  const isClosed = !!(finish && finishTotal > 0);
 
-  // netSales: finish.netSale이 satTotal의 50% 이상일 때만 신뢰 (S_NetSale 단일POS 오류 방지)
-  // 미달이거나 finish 없으면 SaT 합계(다중POS 합산) 사용
-  const rawNetSale = finish?.netSale ?? 0;
-  const netSales = rawNetSale > 0 && satTotal > 0 && rawNetSale >= satTotal * 0.5
-    ? rawNetSale
-    : satTotal;
+  // netSales: 마감 시 Finish SUM(다중POS 합산), 미마감 시 SaT 집계
+  const netSales = isClosed ? (finish!.netSale ?? 0) : satTotal;
   const cashSale    = finish?.cashSale    ?? headerDoc.cashSale  ?? 0;
   const cardSale    = finish?.cardSale    ?? headerDoc.cardSale  ?? 0;
   const returnSale  = finish?.returnSale  ?? 0;

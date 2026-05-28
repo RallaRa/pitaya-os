@@ -31,6 +31,10 @@ export default function SettingsPage() {
   const [fixNetResult, setFixNetResult] = useState<{ fixed: number; candidates: number; message: string; details: { reportDate: string; oldNetSales: number; newNetSales: number; source: string }[] } | null>(null);
   const [fixNetError, setFixNetError]   = useState<string | null>(null);
 
+  const [recalcing, setRecalcing]       = useState(false);
+  const [recalcResult, setRecalcResult] = useState<{ fixed: number; total: number; message: string } | null>(null);
+  const [recalcError, setRecalcError]   = useState<string | null>(null);
+
   useEffect(() => {
     if (!user?.uid || !storesLoaded) return;
     const storeId = currentStore?.storeId || '';
@@ -116,6 +120,28 @@ export default function SettingsPage() {
       setFixNetError(e.message || '오류 발생');
     } finally {
       setFixingNet(false);
+    }
+  };
+
+  const handleRecalcNetSales = async () => {
+    if (!currentStore?.storeId) return;
+    setRecalcing(true);
+    setRecalcResult(null);
+    setRecalcError(null);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch('/api/admin/recalc-netsales', {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storeId: currentStore.storeId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '재계산 실패');
+      setRecalcResult({ fixed: data.fixed, total: data.total, message: data.message });
+    } catch (e: any) {
+      setRecalcError(e.message || '오류 발생');
+    } finally {
+      setRecalcing(false);
     }
   };
 
@@ -306,6 +332,49 @@ export default function SettingsPage() {
                             }
                           </button>
                         </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 순매출 전체 재계산 (다중POS SUM) — master/superuser만 */}
+                {isMasterOrSuperuser && (
+                  <div className="bg-slate-900 border border-slate-700 rounded-xl p-5">
+                    <div className="flex items-start gap-4">
+                      <div className="bg-slate-800 p-3 rounded-xl flex-shrink-0">
+                        <TrendingUp className="w-5 h-5 text-teal-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-bold">순매출 재계산 (다중POS 합산)</p>
+                        <p className="text-slate-400 text-sm mt-0.5">
+                          POS 브릿지 보고서 전체를 Finish_Total SUM 기준으로 순매출·반품금액을 재계산합니다.
+                          다중 POS 환경에서 단일 POS 데이터만 반영된 경우 실행하세요.
+                        </p>
+
+                        {recalcResult && (
+                          <div className="mt-3 p-3 bg-teal-900/30 border border-teal-500/30 rounded-lg text-sm text-teal-300">
+                            ✅ {recalcResult.message}
+                            <span className="ml-2 text-slate-400 text-xs">
+                              (전체 {recalcResult.total}건 / 수정 {recalcResult.fixed}건)
+                            </span>
+                          </div>
+                        )}
+                        {recalcError && (
+                          <div className="mt-3 p-3 bg-red-900/30 border border-red-500/30 rounded-lg text-sm text-red-300">
+                            ❌ {recalcError}
+                          </div>
+                        )}
+
+                        <button
+                          onClick={handleRecalcNetSales}
+                          disabled={recalcing}
+                          className="mt-3 flex items-center gap-2 px-4 py-2 bg-teal-700/40 hover:bg-teal-700/60 border border-teal-500/30 text-teal-300 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          {recalcing
+                            ? <><Loader2 className="w-4 h-4 animate-spin" /> 처리 중...</>
+                            : <><TrendingUp className="w-4 h-4" /> 순매출 재계산 실행</>
+                          }
+                        </button>
                       </div>
                     </div>
                   </div>
