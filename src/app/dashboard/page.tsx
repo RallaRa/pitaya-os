@@ -84,7 +84,7 @@ const WIDGET_META: WidgetMeta[] = [
   },
 ];
 
-const DEFAULT_ACTIVE = ['weather', 'quick_menu', 'weekly_analysis', 'yesterday_analysis', 'news', 'sales_prediction', 'ai_insight'];
+const DEFAULT_ACTIVE = ['weather', 'quick_menu', 'weekly_analysis', 'yesterday_analysis', 'news', 'sales_prediction', 'ai_insight', 'total_partner'];
 
 function makeDefaultLayout(ids: string[]): GridLayout {
   return WIDGET_META.filter(m => ids.includes(m.id)).map(m => ({ ...m.defaultItem }));
@@ -189,8 +189,16 @@ export default function DashboardPage() {
       .then(r => r.json())
       .then(d => {
         if (d.layout && d.activeWidgets) {
-          setLayouts({ lg: d.layout as GridLayout });
-          setActiveWidgets(d.activeWidgets);
+          let widgets: string[] = d.activeWidgets;
+          let layout: LayoutItem[] = d.layout as LayoutItem[];
+          // 기존 저장 레이아웃에 total_partner 없으면 자동 추가
+          if (!widgets.includes('total_partner')) {
+            widgets = [...widgets, 'total_partner'];
+            const meta = WIDGET_META.find(m => m.id === 'total_partner')!;
+            layout = [...layout, { ...meta.defaultItem, y: Infinity }];
+          }
+          setLayouts({ lg: layout as GridLayout });
+          setActiveWidgets(widgets);
         }
         setLayoutLoaded(true);
       })
