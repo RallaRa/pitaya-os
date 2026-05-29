@@ -1,10 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifyToken } from '@/lib/authVerify';
-
-function formatYMD(d: Date) {
-  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-}
+import { getKSTTodayYMD, addDaysYMD } from '@/lib/dateUtils';
 
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
@@ -17,16 +14,14 @@ export async function GET(req: Request) {
   const authHdr = req.headers.get('Authorization') || '';
   const hdrs    = { Authorization: authHdr };
 
+  const sinceStr = addDaysYMD(getKSTTodayYMD(), -30);
+
   // 3개 외부 API + Firestore 매출 병렬 fetch
   const [priceRes, auctionRes, trendRes, salesData] = await Promise.allSettled([
     fetch(`${base}/api/external/meat-price`, { headers: hdrs, signal: AbortSignal.timeout(12000) }).then(r => r.json()),
     fetch(`${base}/api/external/meat-auction`, { headers: hdrs, signal: AbortSignal.timeout(12000) }).then(r => r.json()),
     fetch(`${base}/api/external/naver-trend${storeId ? `?storeId=${storeId}` : ''}`, { headers: hdrs, signal: AbortSignal.timeout(12000) }).then(r => r.json()),
     (async () => {
-      const since = new Date();
-      since.setDate(since.getDate() - 30);
-      const sinceStr = formatYMD(since);
-
       let q: FirebaseFirestore.Query = adminDb.collection('daily_reports')
         .where('reportDate', '>=', sinceStr);
       if (storeId) q = q.where('storeId', '==', storeId);

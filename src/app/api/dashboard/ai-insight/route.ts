@@ -3,11 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { verifyToken } from '@/lib/authVerify';
-
-function todayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+import { getKSTTodayYMD } from '@/lib/dateUtils';
 
 function midnightMs() {
   const d = new Date();
@@ -22,7 +18,7 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const storeId  = searchParams.get('storeId') || '';
   const forceGen = searchParams.get('force') === '1';
-  const today    = todayStr();
+  const today    = getKSTTodayYMD();
   const cacheId  = `ai_insight_${storeId || 'global'}_${today}`;
   const cacheRef = adminDb.collection('dashboard_cache').doc(cacheId);
 

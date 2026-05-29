@@ -20,6 +20,10 @@ export function getKSTTodayYMD(): string {
   return toYMDFromDate(new Date());
 }
 
+export function getKSTYesterdayYMD(): string {
+  return addDaysYMD(getKSTTodayYMD(), -1);
+}
+
 export function getKSTNow(): Date {
   const { year, month, day } = getKSTParts();
   return new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T12:00:00+09:00`);

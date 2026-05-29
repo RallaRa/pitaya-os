@@ -18,6 +18,9 @@ interface SyncBody {
   details?: SadDetail[] | null;
   finish?: FinishTotal | null;
   customerSales?: CustomerSale[] | null;
+  isClosed?: boolean;
+  weather?: Record<string, unknown> | null;
+  timeSlots?: Array<{ posNo?: string; Hour?: string; hour?: string; totalSale?: number; tranCount?: number }> | null;
   syncedAt: string;
 }
 
@@ -40,6 +43,9 @@ interface SadDetail {
   totalPrice?: number;
   purPrice?: number;
   profitPrice?: number;
+  saleTime?: string;
+  posNo?: string;
+  saleNum?: string;
   [key: string]: any;
 }
 
@@ -122,9 +128,10 @@ async function syncToDailyReports(params: {
   headerDoc: SatHeader;
   details: SadDetail[];
   finish: FinishTotal | null;
+  timeSlots: Array<{ posNo?: string; hour?: string; totalSale?: number; tranCount?: number }>;
   syncedAt: string;
 }) {
-  const { storeId, date, headerDoc, details, finish, syncedAt } = params;
+  const { storeId, date, headerDoc, details, finish, timeSlots, syncedAt } = params;
   const posBreakdown: PosBreakdown[] = finish?.perPos ?? [];
 
   // SaT 집계를 primary로 사용 (일마감 여부와 무관하게 실거래 반영)
@@ -203,6 +210,7 @@ async function syncToDailyReports(params: {
     items,
     isClosed,
     posBreakdown: posBreakdown.length > 0 ? posBreakdown : [],
+    timeSlots,
     weather:    weather ?? null,
     news:       news    ?? null,
     issues:     [],
@@ -219,6 +227,46 @@ async function syncToDailyReports(params: {
     const { editHistory: _eh, ...updatePayload } = payload;
     await docRef.update(updatePayload);
   }
+
+  // pos_daily_sales — 대시보드 실시간 구독용
+  const dailySalesId = `${storeId}_${date}`;
+  const headersArr = [{
+    totalSale:  headerDoc.totalSale  ?? 0,
+    cardSale:   headerDoc.cardSale   ?? 0,
+    cashSale:   headerDoc.cashSale   ?? 0,
+    profitPri:  headerDoc.profitPri  ?? 0,
+    transCount: headerDoc.transCount ?? 0,
+  }];
+  const finishPayload = finish ? {
+    totalSale:   finish.totalSale   ?? 0,
+    netSale:     finish.netSale     ?? 0,
+    cashSale:    finish.cashSale    ?? 0,
+    cardSale:    finish.cardSale    ?? 0,
+    returnCount: finish.returnCount ?? 0,
+    returnSale:  finish.returnSale  ?? 0,
+    cusPoint:    finish.cusPoint    ?? 0,
+    perPos:      finish.perPos      ?? [],
+  } : null;
+
+  await adminDb.collection('pos_daily_sales').doc(dailySalesId).set({
+    storeId,
+    date,
+    isClosed,
+    headers: headersArr,
+    finish: finishPayload,
+    totalSales,
+    netSales,
+    cashSale,
+    cardSale,
+    returnAmount: returnSale,
+    returnCount,
+    customerCount: transCount,
+    posBreakdown: posBreakdown.length > 0 ? posBreakdown : [],
+    timeSlots,
+    syncedAt,
+    source: 'pos_bridge',
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
 }
 
 // ── POST /api/pos/sync ────────────────────────────────────────────
@@ -242,6 +290,13 @@ export async function POST(req: Request) {
   const details      = Array.isArray(body.details)       ? body.details       : [];
   const finish       = body.finish ?? null;
   const customerSales = Array.isArray(body.customerSales) ? body.customerSales : [];
+  const timeSlotsRaw = Array.isArray(body.timeSlots) ? body.timeSlots : [];
+  const timeSlots = timeSlotsRaw.map(r => ({
+    posNo:     String(r.posNo ?? ''),
+    hour:      String(r.hour ?? r.Hour ?? ''),
+    totalSale: Number(r.totalSale ?? 0),
+    tranCount: Number(r.tranCount ?? 0),
+  }));
 
   if (!storeId || !date || !syncedAt) {
     return NextResponse.json(
@@ -363,7 +418,7 @@ export async function POST(req: Request) {
   // 5. daily_reports 동시 저장 (실패해도 응답은 성공)
   let dailyReportSaved = false;
   try {
-    await syncToDailyReports({ storeId, date, headerDoc, details, finish, syncedAt });
+    await syncToDailyReports({ storeId, date, headerDoc, details, finish, timeSlots, syncedAt });
     dailyReportSaved = true;
   } catch (err) {
     console.error('[pos/sync] daily_reports 저장 실패:', err);

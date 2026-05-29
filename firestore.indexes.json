@@ -54,7 +54,15 @@
       "queryScope": "COLLECTION",
       "fields": [
         { "fieldPath": "storeId", "order": "ASCENDING" },
-        { "fieldPath": "point", "order": "DESCENDING" }
+        { "fieldPath": "lastVisitDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "pos_daily_sales",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
       ]
     },
     {

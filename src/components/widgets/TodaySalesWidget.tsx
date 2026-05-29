@@ -1,92 +1,115 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import WidgetWrapper from './WidgetWrapper';
-import { getAuthHeaders } from '@/lib/getAuthHeaders';
-import { TrendingUp, TrendingDown, Minus, Users, RefreshCw } from 'lucide-react';
+import { db } from '@/lib/firebase/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { getKSTTodayYMD, getKSTYesterdayYMD } from '@/lib/dateUtils';
+import { getDisplayTotalSale, getDisplayNetSales, posDailySalesDocId } from '@/lib/posDailySales';
+import { dailyReportDocId } from '@/lib/reportCompare';
+import { TrendingUp, RefreshCw } from 'lucide-react';
 
-interface TodaySalesData {
-  todayStr:       string;
-  totalSales:     number;
-  netSales:       number;
-  returnAmount:   number;
-  customerCount:  number;
-  isClosed:       boolean;
-  syncedAt:       string | null;
-  yesterdayNet:   number;
-  diffAmt:        number;
-  diffPct:        number | null;
-  noData:         boolean;
+interface SalesDoc {
+  isClosed?: boolean;
+  headers?: Array<{ totalSale?: number }>;
+  finish?: { totalSale?: number; netSale?: number };
+  totalSales?: number;
+  netSales?: number;
+  syncedAt?: string;
 }
-
-const AUTO_REFRESH_MS = 5 * 60 * 1000; // 5분 자동 갱신
 
 export default function TodaySalesWidget({
   editMode, onRemove, storeId,
 }: {
   editMode: boolean; onRemove: () => void; storeId?: string;
 }) {
-  const [data,         setData]        = useState<TodaySalesData | null>(null);
-  const [loading,      setLoading]     = useState(true);
-  const [refreshing,   setRefreshing]  = useState(false);
-  const [error,        setError]       = useState<string | null>(null);
-  const [updatedAt,    setUpdatedAt]   = useState<Date | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const load = useCallback(async (background = false) => {
-    if (!storeId) { setLoading(false); return; }
-    if (background) setRefreshing(true);
-    else setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/dashboard/today-sales?storeId=${storeId}`, {
-        headers: await getAuthHeaders(),
-      });
-      const d = await res.json();
-      if (d.error) throw new Error(d.error);
-      setData(d);
-      setUpdatedAt(new Date());
-    } catch {
-      setError('당일 매출 데이터를 불러오지 못했습니다');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [storeId]);
+  const [todayDoc,     setTodayDoc]     = useState<SalesDoc | null>(null);
+  const [yesterdayDoc, setYesterdayDoc] = useState<SalesDoc | null>(null);
+  const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState<string | null>(null);
+  const [updatedAt,    setUpdatedAt]    = useState<Date | null>(null);
+  const unsubRef = useRef<(() => void)[]>([]);
 
   useEffect(() => {
-    load();
-    timerRef.current = setInterval(() => load(true), AUTO_REFRESH_MS);
+    unsubRef.current.forEach(u => u());
+    unsubRef.current = [];
 
-    const onVisible = () => { if (document.visibilityState === 'visible') load(true); };
-    document.addEventListener('visibilitychange', onVisible);
+    if (!storeId) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    const todayStr = getKSTTodayYMD();
+    const yesterdayStr = getKSTYesterdayYMD();
+
+    let todayPos: SalesDoc | null = null;
+    let todayReport: SalesDoc | null = null;
+    let yesterdayPos: SalesDoc | null = null;
+    let yesterdayReport: SalesDoc | null = null;
+
+    const mergeToday = () => {
+      setTodayDoc(todayPos ?? todayReport ?? null);
+      setUpdatedAt(new Date());
+      setLoading(false);
+    };
+    const mergeYesterday = () => {
+      setYesterdayDoc(yesterdayPos ?? yesterdayReport ?? null);
+    };
+
+    const todayPosRef = doc(db, 'pos_daily_sales', posDailySalesDocId(storeId, todayStr));
+    const todayReportRef = doc(db, 'daily_reports', dailyReportDocId(storeId, todayStr));
+    const yesterdayPosRef = doc(db, 'pos_daily_sales', posDailySalesDocId(storeId, yesterdayStr));
+    const yesterdayReportRef = doc(db, 'daily_reports', dailyReportDocId(storeId, yesterdayStr));
+
+    const unsubTodayPos = onSnapshot(todayPosRef, snap => {
+      todayPos = snap.exists() ? (snap.data() as SalesDoc) : null;
+      mergeToday();
+    }, err => {
+      console.error('[TodaySalesWidget] today pos_daily_sales:', err);
+      setError('당일 매출 데이터를 불러오지 못했습니다');
+      setLoading(false);
+    });
+
+    const unsubTodayReport = onSnapshot(todayReportRef, snap => {
+      todayReport = snap.exists() ? (snap.data() as SalesDoc) : null;
+      mergeToday();
+    }, err => console.error('[TodaySalesWidget] today daily_reports:', err));
+
+    const unsubYesterdayPos = onSnapshot(yesterdayPosRef, snap => {
+      yesterdayPos = snap.exists() ? (snap.data() as SalesDoc) : null;
+      mergeYesterday();
+    }, err => console.error('[TodaySalesWidget] yesterday pos_daily_sales:', err));
+
+    const unsubYesterdayReport = onSnapshot(yesterdayReportRef, snap => {
+      yesterdayReport = snap.exists() ? (snap.data() as SalesDoc) : null;
+      mergeYesterday();
+    }, err => console.error('[TodaySalesWidget] yesterday daily_reports:', err));
+
+    unsubRef.current.push(unsubTodayPos, unsubTodayReport, unsubYesterdayPos, unsubYesterdayReport);
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      document.removeEventListener('visibilitychange', onVisible);
+      unsubRef.current.forEach(u => u());
+      unsubRef.current = [];
     };
-  }, [load]);
+  }, [storeId]);
 
-  const fmt = (n: number) => n.toLocaleString('ko-KR');
-
-  const diffIcon = !data || data.diffPct === null ? null
-    : data.diffPct > 0 ? <TrendingUp  className="w-4 h-4 text-emerald-400" />
-    : data.diffPct < 0 ? <TrendingDown className="w-4 h-4 text-red-400" />
-    : <Minus className="w-4 h-4 text-slate-400" />;
-
-  const diffColor = !data || data.diffPct === null ? 'text-slate-400'
-    : data.diffPct > 0 ? 'text-emerald-400'
-    : data.diffPct < 0 ? 'text-red-400'
-    : 'text-slate-400';
+  const fmt = (n: number) => (n || 0).toLocaleString('ko-KR');
+  const todayTotal = getDisplayTotalSale(todayDoc);
+  const todayNet   = getDisplayNetSales(todayDoc);
+  const yesterdayTotal = getDisplayTotalSale(yesterdayDoc);
+  const isClosed = todayDoc?.isClosed ?? false;
+  const todayStr = getKSTTodayYMD();
 
   return (
     <WidgetWrapper
       title="📊 당일 매출 현황"
       editMode={editMode}
       onRemove={onRemove}
-      onRefresh={() => load(true)}
       updatedAt={updatedAt}
-      loading={loading || refreshing}
+      loading={loading}
       error={error}
     >
       {!storeId ? (
@@ -94,76 +117,35 @@ export default function TodaySalesWidget({
           <TrendingUp className="w-8 h-8 text-slate-700" />
           <p className="text-slate-500 text-xs text-center">매장을 선택하세요</p>
         </div>
-      ) : data && (
-        <div className="h-full p-3 flex flex-col gap-3">
-          {data.noData ? (
-            <div className="flex flex-col items-center justify-center flex-1 gap-2">
-              <TrendingUp className="w-8 h-8 text-slate-700" />
-              <p className="text-slate-500 text-xs text-center">당일 매출 데이터가 없습니다</p>
-              <p className="text-slate-600 text-[10px] text-center">POS 연동 후 자동으로 갱신됩니다<br/>(5분마다)</p>
+      ) : (
+        <div className="h-full p-3 flex flex-col gap-2 justify-center">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400 text-[10px]">{todayStr}</span>
+            <div className="flex items-center gap-1.5">
+              {isClosed
+                ? <span className="text-[10px] px-1.5 py-0.5 bg-emerald-900/50 text-emerald-400 rounded-full border border-emerald-700/40">마감완료</span>
+                : <span className="text-[10px] px-1.5 py-0.5 bg-yellow-900/50 text-yellow-400 rounded-full border border-yellow-700/40 animate-pulse">영업 중</span>
+              }
+              <RefreshCw className="w-3 h-3 text-slate-600" />
             </div>
-          ) : (
-            <>
-              {/* 상태 뱃지 */}
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 text-[10px]">{data.todayStr}</span>
-                <div className="flex items-center gap-1.5">
-                  {data.isClosed
-                    ? <span className="text-[10px] px-1.5 py-0.5 bg-emerald-900/50 text-emerald-400 rounded-full border border-emerald-700/40">마감완료</span>
-                    : <span className="text-[10px] px-1.5 py-0.5 bg-yellow-900/50 text-yellow-400 rounded-full border border-yellow-700/40 animate-pulse">실시간</span>
-                  }
-                  <RefreshCw className="w-3 h-3 text-slate-600" />
-                </div>
-              </div>
+          </div>
 
-              {/* 순매출 메인 */}
-              <div className="bg-slate-800/60 rounded-xl p-3 text-center">
-                <p className="text-slate-500 text-[10px] mb-1">순매출</p>
-                <p className="text-2xl font-bold text-white">{fmt(data.netSales)}<span className="text-sm text-slate-400 ml-1">원</span></p>
+          <div className="text-center">
+            <p className="text-slate-500 text-[10px] mb-1">오늘 매출</p>
+            <p className="text-3xl font-bold text-teal-300">
+              ₩ {fmt(todayTotal)}
+            </p>
+            <p className="text-slate-500 text-[10px] mt-0.5">순매출 {fmt(todayNet)}원</p>
+          </div>
 
-                {data.diffPct !== null && (
-                  <div className={`flex items-center justify-center gap-1 mt-1 text-xs ${diffColor}`}>
-                    {diffIcon}
-                    <span>전일 대비 {data.diffPct > 0 ? '+' : ''}{data.diffPct}%</span>
-                    <span className="text-slate-500">({data.diffAmt > 0 ? '+' : ''}{fmt(data.diffAmt)}원)</span>
-                  </div>
-                )}
-              </div>
+          <p className="text-center text-sm text-slate-400 scale-[0.85] origin-center">
+            어제 ₩ {fmt(yesterdayTotal)}
+          </p>
 
-              {/* 보조 지표 */}
-              <div className="grid grid-cols-3 gap-2">
-                <div className="bg-slate-800/40 rounded-lg p-2 text-center">
-                  <p className="text-slate-500 text-[9px] mb-0.5">총매출</p>
-                  <p className="text-slate-200 text-xs font-semibold">{fmt(data.totalSales)}</p>
-                  <p className="text-slate-600 text-[9px]">원</p>
-                </div>
-                <div className="bg-slate-800/40 rounded-lg p-2 text-center">
-                  <p className="text-slate-500 text-[9px] mb-0.5">반품</p>
-                  <p className="text-red-400 text-xs font-semibold">{data.returnAmount > 0 ? `-${fmt(data.returnAmount)}` : '0'}</p>
-                  <p className="text-slate-600 text-[9px]">원</p>
-                </div>
-                <div className="bg-slate-800/40 rounded-lg p-2 text-center">
-                  <div className="flex items-center justify-center gap-0.5 mb-0.5">
-                    <Users className="w-2.5 h-2.5 text-slate-500" />
-                    <p className="text-slate-500 text-[9px]">고객수</p>
-                  </div>
-                  <p className="text-blue-400 text-xs font-semibold">{fmt(data.customerCount)}</p>
-                  <p className="text-slate-600 text-[9px]">명</p>
-                </div>
-              </div>
-
-              {/* 전일 비교 */}
-              {data.yesterdayNet > 0 && (
-                <div className="bg-slate-800/30 rounded-lg px-3 py-2 flex items-center justify-between">
-                  <span className="text-slate-500 text-[10px]">전일 순매출</span>
-                  <span className="text-slate-400 text-xs">{fmt(data.yesterdayNet)}원</span>
-                </div>
-              )}
-
-              {data.syncedAt && (
-                <p className="text-slate-600 text-[9px] text-right">마지막 POS 동기화: {new Date(data.syncedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</p>
-              )}
-            </>
+          {todayDoc?.syncedAt && (
+            <p className="text-slate-600 text-[9px] text-right">
+              POS 동기화 {new Date(todayDoc.syncedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+            </p>
           )}
         </div>
       )}

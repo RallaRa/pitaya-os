@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
+import { db } from '@/lib/firebase/firebase';
+import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, Legend,
@@ -16,16 +18,18 @@ import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 /* ── 타입 ── */
 interface Customer {
+  id: string;
   cusCode: string;
-  nameMasked: string;
-  grade: string;
+  name: string;
+  mobile: string;
   cusGubun: string;
+  cusClass: string;
+  grade: string;
   point: number;
+  totalPurchase: number;
+  visitCount: number;
+  lastVisitDate: string;
   joinDate: string;
-  writeDate: string;
-  totalVisits: number;
-  totalSales: number;
-  lastVisit: string;
 }
 
 interface Stats {
@@ -63,7 +67,8 @@ export default function CustomersPage() {
   const [page,         setPage]         = useState(1);
   const [total,        setTotal]        = useState(0);
   const [search,       setSearch]       = useState('');
-  const [loading,      setLoading]      = useState(false);
+  const [loading,      setLoading]      = useState(true);
+  const [listError,    setListError]    = useState<string | null>(null);
   const [analysis,     setAnalysis]     = useState<AnalysisData | null>(null);
   const [analysisLoad, setAnalysisLoad] = useState(false);
   const [decrypted,    setDecrypted]    = useState<Record<string, DecryptedInfo>>({});
@@ -83,27 +88,74 @@ export default function CustomersPage() {
       .catch(() => {});
   }, [user?.uid, storeId]);
 
-  /* ── 고객 목록 조회 ── */
-  const loadCustomers = useCallback(async (p = 1) => {
-    if (!storeId) return;
+  /* ── Firestore 실시간 고객 목록 ── */
+  useEffect(() => {
+    if (!storeId) {
+      setCustomers([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
+    setListError(null);
+
+    const q = query(
+      collection(db, 'pos_customers'),
+      where('storeId', '==', storeId),
+      orderBy('lastVisitDate', 'desc'),
+      limit(500),
+    );
+
+    const unsub = onSnapshot(
+      q,
+      snap => {
+        const list: Customer[] = snap.docs.map(d => {
+          const r = d.data();
+          return {
+            id: d.id,
+            cusCode: String(r.cusCode || ''),
+            name: r.nameEncrypted ? '● 암호화됨' : String(r.name || ''),
+            mobile: String(r.phoneMasked || ''),
+            cusGubun: String(r.cusGubun || ''),
+            cusClass: String(r.cusClass || r.grade || ''),
+            grade: String(r.grade || r.cusClass || ''),
+            point: Number(r.point || 0),
+            totalPurchase: Number(r.totalPurchase || 0),
+            visitCount: Number(r.visitCount || 0),
+            lastVisitDate: String(r.lastVisitDate || ''),
+            joinDate: String(r.joinDate || r.writeDate || ''),
+          };
+        });
+        setCustomers(list);
+        setTotal(list.length);
+        setLoading(false);
+      },
+      err => {
+        console.error('[customers] onSnapshot error:', err);
+        setListError('고객 데이터를 불러오지 못했습니다');
+        setLoading(false);
+      },
+    );
+
+    return () => unsub();
+  }, [storeId]);
+
+  /* ── 통계/등급 (API) ── */
+  const loadStats = useCallback(async () => {
+    if (!storeId) return;
     try {
       const headers = await getAuthHeaders();
-      const params = new URLSearchParams({
-        storeId, page: String(p), limit: String(LIMIT),
-        ...(gradeFilter ? { grade: gradeFilter } : {}),
-      });
-      const res = await fetch(`/api/customers?${params}`, { headers });
+      const res = await fetch(`/api/customers?storeId=${storeId}&limit=1`, { headers });
       const d = await res.json();
-      if (d.error) throw new Error(d.error);
-      setCustomers(d.customers || []);
-      setTotal(d.total || 0);
-      setStats(d.stats || null);
-      setGrades(d.grades || []);
-      setPage(p);
-    } catch { /* silent */ }
-    finally { setLoading(false); }
-  }, [storeId, gradeFilter]);
+      if (!d.error) {
+        setStats(d.stats || null);
+        setGrades(d.grades || []);
+        if (d.total > 0) setTotal(d.total);
+      }
+    } catch (e) {
+      console.error('[customers] stats error:', e);
+    }
+  }, [storeId]);
 
   /* ── 분석 데이터 조회 ── */
   const loadAnalysis = useCallback(async () => {
@@ -118,7 +170,7 @@ export default function CustomersPage() {
     finally { setAnalysisLoad(false); }
   }, [storeId]);
 
-  useEffect(() => { loadCustomers(1); }, [loadCustomers]);
+  useEffect(() => { loadStats(); }, [loadStats]);
   useEffect(() => { if (tab !== '고객 목록') loadAnalysis(); }, [tab, loadAnalysis]);
 
   /* ── PII 복호화 ── */
@@ -138,12 +190,19 @@ export default function CustomersPage() {
     finally { setDecryptLoad(p => ({ ...p, [cusCode]: false })); }
   };
 
-  /* ── 검색 필터 (클라이언트사이드, cusCode) ── */
-  const displayed = search
-    ? customers.filter(c => c.cusCode.toLowerCase().includes(search.toLowerCase()))
-    : customers;
+  const filteredCustomers = useMemo(() => {
+    let list = customers;
+    if (gradeFilter) list = list.filter(c => c.grade === gradeFilter || c.cusClass === gradeFilter);
+    if (search) list = list.filter(c => c.cusCode.toLowerCase().includes(search.toLowerCase()));
+    return list;
+  }, [customers, gradeFilter, search]);
 
-  const totalPages = Math.ceil(total / LIMIT);
+  const paginatedCustomers = useMemo(() => {
+    const start = (page - 1) * LIMIT;
+    return filteredCustomers.slice(start, start + LIMIT);
+  }, [filteredCustomers, page]);
+
+  const totalPages = Math.ceil(filteredCustomers.length / LIMIT) || 1;
 
   /* ── 탭 버튼 ── */
   const TabBtn = ({ label }: { label: typeof TABS[number] }) => (
@@ -168,7 +227,7 @@ export default function CustomersPage() {
           <h1 className="text-lg font-bold">고객 관리</h1>
         </div>
         <button
-          onClick={() => { loadCustomers(1); if (tab !== '고객 목록') loadAnalysis(); }}
+          onClick={() => { loadStats(); if (tab !== '고객 목록') loadAnalysis(); }}
           className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition"
         >
           <RefreshCw className="w-3.5 h-3.5" />새로고침
@@ -213,7 +272,7 @@ export default function CustomersPage() {
             </div>
             <select
               value={gradeFilter}
-              onChange={e => { setGradeFilter(e.target.value); loadCustomers(1); }}
+              onChange={e => { setGradeFilter(e.target.value); setPage(1); }}
               className="px-3 py-2 bg-slate-800/60 border border-slate-700 rounded-lg text-xs text-slate-300 outline-none focus:border-teal-500"
             >
               <option value="">전체 등급</option>
@@ -228,12 +287,12 @@ export default function CustomersPage() {
                 <tr className="border-b border-slate-800 text-slate-500">
                   <th className="text-left px-3 py-2.5 font-medium">고객코드</th>
                   <th className="text-left px-3 py-2.5 font-medium">이름</th>
+                  <th className="text-left px-3 py-2.5 font-medium">전화</th>
                   <th className="text-left px-3 py-2.5 font-medium">회원구분</th>
                   <th className="text-left px-3 py-2.5 font-medium">등급</th>
                   <th className="text-right px-3 py-2.5 font-medium">포인트</th>
+                  <th className="text-right px-3 py-2.5 font-medium">총구매</th>
                   <th className="text-right px-3 py-2.5 font-medium">방문</th>
-                  <th className="text-right px-3 py-2.5 font-medium">총매출</th>
-                  <th className="text-left px-3 py-2.5 font-medium">가입일</th>
                   <th className="text-left px-3 py-2.5 font-medium">최근방문</th>
                   {canDecrypt && <th className="text-center px-3 py-2.5 font-medium">복호화</th>}
                 </tr>
@@ -243,11 +302,15 @@ export default function CustomersPage() {
                   <tr><td colSpan={canDecrypt ? 10 : 9} className="text-center py-10 text-slate-600">
                     <Loader2 className="w-5 h-5 animate-spin mx-auto" />
                   </td></tr>
-                ) : displayed.length === 0 ? (
+                ) : listError ? (
+                  <tr><td colSpan={canDecrypt ? 10 : 9} className="text-center py-10 text-red-400/80 text-xs">
+                    {listError}
+                  </td></tr>
+                ) : paginatedCustomers.length === 0 ? (
                   <tr><td colSpan={canDecrypt ? 10 : 9} className="text-center py-10 text-slate-600">
                     고객 데이터가 없습니다
                   </td></tr>
-                ) : displayed.map(c => {
+                ) : paginatedCustomers.map(c => {
                   const dec = decrypted[c.cusCode];
                   return (
                     <tr key={c.cusCode} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition">
@@ -256,22 +319,24 @@ export default function CustomersPage() {
                         {dec ? (
                           <span className="text-teal-300 font-medium">{dec.name || ''}</span>
                         ) : (
-                          <span className="text-slate-500">{c.nameMasked || ''}</span>
+                          <span className="text-slate-500">{c.name || ''}</span>
                         )}
+                      </td>
+                      <td className="px-3 py-2 text-slate-400 font-mono text-[10px]">
+                        {dec?.phone || c.mobile || ''}
                       </td>
                       <td className="px-3 py-2 text-slate-400">{c.cusGubun || ''}</td>
                       <td className="px-3 py-2">
-                        {c.grade ? (
-                          <span className="px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 text-[10px]">{c.grade}</span>
+                        {(c.cusClass || c.grade) ? (
+                          <span className="px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 text-[10px]">{c.cusClass || c.grade}</span>
                         ) : ''}
                       </td>
                       <td className="px-3 py-2 text-right text-slate-300">{c.point.toLocaleString()}</td>
-                      <td className="px-3 py-2 text-right text-slate-400">{c.totalVisits || ''}</td>
                       <td className="px-3 py-2 text-right text-slate-300">
-                        {c.totalSales ? `${Math.round(c.totalSales / 1000)}K` : ''}
+                        {c.totalPurchase ? `${Math.round(c.totalPurchase / 1000)}K` : ''}
                       </td>
-                      <td className="px-3 py-2 text-slate-500">{c.joinDate?.slice(0, 10) || ''}</td>
-                      <td className="px-3 py-2 text-slate-500">{c.lastVisit?.slice(0, 10) || ''}</td>
+                      <td className="px-3 py-2 text-right text-slate-400">{c.visitCount || ''}</td>
+                      <td className="px-3 py-2 text-slate-500">{c.lastVisitDate?.slice(0, 10) || ''}</td>
                       {canDecrypt && (
                         <td className="px-3 py-2 text-center">
                           {dec ? (
@@ -307,14 +372,14 @@ export default function CustomersPage() {
           {/* 페이지네이션 */}
           {totalPages > 1 && (
             <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>{total.toLocaleString()}명 중 {((page - 1) * LIMIT + 1)}~{Math.min(page * LIMIT, total)}명</span>
+              <span>{filteredCustomers.length.toLocaleString()}명 중 {((page - 1) * LIMIT + 1)}~{Math.min(page * LIMIT, filteredCustomers.length)}명</span>
               <div className="flex items-center gap-1">
-                <button onClick={() => loadCustomers(page - 1)} disabled={page <= 1}
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
                   className="p-1 rounded hover:bg-slate-800 disabled:opacity-30 transition">
                   <ChevronLeft className="w-4 h-4" />
                 </button>
                 <span>{page} / {totalPages}</span>
-                <button onClick={() => loadCustomers(page + 1)} disabled={page >= totalPages}
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
                   className="p-1 rounded hover:bg-slate-800 disabled:opacity-30 transition">
                   <ChevronRight className="w-4 h-4" />
                 </button>

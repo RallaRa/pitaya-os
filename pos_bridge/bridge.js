@@ -564,6 +564,36 @@ async function fetchWeather(dateStr) {
   }
 }
 
+// ── 시간대별 매출 (SaT 시간·POS 집계) ────────────────────────────
+async function fetchTimeSlots(dateStr) {
+  const table = `SaT_${ym(dateStr)}`;
+  const p = await getPool();
+  try {
+    const result = await p.request()
+      .input('date', sql.VarChar(10), dateStr)
+      .query(`
+        SELECT
+          SUBSTRING(Sale_Num, 11, 2) as POS_No,
+          LEFT(Sale_Time, 2) as Hour,
+          SUM(TSell_Pri) as totalSale,
+          COUNT(*) as tranCount
+        FROM ${table}
+        WHERE Sale_Date = @date
+        GROUP BY SUBSTRING(Sale_Num, 11, 2), LEFT(Sale_Time, 2)
+        ORDER BY Hour
+      `);
+    return result.recordset.map(r => ({
+      posNo:     String(r.POS_No || '01'),
+      hour:      String(r.Hour   || '00'),
+      totalSale: toInt(r.totalSale),
+      tranCount: toInt(r.tranCount),
+    }));
+  } catch (e) {
+    warn(`시간대별 조회 실패 [${dateStr}]: ${e.message}`);
+    return [];
+  }
+}
+
 // ── API 전송 ──────────────────────────────────────────────────────
 async function sendToApi(payload) {
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -594,15 +624,16 @@ async function sendToApi(payload) {
 async function syncDate(dateStr, dryRun) {
   log(`-------- ${dateStr} 동기화 시작 --------`);
 
-  let headers, details, finish, weather, customerSales;
+  let headers, details, finish, weather, customerSales, timeSlots;
   try {
     const timeMap = await fetchSaleTimeMap(dateStr);
-    [headers, details, finish, weather, customerSales] = await Promise.all([
+    [headers, details, finish, weather, customerSales, timeSlots] = await Promise.all([
       fetchHeaders(dateStr),
       fetchDetails(dateStr, timeMap),
       fetchFinish(dateStr),
       fetchWeather(dateStr),
       fetchCustomerSales(dateStr),
+      fetchTimeSlots(dateStr),
     ]);
   } catch (e) {
     err(`DB 조회 실패 [${dateStr}]: ${e.message}`);
@@ -635,6 +666,7 @@ async function syncDate(dateStr, dryRun) {
     isClosed,
     weather,
     customerSales,
+    timeSlots,
     syncedAt: new Date().toISOString(),
   };
 
