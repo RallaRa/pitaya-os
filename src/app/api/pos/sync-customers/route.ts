@@ -2,20 +2,6 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { encrypt } from '@/lib/encryption';
-import { timingSafeEqual } from 'crypto';
-
-function authenticate(req: Request): boolean {
-  const key = process.env.POS_BRIDGE_KEY || '';
-  if (!key) return false;
-  const auth  = req.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  const apiKey = req.headers.get('x-api-key') || '';
-  const candidate = token || apiKey;
-  if (!candidate) return false;
-  try {
-    return timingSafeEqual(Buffer.from(candidate), Buffer.from(key));
-  } catch { return false; }
-}
 
 interface LegacyCustomer {
   Cus_Code:   string;
@@ -54,8 +40,11 @@ function isInfoCustomer(c: LegacyCustomer | InfoCustomer): c is InfoCustomer {
 }
 
 // POST /api/pos/sync-customers
+// Body: { storeId, customers, syncedAt }
 export async function POST(req: Request) {
-  if (!authenticate(req)) {
+  const authHeader = req.headers.get('authorization');
+  const apiKey = authHeader?.replace('Bearer ', '') || req.headers.get('x-api-key');
+  if (apiKey !== process.env.POS_BRIDGE_KEY) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
