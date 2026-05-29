@@ -7,11 +7,13 @@ import {
   Settings, MessageCircle, ShoppingCart, Sparkles,
   BarChart2, ClipboardCheck, X,
   Circle, CalendarDays, Tag, Scale, LineChart, Building2, SlidersHorizontal, Users, Crown, History, ChevronRight, ChevronDown,
-  FileText, TrendingUp, Truck, BookOpen, Hash, Code,
+  FileText, TrendingUp, Truck, BookOpen, Hash, Code, LayoutGrid,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import { isSuperuserEmail } from '@/lib/auth/permissions';
+import { useLicense } from '@/hooks/useLicense';
+import { MENU_KEY_TO_MODULE } from '@/lib/licenses';
 import NotificationHub from '@/components/NotificationHub';
 import ResourceMonitor from '@/components/ResourceMonitor';
 import UserProfileModal from '@/components/UserProfileModal';
@@ -78,6 +80,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const [unreadCount,   setUnreadCount]   = useState(0);
   const [showProfile,   setShowProfile]   = useState(false);
   const [purchaseOpen,  setPurchaseOpen]  = useState(false);
+  const { hasModule } = useLicense();
 
   interface SalesSummary { todayNet: number; todaySource: string; weekNet: number; }
   const [sales,        setSales]        = useState<SalesSummary | null>(null);
@@ -225,7 +228,17 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
   const isSuperuser = isSuperuserEmail(user?.email);
   const effectiveAccess = isSuperuser ? ALL_TRUE : menuAccess;
-  const visibleMenus = accessLoading ? [] : mainMenus.filter(m => effectiveAccess[m.key]);
+
+  const moduleAllowed = (menuKey: string) => {
+    if (isSuperuser) return true;
+    const mod = MENU_KEY_TO_MODULE[menuKey];
+    if (!mod) return true;
+    return hasModule(mod);
+  };
+
+  const visibleMenus = accessLoading ? [] : mainMenus.filter(m =>
+    effectiveAccess[m.key] && moduleAllowed(m.key),
+  );
 
   /* ── 공통 사이드바 콘텐츠 ── */
   const sidebarContent = (
@@ -243,8 +256,23 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
             ))
           ) : (
             <>
+              {hasModule('dashboard') && (
+                <Link
+                  href="/dashboard"
+                  onClick={onClose}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm mb-1 ${
+                    pathname === '/dashboard'
+                      ? 'bg-teal-600/20 text-teal-300 font-semibold border border-teal-500/20'
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  <LayoutGrid className="w-4 h-4 shrink-0" />
+                  <span className="flex-1">대시보드</span>
+                </Link>
+              )}
+
               {/* AI 매입관리 아코디언 (purchase 권한) */}
-              {(effectiveAccess.purchase || isSuperuser) && (() => {
+              {(effectiveAccess.purchase || isSuperuser) && hasModule('purchases') && (() => {
                 const purchaseActive = pathname.startsWith('/dashboard/report/purchases');
                 return (
                   <div>

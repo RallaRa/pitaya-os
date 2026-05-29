@@ -294,6 +294,14 @@ service cloud.firestore {
     }
 
     // ──────────────────────────────────────────
+    // store_licenses: 인증된 유저 읽기, 서버만 쓰기
+    // ──────────────────────────────────────────
+    match /store_licenses/{storeId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ──────────────────────────────────────────
     // 슈퍼유저 헬퍼
     // ──────────────────────────────────────────
     function isSuperuser() {

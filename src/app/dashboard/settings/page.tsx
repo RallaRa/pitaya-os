@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2, Tag } from 'lucide-react';
+import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2, Tag, Package } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -86,6 +86,13 @@ export default function SettingsPage() {
   ];
 
   const adminOnlyMenus = [
+    {
+      href: '/dashboard/settings/modules',
+      icon: <Package className="w-5 h-5 text-violet-400" />,
+      label: '모듈 관리',
+      description: '대시보드·매입·HR 등 기능 모듈 ON/OFF',
+      show: ['master', 'superuser', 'admin', 'owner'].includes(currentStore?.role || ''),
+    },
     {
       href: '/dashboard/settings/widgets',
       icon: <LayoutGrid className="w-5 h-5 text-teal-400" />,

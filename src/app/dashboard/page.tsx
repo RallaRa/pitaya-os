@@ -22,10 +22,10 @@ import TotalPartnerWidget     from '@/components/widgets/TotalPartnerWidget';
 import TodaySalesWidget       from '@/components/widgets/TodaySalesWidget';
 import SalesCompareWidget     from '@/components/widgets/SalesCompareWidget';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { isSuperuserEmail } from '@/lib/auth/permissions';
+import { useLicense } from '@/hooks/useLicense';
 import { db } from '@/lib/firebase/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
-
-const SUPERUSER_EMAIL = process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || 'hipona00@gmail.com';
 
 /* ── 타입 ── */
 type GridLayout = readonly LayoutItem[];
@@ -150,10 +150,11 @@ function WidgetAddModal({
 export default function DashboardPage() {
   const { user }         = useAuth();
   const { currentStore } = useStore();
+  const { hasModule, loading: licenseLoading } = useLicense();
 
   const uid     = user?.uid || '';
   const storeId = currentStore?.storeId || '';
-  const isSuperuser = !!(user?.email && user.email.toLowerCase() === SUPERUSER_EMAIL.toLowerCase());
+  const isSuperuser = isSuperuserEmail(user?.email);
 
   const [editMode,      setEditMode]      = useState(false);
   const [activeWidgets, setActiveWidgets] = useState<string[]>(DEFAULT_ACTIVE);
@@ -343,6 +344,18 @@ export default function DashboardPage() {
       default:                   return null;
     }
   };
+
+  /* 모듈 라이선스 */
+  if (!licenseLoading && !isSuperuser && !hasModule('dashboard')) {
+    return (
+      <div className="flex items-center justify-center min-h-full bg-slate-950 p-6">
+        <div className="text-center max-w-sm">
+          <p className="text-slate-400 font-medium">대시보드 모듈이 활성화되지 않았습니다</p>
+          <p className="text-sm text-slate-600 mt-2">관리자에게 문의하세요</p>
+        </div>
+      </div>
+    );
+  }
 
   /* 모바일 세로 스택 */
   if (isMobile) {
