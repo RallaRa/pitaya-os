@@ -19,7 +19,9 @@ interface Customer {
   cusCode: string;
   nameMasked: string;
   grade: string;
+  cusGubun: string;
   point: number;
+  joinDate: string;
   writeDate: string;
   totalVisits: number;
   totalSales: number;
@@ -226,21 +228,23 @@ export default function CustomersPage() {
                 <tr className="border-b border-slate-800 text-slate-500">
                   <th className="text-left px-3 py-2.5 font-medium">고객코드</th>
                   <th className="text-left px-3 py-2.5 font-medium">이름</th>
+                  <th className="text-left px-3 py-2.5 font-medium">회원구분</th>
                   <th className="text-left px-3 py-2.5 font-medium">등급</th>
                   <th className="text-right px-3 py-2.5 font-medium">포인트</th>
                   <th className="text-right px-3 py-2.5 font-medium">방문</th>
                   <th className="text-right px-3 py-2.5 font-medium">총매출</th>
+                  <th className="text-left px-3 py-2.5 font-medium">가입일</th>
                   <th className="text-left px-3 py-2.5 font-medium">최근방문</th>
                   {canDecrypt && <th className="text-center px-3 py-2.5 font-medium">복호화</th>}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={canDecrypt ? 8 : 7} className="text-center py-10 text-slate-600">
+                  <tr><td colSpan={canDecrypt ? 10 : 9} className="text-center py-10 text-slate-600">
                     <Loader2 className="w-5 h-5 animate-spin mx-auto" />
                   </td></tr>
                 ) : displayed.length === 0 ? (
-                  <tr><td colSpan={canDecrypt ? 8 : 7} className="text-center py-10 text-slate-600">
+                  <tr><td colSpan={canDecrypt ? 10 : 9} className="text-center py-10 text-slate-600">
                     고객 데이터가 없습니다
                   </td></tr>
                 ) : displayed.map(c => {
@@ -250,22 +254,24 @@ export default function CustomersPage() {
                       <td className="px-3 py-2 font-mono text-slate-400">{c.cusCode}</td>
                       <td className="px-3 py-2">
                         {dec ? (
-                          <span className="text-teal-300 font-medium">{dec.name || '(없음)'}</span>
+                          <span className="text-teal-300 font-medium">{dec.name || ''}</span>
                         ) : (
-                          <span className="text-slate-500">{c.nameMasked || '***'}</span>
+                          <span className="text-slate-500">{c.nameMasked || ''}</span>
                         )}
                       </td>
+                      <td className="px-3 py-2 text-slate-400">{c.cusGubun || ''}</td>
                       <td className="px-3 py-2">
                         {c.grade ? (
                           <span className="px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 text-[10px]">{c.grade}</span>
-                        ) : <span className="text-slate-600">-</span>}
+                        ) : ''}
                       </td>
                       <td className="px-3 py-2 text-right text-slate-300">{c.point.toLocaleString()}</td>
-                      <td className="px-3 py-2 text-right text-slate-400">{c.totalVisits}</td>
+                      <td className="px-3 py-2 text-right text-slate-400">{c.totalVisits || ''}</td>
                       <td className="px-3 py-2 text-right text-slate-300">
-                        {c.totalSales ? `${Math.round(c.totalSales / 1000)}K` : '-'}
+                        {c.totalSales ? `${Math.round(c.totalSales / 1000)}K` : ''}
                       </td>
-                      <td className="px-3 py-2 text-slate-500">{c.lastVisit?.slice(0, 10) || '-'}</td>
+                      <td className="px-3 py-2 text-slate-500">{c.joinDate?.slice(0, 10) || ''}</td>
+                      <td className="px-3 py-2 text-slate-500">{c.lastVisit?.slice(0, 10) || ''}</td>
                       {canDecrypt && (
                         <td className="px-3 py-2 text-center">
                           {dec ? (

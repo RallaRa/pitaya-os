@@ -1,14 +1,18 @@
 /**
- * Pitaya OS - POS 브릿지 v2
- * 포스 PC(Windows) MSSQL → /api/pos/sync 전송
+ * Pitaya OS - POS 브릿지 v3
+ * 포스 PC(Windows) MSSQL → Pitaya OS API 전송
  *
  * 실행 방법:
- *   node bridge.js                              # 오늘 데이터 1회 전송
- *   node bridge.js today                        # 오늘 데이터 1회 전송
- *   node bridge.js realtime                     # 오늘 데이터 5분마다 반복
- *   node bridge.js date 2026-05-20              # 특정 날짜 전송
- *   node bridge.js migrate 2026-01-01 2026-05-25  # 기간 마이그레이션
- *   node bridge.js --dry-run                    # 조회만, 전송 안 함
+ *   node bridge.js                      # 오늘 매출 전송
+ *   node bridge.js today                # 오늘 데이터 전송 (+ 사원/고객)
+ *   node bridge.js realtime             # 5분마다 반복 (+ 사원/고객)
+ *   node bridge.js date 2026-05-30      # 특정 날짜
+ *   node bridge.js migrate START END    # 기간 마이그레이션
+ *   node bridge.js customers            # Cus_Mst 고객 마스터 (레거시)
+ *   node bridge.js sync-employees       # 사원정보만 동기화
+ *   node bridge.js sync-customers       # Customer_Info 고객 동기화
+ *   node bridge.js check-tables         # DB 테이블 확인
+ *   node bridge.js --dry-run            # 조회만
  *
  * 사전 설치:
  *   npm install mssql axios dotenv
@@ -24,7 +28,8 @@ const axios = require('axios');
 const API_BASE = (process.env.PITAYA_API_URL || 'https://pitaya-osv1.vercel.app/api/pos/sync')
   .replace(/\/api\/pos\/sync$/, '');
 const API_URL  = `${API_BASE}/api/pos/sync`;
-const CUSTOMERS_API_URL = `${API_BASE}/api/pos/sync-customers`;
+const CUSTOMERS_API_URL  = `${API_BASE}/api/pos/sync-customers`;
+const EMPLOYEES_API_URL  = `${API_BASE}/api/pos/sync-employees`;
 const API_KEY  = process.env.POS_BRIDGE_KEY || '';
 const STORE_ID = process.env.STORE_ID       || '';
 
@@ -241,8 +246,84 @@ async function fetchFinish(dateStr) {
   };
 }
 
-// ── 고객 마스터 조회 (Cus_Mst) ───────────────────────────────────
-async function fetchCustomers() {
+function maskPhone(phone) {
+  if (!phone) return null;
+  if (String(phone).includes('*')) return phone;
+  const str = String(phone).replace(/[^0-9]/g, '');
+  if (str.length >= 10) {
+    return str.substring(0, 3) + '-****-' + str.substring(str.length - 4);
+  }
+  return phone;
+}
+
+// ── 사원 조회 (Admin_User) ───────────────────────────────────────
+async function fetchEmployees(pool) {
+  try {
+    const result = await pool.request().query(`
+      SELECT
+        User_ID        as userId,
+        User_Name      as name,
+        Job_Position   as jobPosition,
+        PayMent_Gubun  as paymentType,
+        Salary         as salary,
+        Tel1           as tel1,
+        Tel2           as tel2,
+        Enter_Date     as enterDate,
+        Retire_Date    as retireDate,
+        Admin_Gubun    as adminGrade,
+        OFFICE_CODE    as officeCode,
+        Write_Date     as writeDate,
+        Edit_Date      as editDate
+      FROM Admin_User
+      WHERE Gubun = '1'
+      ORDER BY User_ID
+    `);
+    log(`사원 정보 ${result.recordset.length}명 조회`);
+    return result.recordset;
+  } catch (e) {
+    log('사원 조회 실패: ' + e.message);
+    return [];
+  }
+}
+
+// ── 고객 조회 (Customer_Info) ────────────────────────────────────
+async function fetchCustomerInfo(pool) {
+  try {
+    const result = await pool.request().query(`
+      SELECT
+        Cus_Code       as cusCode,
+        Cus_Name       as name,
+        Cus_Gubun      as cusGubun,
+        Cus_Class      as cusClass,
+        Cus_Mobile     as mobile,
+        Cus_Tel        as tel,
+        Cus_BirDay     as birthday,
+        Mem_Day        as joinDate,
+        Vis_Date       as lastVisitDate,
+        last_eDATE     as lastEventDate,
+        Cus_Point      as point,
+        Cus_TPoint     as totalPoint,
+        Cus_UsePoint   as usedPoint,
+        Pur_Pri        as totalPurchase,
+        Dec_Pri        as totalDiscount,
+        Vis_Count      as visitCount,
+        cPoint_Use     as pointUseYn,
+        Cus_Use        as isActive,
+        Email          as email
+      FROM Customer_Info
+      WHERE Cus_Use = '1'
+      ORDER BY Vis_Date DESC
+    `);
+    log(`고객 정보 ${result.recordset.length}명 조회`);
+    return result.recordset;
+  } catch (e) {
+    log('고객 조회 실패: ' + e.message);
+    return [];
+  }
+}
+
+// ── 고객 마스터 조회 (Cus_Mst, 레거시) ───────────────────────────
+async function fetchCusMstCustomers() {
   const p = await getPool();
   const result = await p.request().query(`
     SELECT
@@ -319,6 +400,129 @@ async function sendCustomersToApi(customers) {
     }
   }
   return { total, failed };
+}
+
+// ── 사원 정보 동기화 ──────────────────────────────────────────────
+async function syncEmployees(pool) {
+  log('━━━ 사원 정보 동기화 시작 ━━━');
+  const employees = await fetchEmployees(pool);
+  if (employees.length === 0) {
+    log('사원 정보 없음');
+    return;
+  }
+
+  const processed = employees.map(emp => ({
+    userId:       String(emp.userId       || '').trim(),
+    name:         String(emp.name         || '').trim(),
+    jobPosition:  String(emp.jobPosition  || '').trim(),
+    paymentType:  String(emp.paymentType  || '').trim(),
+    salary:       toInt(emp.salary),
+    enterDate:    String(emp.enterDate    || '').trim(),
+    retireDate:   String(emp.retireDate   || '').trim(),
+    adminGrade:   String(emp.adminGrade   || '').trim(),
+    officeCode:   String(emp.officeCode   || '').trim(),
+    writeDate:    emp.writeDate ? String(emp.writeDate) : '',
+    editDate:     emp.editDate  ? String(emp.editDate)  : '',
+    tel1Masked:   maskPhone(emp.tel1),
+    tel2Masked:   maskPhone(emp.tel2),
+    storeId:      STORE_ID,
+    syncedAt:     new Date().toISOString(),
+    source:       'pos_bridge',
+  })).filter(e => e.userId);
+
+  try {
+    await axios.post(
+      EMPLOYEES_API_URL,
+      { storeId: STORE_ID, employees: processed },
+      {
+        headers: {
+          Authorization:  `Bearer ${API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 30000,
+      }
+    );
+    log(`✅ 사원정보 ${processed.length}명 동기화 완료`);
+  } catch (e) {
+    err(`사원정보 전송 실패: ${e.message}`);
+  }
+}
+
+// ── 고객 정보 동기화 (Customer_Info) ─────────────────────────────
+async function syncCustomers(pool) {
+  log('━━━ 고객 정보 동기화 시작 ━━━');
+  const customers = await fetchCustomerInfo(pool);
+  if (customers.length === 0) {
+    log('고객 정보 없음');
+    return;
+  }
+
+  const batchSize = 400;
+  let totalSynced = 0;
+
+  for (let i = 0; i < customers.length; i += batchSize) {
+    const batch = customers.slice(i, i + batchSize).map(c => ({
+      cusCode:        String(c.cusCode        || '').trim(),
+      name:           String(c.name           || '').trim(),
+      cusGubun:       String(c.cusGubun       || '').trim(),
+      cusClass:       String(c.cusClass       || '').trim(),
+      mobile:         String(c.mobile         || '').trim(),
+      tel:            String(c.tel            || '').trim(),
+      birthday:       String(c.birthday       || '').trim(),
+      joinDate:       String(c.joinDate       || '').trim(),
+      lastVisitDate:  String(c.lastVisitDate  || '').trim(),
+      lastEventDate:  String(c.lastEventDate  || '').trim(),
+      point:          toInt(c.point),
+      totalPoint:     toInt(c.totalPoint),
+      usedPoint:      toInt(c.usedPoint),
+      totalPurchase:  toInt(c.totalPurchase),
+      totalDiscount:  toInt(c.totalDiscount),
+      visitCount:     toInt(c.visitCount),
+      pointUseYn:     String(c.pointUseYn     || '').trim(),
+      isActive:       String(c.isActive       || '1').trim(),
+      email:          String(c.email          || '').trim(),
+    })).filter(c => c.cusCode);
+
+    try {
+      await axios.post(
+        CUSTOMERS_API_URL,
+        { storeId: STORE_ID, customers: batch, syncedAt: new Date().toISOString() },
+        {
+          headers: {
+            Authorization:  `Bearer ${API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 60000,
+        }
+      );
+      totalSynced += batch.length;
+      log(`고객 배치 전송: ${totalSynced}/${customers.length}`);
+    } catch (e) {
+      err(`고객 배치 전송 실패 (${i}~${i + batchSize}): ${e.message}`);
+    }
+  }
+
+  log(`✅ 고객정보 총 ${totalSynced}명 동기화 완료`);
+}
+
+// ── DB 테이블 확인 ────────────────────────────────────────────────
+async function checkTables(pool) {
+  const tables = ['Admin_User', 'Customer_Info', 'Finish_Total'];
+  for (const table of tables) {
+    try {
+      const result = await pool.request().query(`SELECT COUNT(*) AS cnt FROM ${table}`);
+      log(`${table}: ${result.recordset[0].cnt}건`);
+    } catch (e) {
+      warn(`${table} 조회 실패: ${e.message}`);
+    }
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    const sat = await fetchHeaders(today);
+    log(`SaT_${ym(today)} 오늘 헤더: ${sat.length ? sat[0].totalSale.toLocaleString() + '원' : '없음'}`);
+  } catch (e) {
+    warn(`SaT 조회 실패: ${e.message}`);
+  }
 }
 
 // ── 날씨 조회 (open-meteo 무료 API) ──────────────────────────────
@@ -475,6 +679,11 @@ async function runToday(dryRun) {
   const dateStr = new Date().toISOString().slice(0, 10);
   log(`======== 오늘 동기화: ${dateStr} ========`);
   const ok = await syncDate(dateStr, dryRun);
+  if (!dryRun && ok) {
+    const p = await getPool();
+    await syncEmployees(p);
+    await syncCustomers(p);
+  }
   log(`======== 완료 ${ok ? '✅' : '❌'} ========`);
   return ok;
 }
@@ -587,10 +796,10 @@ async function main() {
       }
 
       case 'customers': {
-        log('======== 고객 마스터 전체 동기화 시작 ========');
+        log('======== Cus_Mst 고객 마스터 동기화 (레거시) ========');
         let cusList;
         try {
-          cusList = await fetchCustomers();
+          cusList = await fetchCusMstCustomers();
         } catch (e) {
           err(`고객 DB 조회 실패: ${e.message}`);
           success = false;
@@ -611,13 +820,47 @@ async function main() {
         break;
       }
 
+      case 'sync-employees': {
+        const p = await getPool();
+        if (dryRun) {
+          const list = await fetchEmployees(p);
+          log(`[DRY-RUN] 사원 ${list.length}명 조회. 상위 3명:`);
+          list.slice(0, 3).forEach(e =>
+            console.log(`  [${e.userId}] ${e.name} | ${e.jobPosition || '-'}`)
+          );
+        } else {
+          await syncEmployees(p);
+        }
+        break;
+      }
+
+      case 'sync-customers': {
+        const p = await getPool();
+        if (dryRun) {
+          const list = await fetchCustomerInfo(p);
+          log(`[DRY-RUN] 고객 ${list.length}명 조회. 상위 3명:`);
+          list.slice(0, 3).forEach(c =>
+            console.log(`  [${c.cusCode}] ${c.name || '-'} | 등급:${c.cusClass || '-'} | 포인트:${c.point || 0}`)
+          );
+        } else {
+          await syncCustomers(p);
+        }
+        break;
+      }
+
+      case 'check-tables': {
+        const p = await getPool();
+        await checkTables(p);
+        break;
+      }
+
       default:
         // 첫 번째 인자가 날짜 형식이면 date 모드로
         if (/^\d{4}-\d{2}-\d{2}$/.test(mode)) {
           success = await runDate(mode, dryRun);
         } else {
           err(`알 수 없는 모드: ${mode}`);
-          console.log('사용법: node bridge.js [today|realtime|date YYYY-MM-DD|migrate START END|customers] [--dry-run]');
+          console.log('사용법: node bridge.js [today|realtime|date YYYY-MM-DD|migrate START END|customers|sync-employees|sync-customers|check-tables] [--dry-run]');
           process.exit(1);
         }
     }

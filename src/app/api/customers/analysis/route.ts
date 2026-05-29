@@ -95,7 +95,7 @@ export async function GET(req: Request) {
       monthlyNew[ym] = 0;
     }
     for (const d of customersSnap.docs) {
-      const wd = String(d.data().writeDate || '').slice(0, 7);
+      const wd = String(d.data().joinDate || d.data().writeDate || '').slice(0, 7);
       if (wd in monthlyNew) monthlyNew[wd]++;
     }
     const newCustomerTrend = Object.entries(monthlyNew).map(([month, count]) => ({ month, count }));

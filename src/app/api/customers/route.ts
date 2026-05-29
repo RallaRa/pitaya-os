@@ -1,7 +1,22 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifyToken } from '@/lib/authVerify';
-import { maskName, maskPhone } from '@/lib/encryption';
+import { maskName } from '@/lib/encryption';
+import type { QueryDocumentSnapshot } from 'firebase-admin/firestore';
+
+async function fetchAllCustomers(storeId: string) {
+  const docs: QueryDocumentSnapshot[] = [];
+  let last: QueryDocumentSnapshot | undefined;
+  while (true) {
+    let q = adminDb.collection('pos_customers').where('storeId', '==', storeId).limit(1000);
+    if (last) q = q.startAfter(last);
+    const snap = await q.get();
+    docs.push(...snap.docs);
+    if (snap.docs.length < 1000) break;
+    last = snap.docs[snap.docs.length - 1];
+  }
+  return docs;
+}
 
 // GET /api/customers?storeId=X&grade=X&page=1&limit=50
 export async function GET(req: Request) {
@@ -17,20 +32,21 @@ export async function GET(req: Request) {
   if (!storeId) return NextResponse.json({ error: 'storeId required' }, { status: 400 });
 
   try {
-    // 고객 목록 조회 (orderBy 복합 인덱스 없이 메모리 정렬)
-    const snap = await adminDb.collection('pos_customers')
-      .where('storeId', '==', storeId)
-      .limit(500)
-      .get();
+    const snap = await fetchAllCustomers(storeId);
 
-    const customers = snap.docs.map(d => {
+    const customers = snap.map(d => {
       const r = d.data();
       return {
         cusCode:    r.cusCode,
         nameMasked: r.nameEncrypted ? '● 암호화됨' : maskName(r.name || ''),
         grade:      r.grade    || '',
+        cusGubun:   r.cusGubun || '',
         point:      Number(r.point) || 0,
-        writeDate:  r.writeDate || '',
+        joinDate:   r.joinDate || r.writeDate || '',
+        writeDate:  r.writeDate || r.joinDate || '',
+        visitCount: Number(r.visitCount || 0),
+        totalPurchase: Number(r.totalPurchase || 0),
+        lastVisitDate: r.lastVisitDate || '',
       };
     }).sort((a, b) => b.point - a.point);
 
@@ -58,9 +74,9 @@ export async function GET(req: Request) {
 
     const enriched = paginated.map(c => ({
       ...c,
-      totalVisits: salesMap[c.cusCode]?.visits    ?? 0,
-      totalSales:  salesMap[c.cusCode]?.totalSales ?? 0,
-      lastVisit:   salesMap[c.cusCode]?.lastVisit  ?? '',
+      totalVisits: salesMap[c.cusCode]?.visits    || c.visitCount || 0,
+      totalSales:  salesMap[c.cusCode]?.totalSales || c.totalPurchase || 0,
+      lastVisit:   salesMap[c.cusCode]?.lastVisit  || c.lastVisitDate || '',
     }));
 
     // 이번달 통계
@@ -71,8 +87,11 @@ export async function GET(req: Request) {
         .map(d => d.data().cusCode as string)
     );
     const newCodes = new Set(
-      snap.docs
-        .filter(d => String(d.data().writeDate || '').startsWith(nowYM))
+      snap
+        .filter(d => {
+          const wd = String(d.data().joinDate || d.data().writeDate || '');
+          return wd.startsWith(nowYM);
+        })
         .map(d => d.data().cusCode as string)
     );
     const totalSalesSum = salesSnap.docs.reduce((s, d) => s + Number(d.data().totalSale || 0), 0);
@@ -83,7 +102,7 @@ export async function GET(req: Request) {
       total,
       page,
       stats: {
-        totalCustomers:   total,
+        totalCustomers:   customers.length,
         monthlyVisitors:  monthCodes.size,
         newCustomers:     newCodes.size,
         avgSpend: totalVisitsSum > 0 ? Math.round(totalSalesSum / totalVisitsSum) : 0,
