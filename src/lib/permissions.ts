@@ -12,6 +12,7 @@ export const ALL_MENUS: MenuItem[] = [
   { key: 'sales',               label: '일일 판매내역 분석',   href: '/dashboard/report/sales_ai',       category: '메인' },
   { key: 'hygiene',             label: '위생 점검일지',        href: '/dashboard/hygiene',               category: '메인' },
   { key: 'view',                label: '일마감내역',           href: '/dashboard/report/view',           category: '메인' },
+  { key: 'view',                label: '달력매출',             href: '/dashboard/report/calendar',       category: '메인' },
   { key: 'settings_store',      label: '매장 설정',            href: '/dashboard/settings/store',        category: '설정' },
   { key: 'settings_permission', label: '권한 설정',            href: '/dashboard/settings/permission',   category: '설정' },
 ];

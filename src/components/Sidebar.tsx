@@ -215,6 +215,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { key: 'messenger' as const, href: '/dashboard/messenger',             icon: <MessageCircle className="w-4 h-4" />,  label: '메신저',      badge: unreadCount },
     { key: 'hygiene' as const,   href: '/dashboard/hygiene',               icon: <ClipboardCheck className="w-4 h-4" />, label: '위생 점검일지' },
     { key: 'report' as const,      href: '/dashboard/report/view',           icon: <BarChart2 className="w-4 h-4" />,      label: '일마감내역' },
+    { key: 'report' as const,      href: '/dashboard/report/calendar',     icon: <CalendarDays className="w-4 h-4" />,   label: '달력매출' },
     { key: 'hrCalendar' as const,         href: '/dashboard/hr/calendar',                    icon: <CalendarDays className="w-4 h-4" />,  label: '캘린더' },
     { key: 'scaleCode' as const,          href: '/dashboard/scale',                          icon: <Scale className="w-4 h-4" />,         label: '저울 코드 관리' },
     { key: 'salesForecast' as const,         href: '/dashboard/sales-forecast',                      icon: <LineChart          className="w-4 h-4" />, label: '품목별 매출 추이' },
