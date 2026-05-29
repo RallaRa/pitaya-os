@@ -175,7 +175,8 @@ export default function MessengerPage() {
   /* My role */
   useEffect(() => {
     if (!user?.uid) return;
-    fetch(`/api/users?uid=${user.uid}`)
+    getAuthJsonHeaders()
+      .then(headers => fetch(`/api/users?uid=${user.uid}`, { headers }))
       .then(r => r.json())
       .then(d => setMyRole(d.user?.role || ''))
       .catch(() => {});
@@ -184,7 +185,8 @@ export default function MessengerPage() {
   /* Users in store */
   useEffect(() => {
     if (!currentStore?.storeId || !user?.uid) return;
-    fetch(`/api/users?storeId=${currentStore.storeId}`)
+    getAuthJsonHeaders()
+      .then(headers => fetch(`/api/users?storeId=${currentStore.storeId}`, { headers }))
       .then(r => r.json())
       .then(d => setUsers((d.users || []).filter((u: UserProfile) => u.uid !== user.uid)))
       .catch(console.error);

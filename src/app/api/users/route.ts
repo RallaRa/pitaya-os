@@ -104,16 +104,25 @@ export async function PUT(req: Request) {
         .where('uid', '==', uid)
         .where('storeId', '==', storeId)
         .get();
-      if (!mapSnap.empty) {
-        const roleToGroup: Record<string, string> = {
-          master: 'owner', admin: 'admin', user: 'user', staff: 'staff', guest: 'staff',
-        };
-        const roleFromGroup = roleToGroup[groupId] || groupId;
-        await mapSnap.docs[0].ref.update({
+      if (mapSnap.empty) {
+        return NextResponse.json({ error: '해당 매장 멤버를 찾을 수 없습니다.' }, { status: 404 });
+      }
+      const groupToRole: Record<string, string> = {
+        master: 'owner', admin: 'admin', user: 'user', staff: 'staff', owner: 'owner',
+      };
+      const roleFromGroup = groupId === ''
+        ? 'staff'
+        : (groupToRole[groupId] || 'user');
+      await mapSnap.docs[0].ref.update({
+        groupId,
+        role: roleFromGroup,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      if (groupId) {
+        await adminDb.collection('users').doc(uid).update({
           groupId,
-          role: roleFromGroup,
           updatedAt: FieldValue.serverTimestamp(),
-        });
+        }).catch(() => {});
       }
     } else {
       await adminDb.collection('users').doc(uid).update({ groupId, updatedAt: FieldValue.serverTimestamp() });

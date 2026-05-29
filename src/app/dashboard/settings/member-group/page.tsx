@@ -103,7 +103,10 @@ export default function MemberGroupPage() {
               storeId: currentStore?.storeId,
               groupId,
             }),
-          }).then(r => { if (!r.ok) throw new Error('저장 실패'); })
+          }).then(async r => {
+            const d = await r.json();
+            if (!r.ok) throw new Error(d.error || '저장 실패');
+          })
         )
       );
       setStoreUsers(prev =>

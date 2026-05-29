@@ -114,7 +114,8 @@ export default function PermissionGroupPage() {
     if (!currentStore?.storeId) { setIsLoadingGroups(false); return; }
     setIsLoadingGroups(true);
     try {
-      const res = await fetch(`/api/permissions?type=groups&storeId=${currentStore.storeId}`);
+      const headers = await getAuthJsonHeaders();
+      const res = await fetch(`/api/permissions?type=groups&storeId=${currentStore.storeId}`, { headers });
       const data = await res.json();
       setGroups(data.groups || []);
     } catch {
@@ -321,7 +322,8 @@ export default function PermissionGroupPage() {
           groupId,
         }),
       });
-      if (!res.ok) throw new Error((await res.json()).error);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '배정 실패');
       setStoreUsers(prev => prev.map(u =>
         u.uid === targetUid ? { ...u, groupId } : u
       ));

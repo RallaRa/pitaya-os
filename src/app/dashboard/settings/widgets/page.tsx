@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { LayoutGrid, Loader2, Save, ArrowLeft, Check } from 'lucide-react';
 import Link from 'next/link';
 import { useStore } from '@/context/StoreContext';
+import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 
 const WIDGET_LIST = [
   { key: 'news',               label: '정육 최신 뉴스',   desc: '네이버/구글 뉴스 RSS' },
@@ -54,7 +55,8 @@ export default function WidgetPermissionsPage() {
 
   useEffect(() => {
     const q = storeId !== 'global' ? `?storeId=${storeId}` : '';
-    fetch(`/api/dashboard/widget-permissions${q}`)
+    getAuthJsonHeaders()
+      .then(headers => fetch(`/api/dashboard/widget-permissions${q}`, { headers }))
       .then(r => r.json())
       .then(d => setPerms({ ...DEFAULT_PERMS, ...d.widgets }))
       .finally(() => setLoading(false));
@@ -77,7 +79,7 @@ export default function WidgetPermissionsPage() {
     try {
       const res = await fetch('/api/dashboard/widget-permissions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ storeId, widgets: perms }),
       });
       const data = await res.json();

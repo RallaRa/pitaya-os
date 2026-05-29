@@ -270,6 +270,30 @@ service cloud.firestore {
     }
 
     // ──────────────────────────────────────────
+    // dashboard_widget_permissions / members / aliases
+    // ──────────────────────────────────────────
+    match /dashboard_widget_permissions/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /widget_permissions/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /members/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /purchases/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /customers/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ──────────────────────────────────────────
     // 슈퍼유저 헬퍼
     // ──────────────────────────────────────────
     function isSuperuser() {

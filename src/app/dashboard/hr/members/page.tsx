@@ -319,7 +319,13 @@ export default function MembersPage() {
           onClick={() => setTab('store')}
           className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-colors ${tab === 'store' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
         >
-          <Building2 className="w-4 h-4" />매장별 보기
+          <Building2 className="w-4 h-4" />
+          <span>
+            매장별
+            <span className="ml-1.5 text-[10px] bg-blue-900/40 text-blue-300 px-2 py-0.5 rounded-full">
+              {currentStore?.storeName || currentStore?.storeId}
+            </span>
+          </span>
         </button>
         <button
           onClick={() => setTab('member')}

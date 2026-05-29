@@ -17,12 +17,11 @@ export async function GET(req: Request) {
   if (!storeId) return NextResponse.json({ error: 'storeId required' }, { status: 400 });
 
   try {
-    // 고객 목록 조회
-    let q: FirebaseFirestore.Query = adminDb.collection('pos_customers')
+    // 고객 목록 조회 (orderBy 복합 인덱스 없이 메모리 정렬)
+    const snap = await adminDb.collection('pos_customers')
       .where('storeId', '==', storeId)
-      .orderBy('point', 'desc')
-      .limit(500);
-    const snap = await q.get();
+      .limit(500)
+      .get();
 
     const customers = snap.docs.map(d => {
       const r = d.data();
@@ -30,10 +29,10 @@ export async function GET(req: Request) {
         cusCode:    r.cusCode,
         nameMasked: r.nameEncrypted ? '● 암호화됨' : maskName(r.name || ''),
         grade:      r.grade    || '',
-        point:      r.point    || 0,
+        point:      Number(r.point) || 0,
         writeDate:  r.writeDate || '',
       };
-    });
+    }).sort((a, b) => b.point - a.point);
 
     // 등급 필터
     const filtered = grade ? customers.filter(c => c.grade === grade) : customers;
@@ -92,6 +91,11 @@ export async function GET(req: Request) {
       grades: [...new Set(customers.map(c => c.grade).filter(Boolean))].sort(),
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    console.error('[customers GET]', e);
+    const msg = e.message || 'Internal error';
+    if (msg.includes('FIREBASE_SERVICE_ACCOUNT_KEY') || msg.includes('Unexpected token')) {
+      return NextResponse.json({ error: '서버 Firebase 설정 오류 (FIREBASE_SERVICE_ACCOUNT_KEY 확인)' }, { status: 503 });
+    }
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

@@ -9,7 +9,10 @@ function getAdminApp(): App {
   const existing = getApps().find(a => a.name === APP_NAME);
   if (existing) return existing;
 
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY!;
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  if (!raw) {
+    throw new Error('FIREBASE_SERVICE_ACCOUNT_KEY is not configured');
+  }
   const sa = JSON.parse(raw);
   // .env 또는 Vercel에서 \n이 이스케이프된 경우 복원
   if (sa.private_key?.includes('\\n')) {

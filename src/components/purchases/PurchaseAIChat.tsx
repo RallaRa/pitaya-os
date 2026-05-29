@@ -31,8 +31,11 @@ function genId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-async function compressImage(dataUrl: string, maxPx = 1600, quality = 0.85): Promise<string> {
-  const MAX_BYTES = 2 * 1024 * 1024; // 2MB
+const MAX_IMAGE_BYTES = 1024 * 1024; // 1MB per image
+// Vercel serverless body limit ~4.5MB — JSON base64 포함 여유
+const MAX_PAYLOAD_BYTES = 2 * 1024 * 1024;
+
+async function compressImage(dataUrl: string, maxPx = 1200, quality = 0.7): Promise<string> {
   let result = await new Promise<string>(resolve => {
     const img = new Image();
     img.onload = () => {
@@ -52,17 +55,27 @@ async function compressImage(dataUrl: string, maxPx = 1600, quality = 0.85): Pro
     img.src = dataUrl;
   });
 
-  // 2MB 초과 시 품질 85%로 단계적 압축
+  let px = maxPx;
   let q = quality;
-  while (result.length > MAX_BYTES && q > 0.4) {
-    q = Math.round((q - 0.1) * 100) / 100;
+  while (result.length > MAX_IMAGE_BYTES && (q > 0.35 || px > 800)) {
+    if (q > 0.35) {
+      q = Math.round((q - 0.1) * 100) / 100;
+    } else {
+      px = Math.round(px * 0.85);
+    }
     result = await new Promise<string>(resolve => {
       const img = new Image();
       img.onload = () => {
+        let w = img.width;
+        let h = img.height;
+        if (w > px || h > px) {
+          if (w > h) { h = Math.round(h * px / w); w = px; }
+          else { w = Math.round(w * px / h); h = px; }
+        }
         const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        canvas.getContext('2d')!.drawImage(img, 0, 0);
+        canvas.width = w;
+        canvas.height = h;
+        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
         resolve(canvas.toDataURL('image/jpeg', q));
       };
       img.onerror = () => resolve(result);
@@ -72,8 +85,11 @@ async function compressImage(dataUrl: string, maxPx = 1600, quality = 0.85): Pro
   return result;
 }
 
-// 실제 JSON 전송 크기 기준 (base64 문자열 길이 ≈ 전송 바이트, 3MB 한도로 Vercel 4.5MB 제한 여유 확보)
-const MAX_PAYLOAD_BYTES = 3 * 1024 * 1024;
+async function compressImageFile(file: File): Promise<string> {
+  const dataUrl = await readFile(file);
+  if (!dataUrl.startsWith('data:image')) return dataUrl;
+  return compressImage(dataUrl);
+}
 function estimatePayloadSize(files: AttachedFile[]): number {
   return files.reduce((sum, f) => sum + (f.content?.length || 0), 0);
 }
@@ -136,10 +152,9 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
     const newItems: AttachedFile[] = await Promise.all(
       files.map(async f => {
         const type = detectFileType(f);
-        let content = await readFile(f).catch(() => '');
-        if (type === 'image' && content.startsWith('data:image')) {
-          content = await compressImage(content);
-        }
+        let content = type === 'image'
+          ? await compressImageFile(f).catch(() => '')
+          : await readFile(f).catch(() => '');
         return {
           id: genId(),
           name: f.name,
@@ -210,13 +225,19 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
 
     try {
       if (sentFiles.length > 0) {
-        // 전송 전 총 페이로드 크기 검사
+        // 전송 직전 이미지 재압축 + 페이로드 검사
+        for (let i = 0; i < sentFiles.length; i++) {
+          const f = sentFiles[i];
+          if (f.type === 'image' && f.content.startsWith('data:image')) {
+            sentFiles[i] = { ...f, content: await compressImage(f.content) };
+          }
+        }
         if (estimatePayloadSize(sentFiles) > MAX_PAYLOAD_BYTES) {
           setMessages(prev => {
             const next = [...prev];
             next[next.length - 1] = {
               role: 'assistant',
-              content: '⚠️ 이미지 용량이 너무 큽니다. 이미지 수를 줄이거나 더 작은 이미지를 사용해주세요. (3MB 이하 권장)',
+              content: '⚠️ 이미지 용량이 너무 큽니다. 이미지 수를 줄이거나 더 작은 이미지를 사용해주세요. (1MB/장, 총 2MB 이하 권장)',
             };
             return next;
           });
