@@ -106,8 +106,34 @@ async function fetchHeaders(dateStr) {
   }];
 }
 
+// ── SaT Sale_Num → Sale_Time 매핑 ───────────────────────────────
+async function fetchSaleTimeMap(dateStr) {
+  const table = `SaT_${ym(dateStr)}`;
+  const p = await getPool();
+  try {
+    const result = await p.request()
+      .input('date', sql.VarChar(10), dateStr)
+      .query(`
+        SELECT Sale_Num, Sale_Time,
+          SUBSTRING(Sale_Num, 11, 2) as POS_No
+        FROM ${table}
+        WHERE Sale_Date = @date
+      `);
+    const map = {};
+    for (const r of result.recordset) {
+      map[String(r.Sale_Num)] = {
+        saleTime: String(r.Sale_Time || '').trim(),
+        posNo: String(r.POS_No || '01'),
+      };
+    }
+    return map;
+  } catch (e) {
+    return {};
+  }
+}
+
 // ── 매출 상세 조회 (SaD_YYYYMM) ──────────────────────────────────
-async function fetchDetails(dateStr) {
+async function fetchDetails(dateStr, timeMap = {}) {
   const table = `SaD_${ym(dateStr)}`;
   const p = await getPool();
   const result = await p.request()
@@ -130,17 +156,24 @@ async function fetchDetails(dateStr) {
         AND Sale_YN = 1
     `);
 
-  return result.recordset.map(r => ({
-    barcode:      String(r.Barcode     || ''),
-    goodsName:    String(r.G_Name      || ''),
-    categoryCode: String(r.S_Code      || ''),
-    categoryName: String(r.S_Name      || ''),
-    saleCount:    toInt(r.Sale_Count),
-    sellPrice:    toInt(r.Sell_Pri),
-    totalPrice:   toInt(r.TSell_Pri),
-    purPrice:     toInt(r.Pur_Pri),
-    profitPrice:  toInt(r.Profit_Pri),
-  }));
+  return result.recordset.map(r => {
+    const saleNum = String(r.Sale_Num || '');
+    const meta = timeMap[saleNum] || {};
+    return {
+      saleNum,
+      saleTime: meta.saleTime || '',
+      posNo:    meta.posNo || (saleNum.length >= 12 ? saleNum.substring(10, 12) : '01'),
+      barcode:      String(r.Barcode     || ''),
+      goodsName:    String(r.G_Name      || ''),
+      categoryCode: String(r.S_Code      || ''),
+      categoryName: String(r.S_Name      || ''),
+      saleCount:    toInt(r.Sale_Count),
+      sellPrice:    toInt(r.Sell_Pri),
+      totalPrice:   toInt(r.TSell_Pri),
+      purPrice:     toInt(r.Pur_Pri),
+      profitPrice:  toInt(r.Profit_Pri),
+    };
+  });
 }
 
 // ── 일마감 조회 (Finish_Total) — 다중 POS 전체 합산 ──────────────
@@ -359,9 +392,10 @@ async function syncDate(dateStr, dryRun) {
 
   let headers, details, finish, weather, customerSales;
   try {
+    const timeMap = await fetchSaleTimeMap(dateStr);
     [headers, details, finish, weather, customerSales] = await Promise.all([
       fetchHeaders(dateStr),
-      fetchDetails(dateStr),
+      fetchDetails(dateStr, timeMap),
       fetchFinish(dateStr),
       fetchWeather(dateStr),
       fetchCustomerSales(dateStr),

@@ -59,7 +59,8 @@ export function pathToModule(pathname: string): LicenseModuleKey | null {
   }
   if (pathname.startsWith('/dashboard/report/purchases')) return 'purchases';
   if (pathname.startsWith('/dashboard/hr') || pathname.startsWith('/dashboard/settings/employees') ||
-      pathname.startsWith('/dashboard/settings/departments')) {
+      pathname.startsWith('/dashboard/settings/departments') ||
+      pathname.startsWith('/dashboard/settings/leave-status')) {
     return 'hr';
   }
   if (pathname.startsWith('/dashboard/hygiene')) return 'hygiene';

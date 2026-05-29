@@ -88,58 +88,94 @@ export async function POST(req: Request) {
     const genAI = new GoogleGenerativeAI(geminiKey || cloudKey!);
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
-    const parts: Part[] = [];
+    const imageFiles = (files || []).filter((f: any) => f.type === 'image' || f.type === 'pdf');
+    const textFiles = (files || []).filter((f: any) => f.type !== 'image' && f.type !== 'pdf');
 
-    if (message?.trim()) {
-      parts.push({ text: message });
-    }
+    const qualities: any[] = [];
+    const allInvoices: any[] = [];
 
-    for (const file of (files || [])) {
-      if (!file.content) continue;
-
-      if (file.type === 'image' || file.type === 'pdf') {
-        const mimeType = file.content.substring(
-          file.content.indexOf(':') + 1,
-          file.content.indexOf(';')
-        );
-        const base64Data = file.content.split(',')[1];
-        if (base64Data) {
-          parts.push({ inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Data } });
-        }
-      } else {
-        // CSV / Excel text
-        parts.push({ text: `[파일: ${file.name}]\n${file.content}` });
+    async function checkQuality(base64Data: string, mimeType: string, fileName: string) {
+      try {
+        const qRes = await model.generateContent({
+          contents: [{ role: 'user', parts: [
+            { inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Data } },
+            { text: `OCR 품질 평가. JSON만: {"quality":"good|poor|unreadable","issues":[],"confidence":0-100,"feedback":"한국어 피드백"}` },
+          ]}],
+          generationConfig: { responseMimeType: 'application/json' },
+        });
+        const qt = qRes.response.text().trim().replace(/```json|```/g, '').trim();
+        return { fileName, ...JSON.parse(qt) };
+      } catch {
+        return { fileName, quality: 'good', confidence: 70, issues: [], feedback: '' };
       }
     }
 
-    if (parts.length === 0) {
+    for (const file of imageFiles) {
+      if (!file.content) continue;
+      const mimeType = file.content.substring(file.content.indexOf(':') + 1, file.content.indexOf(';'));
+      const base64Data = file.content.split(',')[1];
+      if (!base64Data) continue;
+
+      const quality = await checkQuality(base64Data, mimeType, file.name);
+      qualities.push(quality);
+
+      if (quality.quality === 'unreadable' || (quality.confidence != null && quality.confidence < 30)) {
+        continue;
+      }
+
+      const parts: Part[] = [];
+      if (message?.trim()) parts.push({ text: message });
+      parts.push({ inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Data } });
+
+      const result = await generateWithRetry(model, [{ role: 'user', parts }]);
+      const text = result.response.text().trim().replace(/```json|```/g, '').trim();
+      try {
+        const parsed = JSON.parse(text);
+        const invs = Array.isArray(parsed) ? parsed : [parsed];
+        allInvoices.push(...invs.filter((inv: any) => inv && (inv.supplierName || inv.items?.length > 0)));
+      } catch {
+        const match = text.match(/\[[\s\S]*\]/);
+        if (match) {
+          const invs = JSON.parse(match[0]);
+          allInvoices.push(...invs.filter((inv: any) => inv && (inv.supplierName || inv.items?.length > 0)));
+        }
+      }
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    if (textFiles.length > 0) {
+      const parts: Part[] = [];
+      if (message?.trim()) parts.push({ text: message });
+      for (const file of textFiles) {
+        if (file.content) parts.push({ text: `[파일: ${file.name}]\n${file.content}` });
+      }
+      if (parts.length > 0) {
+        const result = await generateWithRetry(model, [{ role: 'user', parts }]);
+        const text = result.response.text().trim().replace(/```json|```/g, '').trim();
+        try {
+          const parsed = JSON.parse(text);
+          const invs = Array.isArray(parsed) ? parsed : [parsed];
+          allInvoices.push(...invs.filter((inv: any) => inv && (inv.supplierName || inv.items?.length > 0)));
+        } catch { /* ignore */ }
+      }
+    }
+
+    if (imageFiles.length === 0 && textFiles.length === 0) {
       return NextResponse.json({ error: '분석할 내용이 없습니다.' }, { status: 400 });
     }
 
-    const result = await generateWithRetry(model, [{ role: 'user', parts }]);
-    const text = result.response.text().trim().replace(/```json|```/g, '').trim();
+    const invoices = allInvoices;
 
-    let invoices: any[];
-    try {
-      const parsed = JSON.parse(text);
-      invoices = Array.isArray(parsed) ? parsed : [parsed];
-    } catch {
-      const match = text.match(/\[[\s\S]*\]/);
-      if (match) {
-        invoices = JSON.parse(match[0]);
-      } else {
-        throw new Error('AI 분석 결과를 파싱할 수 없습니다. 문서를 다시 업로드해보세요.');
-      }
-    }
-
-    // Filter invalid invoices
-    invoices = invoices.filter(inv => inv && (inv.supplierName || inv.items?.length > 0));
-
-    const reply = invoices.length > 0
+    let reply = invoices.length > 0
       ? `${invoices.length}건의 매입 내역을 추출했습니다. 시트에서 내용을 확인·수정 후 저장하세요.`
       : '문서에서 매입 내역을 추출하지 못했습니다. 더 선명한 이미지로 다시 시도해보세요.';
 
-    return NextResponse.json({ invoices, reply });
+    const poor = qualities.filter(q => q.quality !== 'good');
+    if (poor.length > 0) {
+      reply += `\n\n⚠️ ${poor.length}개 파일 품질 주의: ${poor.map((q: any) => q.feedback || q.fileName).join(' / ')}`;
+    }
+
+    return NextResponse.json({ invoices, reply, qualities });
   } catch (e: any) {
     const msg = e.message || '';
     let userError = msg || '분석 중 오류가 발생했습니다.';

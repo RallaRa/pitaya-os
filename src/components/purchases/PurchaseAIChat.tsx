@@ -128,6 +128,9 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
   const [isDragging, setIsDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const [qualityNotes, setQualityNotes] = useState<string[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -276,6 +279,13 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
             content: f.content,
             preview: f.preview,
           })));
+        }
+
+        if (data.qualities?.length) {
+          const notes = data.qualities
+            .filter((q: any) => q.quality !== 'good')
+            .map((q: any) => `⚠️ ${q.fileName}: ${q.feedback || q.issues?.join(', ') || '품질 낮음'} (${q.confidence ?? '?'}%)`);
+          setQualityNotes(notes);
         }
       } else {
         // 텍스트 전용 — Groq SSE 스트리밍
@@ -471,30 +481,65 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
             </div>
           )}
 
+          {/* OCR 품질 피드백 */}
+          {qualityNotes.length > 0 && (
+            <div className="px-3 py-2 border-t border-slate-700/40 shrink-0 space-y-1">
+              {qualityNotes.map((n, i) => (
+                <p key={i} className="text-[11px] text-yellow-400/90 bg-yellow-900/20 border border-yellow-800/30 rounded-lg px-2 py-1">{n}</p>
+              ))}
+            </div>
+          )}
+
           {/* 입력 영역 */}
           <div className="px-3 pb-3 pt-2 shrink-0 border-t border-slate-700/40">
             <div className="flex gap-2 items-center">
-              <CameraCapture onCapture={file => addFiles([file])} />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={loading}
-                title="파일 첨부"
-                className="p-2 text-slate-400 hover:text-teal-400 hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-40 shrink-0"
-              >
-                <Paperclip className="w-4 h-4" />
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept="image/*,.pdf,.xlsx,.xls,.csv"
-                className="hidden"
-                onChange={e => {
-                  if (e.target.files) {
-                    addFiles(e.target.files);
-                    e.target.value = '';
-                  }
-                }}
+              <div className="relative shrink-0">
+                <button
+                  onClick={() => setShowAttachMenu(v => !v)}
+                  disabled={loading}
+                  className="w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-xl flex items-center justify-center disabled:opacity-40"
+                >
+                  +
+                </button>
+                {showAttachMenu && (
+                  <div className="absolute bottom-12 left-0 bg-slate-900 border border-slate-700 rounded-xl shadow-xl overflow-hidden w-44 z-50">
+                    <label className="flex items-center gap-3 px-4 py-3 hover:bg-slate-800 cursor-pointer border-b border-slate-800 text-sm text-slate-200">
+                      📁 파일 첨부
+                      <input type="file" multiple accept="image/*,.pdf,.xlsx,.xls,.csv" className="hidden"
+                        onChange={e => { if (e.target.files) addFiles(e.target.files); setShowAttachMenu(false); e.target.value = ''; }} />
+                    </label>
+                    <button type="button" onClick={() => { setShowCamera(true); setShowAttachMenu(false); }}
+                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-800 border-b border-slate-800 text-sm text-slate-200">
+                      📷 카메라 촬영
+                    </button>
+                    <button type="button" onClick={async () => {
+                      setShowAttachMenu(false);
+                      try {
+                        const items = await navigator.clipboard.read();
+                        for (const item of items) {
+                          for (const type of item.types) {
+                            if (type.startsWith('image/')) {
+                              const blob = await item.getType(type);
+                              await addFiles([new File([blob], `clip_${Date.now()}.png`, { type })]);
+                              return;
+                            }
+                          }
+                        }
+                      } catch { /* ignore */ }
+                    }}
+                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-800 text-sm text-slate-200">
+                      📋 클립보드
+                    </button>
+                  </div>
+                )}
+              </div>
+              <CameraCapture
+                hideTrigger
+                batchMode
+                open={showCamera}
+                onOpenChange={setShowCamera}
+                onCapture={file => addFiles([file])}
+                onCaptureBatch={files => addFiles(files)}
               />
               <input
                 value={input}

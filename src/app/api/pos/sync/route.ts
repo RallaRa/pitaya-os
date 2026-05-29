@@ -160,6 +160,9 @@ async function syncToDailyReports(params: {
   const items = details.map(d => ({
     barcode:       d.barcode       ?? '',
     name:          d.goodsName     ?? '',
+    time:          d.saleTime      ?? '',
+    posNo:         d.posNo         ?? '',
+    saleNum:       d.saleNum       ?? '',
     qty:           d.saleCount     ?? 0,
     amount:        d.totalPrice    ?? 0,
     sellPrice:     d.sellPrice     ?? 0,

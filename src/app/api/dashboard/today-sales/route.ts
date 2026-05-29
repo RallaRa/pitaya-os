@@ -1,10 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifyToken } from '@/lib/authVerify';
-
-function toYMD(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+import { getKSTTodayYMD, addDaysYMD } from '@/lib/dateUtils';
 
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
@@ -12,7 +9,7 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const storeId  = searchParams.get('storeId') || '';
-  const todayStr = toYMD(new Date(Date.now() + 9 * 60 * 60 * 1000));
+  const todayStr = getKSTTodayYMD();
 
   if (!storeId) return NextResponse.json({ error: 'storeId required' }, { status: 400 });
 
@@ -43,7 +40,7 @@ export async function GET(req: Request) {
     const syncedAt      = best.syncedAt      ?? null;
 
     // 전일 비교
-    const yesterdayStr = toYMD(new Date(Date.now() + 9 * 60 * 60 * 1000 - 86400000));
+    const yesterdayStr = addDaysYMD(todayStr, -1);
     const ySnap = await adminDb.collection('daily_reports')
       .where('storeId', '==', storeId)
       .where('reportDate', '==', yesterdayStr)

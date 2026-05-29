@@ -5,6 +5,11 @@ import { Camera, X, Check, RotateCcw, Loader2, AlertCircle } from 'lucide-react'
 
 interface Props {
   onCapture: (file: File) => void;
+  onCaptureBatch?: (files: File[]) => void;
+  batchMode?: boolean;
+  hideTrigger?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 async function compressImageDataUrl(dataUrl: string, maxPx = 1600, quality = 0.88): Promise<string> {
@@ -28,9 +33,18 @@ async function compressImageDataUrl(dataUrl: string, maxPx = 1600, quality = 0.8
   });
 }
 
-export default function CameraCapture({ onCapture }: Props) {
-  const [isOpen, setIsOpen]         = useState(false);
+export default function CameraCapture({
+  onCapture, onCaptureBatch, batchMode = false,
+  hideTrigger = false, open: controlledOpen, onOpenChange,
+}: Props) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isOpen = controlledOpen ?? internalOpen;
+  const setIsOpen = (v: boolean) => {
+    if (onOpenChange) onOpenChange(v);
+    else setInternalOpen(v);
+  };
   const [captured, setCaptured]     = useState<string | null>(null);
+  const [batchPhotos, setBatchPhotos] = useState<{ file: File; preview: string }[]>([]);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [camError, setCamError]     = useState<string | null>(null);
   const [starting, setStarting]     = useState(false);
@@ -80,6 +94,7 @@ export default function CameraCapture({ onCapture }: Props) {
 
   const open = () => {
     setCaptured(null);
+    setBatchPhotos([]);
     setCamError(null);
     setIsOpen(true);
   };
@@ -88,10 +103,11 @@ export default function CameraCapture({ onCapture }: Props) {
     stopStream();
     setIsOpen(false);
     setCaptured(null);
+    setBatchPhotos([]);
     setCamError(null);
   };
 
-  const capture = () => {
+  const capture = async () => {
     if (!videoRef.current || !canvasRef.current) return;
     const video  = videoRef.current;
     const canvas = canvasRef.current;
@@ -99,8 +115,25 @@ export default function CameraCapture({ onCapture }: Props) {
     canvas.height = video.videoHeight || 720;
     canvas.getContext('2d')?.drawImage(video, 0, 0);
     const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+
+    if (batchMode) {
+      const compressed = await compressImageDataUrl(dataUrl, 1600, 0.88);
+      const res = await fetch(compressed);
+      const blob = await res.blob();
+      const file = new File([blob], `receipt_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      setBatchPhotos(prev => [...prev, { file, preview: compressed }]);
+      return;
+    }
+
     setCaptured(dataUrl);
     stopStream();
+  };
+
+  const confirmBatch = () => {
+    if (batchPhotos.length === 0) return;
+    if (onCaptureBatch) onCaptureBatch(batchPhotos.map(p => p.file));
+    else batchPhotos.forEach(p => onCapture(p.file));
+    close();
   };
 
   const retake = () => {
@@ -135,7 +168,7 @@ export default function CameraCapture({ onCapture }: Props) {
 
   return (
     <>
-      {/* 카메라 버튼 */}
+      {!hideTrigger && (
       <button
         onClick={open}
         title="카메라 촬영"
@@ -143,13 +176,19 @@ export default function CameraCapture({ onCapture }: Props) {
       >
         <Camera className="w-4 h-4" />
       </button>
+      )}
 
       {/* 전체화면 카메라 모달 */}
       {isOpen && (
         <div className="fixed inset-0 z-[9999] bg-black flex flex-col select-none">
           {/* 상단 헤더 */}
           <div className="flex items-center justify-between px-4 py-3 bg-black/80 shrink-0">
-            <span className="text-white text-sm font-medium">거래명세서 촬영</span>
+            <span className="text-white text-sm font-medium">
+              거래명세서 촬영
+              {batchMode && batchPhotos.length > 0 && (
+                <span className="ml-2 bg-blue-600 text-xs px-2 py-0.5 rounded-full">{batchPhotos.length}장</span>
+              )}
+            </span>
             <div className="flex items-center gap-3">
               {!captured && !camError && (
                 <button
@@ -188,7 +227,7 @@ export default function CameraCapture({ onCapture }: Props) {
                 <Loader2 className="w-8 h-8 text-teal-400 animate-spin" />
                 <p className="text-slate-400 text-sm">카메라 시작 중...</p>
               </div>
-            ) : !captured ? (
+            ) : !captured || batchMode ? (
               <>
                 {/* 라이브 비디오 */}
                 <video
@@ -233,9 +272,35 @@ export default function CameraCapture({ onCapture }: Props) {
             <canvas ref={canvasRef} className="hidden" />
           </div>
 
+          {/* 배치 썸네일 */}
+          {batchMode && batchPhotos.length > 0 && (
+            <div className="px-4 py-2 bg-black/80 flex gap-2 overflow-x-auto shrink-0">
+              {batchPhotos.map((p, idx) => (
+                <div key={idx} className="relative shrink-0">
+                  <img src={p.preview} alt="" className="w-14 h-14 object-cover rounded-lg border border-white/20" />
+                  <button
+                    onClick={() => setBatchPhotos(prev => prev.filter((_, i) => i !== idx))}
+                    className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-white text-xs flex items-center justify-center"
+                  >✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* 하단 컨트롤 */}
           <div className="px-6 py-8 bg-black/80 shrink-0 flex items-center justify-center gap-10">
-            {!captured && !camError && !starting ? (
+            {batchMode && !camError && !starting ? (
+              <>
+                <button onClick={capture} className="w-[72px] h-[72px] rounded-full bg-white border-4 border-slate-400 flex items-center justify-center">
+                  <Camera className="w-7 h-7 text-slate-800" />
+                </button>
+                {batchPhotos.length > 0 && (
+                  <button onClick={confirmBatch} className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-xl text-sm font-medium">
+                    <Check className="w-4 h-4" /> {batchPhotos.length}장 분석
+                  </button>
+                )}
+              </>
+            ) : !captured && !camError && !starting ? (
               /* 촬영 버튼 */
               <button
                 onClick={capture}

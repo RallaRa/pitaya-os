@@ -9,6 +9,8 @@ import {
   TrendingUp, Users, RotateCcw, Tag, Pencil, RefreshCw, AlertCircle,
 } from 'lucide-react';
 import Link from 'next/link';
+import ReportDailyAnalysis from '@/components/report/ReportDailyAnalysis';
+import { getKSTTodayYMD } from '@/lib/dateUtils';
 
 // ── 타입 ──────────────────────────────────────────────────────────
 interface WeatherData { condition: string; tempMax: number; tempMin: number; }
@@ -357,6 +359,13 @@ export default function ReportViewPage() {
   return (
     <div className="p-4 md:p-6 max-w-full">
 
+      {currentStore?.storeId && (
+        <ReportDailyAnalysis
+          storeId={currentStore.storeId}
+          storeName={currentStore.storeName}
+        />
+      )}
+
       {/* 헤더 */}
       <div className="flex items-start justify-between mb-5">
         <div>
@@ -364,7 +373,7 @@ export default function ReportViewPage() {
             <Calendar className="w-6 h-6" />
             일마감내역
             {(() => {
-              const today = toYMD(new Date());
+              const today = getKSTTodayYMD();
               return today >= range.start && today <= range.end ? (
                 <span className="text-xs font-normal px-2 py-0.5 bg-emerald-900/40 border border-emerald-500/30 text-emerald-400 rounded-full animate-pulse">
                   🟢 실시간

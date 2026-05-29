@@ -25,6 +25,7 @@ import {
   formatTime, timeToMinutes, eventsOnDate, getEventColor,
   SubTask,
 } from './CalendarTypes';
+import DateRangePicker from './DateRangePicker';
 
 /* ═══════════════════════ MINI CALENDAR ═══════════════════════ */
 function MiniCalendar({
@@ -1614,20 +1615,12 @@ function LeavePanel({
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">날짜 추가</label>
-                <div className="flex gap-2">
-                  <input type="date" value={dayoffDateInput} onChange={e => setDayoffDateInput(e.target.value)}
-                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200" />
-                  <button
-                    onClick={() => {
-                      if (dayoffDateInput && !dayoffForm.dates.includes(dayoffDateInput)) {
-                        setDayoffForm(f => ({ ...f, dates: [...f.dates, dayoffDateInput].sort() }));
-                        setDayoffDateInput('');
-                      }
-                    }}
-                    className="px-3 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm"
-                  >추가</button>
-                </div>
+                <label className="block text-xs text-slate-400 mb-2">날짜 선택 (드래그로 범위 선택)</label>
+                <DateRangePicker
+                  selected={dayoffForm.dates}
+                  onChange={dates => setDayoffForm(f => ({ ...f, dates: [...dates].sort() }))}
+                  className="bg-slate-800/50 border border-slate-700 rounded-xl p-3"
+                />
                 {dayoffForm.dates.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1">
                     {dayoffForm.dates.map(d => (
