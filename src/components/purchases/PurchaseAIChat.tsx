@@ -1,0 +1,431 @@
+'use client';
+
+import { useState, useRef, useEffect, useCallback, DragEvent } from 'react';
+import {
+  Bot, Send, X, Paperclip, FileSpreadsheet, FileText, Loader2,
+  Image as ImageIcon, ChevronUp, ChevronDown,
+} from 'lucide-react';
+import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import type { Invoice } from './PurchaseSheet';
+
+interface AttachedFile {
+  id: string;
+  name: string;
+  type: 'image' | 'pdf' | 'csv' | 'excel';
+  content: string;
+  preview?: string;
+}
+
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  files?: { name: string; preview?: string; type: string }[];
+}
+
+interface Props {
+  onInvoicesFound: (invoices: Invoice[]) => void;
+}
+
+function genId() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function detectFileType(f: File): 'image' | 'pdf' | 'csv' | 'excel' {
+  if (f.type.startsWith('image/')) return 'image';
+  if (f.type === 'application/pdf') return 'pdf';
+  if (f.name.endsWith('.csv') || f.type === 'text/csv') return 'csv';
+  return 'excel';
+}
+
+function readFile(f: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    if (f.name.endsWith('.csv') || f.type === 'text/csv') {
+      reader.readAsText(f, 'utf-8');
+    } else {
+      reader.readAsDataURL(f);
+    }
+  });
+}
+
+const QUICK_PROMPTS = ['단가 검토해줘', '누락 항목 확인', '총액 계산해줘'];
+
+export default function PurchaseAIChat({ onInvoicesFound }: Props) {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      role: 'assistant',
+      content: '거래명세서·세금계산서 이미지나 파일을 첨부해 주세요. AI가 자동 분석합니다.\n\n이미지 드래그 앤 드랍, 클립보드 붙여넣기(Ctrl+V), 파일 선택 모두 지원합니다.',
+    },
+  ]);
+  const [input, setInput] = useState('');
+  const [attachments, setAttachments] = useState<AttachedFile[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const dragCounter = useRef(0);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const addFiles = useCallback(async (fileList: FileList | File[]) => {
+    const files = Array.from(fileList).filter(f =>
+      f.type.startsWith('image/') ||
+      f.type === 'application/pdf' ||
+      f.name.endsWith('.csv') ||
+      f.name.endsWith('.xlsx') ||
+      f.name.endsWith('.xls') ||
+      f.type === 'text/csv'
+    );
+    if (!files.length) return;
+
+    const newItems: AttachedFile[] = await Promise.all(
+      files.map(async f => {
+        const type = detectFileType(f);
+        const content = await readFile(f).catch(() => '');
+        return {
+          id: genId(),
+          name: f.name,
+          type,
+          content,
+          preview: type === 'image' ? content : undefined,
+        };
+      })
+    );
+    setAttachments(prev => [...prev, ...newItems.filter(a => a.content)]);
+  }, []);
+
+  // Drag & drop on panel
+  const handleDragEnter = (e: DragEvent) => {
+    e.preventDefault();
+    dragCounter.current++;
+    if (e.dataTransfer.items.length > 0) setIsDragging(true);
+  };
+  const handleDragLeave = (e: DragEvent) => {
+    e.preventDefault();
+    dragCounter.current = Math.max(0, dragCounter.current - 1);
+    if (dragCounter.current === 0) setIsDragging(false);
+  };
+  const handleDragOver = (e: DragEvent) => { e.preventDefault(); };
+  const handleDrop = (e: DragEvent) => {
+    e.preventDefault();
+    dragCounter.current = 0;
+    setIsDragging(false);
+    if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
+  };
+
+  // Clipboard paste (global while mounted)
+  useEffect(() => {
+    const handler = (e: ClipboardEvent) => {
+      const items = Array.from(e.clipboardData?.items || []);
+      const imageFiles = items
+        .filter(item => item.type.startsWith('image/'))
+        .map(item => item.getAsFile())
+        .filter(Boolean) as File[];
+      if (imageFiles.length > 0) addFiles(imageFiles);
+    };
+    document.addEventListener('paste', handler);
+    return () => document.removeEventListener('paste', handler);
+  }, [addFiles]);
+
+  const removeAttachment = (id: string) => {
+    setAttachments(prev => prev.filter(a => a.id !== id));
+  };
+
+  const send = useCallback(async () => {
+    const text = input.trim();
+    if (!text && attachments.length === 0) return;
+    if (loading) return;
+
+    const sentFiles = [...attachments];
+    const userMsg: ChatMessage = {
+      role: 'user',
+      content: text || '파일을 분석해 주세요.',
+      files: sentFiles.map(a => ({ name: a.name, preview: a.preview, type: a.type })),
+    };
+    setMessages(prev => [...prev, userMsg, { role: 'assistant', content: '' }]);
+    setInput('');
+    setAttachments([]);
+    setLoading(true);
+
+    abortRef.current?.abort();
+    abortRef.current = new AbortController();
+
+    try {
+      if (sentFiles.length > 0) {
+        // Gemini 멀티모달 분석
+        const headers = await getAuthJsonHeaders();
+        const res = await fetch('/api/purchases/analyze-multi', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            files: sentFiles.map(f => ({ content: f.content, name: f.name, type: f.type })),
+            message: text || undefined,
+          }),
+          signal: abortRef.current.signal,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'API 오류');
+
+        setMessages(prev => {
+          const next = [...prev];
+          next[next.length - 1] = {
+            role: 'assistant',
+            content: data.reply || '분석이 완료되었습니다.',
+          };
+          return next;
+        });
+
+        if (data.invoices?.length > 0) {
+          onInvoicesFound(data.invoices);
+        }
+      } else {
+        // 텍스트 전용 — Groq SSE 스트리밍
+        const headers = await getAuthHeaders();
+        const res = await fetch('/api/purchases/ai-panel', {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            context: { currentPage: 'register' },
+            message: text,
+            history: messages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+          }),
+          signal: abortRef.current.signal,
+        });
+        if (!res.ok || !res.body) throw new Error('API 오류');
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let full = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          for (const line of chunk.split('\n')) {
+            if (!line.startsWith('data: ')) continue;
+            const raw = line.slice(6).trim();
+            if (raw === '[DONE]') break;
+            try {
+              const delta = JSON.parse(raw).choices?.[0]?.delta?.content || '';
+              full += delta;
+              setMessages(prev => {
+                const next = [...prev];
+                next[next.length - 1] = { role: 'assistant', content: full };
+                return next;
+              });
+            } catch { /* skip */ }
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        setMessages(prev => {
+          const next = [...prev];
+          next[next.length - 1] = {
+            role: 'assistant',
+            content: '⚠️ 오류가 발생했습니다. 다시 시도해 주세요.',
+          };
+          return next;
+        });
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [input, attachments, loading, messages, onInvoicesFound]);
+
+  return (
+    <div
+      className="relative flex flex-col h-full bg-slate-900 border-l border-slate-800/60"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {/* 드래그 오버레이 */}
+      {isDragging && (
+        <div className="absolute inset-0 z-50 bg-teal-500/10 border-2 border-teal-400 border-dashed rounded-r-lg flex flex-col items-center justify-center pointer-events-none gap-3">
+          <ImageIcon className="w-10 h-10 text-teal-400" />
+          <p className="text-teal-300 font-medium text-sm">파일을 여기에 놓으세요</p>
+          <p className="text-teal-500 text-xs">이미지, PDF, CSV, Excel</p>
+        </div>
+      )}
+
+      {/* 헤더 */}
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-700/60 shrink-0">
+        <Bot className="w-4 h-4 text-teal-400 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-teal-300">AI 매입 분석</p>
+          <p className="text-[10px] text-slate-500">파일 첨부 또는 질문 입력</p>
+        </div>
+        <button
+          onClick={() => setCollapsed(c => !c)}
+          className="text-slate-500 hover:text-slate-300 transition-colors p-0.5"
+        >
+          {collapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+        </button>
+      </div>
+
+      {!collapsed && (
+        <>
+          {/* 대화 영역 */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
+            {messages.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[92%] rounded-xl px-3 py-2 text-xs leading-relaxed ${
+                  msg.role === 'user'
+                    ? 'bg-teal-600/30 text-teal-100'
+                    : 'bg-slate-800 text-slate-200'
+                }`}>
+                  {/* 첨부파일 썸네일 */}
+                  {msg.files && msg.files.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-1.5">
+                      {msg.files.map((f, fi) => (
+                        <div key={fi} className="flex items-center gap-1 bg-slate-700/60 rounded-lg px-2 py-1 max-w-[120px]">
+                          {f.preview ? (
+                            <img src={f.preview} alt="" className="w-8 h-8 object-cover rounded" />
+                          ) : f.type === 'pdf' ? (
+                            <FileText className="w-4 h-4 text-red-400 shrink-0" />
+                          ) : (
+                            <FileSpreadsheet className="w-4 h-4 text-green-400 shrink-0" />
+                          )}
+                          <span className="text-[10px] text-slate-300 truncate">{f.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {msg.content ? (
+                    <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                  ) : loading && i === messages.length - 1 && msg.role === 'assistant' ? (
+                    <span className="inline-flex gap-0.5 items-center h-4">
+                      {[0, 150, 300].map(d => (
+                        <span
+                          key={d}
+                          className="w-1 h-1 bg-teal-400 rounded-full animate-bounce"
+                          style={{ animationDelay: `${d}ms` }}
+                        />
+                      ))}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+            <div ref={bottomRef} />
+          </div>
+
+          {/* 퀵 프롬프트 */}
+          <div className="px-3 py-1.5 border-t border-slate-700/40 shrink-0">
+            <div className="flex gap-1.5 flex-wrap">
+              {QUICK_PROMPTS.map(q => (
+                <button
+                  key={q}
+                  onClick={() => setInput(q)}
+                  disabled={loading}
+                  className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 px-2 py-1 rounded-lg border border-slate-700/50 transition-colors disabled:opacity-40"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 첨부파일 미리보기 */}
+          {attachments.length > 0 && (
+            <div className="px-3 py-2 border-t border-slate-700/40 shrink-0">
+              <div className="flex flex-wrap gap-2">
+                {attachments.map(a => (
+                  <div key={a.id} className="relative group">
+                    {a.preview ? (
+                      <img
+                        src={a.preview}
+                        alt={a.name}
+                        className="w-14 h-14 object-cover rounded-lg border border-slate-700"
+                      />
+                    ) : (
+                      <div className="w-14 h-14 bg-slate-800 rounded-lg border border-slate-700 flex flex-col items-center justify-center gap-1">
+                        {a.type === 'pdf'
+                          ? <FileText className="w-5 h-5 text-red-400" />
+                          : <FileSpreadsheet className="w-5 h-5 text-green-400" />}
+                        <span className="text-[9px] text-slate-500 font-medium">
+                          {a.name.split('.').pop()?.toUpperCase()}
+                        </span>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => removeAttachment(a.id)}
+                      className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-slate-600 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-2.5 h-2.5 text-white" />
+                    </button>
+                    <p className="text-[9px] text-slate-600 truncate w-14 text-center mt-0.5">
+                      {a.name.length > 10 ? a.name.slice(0, 8) + '…' : a.name}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 입력 영역 */}
+          <div className="px-3 pb-3 pt-2 shrink-0 border-t border-slate-700/40">
+            <div className="flex gap-2 items-center">
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={loading}
+                title="파일 첨부"
+                className="p-2 text-slate-400 hover:text-teal-400 hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-40 shrink-0"
+              >
+                <Paperclip className="w-4 h-4" />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*,.pdf,.xlsx,.xls,.csv"
+                className="hidden"
+                onChange={e => {
+                  if (e.target.files) {
+                    addFiles(e.target.files);
+                    e.target.value = '';
+                  }
+                }}
+              />
+              <input
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+                placeholder={attachments.length > 0 ? '메시지 추가 (선택)...' : '질문 입력 또는 파일 첨부...'}
+                disabled={loading}
+                className="flex-1 bg-slate-800 border border-slate-700/60 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-teal-500/50 disabled:opacity-50 min-w-0"
+              />
+              <button
+                onClick={send}
+                disabled={loading || (!input.trim() && attachments.length === 0)}
+                className="bg-teal-600 hover:bg-teal-500 disabled:bg-slate-700 text-white p-2 rounded-lg transition-colors disabled:opacity-50 shrink-0"
+              >
+                {loading
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <Send className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-700 mt-1.5 text-center">
+              드래그 앤 드랍 · Ctrl+V 붙여넣기 지원
+            </p>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

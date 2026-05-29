@@ -17,21 +17,22 @@ export async function GET(req: Request) {
   if (!storeId) return NextResponse.json({ error: 'storeId required' }, { status: 400 });
 
   try {
-    // 당일 daily_reports
+    // 당일 daily_reports (orderBy 없이 클라이언트 정렬 — 복합 인덱스 불필요)
     const snap = await adminDb.collection('daily_reports')
       .where('storeId', '==', storeId)
       .where('reportDate', '==', todayStr)
-      .orderBy('lastModifiedAt', 'desc')
-      .limit(5)
+      .limit(10)
       .get();
 
     if (snap.empty) {
       return NextResponse.json({ todayStr, totalSales: 0, netSales: 0, customerCount: 0, noData: true });
     }
 
-    // pos_bridge 우선, 없으면 최신
-    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
-    const best = docs.find(d => d.source === 'pos_bridge') || docs[0];
+    // pos_bridge 우선, 없으면 lastModifiedAt 기준 최신
+    const docs = snap.docs
+      .map(d => ({ id: d.id, ...d.data() } as any))
+      .sort((a: any, b: any) => (b.lastModifiedAt?.toMillis?.() ?? 0) - (a.lastModifiedAt?.toMillis?.() ?? 0));
+    const best = docs.find((d: any) => d.source === 'pos_bridge') || docs[0];
 
     const totalSales    = best.totalSales    ?? 0;
     const returnAmount  = best.returnAmount  ?? 0;

@@ -126,7 +126,8 @@ export default function PermissionGroupPage() {
     if (!currentStore?.storeId) { setIsLoadingUsers(false); return; }
     setIsLoadingUsers(true);
     try {
-      const res = await fetch(`/api/users?storeId=${currentStore.storeId}`);
+      const headers = await getAuthJsonHeaders();
+      const res = await fetch(`/api/users?storeId=${currentStore.storeId}`, { headers });
       const data = await res.json();
       setStoreUsers(data.users || []);
     } catch {
@@ -320,7 +321,12 @@ export default function PermissionGroupPage() {
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 flex-shrink-0">
             <div className="flex items-center gap-2">
               <Shield className="w-5 h-5 text-teal-400" />
-              <h1 className="text-lg font-bold text-teal-400">권한 그룹 관리</h1>
+              <div>
+                <h1 className="text-lg font-bold text-teal-400">권한 그룹 관리</h1>
+                {currentStore?.storeName && (
+                  <p className="text-[11px] text-slate-500 mt-0.5">현재 매장: {currentStore.storeName}</p>
+                )}
+              </div>
             </div>
             <button
               onClick={() => { setShowAddModal(true); setNewGroupName(''); setNewGroupAccess({ ...ALL_FALSE }); }}

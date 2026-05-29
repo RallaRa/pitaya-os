@@ -19,7 +19,7 @@ export default function WidgetWrapper({
   loading, error, children, className = '',
 }: Props) {
   const timeLabel = updatedAt
-    ? updatedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+    ? `${updatedAt.getFullYear()}.${String(updatedAt.getMonth() + 1).padStart(2, '0')}.${String(updatedAt.getDate()).padStart(2, '0')} ${updatedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`
     : '';
 
   return (

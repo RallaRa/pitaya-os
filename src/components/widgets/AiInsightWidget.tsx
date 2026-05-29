@@ -5,6 +5,7 @@ import {
   Trophy, AlertCircle, Lightbulb, ClipboardList,
   TrendingUp, TrendingDown, Minus, RefreshCw,
   CheckCircle2, Circle, Database, ExternalLink,
+  ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import {
@@ -81,6 +82,7 @@ export default function AiInsightWidget({
   const [updatedAt,  setUpdatedAt]  = useState<Date | null>(null);
   const [activeTab,  setActiveTab]  = useState<TabId>('best');
   const [checkedPrep,setCheckedPrep]= useState<Set<number>>(new Set());
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const load = useCallback(async (force = false) => {
     setLoading(true);
@@ -117,20 +119,11 @@ export default function AiInsightWidget({
     });
   };
 
-  /* 탭 내용 */
-  const renderContent = () => {
+  /* 탭별 내용 */
+  const renderTabContent = (tabId: TabId) => {
     if (!data) return null;
 
-    if (data.noData) {
-      return (
-        <div className="flex flex-col items-center justify-center h-32 gap-2 text-slate-500">
-          <Database className="w-8 h-8 opacity-40" />
-          <p className="text-xs text-center">{data.summary || '데이터가 없습니다'}</p>
-        </div>
-      );
-    }
-
-    switch (activeTab) {
+    switch (tabId) {
       case 'best':
         return (
           <div className="space-y-2 p-3">
@@ -243,6 +236,46 @@ export default function AiInsightWidget({
     }
   };
 
+  /* 전체 펼치기: 4개 섹션을 순서대로 */
+  const renderExpandedContent = () => {
+    if (!data) return null;
+    if (data.noData) {
+      return (
+        <div className="flex flex-col items-center justify-center h-32 gap-2 text-slate-500">
+          <Database className="w-8 h-8 opacity-40" />
+          <p className="text-xs text-center">{data.summary || '데이터가 없습니다'}</p>
+        </div>
+      );
+    }
+    return (
+      <div>
+        {TABS.map((tab, idx) => (
+          <div key={tab.id}>
+            {idx > 0 && <div className="border-t border-slate-800/60 mx-3 my-1" />}
+            <div className="flex items-center gap-1.5 px-3 pt-2.5 pb-0.5">
+              <span className="text-sm">{tab.icon}</span>
+              <span className="text-slate-400 text-[11px] font-semibold tracking-wide">{tab.label}</span>
+            </div>
+            {renderTabContent(tab.id)}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderContent = () => {
+    if (!data) return null;
+    if (data.noData) {
+      return (
+        <div className="flex flex-col items-center justify-center h-32 gap-2 text-slate-500">
+          <Database className="w-8 h-8 opacity-40" />
+          <p className="text-xs text-center">{data.summary || '데이터가 없습니다'}</p>
+        </div>
+      );
+    }
+    return isExpanded ? renderExpandedContent() : renderTabContent(activeTab);
+  };
+
   return (
     <WidgetWrapper
       title="🤖 AI 인사이트"
@@ -262,8 +295,8 @@ export default function AiInsightWidget({
         )}
 
         {/* 탭 헤더 */}
-        <div className="flex gap-1 px-3 pt-2 shrink-0 overflow-x-auto">
-          {TABS.map(tab => (
+        <div className="flex items-center gap-1 px-3 pt-2 shrink-0 overflow-x-auto">
+          {!isExpanded && TABS.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -277,6 +310,19 @@ export default function AiInsightWidget({
               <span className="hidden sm:inline">{tab.label}</span>
             </button>
           ))}
+          <button
+            onClick={() => setIsExpanded(v => !v)}
+            className={`ml-auto flex items-center gap-0.5 px-2 py-1 rounded-lg text-[10px] whitespace-nowrap transition-colors shrink-0 ${
+              isExpanded
+                ? 'bg-slate-700/60 text-slate-300 border border-slate-600/40'
+                : 'text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            {isExpanded
+              ? <><ChevronUp className="w-3 h-3" /> 접기</>
+              : <><ChevronDown className="w-3 h-3" /> 전체</>
+            }
+          </button>
         </div>
 
         {/* 탭 콘텐츠 */}

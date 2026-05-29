@@ -164,7 +164,12 @@ export default function MemberGroupPage() {
       {/* 헤더 */}
       <div className="flex items-center gap-2 mb-2">
         <UserCog className="w-5 h-5 text-teal-400" />
-        <h1 className="text-lg font-bold text-teal-400">멤버-그룹 연결</h1>
+        <div>
+          <h1 className="text-lg font-bold text-teal-400">멤버-그룹 연결</h1>
+          {currentStore?.storeName && (
+            <p className="text-[11px] text-slate-500 mt-0.5">현재 매장: {currentStore.storeName}</p>
+          )}
+        </div>
       </div>
       <p className="text-slate-400 text-sm mb-6">스토어 멤버에게 권한 그룹을 배정합니다.</p>
 

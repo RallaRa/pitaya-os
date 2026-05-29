@@ -1,73 +1,127 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
-import { useRef, useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
+import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import {
-  ShoppingCart, Upload, X, FileSpreadsheet, Send,
-  CheckCircle, Loader2, Save, AlertCircle, Search, Beef,
+  ShoppingCart, Save, Loader2, CheckCircle, AlertCircle, Plus, X,
+  Search, Beef,
 } from 'lucide-react';
+import type { Invoice, InvoiceGroup } from '@/components/purchases/PurchaseSheet';
 
-const AIPurchasePanel = dynamic(() => import('@/components/purchases/AIPurchasePanel'), { ssr: false });
+const PurchaseAIChat = dynamic(() => import('@/components/purchases/PurchaseAIChat'), { ssr: false });
+const PurchaseSheet = dynamic(() => import('@/components/purchases/PurchaseSheet'), { ssr: false });
+
+function genId() {
+  return `inv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+}
+
+const EMPTY_INVOICE: Invoice = {
+  purchaseDate: '',
+  supplierName: '',
+  invoiceNumber: '',
+  items: [],
+  supplyAmount: 0,
+  taxAmount: 0,
+  totalAmount: 0,
+  paymentMethod: '',
+  memo: '',
+};
 
 interface TraceInfo {
-  found:          boolean;
-  traceNo?:       string;
-  cattleType?:    string;
-  origin?:        string;
-  farmName?:      string;
-  farmAddr?:      string;
+  found: boolean;
+  cattleType?: string;
+  origin?: string;
+  qgrade?: string;
+  ygrade?: string;
   slaughterDate?: string;
-  slaughterPlace?:string;
-  qgrade?:        string;
-  ygrade?:        string;
-  weight?:        string;
-  message?:       string;
+  farmName?: string;
+  weight?: string;
+  message?: string;
 }
-
-interface PurchaseItem {
-  name: string;
-  qty: number;
-  unit: string;
-  unitPrice: number;
-  supplyAmount: number;
-  taxAmount: number;
-}
-
-interface PurchaseData {
-  purchaseDate: string;
-  supplierName: string;
-  invoiceNumber: string;
-  items: PurchaseItem[];
-  supplyAmount: number;
-  taxAmount: number;
-  totalAmount: number;
-  memo: string;
-}
-
-const fmt = (n: number) => n?.toLocaleString('ko-KR') ?? '0';
 
 export default function PurchaseInputPage() {
   const { user } = useAuth();
   const { currentStore } = useStore();
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [file, setFile] = useState<{ name: string; preview?: string; content: string; type: string } | null>(null);
-  const [text, setText] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [aiReply, setAiReply] = useState('');
-  const [parsedData, setParsedData] = useState<PurchaseData | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [groups, setGroups] = useState<InvoiceGroup[]>([]);
+  const [savingGroupIds, setSavingGroupIds] = useState<Set<string>>(new Set());
+  const [isSavingAll, setIsSavingAll] = useState(false);
+  const [savedCount, setSavedCount] = useState(0);
   const [error, setError] = useState('');
 
   // 이력번호 조회
-  const [traceNo,      setTraceNo]      = useState('');
-  const [traceInfo,    setTraceInfo]    = useState<TraceInfo | null>(null);
+  const [traceOpen, setTraceOpen] = useState(false);
+  const [traceNo, setTraceNo] = useState('');
+  const [traceInfo, setTraceInfo] = useState<TraceInfo | null>(null);
   const [traceLoading, setTraceLoading] = useState(false);
-  const [traceError,   setTraceError]   = useState('');
+  const [traceError, setTraceError] = useState('');
+
+  const handleInvoicesFound = useCallback((invoices: Invoice[]) => {
+    const newGroups: InvoiceGroup[] = invoices.map(inv => ({
+      id: genId(),
+      invoice: inv,
+      isSaved: false,
+      isExpanded: true,
+    }));
+    setGroups(prev => [...prev, ...newGroups]);
+  }, []);
+
+  const saveGroup = useCallback(async (groupId: string) => {
+    const group = groups.find(g => g.id === groupId);
+    if (!group || !user?.uid || !currentStore?.storeId) return;
+
+    setSavingGroupIds(prev => new Set(prev).add(groupId));
+    setError('');
+    try {
+      const res = await fetch('/api/purchases', {
+        method: 'POST',
+        headers: await getAuthJsonHeaders(),
+        body: JSON.stringify({
+          action: 'save',
+          extractedData: group.invoice,
+          uid: user.uid,
+          storeId: currentStore.storeId,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || '저장 실패');
+      setGroups(prev => prev.map(g => g.id === groupId ? { ...g, isSaved: true } : g));
+      setSavedCount(c => c + 1);
+    } catch (e: any) {
+      setError(e.message || '저장 중 오류가 발생했습니다.');
+    } finally {
+      setSavingGroupIds(prev => {
+        const next = new Set(prev);
+        next.delete(groupId);
+        return next;
+      });
+    }
+  }, [groups, user?.uid, currentStore?.storeId]);
+
+  const saveAll = useCallback(async () => {
+    const unsaved = groups.filter(g => !g.isSaved);
+    if (!unsaved.length || isSavingAll) return;
+    setIsSavingAll(true);
+    for (const g of unsaved) {
+      await saveGroup(g.id);
+    }
+    setIsSavingAll(false);
+  }, [groups, isSavingAll, saveGroup]);
+
+  const addBlankGroup = () => {
+    setGroups(prev => [
+      ...prev,
+      {
+        id: genId(),
+        invoice: { ...EMPTY_INVOICE, purchaseDate: new Date().toISOString().slice(0, 10) },
+        isSaved: false,
+        isExpanded: true,
+      },
+    ]);
+  };
 
   const handleTraceSearch = async () => {
     const no = traceNo.replace(/\D/g, '');
@@ -77,7 +131,7 @@ export default function PurchaseInputPage() {
     setTraceInfo(null);
     try {
       const res = await fetch(`/api/external/meat-history?traceNo=${no}`);
-      const d   = await res.json();
+      const d = await res.json();
       if (d.error) throw new Error(d.error);
       setTraceInfo(d);
     } catch (e: any) {
@@ -87,357 +141,163 @@ export default function PurchaseInputPage() {
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setError('');
-
-    const isImage = f.type.startsWith('image/');
-    const isCsv = f.name.endsWith('.csv') || f.type === 'text/csv';
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const content = reader.result as string;
-      setFile({
-        name: f.name,
-        preview: isImage ? content : undefined,
-        content,
-        type: isImage ? 'image' : isCsv ? 'csv' : 'excel',
-      });
-    };
-    if (isCsv) {
-      reader.readAsText(f);
-    } else {
-      reader.readAsDataURL(f);
-    }
-  };
-
-  const handleAnalyze = async () => {
-    if (!file && !text.trim()) return;
-    setIsLoading(true);
-    setAiReply('');
-    setParsedData(null);
-    setSaved(false);
-    setError('');
-
-    try {
-      const res = await fetch('/api/purchases', {
-        method: 'POST',
-        headers: await getAuthJsonHeaders(),
-        body: JSON.stringify({
-          fileContent: file?.content,
-          fileName: file?.name,
-          fileType: file?.type,
-          text: text.trim() || undefined,
-        }),
-      });
-      const data = await res.json();
-      if (data.text) setAiReply(data.text);
-      if (data.parsedData) setParsedData(data.parsedData);
-      if (!data.parsedData && data.text?.startsWith('⚠️')) setError(data.text);
-    } catch {
-      setError('⚠️ 네트워크 오류가 발생했습니다.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSave = async () => {
-    if (!parsedData || !user?.uid || !currentStore?.storeId) return;
-    setIsSaving(true);
-    try {
-      const res = await fetch('/api/purchases', {
-        method: 'POST',
-        headers: await getAuthJsonHeaders(),
-        body: JSON.stringify({
-          action: 'save',
-          extractedData: parsedData,
-          uid: user.uid,
-          storeId: currentStore.storeId,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setSaved(true);
-        setFile(null);
-        setText('');
-        setParsedData(null);
-        setAiReply('');
-        if (fileInputRef.current) fileInputRef.current.value = '';
-      }
-    } catch {
-      setError('⚠️ 저장 실패했습니다.');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const canAnalyze = (!!file || !!text.trim()) && !isLoading;
+  const unsavedCount = groups.filter(g => !g.isSaved).length;
 
   return (
-    <div className="flex h-full min-h-screen bg-slate-950 text-slate-100">
-      <div className="flex-1 overflow-y-auto">
-      <div className="max-w-3xl mx-auto w-full p-6 md:p-8 space-y-6">
+    <div className="flex h-full bg-slate-950 text-slate-100 overflow-hidden">
 
-        {/* 헤더 */}
-        <div className="text-center">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-teal-900/30 border border-teal-500/30 rounded-2xl mb-4">
-            <ShoppingCart className="w-7 h-7 text-teal-400" />
-          </div>
-          <h1 className="text-2xl font-bold text-slate-100">AI 매입관리</h1>
-          <p className="text-slate-400 text-sm mt-2">
-            거래명세서, 세금계산서, 매입전표를 업로드하면 AI가 자동 분석합니다
-          </p>
-        </div>
+      {/* ── 중앙 시트 영역 ── */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
-        {/* 저장 완료 메시지 */}
-        {saved && (
-          <div className="flex items-center gap-3 bg-teal-900/30 border border-teal-500/30 rounded-xl px-4 py-3">
-            <CheckCircle className="w-5 h-5 text-teal-400 flex-shrink-0" />
-            <p className="text-teal-300 text-sm">매입 내역이 저장되었습니다.</p>
-            <button onClick={() => setSaved(false)} className="ml-auto text-slate-400 hover:text-white">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {/* 에러 */}
-        {error && (
-          <div className="flex items-center gap-3 bg-red-900/20 border border-red-500/30 rounded-xl px-4 py-3">
-            <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
-            <p className="text-red-300 text-sm">{error}</p>
-          </div>
-        )}
-
-        {/* 이력번호 조회 */}
-        <div className="bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-3">
-          <div className="flex items-center gap-2 mb-1">
-            <Beef className="w-4 h-4 text-amber-400" />
-            <p className="text-amber-400 text-xs font-semibold">축산물 이력번호 조회</p>
-          </div>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={traceNo}
-              onChange={e => setTraceNo(e.target.value.replace(/\D/g, '').slice(0, 15))}
-              onKeyDown={e => e.key === 'Enter' && handleTraceSearch()}
-              placeholder="이력번호 12자리 입력"
-              maxLength={15}
-              className="flex-1 bg-slate-800 border border-slate-600 rounded-xl px-4 py-2.5 text-slate-200
-                placeholder:text-slate-600 text-sm focus:outline-none focus:border-amber-500/50 transition-colors"
-            />
-            <button
-              onClick={handleTraceSearch}
-              disabled={traceLoading || traceNo.replace(/\D/g,'').length < 12}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-amber-700/80 hover:bg-amber-600
-                disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-xl text-sm font-medium transition-colors"
-            >
-              {traceLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-              조회
-            </button>
+        {/* 헤더 툴바 */}
+        <div className="flex items-center gap-3 px-5 py-2.5 border-b border-slate-800/60 bg-slate-900/60 shrink-0">
+          <ShoppingCart className="w-4 h-4 text-teal-400 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <h1 className="text-sm font-bold text-slate-100 leading-tight">AI 매입관리</h1>
+            {currentStore?.storeName && (
+              <p className="text-[10px] text-slate-500 truncate">{currentStore.storeName}</p>
+            )}
           </div>
 
-          {traceError && (
-            <p className="text-red-400 text-xs">{traceError}</p>
-          )}
-
-          {traceInfo && (
-            traceInfo.found ? (
-              <div className="bg-slate-800/60 rounded-xl p-4 grid grid-cols-2 gap-x-6 gap-y-2 text-xs">
-                {[
-                  ['축종',    traceInfo.cattleType],
-                  ['원산지',  traceInfo.origin],
-                  ['농장명',  traceInfo.farmName],
-                  ['도축일',  traceInfo.slaughterDate],
-                  ['도축장',  traceInfo.slaughterPlace],
-                  ['육질등급', traceInfo.qgrade],
-                  ['육량등급', traceInfo.ygrade],
-                  ['도체중',  traceInfo.weight ? `${traceInfo.weight}kg` : ''],
-                ].filter(([, v]) => v).map(([label, value]) => (
-                  <div key={label as string}>
-                    <span className="text-slate-500">{label}: </span>
-                    <span className="text-slate-200 font-medium">{value as string}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-slate-500 text-xs">{traceInfo.message || '조회된 이력이 없습니다.'}</p>
-            )
-          )}
-        </div>
-
-        {/* 파일 업로드 */}
-        <div className="space-y-3">
+          {/* 이력번호 조회 토글 */}
           <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="w-full border-2 border-dashed border-slate-700 hover:border-teal-500/60
-              bg-slate-900/50 hover:bg-slate-900 rounded-2xl p-8
-              flex flex-col items-center gap-3 transition-colors group"
+            onClick={() => { setTraceOpen(o => !o); setTraceInfo(null); setTraceError(''); }}
+            className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-colors ${
+              traceOpen
+                ? 'bg-amber-900/30 text-amber-300'
+                : 'text-amber-500 hover:text-amber-300 hover:bg-amber-900/20'
+            }`}
           >
-            <Upload className="w-9 h-9 text-slate-500 group-hover:text-teal-400 transition-colors" />
-            <span className="text-slate-400 group-hover:text-slate-300 font-medium transition-colors">
-              사진 또는 파일 업로드
-            </span>
-            <span className="text-slate-600 text-xs">JPG, PNG, PDF, CSV, XLSX 지원</span>
+            <Beef className="w-3.5 h-3.5" />
+            이력조회
           </button>
 
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="hidden"
-            accept="image/*,.pdf,.xlsx,.xls,.csv"
-            onChange={handleFileChange}
-          />
+          {/* 직접 추가 버튼 */}
+          <button
+            onClick={addBlankGroup}
+            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            직접 추가
+          </button>
 
-          {file && (
-            <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 flex items-center gap-4">
-              {file.preview ? (
-                <img src={file.preview} alt="미리보기"
-                  className="w-16 h-16 object-cover rounded-lg border border-slate-700 flex-shrink-0" />
-              ) : (
-                <div className="w-16 h-16 bg-slate-800 rounded-lg border border-slate-700 flex items-center justify-center flex-shrink-0">
-                  <FileSpreadsheet className="w-7 h-7 text-teal-400" />
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-slate-200 font-medium text-sm truncate">{file.name}</p>
-                <p className="text-slate-500 text-xs mt-0.5">업로드 완료</p>
-              </div>
+          {/* 전체 저장 버튼 */}
+          {unsavedCount > 0 && (
+            <button
+              onClick={saveAll}
+              disabled={isSavingAll}
+              className="flex items-center gap-1.5 text-xs font-semibold text-black bg-teal-400 hover:bg-teal-300 disabled:opacity-60 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+            >
+              {isSavingAll
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <Save className="w-3.5 h-3.5" />}
+              전체 저장 ({unsavedCount})
+            </button>
+          )}
+        </div>
+
+        {/* 이력번호 조회 패널 */}
+        {traceOpen && (
+          <div className="px-5 py-3 border-b border-amber-900/30 bg-amber-950/20 shrink-0">
+            <div className="flex gap-2 items-center">
+              <input
+                type="text"
+                value={traceNo}
+                onChange={e => setTraceNo(e.target.value.replace(/\D/g, '').slice(0, 15))}
+                onKeyDown={e => e.key === 'Enter' && handleTraceSearch()}
+                placeholder="이력번호 12자리"
+                className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-amber-500/50"
+              />
               <button
-                type="button"
-                onClick={() => { setFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
-                className="text-slate-500 hover:text-slate-300 p-1 transition-colors flex-shrink-0"
+                onClick={handleTraceSearch}
+                disabled={traceLoading || traceNo.replace(/\D/g, '').length < 12}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-700 hover:bg-amber-600 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg text-xs transition-colors"
               >
-                <X className="w-5 h-5" />
+                {traceLoading
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <Search className="w-3.5 h-3.5" />}
+                조회
+              </button>
+              <button
+                onClick={() => { setTraceOpen(false); setTraceInfo(null); setTraceError(''); }}
+                className="text-slate-500 hover:text-slate-300 p-1 transition-colors"
+              >
+                <X className="w-4 h-4" />
               </button>
             </div>
-          )}
-        </div>
 
-        {/* 텍스트 입력 */}
-        <div>
-          <p className="text-slate-400 text-xs mb-2">또는 매입 내용을 직접 입력</p>
-          <textarea
-            value={text}
-            onChange={e => setText(e.target.value)}
-            placeholder="예) 2026-05-23 한우 도매 / 한우 등심 5kg 단가 45,000원 / 한우 갈비 3kg 단가 38,000원 / 합계 351,000원"
-            rows={4}
-            className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-200
-              placeholder:text-slate-600 text-sm resize-none focus:outline-none focus:border-teal-500/50 transition-colors"
+            {traceError && (
+              <p className="text-red-400 text-xs mt-1.5">{traceError}</p>
+            )}
+
+            {traceInfo && (
+              traceInfo.found ? (
+                <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-1 text-xs">
+                  {([
+                    ['축종', traceInfo.cattleType],
+                    ['원산지', traceInfo.origin],
+                    ['육질등급', traceInfo.qgrade],
+                    ['도축일', traceInfo.slaughterDate],
+                    ['농장명', traceInfo.farmName],
+                    ['도체중', traceInfo.weight ? `${traceInfo.weight}kg` : undefined],
+                  ] as [string, string | undefined][]).filter(([, v]) => v).map(([l, v]) => (
+                    <div key={l}>
+                      <span className="text-slate-500">{l}: </span>
+                      <span className="text-slate-200">{v}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-slate-500 text-xs mt-1.5">{traceInfo.message || '조회된 이력이 없습니다.'}</p>
+              )
+            )}
+          </div>
+        )}
+
+        {/* 알림 영역 */}
+        {(error || savedCount > 0) && (
+          <div className="px-5 py-2 space-y-1 shrink-0">
+            {error && (
+              <div className="flex items-center gap-2 bg-red-900/20 border border-red-500/30 rounded-lg px-3 py-2 text-xs text-red-300">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span className="flex-1">{error}</span>
+                <button onClick={() => setError('')} className="text-slate-500 hover:text-slate-300">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+            {savedCount > 0 && !error && (
+              <div className="flex items-center gap-2 bg-teal-900/20 border border-teal-500/30 rounded-lg px-3 py-2 text-xs text-teal-300">
+                <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                {savedCount}건 저장 완료
+                <button onClick={() => setSavedCount(0)} className="ml-auto text-slate-500 hover:text-slate-300">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 시트 영역 */}
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          <PurchaseSheet
+            groups={groups}
+            onGroupsChange={setGroups}
+            onSaveGroup={saveGroup}
+            savingGroupIds={savingGroupIds}
           />
         </div>
-
-        {/* 분석 버튼 */}
-        <button
-          type="button"
-          onClick={handleAnalyze}
-          disabled={!canAnalyze}
-          className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-500
-            disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold py-3.5 rounded-xl
-            transition-colors text-sm"
-        >
-          {isLoading ? (
-            <><Loader2 className="w-4 h-4 animate-spin" /> AI 분석 중...</>
-          ) : (
-            <><Send className="w-4 h-4" /> AI 분석 시작</>
-          )}
-        </button>
-
-        {/* AI 응답 */}
-        {aiReply && !error && (
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-1">
-            <p className="text-teal-400 text-xs font-semibold mb-2">AI 분석 결과</p>
-            <div className="text-slate-300 text-sm whitespace-pre-wrap leading-relaxed">{aiReply}</div>
-          </div>
-        )}
-
-        {/* 추출 데이터 미리보기 */}
-        {parsedData && (
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-5 space-y-4">
-            <p className="text-teal-400 text-xs font-semibold">추출된 매입 정보</p>
-
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <p className="text-slate-500 text-xs">매입일자</p>
-                <p className="text-slate-200 font-medium">{parsedData.purchaseDate || '-'}</p>
-              </div>
-              <div>
-                <p className="text-slate-500 text-xs">공급업체</p>
-                <p className="text-slate-200 font-medium">{parsedData.supplierName || '-'}</p>
-              </div>
-              {parsedData.invoiceNumber && (
-                <div className="col-span-2">
-                  <p className="text-slate-500 text-xs">전표번호</p>
-                  <p className="text-slate-200 font-medium">{parsedData.invoiceNumber}</p>
-                </div>
-              )}
-            </div>
-
-            {parsedData.items && parsedData.items.length > 0 && (
-              <div>
-                <p className="text-slate-500 text-xs mb-2">품목 내역</p>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-700">
-                        <th className="text-left text-slate-400 pb-2 pr-3 font-medium">품명</th>
-                        <th className="text-right text-slate-400 pb-2 pr-3 font-medium">수량</th>
-                        <th className="text-right text-slate-400 pb-2 pr-3 font-medium">단가</th>
-                        <th className="text-right text-slate-400 pb-2 font-medium">공급가액</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {parsedData.items.map((item, i) => (
-                        <tr key={i} className="border-b border-slate-800">
-                          <td className="py-1.5 pr-3 text-slate-200">{item.name}</td>
-                          <td className="py-1.5 pr-3 text-right text-slate-300">{item.qty}{item.unit}</td>
-                          <td className="py-1.5 pr-3 text-right text-slate-300">{fmt(item.unitPrice)}원</td>
-                          <td className="py-1.5 text-right text-slate-200">{fmt(item.supplyAmount)}원</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            <div className="border-t border-slate-700 pt-3 space-y-1 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-400">공급가액</span>
-                <span className="text-slate-200">{fmt(parsedData.supplyAmount)}원</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">세액</span>
-                <span className="text-slate-200">{fmt(parsedData.taxAmount)}원</span>
-              </div>
-              <div className="flex justify-between font-bold">
-                <span className="text-slate-200">합계금액</span>
-                <span className="text-teal-400 text-base">{fmt(parsedData.totalAmount)}원</span>
-              </div>
-            </div>
-
-            {parsedData.memo && (
-              <p className="text-slate-400 text-xs border-t border-slate-700 pt-3">{parsedData.memo}</p>
-            )}
-
-            <button
-              onClick={handleSave}
-              disabled={isSaving}
-              className="w-full flex items-center justify-center gap-2 bg-teal-700 hover:bg-teal-600
-                disabled:bg-slate-700 text-white font-bold py-3 rounded-xl transition-colors text-sm"
-            >
-              {isSaving ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> 저장 중...</>
-              ) : (
-                <><Save className="w-4 h-4" /> 매입 내역 저장</>
-              )}
-            </button>
-          </div>
-        )}
       </div>
+
+      {/* ── 우측 AI 채팅 패널 ── */}
+      <div className="hidden md:flex flex-col w-96 shrink-0 h-full">
+        <PurchaseAIChat onInvoicesFound={handleInvoicesFound} />
       </div>
-      <AIPurchasePanel currentPage="register" currentData={parsedData || {}} />
+
+      {/* 모바일: 하단 플로팅 버튼 (AI 채팅) */}
+      <div className="md:hidden">
+        {/* TODO: mobile bottom sheet for PurchaseAIChat */}
+      </div>
     </div>
   );
 }

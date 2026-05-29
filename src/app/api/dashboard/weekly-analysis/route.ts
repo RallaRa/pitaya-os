@@ -7,7 +7,7 @@ import { verifyToken } from '@/lib/authVerify';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 function formatYMD(d: Date) {
-  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export async function GET(req: Request) {
