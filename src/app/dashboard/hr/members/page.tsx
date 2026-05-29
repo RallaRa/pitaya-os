@@ -208,14 +208,10 @@ export default function MembersPage() {
       const authHeaders = await getAuthJsonHeaders();
       await Promise.all(entries.map(([key, role]) => {
         const [targetUid, storeId] = key.split(':');
-        const roleToGroup: Record<string, string> = {
-          owner: 'master', admin: 'admin', user: 'user', staff: 'staff',
-        };
-        const groupId = roleToGroup[role] || role;
-        return fetch('/api/users', {
-          method: 'PUT',
+        return fetch('/api/store', {
+          method: 'POST',
           headers: authHeaders,
-          body: JSON.stringify({ action: 'assignGroup', uid: targetUid, storeId, groupId }),
+          body: JSON.stringify({ action: 'changeRole', targetUid, storeId, role }),
         }).then(r => r.json().then(d => { if (!r.ok) throw new Error(d.error); }));
       }));
       setLocalRoleChanges({});

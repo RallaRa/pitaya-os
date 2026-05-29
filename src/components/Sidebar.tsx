@@ -7,7 +7,7 @@ import {
   Settings, MessageCircle, ShoppingCart, Sparkles,
   BarChart2, ClipboardCheck, X,
   Circle, CalendarDays, Tag, Scale, LineChart, Building2, SlidersHorizontal, Users, Crown, History, ChevronRight, ChevronDown,
-  FileText, TrendingUp, Truck, BookOpen, Hash, Code,
+  FileText, TrendingUp, Truck, BookOpen, Hash,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -36,6 +36,15 @@ const ALL_FALSE: MenuAccess = {
   hrCalendar: false, scaleCode: false,
   salesForecast: false, suppliers: false, predictionVariables: false,
   customers: false, predictionHistory: false, items: false,
+};
+
+const ALL_TRUE: MenuAccess = {
+  ai: true, sales: true, purchase: true, report: true,
+  messenger: true, members: true, store: true,
+  permissionGroup: true, memberGroup: true, hygiene: true,
+  hrCalendar: true, scaleCode: true,
+  salesForecast: true, suppliers: true, predictionVariables: true,
+  customers: true, predictionHistory: true, items: true,
 };
 
 interface AiModel {
@@ -215,7 +224,9 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { key: 'store' as const,                 href: '/dashboard/coupons',                              icon: <Tag                className="w-4 h-4" />, label: '쿠폰 관리' },
   ];
 
-  const visibleMenus = accessLoading ? [] : mainMenus.filter(m => menuAccess[m.key]);
+  const isSuperuser = !!(user?.email && user.email.toLowerCase() === SUPERUSER_EMAIL.toLowerCase());
+  const effectiveAccess = isSuperuser ? ALL_TRUE : menuAccess;
+  const visibleMenus = accessLoading ? [] : mainMenus.filter(m => effectiveAccess[m.key]);
 
   /* ── 공통 사이드바 콘텐츠 ── */
   const sidebarContent = (
@@ -234,7 +245,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           ) : (
             <>
               {/* AI 매입관리 아코디언 (purchase 권한) */}
-              {menuAccess.purchase && (() => {
+              {(effectiveAccess.purchase || isSuperuser) && (() => {
                 const purchaseActive = pathname.startsWith('/dashboard/report/purchases');
                 return (
                   <div>
@@ -332,21 +343,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               <div className="hidden md:block">
                 <NotificationHub label="알림" />
               </div>
-
-              {user?.email?.toLowerCase() === SUPERUSER_EMAIL.toLowerCase() && (
-                <Link
-                  href="/dashboard/dev-console"
-                  onClick={onClose}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm mt-1 ${
-                    pathname.startsWith('/dashboard/dev-console')
-                      ? 'bg-purple-600/20 text-purple-300 font-semibold border border-purple-500/20'
-                      : 'text-slate-400 hover:bg-slate-800 hover:text-purple-300'
-                  }`}
-                >
-                  <Code className="w-4 h-4 shrink-0" />
-                  개발 콘솔
-                </Link>
-              )}
             </>
           )}
         </nav>

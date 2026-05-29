@@ -34,10 +34,23 @@ async function getSuperuserUid(): Promise<string | null> {
   } catch { return null; }
 }
 
-// 현재는 슈퍼유저에게만 승인 알림 발송 (추후 매장 직급/승인 프로세스 개발 시 확장 예정)
-async function getApproverUids(_storeId: string): Promise<string[]> {
+async function getApproverUids(storeId: string): Promise<string[]> {
+  const uids = new Set<string>();
   const suUid = await getSuperuserUid();
-  return suUid ? [suUid] : [];
+  if (suUid) uids.add(suUid);
+  if (storeId) {
+    const snap = await adminDb.collection('user_store_map')
+      .where('storeId', '==', storeId)
+      .where('status', '==', 'active')
+      .get();
+    snap.docs.forEach(d => {
+      const { uid, role, groupId } = d.data();
+      if (['owner', 'admin'].includes(role) || ['master', 'admin'].includes(groupId)) {
+        uids.add(uid);
+      }
+    });
+  }
+  return [...uids];
 }
 
 export async function GET(req: Request) {
@@ -116,7 +129,7 @@ export async function POST(req: Request) {
       sendNotification(approverUid,
         '휴무 신청',
         `${userName}님이 ${typeLabel} 신청했습니다 (${dateStr})`,
-        '/dashboard/hr/calendar',
+        '/dashboard/hr/calendar?tab=leave',
       )
     ));
 
@@ -158,7 +171,7 @@ export async function PUT(req: Request) {
       data.userId,
       `휴무 ${label}`,
       `${dateStr} ${typeLabel} 신청이 ${label}되었습니다.`,
-      '/dashboard/hr/calendar',
+      '/dashboard/hr/calendar?tab=leave',
     );
 
     return NextResponse.json({ success: true });

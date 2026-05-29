@@ -13,6 +13,7 @@
     { "path": "/api/cron/recalibrate-variables",    "schedule": "0 7 * * 1" },
     { "path": "/api/cron/generate-partner-analysis","schedule": "0 6 * * *" },
     { "path": "/api/cron/hygiene-alert",            "schedule": "*/5 2-3 * * *" },
-    { "path": "/api/cron/hygiene-auto-check",       "schedule": "0 5,11 * * *" }
+    { "path": "/api/cron/hygiene-auto-check",       "schedule": "0 5,11 * * *" },
+    { "path": "/api/cron/pos-sync-check",           "schedule": "0 * * * *" }
   ]
 }

@@ -322,11 +322,24 @@ export async function POST(req: Request) {
       resolved = effectiveChoice;
     }
 
-    // ── Fail-Safe / Key 검증 ──
+    // ── Fail-Safe / Key 검증 (auto: Gemini silent fallback 금지) ──
     if (effectiveChoice === 'auto') {
-      if (resolved === 'claude'       && !hasKey.claude()) resolved = hasKey.groq() ? 'groq-llama' : 'gemini';
-      if (resolved === 'gpt'          && !hasKey.gpt())    resolved = hasKey.groq() ? 'groq-llama' : 'gemini';
-      if ((resolved === 'groq-mixtral' || resolved === 'groq-llama') && !hasKey.groq()) resolved = 'gemini';
+      const pickAvailable = (preferred: ModelChoice): ModelChoice | null => {
+        if (preferred === 'claude' && hasKey.claude()) return 'claude';
+        if (preferred === 'gpt'    && hasKey.gpt())    return 'gpt';
+        if (preferred === 'groq-llama' && hasKey.groq()) return 'groq-llama';
+        if (preferred === 'gemini' && hasKey.gemini()) return 'gemini';
+        if (hasKey.groq())   return 'groq-llama';
+        if (hasKey.claude()) return 'claude';
+        if (hasKey.gpt())    return 'gpt';
+        if (hasKey.gemini()) return 'gemini';
+        return null;
+      };
+      const fixed = pickAvailable(resolved);
+      if (!fixed) {
+        return NextResponse.json({ error: '사용 가능한 AI API 키가 없습니다.', errorCode: 'api_key_missing' }, { status: 503 });
+      }
+      resolved = fixed;
     } else {
       const keyMissing =
         (resolved === 'claude'       && !hasKey.claude()) ||

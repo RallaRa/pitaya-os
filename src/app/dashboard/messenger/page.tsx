@@ -369,6 +369,26 @@ export default function MessengerPage() {
     setEditText('');
   };
 
+  /* Export chat as text */
+  const handleExportChat = () => {
+    if (!currentRoom || !messages.length) return;
+    const partner = getPartner(currentRoom).name;
+    const lines = messages
+      .filter(m => !m.deletedAt)
+      .map(m => {
+        const ts = m.createdAt?.seconds ? new Date(m.createdAt.seconds * 1000) : m.createdAt ? new Date(m.createdAt) : null;
+        return `[${ts ? ts.toLocaleString('ko-KR') : ''}] ${m.senderName}: ${m.text || ''}`;
+      });
+    const blob = new Blob([`Pitaya OS 대화 내보내기 — ${partner}\n\n${lines.join('\n')}`], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `chat-${currentRoom.id.slice(0, 8)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setShowRoomMenu(false);
+  };
+
   /* C: Leave room */
   const handleLeaveRoom = async () => {
     if (!currentRoom || !user?.uid) return;
@@ -618,6 +638,12 @@ export default function MessengerPage() {
                 </button>
                 {showRoomMenu && (
                   <div className="absolute right-0 top-full mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 min-w-36 overflow-hidden">
+                    <button
+                      onClick={handleExportChat}
+                      className="w-full text-left px-4 py-3 text-sm text-teal-400 hover:bg-slate-700 transition-colors"
+                    >
+                      대화 내보내기 (.txt)
+                    </button>
                     <button
                       onClick={handleLeaveRoom}
                       className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-slate-700 transition-colors"

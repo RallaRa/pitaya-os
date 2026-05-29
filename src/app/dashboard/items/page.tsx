@@ -495,7 +495,39 @@ export default function ItemsPage() {
   const [detailItem,   setDetailItem]   = useState<Item | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showBulkModal,setShowBulkModal]= useState(false);
+  const [pageView,     setPageView]     = useState<'items' | 'aliases'>('items');
+  const [aliases,      setAliases]      = useState<{ id: string; alias: string; normalizedName: string; supplierName?: string }[]>([]);
+  const [aliasLoading, setAliasLoading] = useState(false);
+  const [newAlias,     setNewAlias]     = useState({ alias: '', normalizedName: '', supplierName: '' });
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const loadAliases = useCallback(async () => {
+    if (!storeId) return;
+    setAliasLoading(true);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/purchases/match-items?storeId=${storeId}`, { headers });
+      const data = await res.json();
+      setAliases(data.aliases || []);
+    } finally { setAliasLoading(false); }
+  }, [storeId]);
+
+  const saveAlias = async () => {
+    if (!newAlias.alias.trim() || !newAlias.normalizedName.trim()) return;
+    const headers = await getAuthJsonHeaders();
+    await fetch('/api/purchases/match-items', {
+      method: 'PUT', headers,
+      body: JSON.stringify({ ...newAlias, storeId, confidence: 100 }),
+    });
+    setNewAlias({ alias: '', normalizedName: '', supplierName: '' });
+    loadAliases();
+  };
+
+  const deleteAlias = async (id: string) => {
+    const headers = await getAuthHeaders();
+    await fetch(`/api/purchases/match-items?id=${id}`, { method: 'DELETE', headers });
+    loadAliases();
+  };
 
   const load = useCallback(async () => {
     if (!storeId) return;
@@ -508,6 +540,7 @@ export default function ItemsPage() {
   }, [storeId]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (pageView === 'aliases') loadAliases(); }, [pageView, loadAliases]);
 
   /* 필터링 + 정렬 */
   const filtered = items
@@ -671,8 +704,10 @@ export default function ItemsPage() {
         <div className="flex items-center gap-2 flex-wrap">
           <h1 className="text-slate-400 text-xs font-semibold uppercase tracking-widest flex-1">품목관리</h1>
 
-          {/* 선택된 항목 있으면 일괄변경 */}
-          {selectedIds.size > 0 && (
+          <button onClick={() => setPageView('items')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${pageView === 'items' ? 'bg-teal-600/20 text-teal-300 border border-teal-500/30' : 'text-slate-500'}`}>품목목록</button>
+          <button onClick={() => setPageView('aliases')} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${pageView === 'aliases' ? 'bg-teal-600/20 text-teal-300 border border-teal-500/30' : 'text-slate-500'}`}>알리아스</button>
+
+          {pageView === 'items' && selectedIds.size > 0 && (
             <button
               onClick={() => setShowBulkModal(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 text-orange-300 rounded-lg text-xs"
@@ -682,6 +717,8 @@ export default function ItemsPage() {
             </button>
           )}
 
+          {pageView === 'items' && (
+          <>
           <button
             onClick={() => setShowAddModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600/20 hover:bg-teal-600/30 border border-teal-500/30 text-teal-300 rounded-lg text-xs"
@@ -707,9 +744,37 @@ export default function ItemsPage() {
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           </button>
+          </>
+          )}
+          {pageView === 'aliases' && (
+            <button onClick={loadAliases} className="p-1.5 text-slate-500 hover:text-teal-400"><RefreshCw className={`w-3.5 h-3.5 ${aliasLoading ? 'animate-spin' : ''}`} /></button>
+          )}
         </div>
       </div>
 
+      {pageView === 'aliases' ? (
+        <div className="flex-1 overflow-auto p-6 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2 bg-slate-900 border border-slate-800 rounded-xl p-4">
+            <input value={newAlias.alias} onChange={e => setNewAlias(a => ({ ...a, alias: e.target.value }))} placeholder="OCR/명세서 표기" className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+            <input value={newAlias.normalizedName} onChange={e => setNewAlias(a => ({ ...a, normalizedName: e.target.value }))} placeholder="표준 품목명" className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+            <input value={newAlias.supplierName} onChange={e => setNewAlias(a => ({ ...a, supplierName: e.target.value }))} placeholder="거래처 (선택)" className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" />
+            <button onClick={saveAlias} className="bg-teal-600 hover:bg-teal-500 text-white rounded-lg text-sm font-bold">알리아스 추가</button>
+          </div>
+          {aliasLoading ? <p className="text-slate-500 text-sm">로딩...</p> : aliases.length === 0 ? <p className="text-slate-500 text-sm">등록된 알리아스가 없습니다.</p> : (
+            <div className="space-y-2">
+              {aliases.map(a => (
+                <div key={a.id} className="flex items-center gap-3 bg-slate-900 border border-slate-800 rounded-lg px-4 py-3">
+                  <span className="font-mono text-sm text-white flex-1">{a.alias}</span>
+                  <span className="text-teal-400 text-sm">→ {a.normalizedName}</span>
+                  {a.supplierName && <span className="text-slate-500 text-xs">{a.supplierName}</span>}
+                  <button onClick={() => deleteAlias(a.id)} className="text-slate-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+      <>
       {/* 탭 */}
       <div className="shrink-0 flex items-center gap-1 px-6 pt-3 border-b border-slate-800/40">
         {CATEGORIES.map(cat => (
@@ -925,6 +990,8 @@ export default function ItemsPage() {
           onClose={() => setShowBulkModal(false)}
           onDone={() => { load(); setSelectedIds(new Set()); }}
         />
+      )}
+      </>
       )}
     </div>
   );

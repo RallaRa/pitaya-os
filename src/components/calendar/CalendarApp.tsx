@@ -3,6 +3,7 @@
 import {
   useState, useEffect, useCallback, useRef, useMemo, KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   ChevronLeft, ChevronRight, Plus, X, Check, Search, Printer,
   Download, Upload, RefreshCw, Eye, EyeOff, Trash2,
@@ -1672,6 +1673,14 @@ export default function CalendarApp() {
   // ── 뷰 상태 ──
   const [view,   setView]   = useState<ViewMode>('month');
   const [mainTab, setMainTab] = useState<'calendar' | 'todo' | 'leave'>('calendar');
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'leave' || tab === 'todo' || tab === 'calendar') {
+      setMainTab(tab);
+    }
+  }, [searchParams]);
   const [cursor, setCursor] = useState(new Date());
 
   // ── 데이터 ──

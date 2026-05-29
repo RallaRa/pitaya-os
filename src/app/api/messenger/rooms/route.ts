@@ -30,8 +30,31 @@ export async function POST(req: Request) {
   if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const { uid, targetUid, storeId } = await req.json();
-    if (!uid || !targetUid) return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
+    const { uid, targetUid, storeId, type, name, memberUids } = await req.json();
+    if (!uid) return NextResponse.json({ error: 'uid 필수' }, { status: 400 });
+
+    if (type === 'group') {
+      const members = Array.from(new Set([uid, ...(memberUids || [])])).filter(Boolean);
+      if (members.length < 2) {
+        return NextResponse.json({ error: '그룹은 2명 이상 필요합니다' }, { status: 400 });
+      }
+      const docRef = await adminDb.collection('chat_rooms').add({
+        type: 'group',
+        name: name || '그룹 채팅',
+        members,
+        storeId: storeId || '',
+        status: 'active',
+        lastMessage: '',
+        lastMessageAt: FieldValue.serverTimestamp(),
+        unreadCount: Object.fromEntries(members.map((m: string) => [m, 0])),
+        createdBy: uid,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return NextResponse.json({ roomId: docRef.id, isNew: true });
+    }
+
+    if (!targetUid) return NextResponse.json({ error: 'targetUid 필수' }, { status: 400 });
 
     const snap = await adminDb.collection('chat_rooms')
       .where('type', '==', 'direct')

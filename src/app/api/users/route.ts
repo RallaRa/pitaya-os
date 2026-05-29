@@ -105,7 +105,15 @@ export async function PUT(req: Request) {
         .where('storeId', '==', storeId)
         .get();
       if (!mapSnap.empty) {
-        await mapSnap.docs[0].ref.update({ groupId, updatedAt: FieldValue.serverTimestamp() });
+        const roleToGroup: Record<string, string> = {
+          master: 'owner', admin: 'admin', user: 'user', staff: 'staff', guest: 'staff',
+        };
+        const roleFromGroup = roleToGroup[groupId] || groupId;
+        await mapSnap.docs[0].ref.update({
+          groupId,
+          role: roleFromGroup,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
       }
     } else {
       await adminDb.collection('users').doc(uid).update({ groupId, updatedAt: FieldValue.serverTimestamp() });

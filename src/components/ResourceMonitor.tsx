@@ -61,8 +61,25 @@ export default function ResourceMonitor() {
 
   useEffect(() => { load(); }, [load]);
 
+  const maxPct = services.reduce((max, s) => {
+    if (!s.available || !s.limit) return max;
+    return Math.max(max, Math.round((s.used ?? 0) / s.limit * 100));
+  }, 0);
+
   return (
     <div className="border-t border-slate-800">
+      {/* 트래픽 요약 바 */}
+      {!loading && services.length > 0 && (
+        <div className="px-4 pt-2">
+          <div className="flex items-center justify-between text-[9px] text-slate-500 mb-1">
+            <span>API 사용량</span>
+            <span className={textColor(maxPct, true)}>{maxPct}% peak</span>
+          </div>
+          <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden mb-1">
+            <div className={`h-full transition-all ${barColor(maxPct, true)}`} style={{ width: `${Math.min(maxPct, 100)}%` }} />
+          </div>
+        </div>
+      )}
       {/* 섹션 헤더 */}
       <button
         onClick={() => {
