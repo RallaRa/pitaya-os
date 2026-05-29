@@ -88,9 +88,24 @@ export default function MembersPage() {
   const [localRoleChanges, setLocalRoleChanges] = useState<Record<string, string>>({});
   const [isSavingRoles, setIsSavingRoles] = useState(false);
   const [roleSaveSuccess, setRoleSaveSuccess] = useState(false);
+  const [displayStoreName, setDisplayStoreName] = useState('');
 
   const canManage = isSuperuserEmail(user?.email) || ['owner', 'admin'].includes(myRole);
   const isSuperuser = isSuperuserEmail(user?.email);
+  const hasRoleChanges = Object.keys(localRoleChanges).length > 0;
+
+  useEffect(() => {
+    setDisplayStoreName(currentStore?.storeName || '');
+    if (currentStore?.storeName || !currentStore?.storeId || !user?.uid) return;
+    getAuthJsonHeaders()
+      .then(headers => fetch(`/api/store?uid=${user.uid}`, { headers }))
+      .then(r => r.json())
+      .then(data => {
+        const found = (data.stores || []).find((s: StoreMembership) => s.storeId === currentStore.storeId);
+        if (found?.storeName) setDisplayStoreName(found.storeName);
+      })
+      .catch(() => {});
+  }, [currentStore?.storeId, currentStore?.storeName, user?.uid]);
 
   const fetchMembers = useCallback(async () => {
     if (!currentStore?.storeId) return;
@@ -217,6 +232,18 @@ export default function MembersPage() {
       setLocalRoleChanges({});
       setRoleSaveSuccess(true);
       setTimeout(() => setRoleSaveSuccess(false), 2000);
+      setMemberStores(prev => {
+        const next = { ...prev };
+        for (const [key, role] of entries) {
+          const [targetUid, sid] = key.split(':');
+          if (next[targetUid]) {
+            next[targetUid] = next[targetUid].map(s =>
+              s.storeId === sid ? { ...s, role } : s
+            );
+          }
+        }
+        return next;
+      });
       await fetchMembers();
     } catch (e: any) { setError(e.message || '저장 중 오류가 발생했습니다.'); }
     finally { setIsSavingRoles(false); }
@@ -255,7 +282,7 @@ export default function MembersPage() {
         <Users className="w-5 h-5 text-teal-400" />
         <h1 className="text-lg font-bold text-teal-400">멤버 관리</h1>
       </div>
-      <p className="text-slate-400 text-sm mb-5">{currentStore?.storeName} 매장의 멤버를 관리합니다.</p>
+      <p className="text-slate-400 text-sm mb-5">{displayStoreName || currentStore?.storeId} 매장의 멤버를 관리합니다.</p>
 
       {/* 요약 칩 */}
       {!isLoading && (
@@ -274,7 +301,7 @@ export default function MembersPage() {
       )}
 
       {/* 미저장 변경사항 배너 */}
-      {Object.keys(localRoleChanges).length > 0 && (
+      {hasRoleChanges && (
         <div className="flex items-center gap-3 bg-amber-900/20 border border-amber-500/30 rounded-xl px-4 py-3 mb-4">
           <span className="text-amber-400 text-sm font-medium flex-1">
             저장되지 않은 권한 변경 {Object.keys(localRoleChanges).length}개
@@ -300,7 +327,7 @@ export default function MembersPage() {
         </div>
       )}
 
-      {roleSaveSuccess && Object.keys(localRoleChanges).length === 0 && (
+      {roleSaveSuccess && !hasRoleChanges && (
         <div className="flex items-center gap-2 bg-teal-900/20 border border-teal-500/30 rounded-xl px-4 py-3 mb-4 text-teal-400 text-sm">
           <Check className="w-4 h-4" /> 권한이 저장되었습니다.
         </div>
@@ -323,7 +350,7 @@ export default function MembersPage() {
           <span>
             매장별
             <span className="ml-1.5 text-[10px] bg-blue-900/40 text-blue-300 px-2 py-0.5 rounded-full">
-              {currentStore?.storeName || currentStore?.storeId}
+              {displayStoreName || currentStore?.storeName || currentStore?.storeId}
             </span>
           </span>
         </button>

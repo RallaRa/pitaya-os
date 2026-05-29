@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { DEFAULT_PERMISSIONS, ALL_MENUS, Role } from '@/lib/permissions';
-import { verifyToken, getActualGroupId, isAdminGroup, isMasterGroup } from '@/lib/authVerify';
+import { verifyToken, getActualGroupId, isAdminGroup, isMasterGroup, canManageStore } from '@/lib/authVerify';
 import { isSuperuserEmail } from '@/lib/auth/permissions';
 
 type MenuAccess = {
@@ -233,9 +233,7 @@ export async function POST(req: Request) {
       if (!storeId || !groupName) {
         return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
       }
-      // 관리자 이상만 그룹 생성 가능
-      const groupId = await getActualGroupId(verified.uid, storeId);
-      if (!isAdminGroup(groupId)) {
+      if (!await canManageStore(verified.uid, storeId, verified.email)) {
         return NextResponse.json({ error: '권한 없음. 관리자 이상만 그룹을 생성할 수 있습니다.' }, { status: 403 });
       }
       const ref = adminDb.collection('permission_groups').doc();
@@ -280,15 +278,13 @@ export async function PUT(req: Request) {
     }
 
     const body = await req.json();
-    const { type, groupId, groupName, menuAccess } = body;
+    const { type, groupId, groupName, menuAccess, storeId } = body;
 
     if (type !== 'updateGroup' || !groupId) {
       return NextResponse.json({ error: '잘못된 요청' }, { status: 400 });
     }
 
-    // 관리자 이상만 그룹 수정 가능
-    const actualGroupId = await getActualGroupId(verified.uid);
-    if (!isAdminGroup(actualGroupId)) {
+    if (!await canManageStore(verified.uid, storeId, verified.email)) {
       return NextResponse.json({ error: '권한 없음. 관리자 이상만 그룹을 수정할 수 있습니다.' }, { status: 403 });
     }
 
@@ -310,18 +306,17 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 });
     }
 
-    // 관리자 이상만 그룹 삭제 가능
-    const actualGroupId = await getActualGroupId(verified.uid);
-    if (!isAdminGroup(actualGroupId)) {
-      return NextResponse.json({ error: '권한 없음. 관리자 이상만 그룹을 삭제할 수 있습니다.' }, { status: 403 });
-    }
-
     const { searchParams } = new URL(req.url);
     const type = searchParams.get('type');
     const groupId = searchParams.get('groupId');
+    const storeId = searchParams.get('storeId');
 
     if (type !== 'group' || !groupId) {
       return NextResponse.json({ error: '잘못된 요청' }, { status: 400 });
+    }
+
+    if (!await canManageStore(verified.uid, storeId, verified.email)) {
+      return NextResponse.json({ error: '권한 없음. 관리자 이상만 그룹을 삭제할 수 있습니다.' }, { status: 403 });
     }
 
     const docRef = await adminDb.collection('permission_groups').doc(groupId).get();

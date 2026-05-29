@@ -36,10 +36,20 @@ export async function getActualGroupId(uid: string, storeId?: string | null): Pr
     const mapSnap = await adminDb.collection('user_store_map')
       .where('uid', '==', uid)
       .where('storeId', '==', storeId)
+      .where('status', '==', 'active')
       .get();
     if (!mapSnap.empty) {
-      const storeGroupId = mapSnap.docs[0].data().groupId;
-      if (storeGroupId !== undefined && storeGroupId !== null) return storeGroupId;
+      const mapData = mapSnap.docs[0].data();
+      const storeGroupId = mapData.groupId;
+      if (storeGroupId !== undefined && storeGroupId !== null && storeGroupId !== '') {
+        return storeGroupId;
+      }
+      const roleToGroup: Record<string, string> = {
+        owner: 'master', admin: 'admin', user: 'user', staff: 'staff', superuser: 'master',
+      };
+      if (mapData.role && roleToGroup[mapData.role]) {
+        return roleToGroup[mapData.role];
+      }
     }
   }
 
@@ -48,7 +58,18 @@ export async function getActualGroupId(uid: string, storeId?: string | null): Pr
 
 /** groupId가 관리자급 이상인지 확인합니다. */
 export function isAdminGroup(groupId: string): boolean {
-  return ['master', 'admin'].includes(groupId);
+  return ['master', 'admin', 'owner'].includes(groupId);
+}
+
+/** 매장 권한 관리 가능 여부 */
+export async function canManageStore(
+  uid: string,
+  storeId?: string | null,
+  email?: string,
+): Promise<boolean> {
+  if (isSuperuserEmail(email)) return true;
+  const groupId = await getActualGroupId(uid, storeId);
+  return isAdminGroup(groupId);
 }
 
 /** groupId가 master인지 확인합니다. */

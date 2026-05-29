@@ -118,6 +118,7 @@ export default function MemberGroupPage() {
       setLocalChanges({});
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
+      await fetchAll();
     } catch (e: any) {
       setError(e.message || '저장 중 오류가 발생했습니다.');
     } finally {

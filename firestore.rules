@@ -270,7 +270,7 @@ service cloud.firestore {
     }
 
     // ──────────────────────────────────────────
-    // dashboard_widget_permissions / members / aliases
+    // members (legacy) — API 경유 저장
     // ──────────────────────────────────────────
     match /dashboard_widget_permissions/{docId} {
       allow read: if request.auth != null;

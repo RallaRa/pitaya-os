@@ -106,7 +106,7 @@ export async function POST(req: Request) {
       });
 
       await adminDb.collection('user_store_map').add({
-        uid, storeId, role: 'owner', status: 'active',
+        uid, storeId, role: 'owner', groupId: 'master', status: 'active',
         linkedAt: FieldValue.serverTimestamp(), unlinkedAt: null,
       });
 
@@ -171,7 +171,7 @@ export async function POST(req: Request) {
         });
       } else {
         await adminDb.collection('user_store_map').add({
-          uid, storeId, role: 'staff', status: 'active',
+          uid, storeId, role: 'staff', groupId: '', status: 'active',
           linkedAt: FieldValue.serverTimestamp(), unlinkedAt: null,
         });
       }
@@ -197,7 +197,10 @@ export async function POST(req: Request) {
       }
 
       await snap.docs[0].ref.update({
-        status: 'active', linkedAt: FieldValue.serverTimestamp(),
+        status: 'active',
+        groupId: snap.docs[0].data().groupId ?? '',
+        role: snap.docs[0].data().role || 'staff',
+        linkedAt: FieldValue.serverTimestamp(),
       });
 
       return NextResponse.json({ success: true });

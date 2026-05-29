@@ -118,12 +118,10 @@ export async function PUT(req: Request) {
         role: roleFromGroup,
         updatedAt: FieldValue.serverTimestamp(),
       });
-      if (groupId) {
-        await adminDb.collection('users').doc(uid).update({
-          groupId,
-          updatedAt: FieldValue.serverTimestamp(),
-        }).catch(() => {});
-      }
+      await adminDb.collection('users').doc(uid).update({
+        groupId: groupId || '',
+        updatedAt: FieldValue.serverTimestamp(),
+      }).catch(() => {});
     } else {
       await adminDb.collection('users').doc(uid).update({ groupId, updatedAt: FieldValue.serverTimestamp() });
     }

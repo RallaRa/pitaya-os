@@ -194,13 +194,20 @@ export default function PermissionGroupPage() {
     setError('');
     try {
       const headers = await getAuthJsonHeaders();
-      await Promise.all(changedIds.map(groupId =>
-        fetch('/api/permissions', {
+      await Promise.all(changedIds.map(async groupId => {
+        const res = await fetch('/api/permissions', {
           method: 'PUT',
           headers,
-          body: JSON.stringify({ type: 'updateGroup', groupId, menuAccess: draftAccess[groupId] }),
-        }).then(r => { if (!r.ok) throw new Error('저장 실패'); })
-      ));
+          body: JSON.stringify({
+            type: 'updateGroup',
+            groupId,
+            storeId: currentStore?.storeId,
+            menuAccess: draftAccess[groupId],
+          }),
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || '저장 실패');
+      }));
       setGroups(prev => prev.map(g =>
         draftAccess[g.groupId] ? { ...g, menuAccess: draftAccess[g.groupId] } : g
       ));
@@ -234,7 +241,12 @@ export default function PermissionGroupPage() {
       const res = await fetch('/api/permissions', {
         method: 'PUT',
         headers,
-        body: JSON.stringify({ type: 'updateGroup', groupId, menuAccess: draftAccess[groupId] }),
+        body: JSON.stringify({
+          type: 'updateGroup',
+          groupId,
+          storeId: currentStore?.storeId,
+          menuAccess: draftAccess[groupId],
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -255,7 +267,12 @@ export default function PermissionGroupPage() {
       const res = await fetch('/api/permissions', {
         method: 'PUT',
         headers,
-        body: JSON.stringify({ type: 'updateGroup', groupId, groupName: editingName.trim() }),
+        body: JSON.stringify({
+          type: 'updateGroup',
+          groupId,
+          storeId: currentStore?.storeId,
+          groupName: editingName.trim(),
+        }),
       });
       if (!res.ok) throw new Error((await res.json()).error);
       setGroups(prev => prev.map(g =>
@@ -273,7 +290,10 @@ export default function PermissionGroupPage() {
     setDeletingId(group.groupId);
     try {
       const headers = await getAuthJsonHeaders();
-      const res = await fetch(`/api/permissions?type=group&groupId=${group.groupId}`, { method: 'DELETE', headers });
+      const res = await fetch(
+        `/api/permissions?type=group&groupId=${group.groupId}&storeId=${currentStore?.storeId || ''}`,
+        { method: 'DELETE', headers },
+      );
       if (!res.ok) throw new Error((await res.json()).error);
       setGroups(prev => prev.filter(g => g.groupId !== group.groupId));
       if (selectedGroup?.groupId === group.groupId) setSelectedGroup(null);
