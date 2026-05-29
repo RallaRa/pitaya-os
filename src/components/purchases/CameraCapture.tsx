@@ -12,7 +12,7 @@ interface Props {
   onOpenChange?: (open: boolean) => void;
 }
 
-async function compressImageDataUrl(dataUrl: string, maxPx = 1600, quality = 0.88): Promise<string> {
+async function compressImageDataUrl(dataUrl: string, maxPx = 1024, quality = 0.7): Promise<string> {
   return new Promise(resolve => {
     const img = new Image();
     img.onload = () => {
@@ -117,7 +117,7 @@ export default function CameraCapture({
     const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
 
     if (batchMode) {
-      const compressed = await compressImageDataUrl(dataUrl, 1600, 0.88);
+      const compressed = await compressImageDataUrl(dataUrl, 1024, 0.7);
       const res = await fetch(compressed);
       const blob = await res.blob();
       const file = new File([blob], `receipt_${Date.now()}.jpg`, { type: 'image/jpeg' });
@@ -146,7 +146,7 @@ export default function CameraCapture({
     if (!captured || !canvasRef.current) return;
     setCompressing(true);
     try {
-      const compressed = await compressImageDataUrl(captured, 1600, 0.88);
+      const compressed = await compressImageDataUrl(captured, 1024, 0.7);
       const res = await fetch(compressed);
       const blob = await res.blob();
       const file = new File([blob], `receipt_${Date.now()}.jpg`, { type: 'image/jpeg' });

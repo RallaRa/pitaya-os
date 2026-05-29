@@ -6,6 +6,7 @@ import {
   Image as ImageIcon, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { compressImageFromDataUrl } from '@/lib/compressImageClient';
 import type { Invoice, AttachedFile as SheetAttachedFile } from './PurchaseSheet';
 import CameraCapture from './CameraCapture';
 
@@ -31,61 +32,22 @@ function genId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-const MAX_IMAGE_BYTES = 1024 * 1024; // 1MB per image
-// Vercel serverless body limit ~4.5MB — JSON base64 포함 여유
-const MAX_PAYLOAD_BYTES = 2 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 800 * 1024; // ~800KB per image after compress
+const MAX_PAYLOAD_BYTES = 3.5 * 1024 * 1024; // Vercel body limit 여유
 
-async function compressImage(dataUrl: string, maxPx = 1200, quality = 0.7): Promise<string> {
-  let result = await new Promise<string>(resolve => {
-    const img = new Image();
-    img.onload = () => {
-      let w = img.width;
-      let h = img.height;
-      if (w > maxPx || h > maxPx) {
-        if (w > h) { h = Math.round(h * maxPx / w); w = maxPx; }
-        else { w = Math.round(w * maxPx / h); h = maxPx; }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL('image/jpeg', quality));
-    };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
-
-  let px = maxPx;
-  let q = quality;
-  while (result.length > MAX_IMAGE_BYTES && (q > 0.35 || px > 800)) {
-    if (q > 0.35) {
-      q = Math.round((q - 0.1) * 100) / 100;
-    } else {
-      px = Math.round(px * 0.85);
-    }
-    result = await new Promise<string>(resolve => {
-      const img = new Image();
-      img.onload = () => {
-        let w = img.width;
-        let h = img.height;
-        if (w > px || h > px) {
-          if (w > h) { h = Math.round(h * px / w); w = px; }
-          else { w = Math.round(w * px / h); h = px; }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', q));
-      };
-      img.onerror = () => resolve(result);
-      img.src = result;
-    });
+async function compressImage(dataUrl: string): Promise<string> {
+  let result = await compressImageFromDataUrl(dataUrl, 1024, 0.7);
+  let px = 1024;
+  let q = 0.7;
+  while (result.length > MAX_IMAGE_BYTES && (q > 0.35 || px > 640)) {
+    if (q > 0.35) q = Math.round((q - 0.1) * 100) / 100;
+    else px = Math.round(px * 0.85);
+    result = await compressImageFromDataUrl(result, px, q);
   }
   return result;
 }
 
-async function compressImageFile(file: File): Promise<string> {
+async function compressImageFileWrapper(file: File): Promise<string> {
   const dataUrl = await readFile(file);
   if (!dataUrl.startsWith('data:image')) return dataUrl;
   return compressImage(dataUrl);
@@ -156,7 +118,7 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
       files.map(async f => {
         const type = detectFileType(f);
         let content = type === 'image'
-          ? await compressImageFile(f).catch(() => '')
+          ? await compressImageFileWrapper(f).catch(() => '')
           : await readFile(f).catch(() => '');
         return {
           id: genId(),
@@ -240,7 +202,7 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
             const next = [...prev];
             next[next.length - 1] = {
               role: 'assistant',
-              content: '⚠️ 이미지 용량이 너무 큽니다. 이미지 수를 줄이거나 더 작은 이미지를 사용해주세요. (1MB/장, 총 2MB 이하 권장)',
+              content: '⚠️ 이미지 용량이 너무 큽니다. 이미지 수를 줄이거나 더 작은 이미지를 사용해주세요. (800KB/장, 총 3.5MB 이하 권장)',
             };
             return next;
           });
