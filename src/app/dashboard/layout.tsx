@@ -9,7 +9,7 @@ import { useStore } from '@/context/StoreContext';
 import Sidebar from '@/components/Sidebar';
 import NotificationHub from '@/components/NotificationHub';
 
-const SUPERUSER_EMAIL = process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || '';
+const SUPERUSER_EMAIL = process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || 'hipona00@gmail.com';
 
 export default function DashboardLayout({
   children,

@@ -360,18 +360,12 @@ export async function POST(req: Request) {
         result = await callGemini(message, msgs, system);
       }
     } catch (callErr: any) {
-      if (resolved !== 'gemini' && modelChoice === 'auto') {
-        console.warn(`[AI] ${resolved} 호출 실패 → Gemini 우회:`, callErr.message);
-        result = await callGemini(message, msgs, system);
-        finalModel = 'gemini';
-      } else {
-        const errMsg = callErr.message || '알 수 없는 오류';
-        return NextResponse.json({
-          text:      `⚠️ ${MODEL_NAMES[resolved] || resolved} 오류: ${errMsg}`,
-          usedModel: MODEL_NAMES[resolved] || resolved,
-          error:     errMsg,
-        }, { status: 502 });
-      }
+      const errMsg = callErr.message || '알 수 없는 오류';
+      return NextResponse.json({
+        text:      `⚠️ ${MODEL_NAMES[resolved] || resolved} 오류: ${errMsg}`,
+        usedModel: MODEL_NAMES[resolved] || resolved,
+        error:     errMsg,
+      }, { status: 502 });
     }
 
     // ── 사용량 추적 ──

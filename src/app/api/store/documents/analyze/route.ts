@@ -66,20 +66,23 @@ export async function POST(req: Request) {
   try {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-    const contentBlock: Anthropic.MessageParam['content'][number] = isPdf
+    const contentBlock = isPdf
       ? {
-          type: 'document',
-          source: { type: 'base64', media_type: 'application/pdf', data: base64 },
-        } as any
+          type: 'document' as const,
+          source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: base64 },
+        }
       : {
-          type: 'image',
-          source: { type: 'base64', media_type: mimeType as any, data: base64 },
+          type: 'image' as const,
+          source: { type: 'base64' as const, media_type: mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data: base64 },
         };
 
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
-      messages: [{ role: 'user', content: [contentBlock, { type: 'text', text: prompt }] }],
+      messages: [{
+        role: 'user',
+        content: [contentBlock, { type: 'text' as const, text: prompt }],
+      }],
     });
 
     const text = response.content[0].type === 'text' ? response.content[0].text : '';

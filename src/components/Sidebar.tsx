@@ -18,7 +18,7 @@ import { db } from '@/lib/firebase/firebase';
 import { collection, query, where, onSnapshot, doc } from 'firebase/firestore';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
-const SUPERUSER_EMAIL = process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || '';
+const SUPERUSER_EMAIL = process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || 'hipona00@gmail.com';
 
 type MenuAccess = {
   ai: boolean; sales: boolean; purchase: boolean; report: boolean;
@@ -212,6 +212,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { key: 'customers' as const,             href: '/dashboard/customers',                            icon: <Users              className="w-4 h-4" />, label: '고객 관리' },
     { key: 'predictionHistory' as const,     href: '/dashboard/prediction-history',                   icon: <History            className="w-4 h-4" />, label: 'AI 예측 히스토리' },
     { key: 'items' as const,                 href: '/dashboard/items',                                icon: <Tag                className="w-4 h-4" />, label: '품목관리' },
+    { key: 'store' as const,                 href: '/dashboard/coupons',                              icon: <Tag                className="w-4 h-4" />, label: '쿠폰 관리' },
   ];
 
   const visibleMenus = accessLoading ? [] : mainMenus.filter(m => menuAccess[m.key]);

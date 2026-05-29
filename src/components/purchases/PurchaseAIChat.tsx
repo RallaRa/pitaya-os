@@ -31,8 +31,9 @@ function genId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-async function compressImage(dataUrl: string, maxPx = 1600, quality = 0.82): Promise<string> {
-  return new Promise(resolve => {
+async function compressImage(dataUrl: string, maxPx = 1600, quality = 0.85): Promise<string> {
+  const MAX_BYTES = 2 * 1024 * 1024; // 2MB
+  let result = await new Promise<string>(resolve => {
     const img = new Image();
     img.onload = () => {
       let w = img.width;
@@ -50,6 +51,25 @@ async function compressImage(dataUrl: string, maxPx = 1600, quality = 0.82): Pro
     img.onerror = () => resolve(dataUrl);
     img.src = dataUrl;
   });
+
+  // 2MB 초과 시 품질 85%로 단계적 압축
+  let q = quality;
+  while (result.length > MAX_BYTES && q > 0.4) {
+    q = Math.round((q - 0.1) * 100) / 100;
+    result = await new Promise<string>(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        canvas.getContext('2d')!.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL('image/jpeg', q));
+      };
+      img.onerror = () => resolve(result);
+      img.src = result;
+    });
+  }
+  return result;
 }
 
 // 실제 JSON 전송 크기 기준 (base64 문자열 길이 ≈ 전송 바이트, 3MB 한도로 Vercel 4.5MB 제한 여유 확보)

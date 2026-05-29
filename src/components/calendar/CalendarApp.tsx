@@ -2283,7 +2283,8 @@ export default function CalendarApp() {
           <div className="flex-1 overflow-hidden">
             <LeavePanel
               uid={uid} storeId={storeId} user={user}
-              isAdmin={isAdmin} leaves={leaves} dayoffs={dayoffs}
+              isAdmin={isAdmin} isSuperuser={isSuperuser}
+              leaves={leaves} dayoffs={dayoffs}
               onReload={loadLeaves} showToast={showToast}
             />
           </div>

@@ -222,10 +222,63 @@ service cloud.firestore {
     }
 
     // ──────────────────────────────────────────
-    // 정의되지 않은 컬렉션 — 전면 차단
+    // HR / Calendar / Items / Coupons
+    // ──────────────────────────────────────────
+    match /hr_leave_requests/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /hr_dayoff_requests/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /hr_employees/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /hr_departments/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /calendar_events/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /calendar_todos/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /items/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /coupons/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /store_documents/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /suppliers/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ──────────────────────────────────────────
+    // 슈퍼유저 헬퍼
+    // ──────────────────────────────────────────
+    function isSuperuser() {
+      return request.auth != null
+        && request.auth.token.email == 'hipona00@gmail.com';
+    }
+
+    // ──────────────────────────────────────────
+    // 정의되지 않은 컬렉션 — 슈퍼유저 읽기 허용, 쓰기 차단
     // ──────────────────────────────────────────
     match /{document=**} {
-      allow read, write: if false;
+      allow read: if request.auth != null && isSuperuser();
+      allow write: if false;
     }
   }
 }

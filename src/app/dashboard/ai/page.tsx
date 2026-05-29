@@ -292,7 +292,8 @@ export default function AiChatPage() {
     setIsLoading(true);
 
     try {
-      const res = await fetch('/api/ai', {
+      const endpoint = selectedModel === 'auto' ? '/api/ai' : `/api/ai/${selectedModel}`;
+      const res = await fetch(endpoint, {
         method:  'POST',
         headers: await getAuthJsonHeaders(),
         body:    JSON.stringify({

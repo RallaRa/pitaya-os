@@ -19,7 +19,7 @@ interface TodaySalesData {
   noData:         boolean;
 }
 
-const AUTO_REFRESH_MS = 30 * 1000; // 30초 자동 갱신
+const AUTO_REFRESH_MS = 5 * 60 * 1000; // 5분 자동 갱신
 
 export default function TodaySalesWidget({
   editMode, onRemove, storeId,
@@ -100,7 +100,7 @@ export default function TodaySalesWidget({
             <div className="flex flex-col items-center justify-center flex-1 gap-2">
               <TrendingUp className="w-8 h-8 text-slate-700" />
               <p className="text-slate-500 text-xs text-center">당일 매출 데이터가 없습니다</p>
-              <p className="text-slate-600 text-[10px] text-center">POS 연동 후 자동으로 갱신됩니다<br/>(매 1분)</p>
+              <p className="text-slate-600 text-[10px] text-center">POS 연동 후 자동으로 갱신됩니다<br/>(5분마다)</p>
             </div>
           ) : (
             <>

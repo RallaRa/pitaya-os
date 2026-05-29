@@ -8,6 +8,8 @@ import {
   Users, ChevronDown, ChevronUp, Eye, Settings,
 } from 'lucide-react';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { db } from '@/lib/firebase/firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 
 type MenuKey =
   | 'ai' | 'sales' | 'purchase' | 'report' | 'messenger'
@@ -137,7 +139,25 @@ export default function PermissionGroupPage() {
     }
   }, [currentStore?.storeId]);
 
-  useEffect(() => { fetchGroups(); fetchUsers(); }, [fetchGroups, fetchUsers]);
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+
+  // Firestore onSnapshot — 권한 그룹 실시간 반영
+  useEffect(() => {
+    if (!currentStore?.storeId) { setIsLoadingGroups(false); return; }
+    setIsLoadingGroups(true);
+    const q = query(
+      collection(db, 'permission_groups'),
+      where('storeId', '==', currentStore.storeId),
+    );
+    const unsub = onSnapshot(q, snap => {
+      const next = snap.docs.map(d => ({ groupId: d.id, ...d.data() } as PermissionGroup));
+      setGroups(next);
+      setIsLoadingGroups(false);
+    }, () => {
+      fetchGroups();
+    });
+    return () => unsub();
+  }, [currentStore?.storeId, fetchGroups]);
 
   const selectedGroupId = selectedGroup?.groupId;
   useEffect(() => {
@@ -146,12 +166,51 @@ export default function PermissionGroupPage() {
     if (updated) setSelectedGroup(updated);
   }, [groups, selectedGroupId]);
 
-  // ── 권한 토글 ──
+  // ── 권한 토글 (localChanges — 저장 전 로컬만) ──
   const handleToggle = (groupId: string, key: MenuKey) => {
+    const group = groups.find(g => g.groupId === groupId);
+    const base = draftAccess[groupId] ?? group?.menuAccess ?? ALL_FALSE;
     setDraftAccess(prev => ({
       ...prev,
-      [groupId]: { ...prev[groupId], [key]: !prev[groupId]?.[key] },
+      [groupId]: { ...base, [key]: !base[key] },
     }));
+  };
+
+  const hasGroupChanges = (groupId: string) => {
+    const group = groups.find(g => g.groupId === groupId);
+    if (!group) return false;
+    const draft = draftAccess[groupId];
+    if (!draft) return false;
+    return MENU_COLS.some(([key]) => draft[key] !== group.menuAccess[key]);
+  };
+
+  const unsavedCount = groups.filter(g => hasGroupChanges(g.groupId)).length;
+
+  const handleSaveAll = async () => {
+    const changedIds = groups.filter(g => hasGroupChanges(g.groupId)).map(g => g.groupId);
+    if (!changedIds.length) return;
+    setSavingId('all');
+    setError('');
+    try {
+      const headers = await getAuthJsonHeaders();
+      await Promise.all(changedIds.map(groupId =>
+        fetch('/api/permissions', {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({ type: 'updateGroup', groupId, menuAccess: draftAccess[groupId] }),
+        }).then(r => { if (!r.ok) throw new Error('저장 실패'); })
+      ));
+      setGroups(prev => prev.map(g =>
+        draftAccess[g.groupId] ? { ...g, menuAccess: draftAccess[g.groupId] } : g
+      ));
+      setDraftAccess(prev => {
+        const next = { ...prev };
+        changedIds.forEach(id => delete next[id]);
+        return next;
+      });
+      setExpandedId(null);
+    } catch (e: any) { setError(e.message); }
+    finally { setSavingId(null); }
   };
 
   const handleExpand = (group: PermissionGroup) => {
@@ -328,12 +387,29 @@ export default function PermissionGroupPage() {
                 )}
               </div>
             </div>
-            <button
+            <div className="flex items-center gap-2">
+              {unsavedCount > 0 && (
+                <span className="hidden sm:inline text-xs text-yellow-400 bg-yellow-900/30 border border-yellow-500/30 px-2 py-1 rounded-lg">
+                  저장하지 않은 변경사항 {unsavedCount}개
+                </span>
+              )}
+              {unsavedCount > 0 && (
+                <button
+                  onClick={handleSaveAll}
+                  disabled={savingId === 'all'}
+                  className="flex items-center gap-1 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm font-bold"
+                >
+                  {savingId === 'all' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  일괄 저장
+                </button>
+              )}
+              <button
               onClick={() => { setShowAddModal(true); setNewGroupName(''); setNewGroupAccess({ ...ALL_FALSE }); }}
               className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white px-3 py-1.5 rounded-lg text-sm font-bold transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />그룹 추가
             </button>
+            </div>
           </div>
 
           {error && (
@@ -380,13 +456,16 @@ export default function PermissionGroupPage() {
                       const isSaving = savingId === group.groupId;
                       const isEditingName = editingId === group.groupId;
 
+                      const rowChanged = hasGroupChanges(group.groupId);
+
                       return (
                         <Fragment key={group.groupId}>
                           <tr
                             onDoubleClick={() => setSelectedGroup(isSelected ? null : group)}
                             onClick={() => handleExpand(group)}
                             className={`border-b border-slate-800/60 cursor-pointer transition-colors select-none
-                              ${isSelected   ? 'bg-purple-900/15' :
+                              ${rowChanged ? 'bg-yellow-900/10 border-l-2 border-l-yellow-500/50' :
+                                isSelected   ? 'bg-purple-900/15' :
                                 isPreviewing ? 'bg-teal-900/15' :
                                                'hover:bg-slate-800/40'}
                             `}

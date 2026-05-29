@@ -65,8 +65,10 @@ export async function POST(req: Request) {
   const authUser = await verifyToken(req);
   if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  if (!process.env.GEMINI_API_KEY) {
-    return NextResponse.json({ error: 'GEMINI_API_KEY 미설정' }, { status: 500 });
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  const cloudKey  = process.env.GOOGLE_CLOUD_API_KEY;
+  if (!geminiKey && !cloudKey) {
+    return NextResponse.json({ error: 'GEMINI_API_KEY 또는 GOOGLE_CLOUD_API_KEY 미설정' }, { status: 500 });
   }
 
   let body: any;
@@ -83,7 +85,7 @@ export async function POST(req: Request) {
     const { files, message } = body;
     // files: [{ content: "data:image/...;base64,...", name: string, type: 'image'|'csv'|'excel'|'pdf' }]
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+    const genAI = new GoogleGenerativeAI(geminiKey || cloudKey!);
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const parts: Part[] = [];
