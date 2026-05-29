@@ -7,18 +7,17 @@ import {
   Settings, MessageCircle, ShoppingCart, Sparkles,
   BarChart2, ClipboardCheck, X,
   Circle, CalendarDays, Tag, Scale, LineChart, Building2, SlidersHorizontal, Users, Crown, History, ChevronRight, ChevronDown,
-  FileText, TrendingUp, Truck, BookOpen, Hash,
+  FileText, TrendingUp, Truck, BookOpen, Hash, Code,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
+import { isSuperuserEmail } from '@/lib/auth/permissions';
 import NotificationHub from '@/components/NotificationHub';
 import ResourceMonitor from '@/components/ResourceMonitor';
 import UserProfileModal from '@/components/UserProfileModal';
 import { db } from '@/lib/firebase/firebase';
 import { collection, query, where, onSnapshot, doc } from 'firebase/firestore';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
-
-const SUPERUSER_EMAIL = process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || 'hipona00@gmail.com';
 
 type MenuAccess = {
   ai: boolean; sales: boolean; purchase: boolean; report: boolean;
@@ -224,7 +223,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { key: 'store' as const,                 href: '/dashboard/coupons',                              icon: <Tag                className="w-4 h-4" />, label: '쿠폰 관리' },
   ];
 
-  const isSuperuser = !!(user?.email && user.email.toLowerCase() === SUPERUSER_EMAIL.toLowerCase());
+  const isSuperuser = isSuperuserEmail(user?.email);
   const effectiveAccess = isSuperuser ? ALL_TRUE : menuAccess;
   const visibleMenus = accessLoading ? [] : mainMenus.filter(m => effectiveAccess[m.key]);
 
@@ -343,6 +342,21 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               <div className="hidden md:block">
                 <NotificationHub label="알림" />
               </div>
+
+              {isSuperuser && (
+                <Link
+                  href="/dashboard/dev-console"
+                  onClick={onClose}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm mt-1 ${
+                    pathname.startsWith('/dashboard/dev-console')
+                      ? 'bg-purple-600/20 text-purple-300 font-semibold border border-purple-500/20'
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-purple-300'
+                  }`}
+                >
+                  <Code className="w-4 h-4 shrink-0" />
+                  개발 콘솔
+                </Link>
+              )}
             </>
           )}
         </nav>
@@ -420,7 +434,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       {/* 하단: 유저 프로필 (클릭 → 모달) */}
       <div className="p-3 border-t border-slate-800 shrink-0">
         {user && (() => {
-          const isSU = SUPERUSER_EMAIL && user.email?.toLowerCase() === SUPERUSER_EMAIL.toLowerCase();
+          const isSU = isSuperuserEmail(user.email);
           return (
             <button
               onClick={() => { onClose?.(); setShowProfile(true); }}
