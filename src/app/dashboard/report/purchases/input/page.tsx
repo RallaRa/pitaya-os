@@ -9,7 +9,7 @@ import {
   ShoppingCart, Save, Loader2, CheckCircle, AlertCircle, Plus, X,
   Search, Beef,
 } from 'lucide-react';
-import type { Invoice, InvoiceGroup } from '@/components/purchases/PurchaseSheet';
+import type { Invoice, InvoiceGroup, AttachedFile } from '@/components/purchases/PurchaseSheet';
 
 const PurchaseAIChat = dynamic(() => import('@/components/purchases/PurchaseAIChat'), { ssr: false });
 const PurchaseSheet = dynamic(() => import('@/components/purchases/PurchaseSheet'), { ssr: false });
@@ -59,12 +59,13 @@ export default function PurchaseInputPage() {
   const [traceLoading, setTraceLoading] = useState(false);
   const [traceError, setTraceError] = useState('');
 
-  const handleInvoicesFound = useCallback((invoices: Invoice[]) => {
+  const handleInvoicesFound = useCallback((invoices: Invoice[], files: AttachedFile[]) => {
     const newGroups: InvoiceGroup[] = invoices.map(inv => ({
       id: genId(),
       invoice: inv,
       isSaved: false,
       isExpanded: true,
+      attachedFiles: files.length > 0 ? files : undefined,
     }));
     setGroups(prev => [...prev, ...newGroups]);
   }, []);
@@ -76,6 +77,11 @@ export default function PurchaseInputPage() {
     setSavingGroupIds(prev => new Set(prev).add(groupId));
     setError('');
     try {
+      // 이미지 파일만 추출 (PDF 포함)
+      const imagesToUpload = (group.attachedFiles || [])
+        .filter(f => f.type === 'image' || f.type === 'pdf')
+        .map(f => ({ name: f.name, content: f.content }));
+
       const res = await fetch('/api/purchases', {
         method: 'POST',
         headers: await getAuthJsonHeaders(),
@@ -84,11 +90,16 @@ export default function PurchaseInputPage() {
           extractedData: group.invoice,
           uid: user.uid,
           storeId: currentStore.storeId,
+          images: imagesToUpload.length > 0 ? imagesToUpload : undefined,
         }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || '저장 실패');
-      setGroups(prev => prev.map(g => g.id === groupId ? { ...g, isSaved: true } : g));
+      setGroups(prev => prev.map(g =>
+        g.id === groupId
+          ? { ...g, isSaved: true, savedImageUrls: data.imageUrls || [] }
+          : g
+      ));
       setSavedCount(c => c + 1);
     } catch (e: any) {
       setError(e.message || '저장 중 오류가 발생했습니다.');

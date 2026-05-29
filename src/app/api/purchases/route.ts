@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI, Part } from '@google/generative-ai';
-import { adminDb } from '@/lib/firebase/admin';
+import { adminDb, adminStorage } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
+import { v4 as uuidv4 } from 'uuid';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
@@ -89,17 +90,54 @@ export async function POST(req: Request) {
 
     // ── Save action ──
     if (body.action === 'save') {
-      const { extractedData, uid, storeId } = body;
+      const { extractedData, uid, storeId, images } = body;
+      // images: [{ name: string, content: string /* base64 dataURL */, mimeType?: string }]
       if (!extractedData || !uid || !storeId) {
         return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
       }
+
+      // Firebase Storage에 원본 이미지 업로드
+      const imageUrls: string[] = [];
+      if (Array.isArray(images) && images.length > 0) {
+        try {
+          const bucket = adminStorage.bucket();
+          for (const img of images) {
+            if (!img.content) continue;
+            // dataURL → buffer
+            const base64 = img.content.includes(',') ? img.content.split(',')[1] : img.content;
+            if (!base64) continue;
+            const buffer = Buffer.from(base64, 'base64');
+            const mimeType = img.mimeType ||
+              (img.content.includes('data:') ? img.content.slice(5, img.content.indexOf(';')) : 'image/jpeg');
+            const ext = mimeType.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
+            const token = uuidv4();
+            const filePath = `purchase_images/${storeId}/${uid}/${Date.now()}_${token.slice(0, 8)}.${ext}`;
+            const storageFile = bucket.file(filePath);
+            await storageFile.save(buffer, {
+              metadata: {
+                contentType: mimeType,
+                metadata: { firebaseStorageDownloadTokens: token },
+              },
+            });
+            const bucketName = bucket.name;
+            imageUrls.push(
+              `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(filePath)}?alt=media&token=${token}`
+            );
+          }
+        } catch (uploadErr: any) {
+          console.error('이미지 업로드 실패:', uploadErr.message);
+          // 이미지 업로드 실패해도 데이터는 저장
+        }
+      }
+
       const docRef = await adminDb.collection('purchase_records').add({
         ...extractedData,
         uid,
         storeId,
+        imageUrls: imageUrls.length > 0 ? imageUrls : [],
         createdAt: FieldValue.serverTimestamp(),
       });
-      return NextResponse.json({ success: true, id: docRef.id });
+      return NextResponse.json({ success: true, id: docRef.id, imageUrls });
     }
 
     // ── Delete action ──

@@ -3,7 +3,8 @@
 import { useState, useMemo, useCallback } from 'react';
 import {
   ChevronRight, ChevronDown, Plus, Trash2, Save, Loader2, Check,
-  ShoppingCart,
+  ShoppingCart, Image as ImageIcon, X, ChevronLeft, ChevronRight as ChevronRightIcon,
+  FileText, FileSpreadsheet,
 } from 'lucide-react';
 
 export interface PurchaseItem {
@@ -31,11 +32,20 @@ export interface Invoice {
   memo: string;
 }
 
+export interface AttachedFile {
+  name: string;
+  type: 'image' | 'pdf' | 'csv' | 'excel';
+  content: string;
+  preview?: string;
+}
+
 export interface InvoiceGroup {
   id: string;
   invoice: Invoice;
   isSaved: boolean;
   isExpanded: boolean;
+  attachedFiles?: AttachedFile[];
+  savedImageUrls?: string[];
 }
 
 interface Props {
@@ -88,10 +98,132 @@ function applyItemChange(
   return updated;
 }
 
+// ── 이미지 뷰어 모달 ──
+function ImageViewerModal({
+  files,
+  savedUrls,
+  initialIndex,
+  onClose,
+}: {
+  files: AttachedFile[];
+  savedUrls?: string[];
+  initialIndex: number;
+  onClose: () => void;
+}) {
+  const [idx, setIdx] = useState(initialIndex);
+
+  // 표시할 소스 목록: 저장된 URL 우선, 없으면 로컬 content
+  const sources: { src: string; name: string; type: string }[] = files.map((f, i) => ({
+    src: savedUrls?.[i] || f.preview || f.content,
+    name: f.name,
+    type: f.type,
+  }));
+  const total = sources.length;
+  const cur = sources[idx];
+
+  const prev = () => setIdx(i => (i - 1 + total) % total);
+  const next = () => setIdx(i => (i + 1) % total);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/80 flex flex-col items-center justify-center"
+      onClick={onClose}
+    >
+      <div
+        className="relative bg-slate-900 rounded-2xl overflow-hidden max-w-4xl w-full mx-4 max-h-[90vh] flex flex-col"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* 헤더 */}
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-700 shrink-0">
+          <ImageIcon className="w-4 h-4 text-teal-400" />
+          <span className="text-sm text-slate-200 flex-1 truncate">{cur?.name}</span>
+          <span className="text-xs text-slate-500">{idx + 1} / {total}</span>
+          <button onClick={onClose} className="text-slate-400 hover:text-white p-1 transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* 이미지 영역 */}
+        <div className="flex-1 overflow-auto flex items-center justify-center bg-slate-950 min-h-[300px] relative">
+          {cur?.type === 'image' ? (
+            <img
+              src={cur.src}
+              alt={cur.name}
+              className="max-w-full max-h-[70vh] object-contain"
+            />
+          ) : cur?.type === 'pdf' ? (
+            <div className="flex flex-col items-center gap-3 text-slate-400">
+              <FileText className="w-16 h-16 text-red-400" />
+              <p className="text-sm">{cur.name}</p>
+              <a
+                href={cur.src}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-teal-400 hover:text-teal-300 text-xs underline"
+              >
+                새 탭에서 열기
+              </a>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3 text-slate-400">
+              <FileSpreadsheet className="w-16 h-16 text-green-400" />
+              <p className="text-sm">{cur.name}</p>
+            </div>
+          )}
+
+          {/* 이전/다음 버튼 */}
+          {total > 1 && (
+            <>
+              <button
+                onClick={prev}
+                className="absolute left-2 top-1/2 -translate-y-1/2 bg-slate-800/80 hover:bg-slate-700 text-white rounded-full p-2 transition-colors"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <button
+                onClick={next}
+                className="absolute right-2 top-1/2 -translate-y-1/2 bg-slate-800/80 hover:bg-slate-700 text-white rounded-full p-2 transition-colors"
+              >
+                <ChevronRightIcon className="w-5 h-5" />
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* 썸네일 스트립 (여러 장일 때) */}
+        {total > 1 && (
+          <div className="flex gap-2 px-4 py-2 border-t border-slate-700 overflow-x-auto shrink-0">
+            {sources.map((s, i) => (
+              <button
+                key={i}
+                onClick={() => setIdx(i)}
+                className={`shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition-colors ${
+                  i === idx ? 'border-teal-400' : 'border-slate-700 hover:border-slate-500'
+                }`}
+              >
+                {s.type === 'image' ? (
+                  <img src={s.src} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-slate-800 flex items-center justify-center">
+                    {s.type === 'pdf'
+                      ? <FileText className="w-6 h-6 text-red-400" />
+                      : <FileSpreadsheet className="w-6 h-6 text-green-400" />}
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function PurchaseSheet({
   groups, onGroupsChange, onSaveGroup, savingGroupIds,
 }: Props) {
   const [visibleCols, setVisibleCols] = useState<Set<OptionalCol>>(new Set());
+  const [viewer, setViewer] = useState<{ groupId: string; index: number } | null>(null);
 
   const hasData = useMemo<Record<OptionalCol, boolean>>(() => {
     const r: Record<OptionalCol, boolean> = { traceNo: false, origin: false, cut: false, grade: false };
@@ -159,6 +291,8 @@ export default function PurchaseSheet({
     });
   };
 
+  const viewerGroup = viewer ? groups.find(g => g.id === viewer.groupId) : null;
+
   if (groups.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-3">
@@ -171,6 +305,16 @@ export default function PurchaseSheet({
 
   return (
     <div className="space-y-4">
+      {/* 이미지 뷰어 모달 */}
+      {viewer && viewerGroup && viewerGroup.attachedFiles && viewerGroup.attachedFiles.length > 0 && (
+        <ImageViewerModal
+          files={viewerGroup.attachedFiles}
+          savedUrls={viewerGroup.savedImageUrls}
+          initialIndex={viewer.index}
+          onClose={() => setViewer(null)}
+        />
+      )}
+
       {/* 선택 컬럼 토글 */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[11px] text-slate-500">선택 컬럼:</span>
@@ -252,6 +396,26 @@ export default function PurchaseSheet({
               <span className="text-sm text-teal-400 font-bold whitespace-nowrap shrink-0 hidden lg:block tabular-nums">
                 {fmt(inv.totalAmount)}원
               </span>
+
+              {/* 원본 이미지 버튼 */}
+              {group.attachedFiles && group.attachedFiles.length > 0 && (
+                <button
+                  onClick={() => setViewer({ groupId: group.id, index: 0 })}
+                  className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-teal-300 bg-slate-700/60 hover:bg-slate-700 px-2 py-1 rounded-lg transition-colors shrink-0"
+                  title="원본 문서 보기"
+                >
+                  {group.attachedFiles[0].type === 'image' && group.attachedFiles[0].preview ? (
+                    <img
+                      src={group.attachedFiles[0].preview}
+                      alt=""
+                      className="w-5 h-5 object-cover rounded"
+                    />
+                  ) : (
+                    <ImageIcon className="w-3.5 h-3.5" />
+                  )}
+                  <span>원본 {group.attachedFiles.length > 1 ? `${group.attachedFiles.length}장` : ''}</span>
+                </button>
+              )}
 
               {group.isSaved ? (
                 <span className="flex items-center gap-1 text-[10px] text-teal-400 shrink-0">

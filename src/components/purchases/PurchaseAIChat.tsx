@@ -6,7 +6,7 @@ import {
   Image as ImageIcon, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
-import type { Invoice } from './PurchaseSheet';
+import type { Invoice, AttachedFile as SheetAttachedFile } from './PurchaseSheet';
 
 interface AttachedFile {
   id: string;
@@ -23,7 +23,7 @@ interface ChatMessage {
 }
 
 interface Props {
-  onInvoicesFound: (invoices: Invoice[]) => void;
+  onInvoicesFound: (invoices: Invoice[], files: SheetAttachedFile[]) => void;
 }
 
 function genId() {
@@ -183,7 +183,12 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
         });
 
         if (data.invoices?.length > 0) {
-          onInvoicesFound(data.invoices);
+          onInvoicesFound(data.invoices, sentFiles.map(f => ({
+            name: f.name,
+            type: f.type,
+            content: f.content,
+            preview: f.preview,
+          })));
         }
       } else {
         // 텍스트 전용 — Groq SSE 스트리밍
