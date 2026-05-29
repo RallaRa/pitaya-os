@@ -3,15 +3,6 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { fetchWeather, getStoreCoords } from '@/lib/weather';
 
-// ── 인증 ──────────────────────────────────────────────────────────
-function authenticate(req: Request): boolean {
-  const auth = req.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  const expected = process.env.POS_BRIDGE_KEY;
-  if (!expected) return false;
-  return token === expected;
-}
-
 // ── 타입 ──────────────────────────────────────────────────────────
 interface CustomerSale {
   Cus_Code:   string;
@@ -232,7 +223,9 @@ async function syncToDailyReports(params: {
 
 // ── POST /api/pos/sync ────────────────────────────────────────────
 export async function POST(req: Request) {
-  if (!authenticate(req)) {
+  const authHeader = req.headers.get('authorization');
+  const apiKey = authHeader?.replace('Bearer ', '') || req.headers.get('x-api-key');
+  if (apiKey !== process.env.POS_BRIDGE_KEY) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
