@@ -690,11 +690,14 @@ async function runToday(dryRun) {
 
 // 실시간 반복 (30초)
 async function runRealtime(dryRun) {
-  log(`======== 실시간 모드 시작 (${REALTIME_INTERVAL_MS / 60000}분 간격) ========`);
+  const intervalLabel = REALTIME_INTERVAL_MS >= 60000
+    ? `${REALTIME_INTERVAL_MS / 60000}분`
+    : `${REALTIME_INTERVAL_MS / 1000}초`;
+  log(`======== 실시간 모드 시작 (${intervalLabel} 간격) ========`);
   log('종료하려면 Ctrl+C');
   while (true) {
     await runToday(dryRun);
-    log(`다음 전송까지 ${REALTIME_INTERVAL_MS / 60000}분 대기...`);
+    log(`다음 전송까지 ${intervalLabel} 대기...`);
     await sleep(REALTIME_INTERVAL_MS);
   }
 }
