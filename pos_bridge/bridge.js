@@ -5,7 +5,7 @@
  * 실행 방법:
  *   node bridge.js                      # 오늘 매출 전송
  *   node bridge.js today                # 오늘 데이터 전송 (+ 사원/고객)
- *   node bridge.js realtime             # 5분마다 반복 (+ 사원/고객)
+ *   node bridge.js realtime             # 30초마다 반복 (+ 사원/고객)
  *   node bridge.js date 2026-05-30      # 특정 날짜
  *   node bridge.js migrate START END    # 기간 마이그레이션
  *   node bridge.js customers            # Cus_Mst 고객 마스터 (레거시)
@@ -47,7 +47,7 @@ const DB_CONFIG = {
   },
 };
 
-const REALTIME_INTERVAL_MS = 5 * 60 * 1000; // 5분
+const REALTIME_INTERVAL_MS = 30 * 1000; // 30초
 
 // ── 유틸 ──────────────────────────────────────────────────────────
 const toInt = v => (v == null ? 0 : parseInt(v, 10) || 0);
@@ -688,7 +688,7 @@ async function runToday(dryRun) {
   return ok;
 }
 
-// 실시간 반복 (5분)
+// 실시간 반복 (30초)
 async function runRealtime(dryRun) {
   log(`======== 실시간 모드 시작 (${REALTIME_INTERVAL_MS / 60000}분 간격) ========`);
   log('종료하려면 Ctrl+C');
