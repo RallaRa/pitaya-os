@@ -1,0 +1,16 @@
+== 지금 바로 실행할 명령 2개 ==
+
+
+1. 백업
+
+copy bridge.js bridge.js.bak
+
+
+2. 새 파일 다운로드 (교체)
+
+curl -o bridge.js https://raw.githubusercontent.com/RallaRa/pitaya-os/main/pos_bridge/bridge.js
+
+
+3. 확인
+
+

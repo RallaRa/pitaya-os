@@ -4,7 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { verifyToken } from '@/lib/authVerify';
 
-const CACHE_TTL_MS = 3 * 60 * 60 * 1000; // 3시간 (수동 새로고침 반영을 위해 단축)
+const CACHE_TTL_MS = 60 * 1000; // 1분
 
 function toYMD(d: Date) {
   // daily_reports의 reportDate 형식: "YYYY-MM-DD"

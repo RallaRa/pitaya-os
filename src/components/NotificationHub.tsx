@@ -163,7 +163,12 @@ export default function NotificationHub({ label, buttonClassName }: Notification
       {isOpen && (
         <div
           ref={panelRef}
-          className="fixed right-4 top-14 z-[100] w-80 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden"
+          className={`fixed z-[100] w-80 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden ${
+            label ? 'left-[220px] top-auto' : 'right-4 top-14'
+          }`}
+          style={label && buttonRef.current ? {
+            top: buttonRef.current.getBoundingClientRect().top,
+          } : undefined}
         >
           {/* 패널 헤더 */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">

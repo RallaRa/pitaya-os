@@ -26,7 +26,7 @@ type MenuAccess = {
   permissionGroup: boolean; memberGroup: boolean; hygiene: boolean;
   hrCalendar: boolean; scaleCode: boolean;
   salesForecast: boolean; suppliers: boolean; predictionVariables: boolean;
-  customers: boolean; predictionHistory: boolean;
+  customers: boolean; predictionHistory: boolean; items: boolean;
 };
 
 const ALL_FALSE: MenuAccess = {
@@ -35,7 +35,7 @@ const ALL_FALSE: MenuAccess = {
   permissionGroup: false, memberGroup: false, hygiene: false,
   hrCalendar: false, scaleCode: false,
   salesForecast: false, suppliers: false, predictionVariables: false,
-  customers: false, predictionHistory: false,
+  customers: false, predictionHistory: false, items: false,
 };
 
 interface AiModel {
@@ -211,6 +211,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { key: 'predictionVariables' as const,   href: '/dashboard/settings/prediction-variables',       icon: <SlidersHorizontal  className="w-4 h-4" />, label: 'AI 예측 변수' },
     { key: 'customers' as const,             href: '/dashboard/customers',                            icon: <Users              className="w-4 h-4" />, label: '고객 관리' },
     { key: 'predictionHistory' as const,     href: '/dashboard/prediction-history',                   icon: <History            className="w-4 h-4" />, label: 'AI 예측 히스토리' },
+    { key: 'items' as const,                 href: '/dashboard/items',                                icon: <Tag                className="w-4 h-4" />, label: '품목관리' },
   ];
 
   const visibleMenus = accessLoading ? [] : mainMenus.filter(m => menuAccess[m.key]);

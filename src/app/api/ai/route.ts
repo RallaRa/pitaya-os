@@ -8,7 +8,15 @@ import { SYSTEM_PROMPT } from '@/lib/aiSystemPrompt';
 import { verifyToken } from '@/lib/authVerify';
 
 type GroqModel = 'groq-mixtral' | 'groq-llama';
-type ModelChoice = 'auto' | 'gemini' | 'claude' | 'gpt' | 'groq' | GroqModel;
+type ModelChoice = 'auto' | 'gemini' | 'claude' | 'gpt' | 'groq' | GroqModel | 'debate';
+
+export interface DebateEntry {
+  model: string;
+  name: string;
+  emoji: string;
+  text: string;
+  error?: string;
+}
 
 const SYSTEM_INSTRUCTIONS: Record<string, string> = {
   default:  SYSTEM_PROMPT,
@@ -42,8 +50,8 @@ async function fetchMeatHistory(traceNo: string): Promise<string | null> {
 }
 
 const MODEL_NAMES: Record<string, string> = {
-  gemini:         'Gemini',
-  claude:         'Claude',
+  gemini:         'Gemini 2.5 Flash',
+  claude:         'Claude Sonnet 4.6',
   gpt:            'GPT-4o',
   'groq-mixtral': 'Groq Llama3 8B',
   'groq-llama':   'Groq Llama3 70B',
@@ -61,7 +69,6 @@ const hasKey = {
   groq:   () => !!process.env.GROQ_API_KEY,
 };
 
-/* ── 반환 타입: text + 실제 토큰 수 ── */
 interface CallResult { text: string; inputTokens: number; outputTokens: number; }
 
 async function callGemini(message: string, history: any[], system: string): Promise<CallResult> {
@@ -107,7 +114,7 @@ async function callClaude(message: string, history: any[], system: string): Prom
 
   const claudeHistory = history.map((m: any) => ({
     role:    (m.role === 'model' ? 'assistant' : 'user') as 'user' | 'assistant',
-    content: m.content,
+    content: m.content || '',
   }));
 
   const response = await client.messages.create({
@@ -131,7 +138,7 @@ async function callGPT(message: string, history: any[], system: string): Promise
 
   const gptHistory = history.map((m: any) => ({
     role:    (m.role === 'model' ? 'assistant' : 'user') as 'user' | 'assistant',
-    content: m.content,
+    content: m.content || '',
   }));
 
   const completion = await openai.chat.completions.create({
@@ -157,7 +164,7 @@ async function callGroq(message: string, history: any[], system: string, groqMod
 
   const groqHistory = history.map((m: any) => ({
     role:    (m.role === 'model' ? 'assistant' : 'user') as 'user' | 'assistant',
-    content: m.content,
+    content: m.content || '',
   }));
 
   const completion = await groq.chat.completions.create({
@@ -177,6 +184,71 @@ async function callGroq(message: string, history: any[], system: string, groqMod
     inputTokens:  completion.usage?.prompt_tokens     ?? 0,
     outputTokens: completion.usage?.completion_tokens ?? 0,
   };
+}
+
+/* ── Groq 기반 최적 AI 자동 선택 ── */
+async function groqAutoSelect(message: string): Promise<string> {
+  if (!hasKey.groq()) return 'fallback';
+  try {
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+    const available = [
+      hasKey.gemini() && 'gemini',
+      hasKey.claude() && 'claude',
+      hasKey.gpt()    && 'gpt',
+      'groq',
+    ].filter(Boolean) as string[];
+
+    const completion = await groq.chat.completions.create({
+      model:       'llama-3.1-8b-instant',
+      max_tokens:  5,
+      temperature: 0,
+      messages: [{
+        role:    'user',
+        content: `질문에 맞는 AI 선택. 가능: ${available.join(',')}
+claude=깊은분석/추론/문서, gpt=코드/기술/수학, gemini=이미지/멀티모달, groq=빠른답변/일상
+질문: "${message.slice(0, 200)}"
+한 단어만:`,
+      }],
+    });
+
+    const pick = (completion.choices[0]?.message?.content || '')
+      .trim().toLowerCase().replace(/[^a-z]/g, '');
+    return available.includes(pick) ? pick : 'fallback';
+  } catch {
+    return 'fallback';
+  }
+}
+
+/* ── 4AI 복합 토론: 모든 AI 병렬 호출 ── */
+async function runDebate(message: string, history: any[], system: string): Promise<DebateEntry[]> {
+  const tasks: Promise<DebateEntry>[] = [];
+
+  if (hasKey.gemini()) tasks.push(
+    callGemini(message, history, system)
+      .then(r => ({ model: 'gemini', name: 'Gemini 2.5 Flash', emoji: '⚡', text: r.text }))
+      .catch(e => ({ model: 'gemini', name: 'Gemini 2.5 Flash', emoji: '⚡', text: '', error: e.message }))
+  );
+  if (hasKey.claude()) tasks.push(
+    callClaude(message, history, system)
+      .then(r => ({ model: 'claude', name: 'Claude Sonnet 4.6', emoji: '🧠', text: r.text }))
+      .catch(e => ({ model: 'claude', name: 'Claude Sonnet 4.6', emoji: '🧠', text: '', error: e.message }))
+  );
+  if (hasKey.gpt()) tasks.push(
+    callGPT(message, history, system)
+      .then(r => ({ model: 'gpt', name: 'GPT-4o', emoji: '👔', text: r.text }))
+      .catch(e => ({ model: 'gpt', name: 'GPT-4o', emoji: '👔', text: '', error: e.message }))
+  );
+  if (hasKey.groq()) tasks.push(
+    callGroq(message, history, system, GROQ_MODEL_IDS['groq-llama'])
+      .then(r => ({ model: 'groq', name: 'Groq Llama3 70B', emoji: '🟠', text: r.text }))
+      .catch(e => ({ model: 'groq', name: 'Groq Llama3 70B', emoji: '🟠', text: '', error: e.message }))
+  );
+
+  if (tasks.length === 0) {
+    return [{ model: 'none', name: 'AI 없음', emoji: '❌', text: '', error: '사용 가능한 AI API 키가 없습니다.' }];
+  }
+
+  return Promise.all(tasks);
 }
 
 export async function GET() {
@@ -215,27 +287,36 @@ export async function POST(req: Request) {
       }
     }
 
+    // ── 4AI 토론 모드 ──
+    if ((modelChoice as string) === 'debate') {
+      const debates = await runDebate(message, msgs, system);
+      return NextResponse.json({ debate: debates, usedModel: '4AI 토론' });
+    }
+
     // ── 모델 결정 ──
     let resolved: ModelChoice;
+    let autoSelectedBy: string | undefined;
 
-    // `groq` 단일 ID → groq-llama 로 매핑
     const effectiveChoice: ModelChoice =
       (modelChoice as string) === 'groq' ? 'groq-llama' : modelChoice;
 
     if (effectiveChoice === 'auto') {
-      const hasImage     = /data:image\/[a-z]+;base64,/.test(message);
-      const hasAnalytics = /표|분석|JSON|코드|데이터/.test(message);
+      const hasImage = /data:image\/[a-z]+;base64,/.test(message);
 
       if (hasImage) {
         resolved = 'gemini';
-      } else if (hasKey.groq()) {
-        resolved = 'groq-llama';
-      } else if (hasAnalytics && hasKey.claude()) {
-        resolved = 'claude';
-      } else if (hasKey.gpt()) {
-        resolved = 'gpt';
       } else {
-        resolved = 'gemini';
+        // Groq가 메시지를 분석해 최적 AI 선택
+        const groqPick = await groqAutoSelect(message);
+
+        if      (groqPick === 'claude' && hasKey.claude()) { resolved = 'claude'; autoSelectedBy = 'groq'; }
+        else if (groqPick === 'gpt'    && hasKey.gpt())    { resolved = 'gpt';    autoSelectedBy = 'groq'; }
+        else if (groqPick === 'gemini' && hasKey.gemini()) { resolved = 'gemini'; autoSelectedBy = 'groq'; }
+        else if (groqPick === 'groq'   && hasKey.groq())   { resolved = 'groq-llama'; autoSelectedBy = 'groq'; }
+        else if (hasKey.groq())   resolved = 'groq-llama';
+        else if (hasKey.claude()) resolved = 'claude';
+        else if (hasKey.gpt())    resolved = 'gpt';
+        else                      resolved = 'gemini';
       }
     } else {
       resolved = effectiveChoice;
@@ -243,12 +324,10 @@ export async function POST(req: Request) {
 
     // ── Fail-Safe / Key 검증 ──
     if (effectiveChoice === 'auto') {
-      // auto 모드: 키 없으면 조용히 다른 모델로 fallback
       if (resolved === 'claude'       && !hasKey.claude()) resolved = hasKey.groq() ? 'groq-llama' : 'gemini';
       if (resolved === 'gpt'          && !hasKey.gpt())    resolved = hasKey.groq() ? 'groq-llama' : 'gemini';
       if ((resolved === 'groq-mixtral' || resolved === 'groq-llama') && !hasKey.groq()) resolved = 'gemini';
     } else {
-      // 명시적 모델 선택: 키 없으면 에러 반환 (조용한 Gemini fallback 금지)
       const keyMissing =
         (resolved === 'claude'       && !hasKey.claude()) ||
         (resolved === 'gpt'          && !hasKey.gpt())    ||
@@ -256,9 +335,9 @@ export async function POST(req: Request) {
       if (keyMissing) {
         const envKey = resolved === 'claude' ? 'ANTHROPIC_API_KEY' : resolved === 'gpt' ? 'OPENAI_API_KEY' : 'GROQ_API_KEY';
         return NextResponse.json({
-          text: `⚠️ ${MODEL_NAMES[resolved]} API 키가 설정되지 않았습니다. (${envKey} 미설정)`,
+          text:      `⚠️ ${MODEL_NAMES[resolved]} API 키가 설정되지 않았습니다. (${envKey} 미설정)`,
           usedModel: '',
-          error: 'api_key_missing',
+          error:     'api_key_missing',
         }, { status: 503 });
       }
     }
@@ -282,13 +361,16 @@ export async function POST(req: Request) {
       }
     } catch (callErr: any) {
       if (resolved !== 'gemini' && modelChoice === 'auto') {
-        // auto 모드 호출 실패 시 Gemini로 fallback
         console.warn(`[AI] ${resolved} 호출 실패 → Gemini 우회:`, callErr.message);
         result = await callGemini(message, msgs, system);
         finalModel = 'gemini';
       } else {
-        // 명시적 선택 실패 시 에러 반환
-        throw callErr;
+        const errMsg = callErr.message || '알 수 없는 오류';
+        return NextResponse.json({
+          text:      `⚠️ ${MODEL_NAMES[resolved] || resolved} 오류: ${errMsg}`,
+          usedModel: MODEL_NAMES[resolved] || resolved,
+          error:     errMsg,
+        }, { status: 502 });
       }
     }
 
@@ -301,18 +383,20 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({
-      text:      result.text,
-      usedModel: MODEL_NAMES[finalModel] || finalModel,
-      isAuto:    modelChoice === 'auto',
+      text:            result.text,
+      usedModel:       MODEL_NAMES[finalModel] || finalModel,
+      isAuto:          modelChoice === 'auto',
+      autoSelectedBy,
     });
 
   } catch (error: any) {
     console.error('AI API Error:', error);
     return NextResponse.json({
-      text: error.message?.includes('503')
+      text:      error.message?.includes('503')
         ? '⚠️ AI 서버가 혼잡합니다. 잠시 후 다시 시도해주세요.'
-        : '⚠️ AI 응답 중 오류가 발생했습니다. 다시 시도해주세요.',
+        : `⚠️ AI 응답 오류: ${error.message || '다시 시도해주세요.'}`,
       usedModel: '',
+      error:     error.message,
     }, { status: 200 });
   }
 }

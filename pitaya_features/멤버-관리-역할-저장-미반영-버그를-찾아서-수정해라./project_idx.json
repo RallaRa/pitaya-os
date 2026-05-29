@@ -1,0 +1,133 @@
+{
+  "project_id": "14fd51d1",
+  "project_name": "멤버-관리-역할-저장-미반영-버그를-찾아서-수정해라.",
+  "created_at": "2026-05-29T07:42:54.997357",
+  "updated_at": "2026-05-29T07:43:19.488321",
+  "status": "risk_checked",
+  "current_step": 3,
+  "pitaya_context": true,
+  "summary": {
+    "project_goal": "멤버 관리에서 역할 변경이 저장되지 않는 버그를 해결하고, 역할 설정 경험을 개선합니다.",
+    "main_features": [
+      "멤버 역할 변경 시 데이터가 올바르게 저장 및 반영되도록 수정",
+      "역할 변경 과정의 사용자 경험 개선 (UI/UX)",
+      "역할 및 권한 관리 기능의 안정성 및 확장성 확보"
+    ],
+    "tech_stack": [
+      "Next.js 16",
+      "TypeScript",
+      "Firestore",
+      "Firebase Admin SDK",
+      "Firebase Client SDK",
+      "Tailwind CSS"
+    ],
+    "new_pages": [],
+    "new_apis": [
+      "src/app/api/members/route.ts (또는 유사 경로) - 역할 변경 API"
+    ],
+    "new_components": [],
+    "firestore_collections": [
+      "stores/{storeId}/members — 멤버 정보 및 역할 저장"
+    ],
+    "target_users": "관리자 (admin)",
+    "unclear_points": [
+      "버그 발생 시점 및 구체적인 재현 시나리오",
+      "역할 정보가 Firestore에 저장되는 정확한 필드명 및 구조",
+      "역할 변경 로직과 관련된 특정 API 엔드포인트 및 데이터 페이로드",
+      "멤버 관리 UI 컴포넌트의 구체적인 구조 및 이벤트 핸들러 로직"
+    ],
+    "notes": "대화 내용은 '멤버-관리-역할-저장-미반영-버그' 해결 및 기능 개선을 위한 기술적인 조사 과정을 보여줍니다. 핵심은 버그 재현, 코드 검토, Firestore 업데이트 경로 확인을 통해 문제점을 파악하고, 이를 바탕으로 안정적이고 개선된 멤버 역할 관리 기능을 구현하는 것입니다."
+  },
+  "conversation_log": [
+    {
+      "turn": 0,
+      "role": "gemini",
+      "content": "안녕하세요! Pitaya OS 팀의 시니어 풀스택 개발자입니다. 😊\n\n'멤버-관리-역할-저장-미반영-버그'를 해결하는 새로운 기능을 개발하게 되어 기쁩니다. 이 기능은 기존에 멤버 관리에서 역할 변경이 제대로 저장되지 않는 문제를 해결하는 것을 목표로 하고 있습니다.\n\n첫 번째 질문입니다! 이 기능을 통해 **어떤 사용자 경험을 개선하고 싶으신가요?** 즉, 현재 이 버그 때문에 멤버 관리에서 어떤 점이 불편하고, 이 기능을 통해 사용자들이 어떻게 더 편리해지기를 기대하시나요?"
+    },
+    {
+      "turn": 2,
+      "role": "user",
+      "content": "## 조사 순서"
+    },
+    {
+      "turn": 2,
+      "role": "gemini",
+      "content": "훌륭한 질문입니다! '멤버-관리-역할-저장-미반영-버그' 수정 및 신규 기능 개발을 위한 조사 순서는 다음과 같이 진행하는 것이 효율적일 것 같습니다.\n\n1.  **버그 재현 및 분석:**\n    *   어떤 상황에서 역할 저장 변경이 미반영되는지 정확히 파악합니다. (예: 특정 권한 레벨에서만 발생하는지, 동시 작업 시 문제인지, 특정 저장 버튼 클릭 후 발생하는 문제인지 등)\n    *   브라우저 개발자 도구를 사용하여 네트워크 요청, 콘솔 로그, 스토리지 등을 확인하며 문제의 원인을 추적합니다.\n    *   Firebase Admin SDK와 Client SDK의 로그를 면밀히 검토하여 서버와 클라이언트 간 데이터 불일치 지점을 찾습니다.\n\n2.  **기존 코드 검토:**\n    *   **멤버 관리 관련 API (src/app/api/members/route.ts 또는 유사 경로):** 역할 변경 관련 API 로직을 자세히 살펴봅니다. 데이터 유효성 검사, DB 저장 로직, 응답 처리 부분에 문제가 없는지 확인합니다.\n    *   **멤버 관리 관련 UI (src/app/dashboard/members/page.tsx 또는 유사 경로):** 역할 선택 UI, 저장 버튼 클릭 이벤트 핸들러, 상태 관리 로직을 검토합니다. 클라이언트 측에서 역할 변경이 제대로 감지되고 API 호출로 이어지는지 확인합니다.\n    *   **권한 설정 관련 로직 (src/app/dashboard/settings/permissions/page.tsx 또는 유사 경로):** 만약 역할 및 권한 관리가 분리되어 있다면, 이 부분의 로직도 함께 검토합니다.\n    *   **인증 로직 (src/lib/authVerify.ts, src/lib/getAuthHeaders.ts):** 현재 로그인된 사용자의 권한 정보가 API 요청 시 올바르게 전달되고, 서버 측에서 이를 제대로 확인하는지 점검합니다.\n    *   **Firestore 데이터 구조:** `stores/{storeId}/members` 또는 `users/{userId}/stores/{storeId}` 등 멤버 및 역할 관련 데이터가 저장되는 구조를 확인합니다. 역할 정보가 어떻게 저장되고 읽히는지 파악합니다.\n\n3.  **신규 기능 정의:**\n    *   버그 수정뿐만 아니라, 사용자 편의성과 확장성을 고려한 '멤버 관리 - 역할 설정' 기능의 전체적인 개선 방향을 정의합니다.\n    *   이번 기회에 역할을 더 명확하게 구분하고 관리할 수 있도록 UI/UX를 개선할 부분을 찾습니다.\n\n이 순서대로 진행하면 버그의 근본 원인을 파악하고, 이를 기반으로 안정적이고 개선된 신규 기능을 설계할 수 있을 것입니다.\n\n준비되셨다면, 첫 번째 단계인 **\"버그 재현 및 분석\"**부터 시작해 볼까요? 혹시 이 버그가 발생했을 때의 구체적인 시나리오나, 현재까지 파악하신 정보가 있다면 공유해주시면 더욱 빠르게 진행할 수 있습니다."
+    },
+    {
+      "turn": 3,
+      "role": "user",
+      "content": "1. 멤버 관리 관련 컴포넌트 파일 찾기 (MemberManagement, members/page 등)"
+    },
+    {
+      "turn": 3,
+      "role": "gemini",
+      "content": "네, 좋습니다! 첫 번째 단계인 \"버그 재현 및 분석\"을 위해 관련 컴포넌트 파일을 찾는 것부터 시작해 보겠습니다.\n\nPitaya OS의 파일 구조에 따르면, 멤버 관리 관련 컴포넌트와 페이지는 주로 다음과 같은 경로에 있을 것으로 예상됩니다.\n\n*   **페이지:** `src/app/dashboard/members/page.tsx` (이곳에 멤버 목록을 보여주고 관리하는 메인 페이지가 있을 가능성이 높습니다.)\n*   **컴포넌트:** `src/components/` 디렉토리 내에서 `MemberManagement` 또는 `MembersTable`, `MemberList`, `MemberListItem` 등 멤버 관리에 직접적으로 관련된 컴포넌트들이 있을 수 있습니다. `src/app/dashboard/members/` 하위에도 관련 컴포넌트가 분리되어 있을 수 있습니다.\n*   **API Route Handler:** `src/app/api/members/route.ts` 또는 `src/app/api/stores/{storeId}/members/route.ts` 와 같이 멤버 관련 데이터 조회, 추가, 수정, 삭제를 처리하는 API가 있을 것입니다.\n\n**제안:**\n\n1.  먼저 `src/app/dashboard/members/page.tsx` 파일을 열어 어떤 컴포넌트들을 렌더링하고 있는지 확인해 보세요.\n2.  그 과정에서 `MemberManagement`라는 이름의 컴포넌트나, 멤버 목록/상세 정보/편집과 관련된 여러 컴포넌트들이 보일 것입니다. 해당 컴포넌트들을 집중적으로 살펴보겠습니다.\n\n이 파일들을 찾아서 열어보시고, 멤버 역할 변경과 관련된 UI 요소(드롭다운, 셀렉트 박스, 저장 버튼 등)와 해당 요소들이 어떤 이벤트 핸들러에 연결되어 있는지, 그리고 그 핸들러가 어떤 함수를 호출하는지 파악하는 것이 다음 단계가 될 것입니다."
+    },
+    {
+      "turn": 4,
+      "role": "user",
+      "content": "2. 역할 변경 핸들러 함수 찾기"
+    },
+    {
+      "turn": 4,
+      "role": "gemini",
+      "content": "네, 좋습니다! 이제 멤버 관리 페이지 및 컴포넌트에서 역할을 변경할 때 호출되는 핸들러 함수를 찾아보겠습니다.\n\n`src/app/dashboard/members/page.tsx` 또는 `src/components/` 내에서 찾은 멤버 관리 관련 컴포넌트 파일들을 열어보시고, 다음과 같은 패턴을 주의 깊게 살펴보세요.\n\n*   **이벤트 리스너:** `onChange`, `onClick`, `onSelect` 등 역할 변경 UI 요소(예: `<select>`, `<DropdownMenuContent>`, 커스텀 셀렉터 컴포넌트)에 연결된 이벤트 리스너를 찾습니다.\n*   **핸들러 함수 이름:** 해당 이벤트 리스너에 연결된 함수 이름이 `handleRoleChange`, `updateMemberRole`, `saveMemberPermissions` 등 역할 변경과 관련된 명칭인지 확인합니다.\n*   **상태 업데이트 로직:** 핸들러 함수 내에서 `useState`, `useReducer` 또는 Context API 등을 사용하여 멤버 객체의 `role` 또는 `permissions` 필드를 업데이트하는 코드를 찾습니다.\n*   **API 호출:** 역할 변경이 감지되면, 상태를 업데이트한 후 서버 API를 호출하는 부분이 있을 것입니다. `fetch`, `axios` 등의 라이브러리를 사용한 API 호출(`POST`, `PUT`, `PATCH` 메서드)을 찾아보세요. 특히 `src/lib/getAuthHeaders.ts` 와 같은 유틸리티를 사용하여 인증 헤더를 포함하여 API를 호출하는 부분을 주목해야 합니다.\n\n**팁:**\n\n*   `console.log()`를 핸들러 함수의 시작 부분이나 상태 변경 직전에 삽입하여, 해당 함수가 실제로 호출되는지, 어떤 인자가 전달되는지 확인해 볼 수 있습니다.\n*   UI에서 역할을 변경해보면서 개발자 도구의 네트워크 탭을 확인하여 어떤 API 요청이 발생하는지 추적하는 것도 큰 도움이 됩니다.\n\n이러한 패턴들을 통해 역할 변경 핸들러 함수를 찾으셨다면, 그 함수의 구체적인 로직을 파악하는 것이 다음 단계가 됩니다. 어떤 데이터를 어떻게 처리하고, 어떤 API를 호출하는지 등을 자세히 살펴보겠습니다."
+    },
+    {
+      "turn": 5,
+      "role": "user",
+      "content": "3. Firestore 업데이트 경로 확인"
+    },
+    {
+      "turn": 5,
+      "role": "gemini",
+      "content": "네, 좋습니다! 역할 변경 핸들러 함수에서 API를 호출하는 부분을 찾으셨다면, 이제 그 API가 Firestore를 어떻게 업데이트하는지 경로를 확인하는 단계입니다.\n\nAPI Route Handler는 서버 측에서 실행되므로, **`src/app/api/`** 디렉토리 아래에 있는 관련 파일(예: `src/app/api/members/route.ts` 또는 `src/app/api/members/[memberId]/route.ts` 등)을 열어보셔야 합니다.\n\n해당 API Route Handler 파일 안에서 다음을 찾아보세요:\n\n1.  **Firebase Admin SDK 사용:**\n    *   `import * as admin from 'firebase-admin';` 과 같이 Firebase Admin SDK를 import하는 부분을 확인합니다.\n    *   `admin.firestore()`를 사용하여 Firestore 인스턴스에 접근하는 코드를 찾습니다.\n\n2.  **데이터 접근 로직:**\n    *   API 요청으로 받은 멤버 ID, 변경될 역할 정보 등을 사용하여 Firestore 문서에 접근하는 코드를 찾습니다.\n    *   일반적으로 다음과 같은 패턴을 따를 것입니다:\n        ```typescript\n        const db = admin.firestore();\n        const memberRef = db.collection('stores').doc(storeId).collection('members').doc(memberId);\n        // 또는 다른 구조 (예: users/{userId}/stores/{storeId}/members)\n        ```\n        (여기서 `storeId`와 `memberId`는 API 요청에서 추출될 것입니다.)\n\n3.  **업데이트 메서드:**\n    *   찾아낸 `memberRef` 또는 해당 문서 참조에 대해 `update()` 또는 `set(..., { merge: true })` 메서드를 사용하는 코드를 찾습니다.\n    *   예시:\n        ```typescript\n        await memberRef.update({\n          role: newRole, // 핸들러에서 받아온 새 역할 정보\n          // 다른 관련 필드도 함께 업데이트될 수 있습니다.\n        });\n        ```\n\n4.  **데이터 구조 검토:**\n    *   `role` 필드가 어떤 이름으로 저장되고 있는지, 그리고 해당 필드의 데이터 타입 (문자열, 숫자 등)이 일관적인지 확인합니다.\n    *   만약 역할 관리가 `permissions`와 같이 더 복잡한 구조로 되어 있다면, 해당 구조를 어떻게 업데이트하는지도 면밀히 봐야 합니다.\n\n**핵심 포인트:**\n\n*   **`storeId`와 `memberId`가 올바르게 추출되고 사용되는가?**\n*   **`update()` 또는 `set()` 메서드에 전달되는 데이터 객체에 `role` 필드가 포함되어 있고, 그 값이 올바르게 설정되는가?**\n*   **`update()` 메서드를 사용한다면, `role` 필드 외에 다른 필드가 실수로 덮어씌워지지 않는가?** (이 부분은 버그의 원인이 될 수 있습니다.)\n\n이 과정을 통해 Firestore에 멤버의 역할 정보가 저장되는 정확한 경로와 방식을 파악할 수 있습니다."
+    }
+  ],
+  "requirements": "멤버 역할 변경 시 데이터가 올바르게 저장 및 반영되도록 수정\n역할 변경 과정의 사용자 경험 개선 (UI/UX)\n역할 및 권한 관리 기능의 안정성 및 확장성 확보",
+  "design": "목표: 멤버 관리에서 역할 변경이 저장되지 않는 버그를 해결하고, 역할 설정 경험을 개선합니다.\n새 페이지: \n새 API: src/app/api/members/route.ts (또는 유사 경로) - 역할 변경 API\n새 컴포넌트: \nFirestore: stores/{storeId}/members — 멤버 정보 및 역할 저장\n대상 역할: 관리자 (admin)",
+  "risks": {
+    "security_risks": [
+      {
+        "risk": "인증되지 않은 API 접근",
+        "severity": "critical",
+        "description": "API가 인증 없이 접근 가능할 경우, 악의적인 사용자가 역할 변경을 포함한 민감한 데이터를 조작할 수 있습니다.",
+        "mitigation": "verifyToken()을 사용하여 모든 API 요청에서 Firebase ID 토큰을 검증하고, 사용자 권한을 확인합니다."
+      }
+    ],
+    "performance_risks": [
+      {
+        "risk": "Firestore 읽기/쓰기 과다",
+        "potential_impact": "과도한 읽기/쓰기 요청으로 인해 Firestore 비용 증가 및 성능 저하가 발생할 수 있습니다.",
+        "solution": "역할 변경 시 필요한 최소한의 데이터만 업데이트하고, 변경이 자주 발생하는 경우 캐싱을 고려합니다."
+      }
+    ],
+    "architecture_risks": [
+      {
+        "risk": "API 경로 구조의 비일관성",
+        "reason": "API 경로가 일관되지 않으면 유지보수성이 떨어지고, 개발자가 혼란을 겪을 수 있습니다.",
+        "recommendation": "Next.js App Router 패턴에 맞춰 RESTful한 API 경로를 설계하고, 역할 변경과 관련된 모든 API를 한 곳에 모읍니다."
+      }
+    ],
+    "typescript_risks": [
+      {
+        "risk": "타입 안전성 위험",
+        "solution": "역할 및 권한 관련 데이터 구조에 대해 명확한 TypeScript 인터페이스를 정의하고, 모든 API 응답 및 Firestore 데이터에 타입을 적용합니다."
+      }
+    ],
+    "must_implement": [
+      "verifyToken() 인증 — 모든 API route에 필수",
+      "getAuthHeaders() — 모든 클라이언트 fetch에 필수"
+    ],
+    "avoid": [
+      "하드코딩된 uid/email/storeId",
+      "인증 없는 Firestore 직접 접근"
+    ],
+    "overall_risk_level": "high",
+    "summary_for_claude": "모든 API 요청에 대해 Firebase ID 토큰을 검증하는 인증 절차를 구현하고, 역할 변경 시 Firestore의 데이터 구조를 명확히 정의하여 타입 안전성을 확보해야 합니다. Next.js App Router 패턴에 맞춰 API 경로를 설계하고, 성능 최적화를 위해 캐싱을 고려합니다."
+  },
+  "generated_files": [],
+  "stability_analysis": {},
+  "retry_count": 0
+}

@@ -1,0 +1,79 @@
+========================================
+  피타야 개발 에이전트 실행 가이드
+========================================
+
+[ 환경 준비 — 최초 1회만 ]
+----------------------------------------
+패키지는 가상환경에 설치됨:
+  /home/user/pitaya-venv/
+
+추가 설치 필요 시:
+  /home/user/pitaya-venv/bin/pip install <패키지명>
+
+
+[ API 키 파일 ]
+----------------------------------------
+파일 위치: /home/user/pitaya-osv1/.env.local
+
+아래 내용을 .env.local 에 저장하세요:
+
+  GEMINI_API_KEY=여기에_Gemini_API_키
+  OPENAI_API_KEY=여기에_OpenAI_API_키
+  ANTHROPIC_API_KEY=여기에_Anthropic_API_키
+  GROQ_API_KEY=여기에_Groq_API_키
+
+
+[ 실행 방법 — pitayadev 명령 ]
+----------------------------------------
+
+새 기능 개발 시작 (Step 1부터):
+  pitayadev
+
+기능 이어하기 (현재 단계 자동 감지):
+  pitayadev inventory-alert
+
+특정 단계만 실행:
+  pitayadev inventory-alert 1
+  pitayadev inventory-alert 2
+  pitayadev inventory-alert 3
+  pitayadev inventory-alert 4
+
+도움말:
+  pitayadev --help
+
+
+[ 전체 흐름 ]
+----------------------------------------
+Step 1 — Gemini와 대화로 기능 설계
+  → Step 2 — GPT-4o 위험 분석
+    → Step 3 — Claude Sonnet 코드 생성
+      → Step 4 — Groq 검증 + 프로젝트 자동 적용
+
+
+[ Step별 상세 ]
+----------------------------------------
+Step 1: 기능 이름 입력 → Gemini와 대화 → "완료" 입력 시 종료
+Step 2: 자동 실행 (입력 불필요)
+Step 3: 자동 실행 / 추가 지시 가능
+Step 4: 안정성 85점 이상 → 자동 승인
+        미달 시 선택:
+          1) Claude 자동 재생성 (최대 3회)
+          2) 추가 지시 후 재생성
+          3) 수동 수락
+        승인 후 "y" → 프로젝트에 파일 자동 복사
+
+
+[ 생성 파일 위치 ]
+----------------------------------------
+staging:  pitaya_features/{기능명}/src/...
+로그:     pitaya_features/{기능명}/logs/step{N}_*.log
+상태:     pitaya_features/{기능명}/project_idx.json
+
+
+[ 주의사항 ]
+----------------------------------------
+- 새 터미널에서 pitayadev가 안 되면: source ~/.bashrc
+- .env.local 은 git에 커밋되지 않음
+- inventory-alert 는 예시 — 실제 기능명으로 교체
+
+========================================

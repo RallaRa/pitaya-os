@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI, Part } from '@google/generative-ai';
 import { verifyToken } from '@/lib/authVerify';
 
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
 const SYSTEM_INSTRUCTION = `당신은 매입/구매 문서 전문 분석 AI입니다.
 하나 또는 여러 장의 거래명세서, 세금계산서, 매입전표, 영수증을 분석하여 정확한 JSON 배열로 반환합니다.
 
@@ -66,8 +69,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'GEMINI_API_KEY 미설정' }, { status: 500 });
   }
 
+  let body: any;
   try {
-    const { files, message } = await req.json();
+    body = await req.json();
+  } catch (e: any) {
+    if (e.message?.includes('413') || e.message?.includes('too large') || e.message?.includes('limit')) {
+      return NextResponse.json({ error: '이미지 용량이 너무 큽니다. 이미지를 줄여서 다시 시도해주세요.' }, { status: 413 });
+    }
+    return NextResponse.json({ error: '요청 파싱 실패. 파일 크기를 줄여주세요.' }, { status: 400 });
+  }
+
+  try {
+    const { files, message } = body;
     // files: [{ content: "data:image/...;base64,...", name: string, type: 'image'|'csv'|'excel'|'pdf' }]
 
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
@@ -126,6 +139,13 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ invoices, reply });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    const msg = e.message || '';
+    let userError = msg || '분석 중 오류가 발생했습니다.';
+    if (msg.includes('503') || msg.includes('overloaded')) userError = 'Gemini 서버가 혼잡합니다. 잠시 후 재시도해주세요.';
+    else if (msg.includes('429')) userError = 'API 요청 한도 초과입니다. 잠시 후 다시 시도해주세요.';
+    else if (msg.includes('400') || msg.includes('invalid')) userError = '이미지 처리 오류입니다. 더 선명한 이미지로 다시 시도해주세요.';
+    else if (msg.includes('JSON') || msg.includes('파싱')) userError = 'AI 분석 결과 파싱 실패. 문서를 다시 업로드해보세요.';
+    console.error('[analyze-multi] 오류:', e);
+    return NextResponse.json({ error: userError, detail: process.env.NODE_ENV === 'development' ? msg : undefined }, { status: 500 });
   }
 }

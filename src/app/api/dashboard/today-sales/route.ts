@@ -12,7 +12,7 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const storeId  = searchParams.get('storeId') || '';
-  const todayStr = toYMD(new Date());
+  const todayStr = toYMD(new Date(Date.now() + 9 * 60 * 60 * 1000));
 
   if (!storeId) return NextResponse.json({ error: 'storeId required' }, { status: 400 });
 
@@ -43,7 +43,7 @@ export async function GET(req: Request) {
     const syncedAt      = best.syncedAt      ?? null;
 
     // 전일 비교
-    const yesterdayStr = toYMD(new Date(Date.now() - 86400000));
+    const yesterdayStr = toYMD(new Date(Date.now() + 9 * 60 * 60 * 1000 - 86400000));
     const ySnap = await adminDb.collection('daily_reports')
       .where('storeId', '==', storeId)
       .where('reportDate', '==', yesterdayStr)

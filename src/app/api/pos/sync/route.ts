@@ -141,10 +141,13 @@ async function syncToDailyReports(params: {
   const finishTotal = finish?.totalSale   ?? 0;
   const totalSales  = satTotal;
 
-  // isClosed: Finish_Total이 존재하면 마감으로 판단 (다중POS SUM 신뢰)
-  const isClosed = !!(finish && finishTotal > 0);
+  // isClosed: 마감 테이블이 있더라도 마감 이후 추가 매출(satTotal > finishTotal+10원)이
+  // 발생한 경우 미마감으로 자동 전환 → 최신 실시간 매출 반영
+  const baseIsClosed        = !!(finish && finishTotal > 0);
+  const hasPostCloseActivity = baseIsClosed && (satTotal > finishTotal + 1000);
+  const isClosed            = baseIsClosed && !hasPostCloseActivity;
 
-  // netSales: 마감 시 Finish SUM(다중POS 합산), 미마감 시 SaT 집계
+  // netSales: 진짜 마감 완료 시 Finish SUM(다중POS 합산), 그 외 SaT 실시간 집계
   const netSales = isClosed ? (finish!.netSale ?? 0) : satTotal;
   const cashSale    = finish?.cashSale    ?? headerDoc.cashSale  ?? 0;
   const cardSale    = finish?.cardSale    ?? headerDoc.cardSale  ?? 0;

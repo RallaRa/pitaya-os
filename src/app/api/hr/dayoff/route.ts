@@ -4,6 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken, getActualGroupId } from '@/lib/authVerify';
 
 const ADMIN_ROLES = ['master', 'admin', 'owner'];
+const SUPERUSER_EMAIL = process.env.SUPERUSER_EMAIL || process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || '';
 
 async function isStoreAdmin(uid: string, storeId: string) {
   const role = await getActualGroupId(uid, storeId);
@@ -12,25 +13,31 @@ async function isStoreAdmin(uid: string, storeId: string) {
 
 async function sendNotification(targetUid: string, title: string, body: string, link: string) {
   await adminDb.collection('notifications').add({
-    targetUid, title, body, link,
+    targetUid,
+    senderUid: '',
+    senderName: '',
     type: 'hr_dayoff',
+    message: body,
+    link,
     isRead: false,
     createdAt: FieldValue.serverTimestamp(),
   });
 }
 
-async function getAdminUids(storeId: string): Promise<string[]> {
-  if (!storeId) return [];
-  const snap = await adminDb.collection('user_store_map')
-    .where('storeId', '==', storeId)
-    .where('status', '==', 'active')
-    .get();
-  const uids: string[] = [];
-  for (const doc of snap.docs) {
-    const { uid, groupId } = doc.data();
-    if (['master', 'admin', 'owner'].includes(groupId || '')) uids.push(uid);
-  }
-  return uids;
+async function getSuperuserUid(): Promise<string | null> {
+  if (!SUPERUSER_EMAIL) return null;
+  try {
+    const snap = await adminDb.collection('users')
+      .where('email', '==', SUPERUSER_EMAIL)
+      .limit(1).get();
+    return snap.empty ? null : snap.docs[0].id;
+  } catch { return null; }
+}
+
+// 현재는 슈퍼유저에게만 승인 알림 발송 (추후 매장 직급/승인 프로세스 개발 시 확장 예정)
+async function getApproverUids(_storeId: string): Promise<string[]> {
+  const suUid = await getSuperuserUid();
+  return suUid ? [suUid] : [];
 }
 
 export async function GET(req: Request) {
@@ -102,11 +109,11 @@ export async function POST(req: Request) {
       approvedAt:  null,
     });
 
-    const admins = await getAdminUids(storeId);
+    const approvers = await getApproverUids(storeId);
     const typeLabel = { regular: '정기휴무', substitute: '대체휴무', unpaid: '무급휴무' }[type as string] || type;
     const dateStr = dates.length === 1 ? dates[0] : `${dates[0]} 외 ${dates.length - 1}일`;
-    await Promise.all(admins.map(uid =>
-      sendNotification(uid,
+    await Promise.all(approvers.map(approverUid =>
+      sendNotification(approverUid,
         '휴무 신청',
         `${userName}님이 ${typeLabel} 신청했습니다 (${dateStr})`,
         '/dashboard/hr/calendar',

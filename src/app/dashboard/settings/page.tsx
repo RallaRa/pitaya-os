@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2 } from 'lucide-react';
-import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2, Tag } from 'lucide-react';
+import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 
@@ -38,6 +38,10 @@ export default function SettingsPage() {
   const [posBreakdownMigrating, setPosBreakdownMigrating] = useState(false);
   const [posBreakdownResult, setPosBreakdownResult] = useState<{ updated: number; skipped: number; total: number; message: string } | null>(null);
   const [posBreakdownError, setPosBreakdownError]   = useState<string | null>(null);
+
+  const [initingItems,   setInitingItems]   = useState(false);
+  const [initItemsResult, setInitItemsResult] = useState<{ saved: number; skipped: number; total: number } | null>(null);
+  const [initItemsError,  setInitItemsError]  = useState<string | null>(null);
 
   useEffect(() => {
     if (!user?.uid || !storesLoaded) return;
@@ -460,6 +464,80 @@ export default function SettingsPage() {
                             : <><Database className="w-4 h-4" /> POS별 내역 보강 실행</>
                           }
                         </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 품목 초기 데이터 — master/superuser만 */}
+                {isMasterOrSuperuser && (
+                  <div className="bg-slate-900 border border-slate-700 rounded-xl p-5">
+                    <div className="flex items-start gap-4">
+                      <div className="bg-slate-800 p-3 rounded-xl flex-shrink-0">
+                        <Tag className="w-5 h-5 text-teal-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-bold">품목 초기 데이터 로드</p>
+                        <p className="text-slate-400 text-sm mt-0.5">
+                          한돈 38 · 수입육 41 · 계육및기타 34 · 한우 74 = 총 187개 기본 품목을
+                          Firestore에 저장합니다. 기존에 같은 구분+부위+등급이 있으면 스킵됩니다.
+                        </p>
+
+                        {initItemsResult && (
+                          <div className="mt-3 p-3 bg-teal-900/30 border border-teal-500/30 rounded-lg text-sm text-teal-300">
+                            ✅ 저장 완료: {initItemsResult.saved}개 저장 / {initItemsResult.skipped}개 스킵 (총 {initItemsResult.total}개)
+                          </div>
+                        )}
+                        {initItemsError && (
+                          <div className="mt-3 p-3 bg-red-900/30 border border-red-500/30 rounded-lg text-sm text-red-300">
+                            ❌ {initItemsError}
+                          </div>
+                        )}
+
+                        <div className="mt-3 flex items-center gap-2">
+                          <button
+                            onClick={async () => {
+                              if (!currentStore?.storeId) return;
+                              setInitingItems(true); setInitItemsResult(null); setInitItemsError(null);
+                              try {
+                                const headers = await getAuthJsonHeaders();
+                                const res = await fetch('/api/admin/init-items', {
+                                  method: 'POST', headers,
+                                  body: JSON.stringify({ storeId: currentStore.storeId, mode: 'skip' }),
+                                });
+                                const data = await res.json();
+                                if (!res.ok) throw new Error(data.error || '실패');
+                                setInitItemsResult(data);
+                              } catch (e: any) { setInitItemsError(e.message); }
+                              finally { setInitingItems(false); }
+                            }}
+                            disabled={initingItems}
+                            className="flex items-center gap-2 px-4 py-2 bg-teal-700/40 hover:bg-teal-700/60 border border-teal-500/30 text-teal-300 text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+                          >
+                            {initingItems ? <><Loader2 className="w-4 h-4 animate-spin" /> 처리 중...</> : <><Tag className="w-4 h-4" /> 초기 데이터 로드 (스킵 모드)</>}
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (!currentStore?.storeId || !confirm('기존 품목을 전부 삭제하고 초기화합니까?')) return;
+                              setInitingItems(true); setInitItemsResult(null); setInitItemsError(null);
+                              try {
+                                const headers = await getAuthJsonHeaders();
+                                const res = await fetch('/api/admin/init-items', {
+                                  method: 'POST', headers,
+                                  body: JSON.stringify({ storeId: currentStore.storeId, mode: 'reset' }),
+                                });
+                                const data = await res.json();
+                                if (!res.ok) throw new Error(data.error || '실패');
+                                setInitItemsResult(data);
+                              } catch (e: any) { setInitItemsError(e.message); }
+                              finally { setInitingItems(false); }
+                            }}
+                            disabled={initingItems}
+                            className="flex items-center gap-2 px-4 py-2 bg-red-700/30 hover:bg-red-700/50 border border-red-500/30 text-red-300 text-sm rounded-lg transition-colors disabled:opacity-50"
+                          >
+                            전체 초기화
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>

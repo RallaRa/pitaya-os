@@ -30,29 +30,8 @@ function extractDateFromText(text: string): string | null {
   return null;
 }
 
-async function getNextTargetDate(): Promise<string> {
-  const snapshot = await adminDb.collection("daily_reports")
-    .orderBy("createdAt", "desc")
-    .limit(1)
-    .get();
-
-  if (snapshot.empty) {
-    return formatYMD(new Date());
-  }
-
-  const latestSerial: string = (snapshot.docs[0].data() as any).serialNumber || '';
-  const datePart = latestSerial.slice(0, 8);
-
-  if (/^\d{8}$/.test(datePart)) {
-    const base = new Date(
-      parseInt(datePart.slice(0, 4)),
-      parseInt(datePart.slice(4, 6)) - 1,
-      parseInt(datePart.slice(6, 8)) + 1
-    );
-    return formatYMD(base);
-  }
-
-  return formatYMD(new Date());
+function getKSTToday(): string {
+  return formatYMD(new Date(Date.now() + 9 * 60 * 60 * 1000));
 }
 
 async function generateSerialNumber(targetDateStr: string): Promise<string> {
@@ -122,7 +101,7 @@ export async function POST(req: Request) {
         if (snMatch) {
           reportDate = `${snMatch[1]}-${snMatch[2]}-${snMatch[3]}`;
         } else {
-          reportDate = new Date().toISOString().split('T')[0];
+          reportDate = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
         }
       }
 
@@ -231,7 +210,7 @@ export async function POST(req: Request) {
       : extractDateFromText(finalPrompt);
 
     if (!targetDateStr) {
-      targetDateStr = await getNextTargetDate();
+      targetDateStr = getKSTToday();
     }
 
     const serialNumber = await generateSerialNumber(targetDateStr);

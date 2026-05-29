@@ -1,0 +1,12 @@
+[96m📋 로그 저장: pitaya_features/test-feature/logs/step1_20260528_020022.log[0m
+[96m────────────────────────────────────────────────────────────[0m
+
+[1m[96m============================================================[0m
+[1m[96m                         【기능 정의 시작】                         [0m
+[1m[96m============================================================[0m
+
+[96m⚙  Gemini 연결 중...[0m
+[92m✅ Gemini 연결 완료 (gemini-2.5-flash)[0m
+[96m────────────────────────────────────────────────────────────[0m
+[96m⚙  Gemini 생각 중...[0m
+[91m❌ Gemini 오류: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}[0m

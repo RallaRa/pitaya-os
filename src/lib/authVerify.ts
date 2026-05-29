@@ -43,7 +43,7 @@ export async function getActualGroupId(uid: string, storeId?: string | null): Pr
     }
   }
 
-  return userData?.groupId || 'staff';
+  return userData?.groupId || 'user';
 }
 
 /** groupId가 관리자급 이상인지 확인합니다. */

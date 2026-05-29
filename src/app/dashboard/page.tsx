@@ -102,7 +102,7 @@ const WIDGET_META: WidgetMeta[] = [
   },
 ];
 
-const DEFAULT_ACTIVE = ['weather', 'quick_menu', 'weekly_analysis', 'yesterday_analysis', 'news', 'sales_prediction', 'ai_insight', 'total_partner'];
+const DEFAULT_ACTIVE = ['weather', 'quick_menu', 'weekly_analysis', 'yesterday_analysis', 'news', 'sales_prediction', 'ai_insight', 'total_partner', 'today_sales', 'sales_compare'];
 
 function makeDefaultLayout(ids: string[]): GridLayout {
   return WIDGET_META.filter(m => ids.includes(m.id)).map(m => ({ ...m.defaultItem }));

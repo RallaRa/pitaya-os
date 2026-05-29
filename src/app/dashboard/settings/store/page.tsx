@@ -5,11 +5,12 @@ import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import {
   Store, Copy, Check, Loader2,
-  Save, RefreshCw, Users
+  Save, RefreshCw, Users, FileText,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
+import StoreDocuments from '@/components/store/StoreDocuments';
 
 const SIDO_LIST = ['서울','부산','대구','인천','광주','대전','울산','세종',
   '경기','강원','충북','충남','전북','전남','경북','경남','제주'];
@@ -53,6 +54,17 @@ export default function StoreSettingsPage() {
     navigator.clipboard.writeText(currentStore.storeId);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleApplyStoreInfo = (data: { businessNumber?: string; ownerName?: string; storeName?: string; address?: string }) => {
+    setForm(prev => ({
+      ...prev,
+      ...(data.storeName ? { storeName: data.storeName } : {}),
+      ...(data.ownerName ? { ownerName: data.ownerName } : {}),
+      ...(data.businessNumber ? { businessNumber: data.businessNumber } : {}),
+      ...(data.address ? { address: data.address } : {}),
+    }));
+    setSaveMsg('AI가 서류에서 정보를 반영했습니다. 확인 후 저장 버튼을 눌러주세요.');
   };
 
   const handleSave = async () => {
@@ -250,7 +262,7 @@ export default function StoreSettingsPage() {
       </div>
 
       {/* 연결된 계정 목록 */}
-      <div className="bg-slate-900 border border-slate-700 rounded-xl p-6">
+      <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 mb-6">
         <h2 className="text-white font-bold mb-4 flex items-center gap-2">
           <Users className="w-4 h-4 text-teal-400" />
           연결된 계정
@@ -258,6 +270,19 @@ export default function StoreSettingsPage() {
         <p className="text-slate-400 text-sm">
           매장 ID를 공유하면 다른 계정이 이 매장에 연결할 수 있습니다.
         </p>
+      </div>
+
+      {/* 서류 관리 */}
+      <div className="bg-slate-900 border border-slate-700 rounded-xl p-6">
+        <h2 className="text-white font-bold mb-1 flex items-center gap-2">
+          <FileText className="w-4 h-4 text-teal-400" />
+          서류 관리
+        </h2>
+        <p className="text-slate-500 text-xs mb-5">
+          사업자등록증, 허가증 등을 업로드하면 AI가 내용을 읽어 매장 정보에 자동 반영합니다.
+          만료일이 가까운 서류는 자동으로 알림이 표시됩니다.
+        </p>
+        <StoreDocuments storeId={currentStore.storeId} onApplyStoreInfo={handleApplyStoreInfo} />
       </div>
 
     </div>

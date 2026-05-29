@@ -1,0 +1,199 @@
+================================================================
+  Pitaya OS POS 연동 작업 요약 (최근 5개)
+  2026-05-26
+================================================================
+
+
+----------------------------------------------------------------
+작업 1 — POS 실데이터 → daily_reports 실시간 연동
+----------------------------------------------------------------
+
+목적
+  브릿지가 데이터를 보낼 때 기존 수동입력과 같은 구조로 저장
+
+핵심 변경
+  - /api/pos/sync 서버 라우트에 syncToDailyReports() 함수 추가
+  - POS 데이터를 daily_reports 컬렉션에 upsert
+    (doc ID: pos_{storeId}_{date})
+  - 날씨 데이터(open-meteo), 뉴스(Google RSS) 동시 fetch 후 함께 저장
+  - source: 'pos_bridge' 필드로 출처 구분
+
+주요 코드 패턴
+  // upsert 패턴
+  const snap = await docRef.get();
+  if (!snap.exists) {
+    await docRef.set({ ...payload, createdAt: FieldValue.serverTimestamp() });
+  } else {
+    const { editHistory: _eh, ...updatePayload } = payload;
+    await docRef.update(updatePayload);
+  }
+
+학습 포인트
+  - Firebase Admin SDK는 보안 규칙 우회 → 서버에서만 쓰기
+  - batch.commit() 완료 후 syncToDailyReports() 비동기 실행,
+    실패해도 메인 응답은 성공 처리 (부가 작업 분리 원칙)
+  - upsert: docRef.get() → exists면 update, 없으면 set with createdAt
+
+
+----------------------------------------------------------------
+작업 2 — 보고서 조회 화면 데이터 갱신 문제
+----------------------------------------------------------------
+
+목적
+  새로고침 버튼, 포커스 자동 갱신, 스켈레톤 로딩, 에러 재시도 추가
+
+핵심 변경
+  - useCallback으로 fetchData 메모이제이션
+  - window.addEventListener('focus', onFocus)
+    → 탭 전환 후 돌아올 때 자동 재조회
+  - 로딩 중 스켈레톤 UI (animate-pulse)
+  - 에러 상태 시 재시도 버튼
+  - 날짜별 중복 제거: POS 문서 우선, Map<reportDate, doc>으로 dedup
+
+주요 코드 패턴
+  // 포커스 자동 갱신
+  useEffect(() => {
+    const onFocus = () => fetchData(range.start, range.end);
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus); // cleanup
+  }, [range, fetchData]);
+
+학습 포인트
+  - React useEffect cleanup으로 이벤트 리스너 메모리 누수 방지
+  - Firestore 클라이언트 SDK는 보안 규칙 적용
+    → 서버 전용 컬렉션 조회 시 권한 오류 발생
+
+
+----------------------------------------------------------------
+작업 3 — 조회 화면 데이터 안 나오는 버그 수정
+----------------------------------------------------------------
+
+문제
+  pos_finish_total, pos_sales_header 를 클라이언트 SDK로 조회 시
+  Firestore 보안 규칙에 막혀 데이터 전혀 안 나옴
+
+원인 분석
+  firestore.rules:
+    match /{document=**} {
+      allow read, write: if false;  // 명시 안 된 컬렉션 전면 차단
+    }
+
+  pos_finish_total은 서버(Admin SDK)에서만 쓰던 컬렉션
+  → 클라이언트 read 규칙 없음 → 전면 차단에 걸림
+
+해결
+  daily_reports 단일 컬렉션만 조회 (마이그레이션으로 모든 데이터 집결)
+
+  const snap = await getDocs(query(
+    collection(db, 'daily_reports'),
+    where('reportDate', '>=', start),
+    where('reportDate', '<=', end),
+  ));
+  // storeId 필터 + 날짜별 중복 제거는 클라이언트에서 처리
+
+학습 포인트
+  - Firestore 보안 규칙 match /{document=**} 와일드카드가
+    마지막 fallback으로 전면 차단
+  - Admin SDK(서버)와 클라이언트 SDK의 권한 완전 분리 원칙
+  - 클라이언트에서 조회할 컬렉션은 반드시 명시적 read 규칙 필요
+
+
+----------------------------------------------------------------
+작업 4 — 오늘만 나오고 나머지 0 표시 버그 수정
+----------------------------------------------------------------
+
+문제
+  5월 데이터 조회 시 오늘만 표시, 나머지 전부 0원
+
+진단 과정
+  Node.js 스크립트로 Firestore Admin SDK 직접 조회:
+    pos_finish_total: 2026-05-26만 920000, 나머지 전부 totalSale=0
+    → 마이그레이션된 366개 daily_reports 문서가 모두 totalSales=0
+    → 실제 데이터는 수동입력 9개 문서에만 존재
+
+원인
+  중복 제거 로직이 POS 문서를 값과 무관하게 무조건 우선시:
+
+  // 잘못된 로직
+  const isPOS = dr.source === 'pos_bridge' || dr.source === 'pos_bridge_migration';
+  if (!existing || isPOS) byDate.set(dr.reportDate, dr);
+  // → 0값 POS가 실제 수동 데이터를 덮어씀
+
+수정
+  totalSales 높은 쪽 우선, live POS만 절대 우선:
+
+  const isLivePOS = (src?: string) => src === 'pos_bridge';
+  const score = (dr: any) => isLivePOS(dr.source) ? Infinity : (dr.totalSales || 0);
+  if (!existing || score(dr) > score(existing)) byDate.set(dr.reportDate, dr);
+
+추가 원인 (근본)
+  pos_finish_total이 0인 이유:
+  - Finish_Total 테이블은 POS에서 일마감 버튼을 눌러야 채워짐
+  - 일마감 전에 브릿지가 실행되면 totalSale=0
+  - 샘플 데이터(SQLite 테스트 DB)로 브릿지를 테스트했기 때문
+
+학습 포인트
+  - 데이터 우선순위 로직은 "무조건 타입 우선"보다 "실제 값 기반"이 안전
+  - 운영 데이터 진단 시 Admin SDK 스크립트로 컬렉션 직접 확인이 빠름
+  - POS 데이터 구조 이해 필요:
+    SaT(매출 헤더, 트랜잭션 즉시) vs Finish_Total(일마감 후 집계)
+
+
+----------------------------------------------------------------
+작업 5 — SaT 기반 재설계 + 미마감 플래그
+----------------------------------------------------------------
+
+배경
+  Finish_Total: 일마감 버튼 눌러야 채워짐 → 마감 전 실행 시 항상 0
+  SaT(매출 헤더): 거래 즉시 쌓이는 실시간 테이블 → 항상 정확
+
+설계 원칙
+  totalSales = SaT 집계 (primary, 마감 여부 무관하게 실거래 반영)
+  netSales   = Finish_Total.NetSale (마감 시) / SaT 합계 (미마감 시)
+  isClosed   = Finish_Total 있음 AND Finish_Total.TotalSale > 0
+               AND Finish_Total.TotalSale == SaT 합계
+
+변경 파일 1: /api/pos/sync/route.ts
+  const satTotal    = headerDoc.totalSale ?? 0;
+  const finishTotal = finish?.totalSale   ?? 0;
+  const totalSales  = satTotal;
+  const netSales    = finish?.netSale ?? satTotal;
+  const isClosed    = finish !== null
+                      && finishTotal > 0
+                      && finishTotal === satTotal;
+  // → daily_reports에 isClosed 필드 저장
+
+변경 파일 2: pos_bridge/client.py
+  --range 옵션 추가 (과거 데이터 일괄 재동기화):
+
+  python client.py --range 2026-01-01 2026-05-25
+
+  - 날짜별 순차 처리, 0.5초 간격 (API 과부하 방지)
+  - 실패 날짜는 건너뛰고 계속 진행
+  - sync_date() 함수로 단일 날짜 로직 분리 후 main()에서 루프
+
+변경 파일 3: 뷰 페이지
+  {isPOS && report.isClosed === false && (
+    <span className="...text-yellow-400">미마감</span>
+  )}
+
+학습 포인트
+  - POS 데이터 특성:
+    SaT/SaD(트랜잭션 테이블) — 거래 즉시 기록, 항상 최신
+    Finish_Total(집계 테이블) — 일마감 작업 후 확정
+  - 상태 플래그 설계: 두 값의 일치 여부로 비즈니스 상태 판단
+  - 배치 재처리 시 API 과부하 방지를 위한 딜레이 적용
+  - 함수 분리: sync_date() 추출로 단일/범위 모드 재사용
+
+================================================================
+  수정된 파일 목록
+================================================================
+
+  src/app/api/pos/sync/route.ts
+  src/app/api/admin/migrate-pos-to-reports/route.ts  (작업 1)
+  src/app/dashboard/report/view/page.tsx             (작업 2,3,4,5)
+  src/app/dashboard/settings/page.tsx               (작업 1)
+  pos_bridge/client.py                               (작업 5)
+  firestore.rules                                    (참조)
+
+================================================================

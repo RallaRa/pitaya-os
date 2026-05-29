@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import WidgetWrapper from './WidgetWrapper';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
@@ -16,14 +16,15 @@ export default function YesterdayWidget({
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const load = useCallback(async (forceRefresh = false) => {
-    setLoading(true);
+  const load = useCallback(async (background = false) => {
+    if (!background) setLoading(true); // 초기 로딩만 skeleton 표시
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (storeId)      params.set('storeId', storeId);
-      if (forceRefresh) params.set('refresh', '1');
+      if (storeId)    params.set('storeId', storeId);
+      if (background) params.set('refresh', '1'); // 백그라운드 갱신은 캐시 우회
       const res = await fetch(`/api/dashboard/yesterday-analysis?${params}`, { headers: await getAuthHeaders() });
       const d   = await res.json();
       if (d.error) throw new Error(d.error);
@@ -36,7 +37,18 @@ export default function YesterdayWidget({
     }
   }, [storeId]);
 
-  useEffect(() => { load(false); }, [load]);
+  useEffect(() => {
+    load(false);
+    timerRef.current = setInterval(() => load(true), 60 * 1000);
+
+    const onVisible = () => { if (document.visibilityState === 'visible') load(true); };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [load]);
 
   const RANK_COLOR = ['text-yellow-400', 'text-slate-300', 'text-orange-400', 'text-slate-400', 'text-slate-500'];
 
@@ -45,7 +57,7 @@ export default function YesterdayWidget({
       title="📅 전일 판매 분석"
       editMode={editMode}
       onRemove={onRemove}
-      onRefresh={() => load(true)}  // 새로고침 → 캐시 우회
+      onRefresh={() => load(true)}
       updatedAt={updatedAt}
       loading={loading}
       error={error}

@@ -11,7 +11,7 @@ type MenuAccess = {
   permissionGroup: boolean; memberGroup: boolean; hygiene: boolean;
   hrCalendar: boolean; scaleCode: boolean;
   salesForecast: boolean; suppliers: boolean; predictionVariables: boolean;
-  customers: boolean; predictionHistory: boolean;
+  customers: boolean; predictionHistory: boolean; items: boolean;
 };
 
 const ALL_FALSE: MenuAccess = {
@@ -20,7 +20,7 @@ const ALL_FALSE: MenuAccess = {
   permissionGroup: false, memberGroup: false, hygiene: false,
   hrCalendar: false, scaleCode: false,
   salesForecast: false, suppliers: false, predictionVariables: false,
-  customers: false, predictionHistory: false,
+  customers: false, predictionHistory: false, items: false,
 };
 
 const STAFF_ACCESS: MenuAccess = {
@@ -29,50 +29,47 @@ const STAFF_ACCESS: MenuAccess = {
   permissionGroup: false, memberGroup: false, hygiene: true,
   hrCalendar: true, scaleCode: false,
   salesForecast: false, suppliers: false, predictionVariables: false,
-  customers: false, predictionHistory: false,
+  customers: false, predictionHistory: false, items: false,
 };
 
 const SYSTEM_GROUPS = [
   {
     groupId: 'master',
     storeId: 'global',
-    groupName: 'Master',
-    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: true, memberGroup: true, hygiene: true, hrCalendar: true, scaleCode: true, salesForecast: true, suppliers: true, predictionVariables: true, customers: true, predictionHistory: true },
+    groupName: '마스터',
+    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: true, memberGroup: true, hygiene: true, hrCalendar: true, scaleCode: true, salesForecast: true, suppliers: true, predictionVariables: true, customers: true, predictionHistory: true, items: true },
     isSystem: true,
   },
   {
     groupId: 'admin',
     storeId: 'global',
-    groupName: '관리자',
-    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: true, salesForecast: true, suppliers: true, predictionVariables: false, customers: true, predictionHistory: true },
+    groupName: '점장',
+    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: true, salesForecast: true, suppliers: true, predictionVariables: false, customers: true, predictionHistory: true, items: true },
     isSystem: true,
   },
   {
     groupId: 'user',
     storeId: 'global',
-    groupName: '사용자',
-    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: false, salesForecast: true, suppliers: false, predictionVariables: false, customers: false, predictionHistory: false },
-    isSystem: true,
-  },
-  {
-    groupId: 'staff',
-    storeId: 'global',
     groupName: '직원',
-    menuAccess: { ai: true, sales: true, purchase: false, report: false, messenger: true, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: false, salesForecast: false, suppliers: false, predictionVariables: false, customers: false, predictionHistory: false },
-    isSystem: true,
-  },
-  {
-    groupId: 'guest',
-    storeId: 'global',
-    groupName: '게스트',
-    menuAccess: { ai: true, sales: false, purchase: false, report: false, messenger: false, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: false, hrCalendar: false, scaleCode: false, salesForecast: false, suppliers: false, predictionVariables: false, customers: false, predictionHistory: false },
+    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: false, salesForecast: true, suppliers: false, predictionVariables: false, customers: false, predictionHistory: false, items: true },
     isSystem: true,
   },
 ];
 
+// 구 시스템 그룹 ID (마이그레이션용)
+const OBSOLETE_SYSTEM_GROUP_IDS = ['staff', 'guest'];
+
+// 이름이 구 기본값이면 새 이름으로 교체
+const OLD_GROUP_NAMES: Record<string, string> = {
+  master: 'Master',
+  admin: '관리자',
+  user: '사용자',
+};
+
 async function ensureSystemGroups() {
   const batch = adminDb.batch();
   let hasChanges = false;
+
   for (const group of SYSTEM_GROUPS) {
     const ref = adminDb.collection('permission_groups').doc(group.groupId);
     const doc = await ref.get();
@@ -80,17 +77,34 @@ async function ensureSystemGroups() {
       batch.set(ref, { ...group, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
       hasChanges = true;
     } else {
-      // 새로 추가된 키가 기존 Firestore 문서에 없으면 시스템 기본값으로 패치
-      const existingAccess = doc.data()?.menuAccess || {};
+      const existingData = doc.data()!;
+      const existingAccess = existingData?.menuAccess || {};
+      const patch: Record<string, any> = {};
+      // 새로 추가된 키가 없으면 시스템 기본값으로 패치
       const missingKeys = Object.keys(group.menuAccess).filter(k => !(k in existingAccess));
-      if (missingKeys.length > 0) {
-        const patch: Record<string, any> = { updatedAt: FieldValue.serverTimestamp() };
-        missingKeys.forEach(k => { patch[`menuAccess.${k}`] = (group.menuAccess as any)[k]; });
+      missingKeys.forEach(k => { patch[`menuAccess.${k}`] = (group.menuAccess as any)[k]; });
+      // 구 기본 이름이면 새 이름으로 업데이트
+      if (existingData.groupName === OLD_GROUP_NAMES[group.groupId]) {
+        patch.groupName = group.groupName;
+      }
+      if (Object.keys(patch).length > 0) {
+        patch.updatedAt = FieldValue.serverTimestamp();
         batch.update(ref, patch);
         hasChanges = true;
       }
     }
   }
+
+  // 구 시스템 그룹 삭제 (staff, guest)
+  for (const oldId of OBSOLETE_SYSTEM_GROUP_IDS) {
+    const ref = adminDb.collection('permission_groups').doc(oldId);
+    const doc = await ref.get();
+    if (doc.exists && doc.data()?.isSystem) {
+      batch.delete(ref);
+      hasChanges = true;
+    }
+  }
+
   if (hasChanges) await batch.commit();
 }
 
@@ -145,22 +159,22 @@ export async function GET(req: Request) {
 
       // 3. 글로벌 groupId fallback
       if (groupId === null) {
-        groupId = userData?.groupId || 'staff';
+        groupId = userData?.groupId || 'user';
       }
 
       // 4. 대기 상태 → 모든 메뉴 false
       if (groupId === '') {
-        return NextResponse.json({ groupId: '', menuAccess: ALL_FALSE });
+        return NextResponse.json({ groupId: '', role: '', menuAccess: ALL_FALSE });
       }
 
       // 5. 그룹의 menuAccess 조회
       const groupDoc = await adminDb.collection('permission_groups').doc(groupId).get();
       if (groupDoc.exists) {
         const stored = groupDoc.data()?.menuAccess || {};
-        return NextResponse.json({ groupId, menuAccess: { ...ALL_FALSE, ...stored } });
+        return NextResponse.json({ groupId, role: groupId, menuAccess: { ...ALL_FALSE, ...stored } });
       }
 
-      return NextResponse.json({ groupId: 'staff', menuAccess: { ...ALL_FALSE, ...STAFF_ACCESS } });
+      return NextResponse.json({ groupId: 'staff', role: 'staff', menuAccess: { ...ALL_FALSE, ...STAFF_ACCESS } });
     }
 
     // ── 권한 그룹 목록 조회 ──

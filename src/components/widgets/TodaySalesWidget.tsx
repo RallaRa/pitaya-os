@@ -19,22 +19,24 @@ interface TodaySalesData {
   noData:         boolean;
 }
 
-const AUTO_REFRESH_MS = 60 * 1000; // 1분 자동 갱신
+const AUTO_REFRESH_MS = 30 * 1000; // 30초 자동 갱신
 
 export default function TodaySalesWidget({
   editMode, onRemove, storeId,
 }: {
   editMode: boolean; onRemove: () => void; storeId?: string;
 }) {
-  const [data,      setData]      = useState<TodaySalesData | null>(null);
-  const [loading,   setLoading]   = useState(true);
-  const [error,     setError]     = useState<string | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [data,         setData]        = useState<TodaySalesData | null>(null);
+  const [loading,      setLoading]     = useState(true);
+  const [refreshing,   setRefreshing]  = useState(false);
+  const [error,        setError]       = useState<string | null>(null);
+  const [updatedAt,    setUpdatedAt]   = useState<Date | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (background = false) => {
     if (!storeId) { setLoading(false); return; }
-    setLoading(true);
+    if (background) setRefreshing(true);
+    else setLoading(true);
     setError(null);
     try {
       const res = await fetch(`/api/dashboard/today-sales?storeId=${storeId}`, {
@@ -48,13 +50,21 @@ export default function TodaySalesWidget({
       setError('당일 매출 데이터를 불러오지 못했습니다');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [storeId]);
 
   useEffect(() => {
     load();
-    timerRef.current = setInterval(load, AUTO_REFRESH_MS);
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    timerRef.current = setInterval(() => load(true), AUTO_REFRESH_MS);
+
+    const onVisible = () => { if (document.visibilityState === 'visible') load(true); };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [load]);
 
   const fmt = (n: number) => n.toLocaleString('ko-KR');
@@ -74,16 +84,19 @@ export default function TodaySalesWidget({
       title="📊 당일 매출 현황"
       editMode={editMode}
       onRemove={onRemove}
-      onRefresh={load}
+      onRefresh={() => load(true)}
       updatedAt={updatedAt}
-      loading={loading}
+      loading={loading || refreshing}
       error={error}
     >
-      {data && (
+      {!storeId ? (
+        <div className="flex flex-col items-center justify-center h-full gap-2">
+          <TrendingUp className="w-8 h-8 text-slate-700" />
+          <p className="text-slate-500 text-xs text-center">매장을 선택하세요</p>
+        </div>
+      ) : data && (
         <div className="h-full p-3 flex flex-col gap-3">
-          {!storeId ? (
-            <p className="text-slate-500 text-xs text-center mt-4">매장을 선택하세요</p>
-          ) : data.noData ? (
+          {data.noData ? (
             <div className="flex flex-col items-center justify-center flex-1 gap-2">
               <TrendingUp className="w-8 h-8 text-slate-700" />
               <p className="text-slate-500 text-xs text-center">당일 매출 데이터가 없습니다</p>

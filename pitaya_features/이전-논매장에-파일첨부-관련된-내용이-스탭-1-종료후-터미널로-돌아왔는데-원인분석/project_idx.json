@@ -1,0 +1,52 @@
+{
+  "project_id": "659a86d5",
+  "project_name": "이전-논매장에-파일첨부-관련된-내용이-스탭-1-종료후-터미널로-돌아왔는데-원인분석",
+  "created_at": "2026-05-29T01:01:07.947953",
+  "updated_at": "2026-05-29T01:01:21.219349",
+  "status": "designed",
+  "current_step": 2,
+  "pitaya_context": true,
+  "summary": {
+    "project_goal": "이전 논매장 시 파일 첨부 기능에서 스텝 1 종료 후 터미널로 돌아오는 오류를 해결하고 안정적인 파일 첨부 프로세스를 구현합니다.",
+    "main_features": [
+      "이전 논매장 중 파일 첨부 기능 관련 오류 수정",
+      "스텝 1 종료 후 터미널 복귀 문제 해결",
+      "안정적인 파일 첨부 워크플로우 보장"
+    ],
+    "tech_stack": [
+      "Next.js 16",
+      "TypeScript",
+      "Firestore",
+      "Tailwind CSS"
+    ],
+    "new_pages": [
+      "src/app/dashboard/previous-non-store/file-attachment/page.tsx"
+    ],
+    "new_apis": [
+      "src/app/api/previous-non-store/file-attachment/route.ts"
+    ],
+    "new_components": [
+      "src/components/FileAttachmentForm.tsx",
+      "src/components/AttachmentStepper.tsx"
+    ],
+    "firestore_collections": [
+      "attachments — 파일 첨부 관련 메타데이터 및 상태 관리"
+    ],
+    "target_users": "admin/user/staff",
+    "unclear_points": [],
+    "notes": "기존 파일 첨부 관련 로직 분석 및 디버깅이 중요합니다."
+  },
+  "conversation_log": [
+    {
+      "turn": 0,
+      "role": "gemini",
+      "content": "안녕하세요! Pitaya OS의 시니어 풀스택 개발자입니다. 😊\n\n'이전-논매장에-파일첨부-관련된-내용이-스탭-1-종료후-터미널로-돌아왔는데-원인분석' 기능 개발을 시작하게 되어 기쁩니다!\n\n이 기능의 가장 핵심적인 목표가 무엇일까요? 어떤 문제를 해결하고 싶으신 건가요?"
+    }
+  ],
+  "requirements": "이전 논매장 중 파일 첨부 기능 관련 오류 수정\n스텝 1 종료 후 터미널 복귀 문제 해결\n안정적인 파일 첨부 워크플로우 보장",
+  "design": "목표: 이전 논매장 시 파일 첨부 기능에서 스텝 1 종료 후 터미널로 돌아오는 오류를 해결하고 안정적인 파일 첨부 프로세스를 구현합니다.\n새 페이지: src/app/dashboard/previous-non-store/file-attachment/page.tsx\n새 API: src/app/api/previous-non-store/file-attachment/route.ts\n새 컴포넌트: src/components/FileAttachmentForm.tsx, src/components/AttachmentStepper.tsx\nFirestore: attachments — 파일 첨부 관련 메타데이터 및 상태 관리\n대상 역할: admin/user/staff",
+  "risks": {},
+  "generated_files": [],
+  "stability_analysis": {},
+  "retry_count": 0
+}

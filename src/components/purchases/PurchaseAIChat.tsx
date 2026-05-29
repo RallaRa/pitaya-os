@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import type { Invoice, AttachedFile as SheetAttachedFile } from './PurchaseSheet';
+import CameraCapture from './CameraCapture';
 
 interface AttachedFile {
   id: string;
@@ -28,6 +29,33 @@ interface Props {
 
 function genId() {
   return Math.random().toString(36).slice(2, 10);
+}
+
+async function compressImage(dataUrl: string, maxPx = 1600, quality = 0.82): Promise<string> {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width;
+      let h = img.height;
+      if (w > maxPx || h > maxPx) {
+        if (w > h) { h = Math.round(h * maxPx / w); w = maxPx; }
+        else { w = Math.round(w * maxPx / h); h = maxPx; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+// 실제 JSON 전송 크기 기준 (base64 문자열 길이 ≈ 전송 바이트, 3MB 한도로 Vercel 4.5MB 제한 여유 확보)
+const MAX_PAYLOAD_BYTES = 3 * 1024 * 1024;
+function estimatePayloadSize(files: AttachedFile[]): number {
+  return files.reduce((sum, f) => sum + (f.content?.length || 0), 0);
 }
 
 function detectFileType(f: File): 'image' | 'pdf' | 'csv' | 'excel' {
@@ -88,7 +116,10 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
     const newItems: AttachedFile[] = await Promise.all(
       files.map(async f => {
         const type = detectFileType(f);
-        const content = await readFile(f).catch(() => '');
+        let content = await readFile(f).catch(() => '');
+        if (type === 'image' && content.startsWith('data:image')) {
+          content = await compressImage(content);
+        }
         return {
           id: genId(),
           name: f.name,
@@ -159,6 +190,20 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
 
     try {
       if (sentFiles.length > 0) {
+        // 전송 전 총 페이로드 크기 검사
+        if (estimatePayloadSize(sentFiles) > MAX_PAYLOAD_BYTES) {
+          setMessages(prev => {
+            const next = [...prev];
+            next[next.length - 1] = {
+              role: 'assistant',
+              content: '⚠️ 이미지 용량이 너무 큽니다. 이미지 수를 줄이거나 더 작은 이미지를 사용해주세요. (3MB 이하 권장)',
+            };
+            return next;
+          });
+          setLoading(false);
+          return;
+        }
+
         // Gemini 멀티모달 분석
         const headers = await getAuthJsonHeaders();
         const res = await fetch('/api/purchases/analyze-multi', {
@@ -170,6 +215,7 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
           }),
           signal: abortRef.current.signal,
         });
+        if (res.status === 413) throw new Error('이미지 용량이 너무 큽니다. 이미지 수를 줄이거나 더 작은 이미지를 사용해주세요.');
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'API 오류');
 
@@ -231,12 +277,18 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
       }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
+        const msg = err.message || '';
+        let userMsg = '⚠️ 오류가 발생했습니다. 다시 시도해 주세요.';
+        if (msg.includes('503') || msg.includes('overloaded')) userMsg = '⚠️ Gemini 서버가 혼잡합니다. 잠시 후 재시도해주세요.';
+        else if (msg.includes('429')) userMsg = '⚠️ API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.';
+        else if (msg.includes('413') || msg.includes('용량이 너무')) userMsg = `⚠️ ${msg}`;
+        else if (msg.includes('400')) userMsg = '⚠️ 이미지 처리 오류입니다. 다른 파일을 시도해주세요.';
+        else if (msg.includes('GEMINI_API_KEY') || msg.includes('API_KEY')) userMsg = '⚠️ GEMINI_API_KEY가 설정되지 않았습니다. 관리자에게 문의하세요.';
+        else if (msg.includes('Unauthorized') || msg.includes('401')) userMsg = '⚠️ 인증이 만료됐습니다. 다시 로그인해주세요.';
+        else if (msg && msg !== 'API 오류') userMsg = `⚠️ ${msg}`;
         setMessages(prev => {
           const next = [...prev];
-          next[next.length - 1] = {
-            role: 'assistant',
-            content: '⚠️ 오류가 발생했습니다. 다시 시도해 주세요.',
-          };
+          next[next.length - 1] = { role: 'assistant', content: userMsg };
           return next;
         });
       }
@@ -381,6 +433,7 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
           {/* 입력 영역 */}
           <div className="px-3 pb-3 pt-2 shrink-0 border-t border-slate-700/40">
             <div className="flex gap-2 items-center">
+              <CameraCapture onCapture={file => addFiles([file])} />
               <button
                 onClick={() => fileInputRef.current?.click()}
                 disabled={loading}

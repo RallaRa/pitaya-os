@@ -61,6 +61,8 @@ function HygieneChecklistContent() {
     const ts     = serverTimestamp();
 
     const updates: Record<string, unknown> = {
+      storeId: currentStore.storeId,
+      checkDate: kstToday,
       [`sections.${sectionKey}.completed`]:   true,
       [`sections.${sectionKey}.completedBy`]: byName,
       [`sections.${sectionKey}.completedAt`]: ts,

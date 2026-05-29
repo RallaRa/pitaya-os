@@ -8,7 +8,7 @@ import {
   Download, Upload, RefreshCw, Eye, EyeOff, Trash2,
   Settings, MapPin, Video, Users, Bell, CheckSquare,
   List, Calendar as CalIcon, AlertCircle, ChevronDown, ChevronUp,
-  SquarePen, ExternalLink, FileText, Clock,
+  SquarePen, ExternalLink, FileText, Clock, Bot, Send, Loader2,
 } from 'lucide-react';
 import {
   DragDropContext, Droppable, Draggable, DropResult,
@@ -992,6 +992,317 @@ function SearchModal({
   );
 }
 
+/* ═══════════════════════ AI 일괄 등록 모달 ═══════════════════════ */
+const SUPERUSER_EMAIL_CLIENT = process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || '';
+
+interface ParsedBulkItem {
+  type: 'leave' | 'dayoff';
+  userName: string;
+  userId: string;
+  userEmail: string;
+  leaveType?: string;
+  dayoffType?: string;
+  startDate?: string;
+  endDate?: string;
+  dates?: string[];
+  reason: string;
+  matched: boolean;
+}
+
+const AI_BULK_SYSTEM = `당신은 연차/휴무 일괄 등록 파서입니다.
+사용자의 자연어 입력을 파싱하여 반드시 아래 JSON 배열만 출력하세요. 다른 설명 없이 JSON만.
+
+직원 목록(userId, userName 포함)이 제공되면 이름 매칭에 사용하세요.
+
+출력 형식:
+[
+  {
+    "type": "leave",
+    "userName": "홍길동",
+    "leaveType": "annual|half_am|half_pm",
+    "startDate": "YYYY-MM-DD",
+    "endDate": "YYYY-MM-DD",
+    "reason": ""
+  },
+  {
+    "type": "dayoff",
+    "userName": "김철수",
+    "dayoffType": "regular|substitute|unpaid",
+    "dates": ["YYYY-MM-DD", "YYYY-MM-DD"],
+    "reason": ""
+  }
+]
+
+규칙:
+- 연차/반차 → type: "leave"
+- 휴무 → type: "dayoff"
+- 날짜 범위(~, -)는 startDate/endDate로, 개별 날짜 나열은 dates[]로
+- 오전반차 → half_am, 오후반차 → half_pm, 연차 → annual
+- 정기휴무 → regular, 대체휴무 → substitute, 무급휴무 → unpaid
+- leaveType/dayoffType 미지정 시 연차는 annual, 휴무는 regular로 기본값 설정
+- 반드시 순수 JSON 배열만 출력`;
+
+function AiBulkLeaveModal({
+  storeId, uid, user, onClose, onSuccess, showToast,
+}: {
+  storeId: string; uid: string; user: any;
+  onClose: () => void; onSuccess: () => void;
+  showToast: (msg: string, ok?: boolean) => void;
+}) {
+  const [input,       setInput]       = useState('');
+  const [messages,    setMessages]    = useState<{ role: 'user' | 'ai'; text: string }[]>([
+    { role: 'ai', text: '안녕하세요! 연차/휴무를 자연어로 입력하면 일괄 등록해드립니다.\n\n예시:\n• 홍길동 6월 1~5일 연차\n• 김철수 6월 1일, 3일 정기휴무\n• 이영희 오전반차 6월 10일' },
+  ]);
+  const [parsed,      setParsed]      = useState<ParsedBulkItem[] | null>(null);
+  const [employees,   setEmployees]   = useState<any[]>([]);
+  const [loading,     setLoading]     = useState(false);
+  const [submitting,  setSubmitting]  = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch(`/api/hr/employees?storeId=${storeId}`, { headers: {} })
+      .then(r => r.json())
+      .then(d => setEmployees(d.employees || []))
+      .catch(() => {});
+  }, [storeId]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, parsed]);
+
+  const matchEmployee = (userName: string, empList: any[]): { userId: string; userEmail: string; matched: boolean } => {
+    const name = userName.trim();
+    const emp = empList.find(e => e.name === name || e.name?.includes(name) || name.includes(e.name));
+    if (emp) return { userId: emp.userId || emp.uid || '', userEmail: emp.email || '', matched: true };
+    return { userId: '', userEmail: '', matched: false };
+  };
+
+  const sendMessage = async () => {
+    if (!input.trim() || loading) return;
+    const userMsg = input.trim();
+    setInput('');
+    setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+    setLoading(true);
+    setParsed(null);
+
+    try {
+      const { getAuthJsonHeaders } = await import('@/lib/getAuthHeaders');
+      const empContext = employees.length > 0
+        ? `\n\n직원 목록:\n${employees.map(e => `- ${e.name} (userId: ${e.userId || e.uid || ''})`).join('\n')}`
+        : '';
+
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: await getAuthJsonHeaders(),
+        body: JSON.stringify({
+          message: userMsg + empContext,
+          history: [],
+          model: 'auto',
+          system: AI_BULK_SYSTEM,
+        }),
+      });
+      const data = await res.json();
+      const text = data.text || data.reply || '';
+
+      // JSON 파싱 시도
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) throw new Error('JSON을 파싱할 수 없습니다. 다시 시도해주세요.');
+
+      const rawItems = JSON.parse(jsonMatch[0]);
+      if (!Array.isArray(rawItems) || rawItems.length === 0) throw new Error('파싱된 항목이 없습니다.');
+
+      const items: ParsedBulkItem[] = rawItems.map((item: any) => {
+        const { userId, userEmail, matched } = matchEmployee(item.userName, employees);
+        return {
+          type: item.type,
+          userName: item.userName,
+          userId,
+          userEmail,
+          leaveType: item.leaveType,
+          dayoffType: item.dayoffType,
+          startDate: item.startDate,
+          endDate: item.endDate,
+          dates: item.dates,
+          reason: item.reason || '',
+          matched,
+        };
+      });
+
+      setParsed(items);
+      setMessages(prev => [...prev, { role: 'ai', text: `${items.length}건이 파싱되었습니다. 아래 내용을 확인하고 [일괄 등록] 버튼을 눌러주세요.` }]);
+    } catch (e: any) {
+      setMessages(prev => [...prev, { role: 'ai', text: `오류: ${e.message}` }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBulkRegister = async () => {
+    if (!parsed || parsed.length === 0) return;
+    setSubmitting(true);
+    try {
+      const { getAuthJsonHeaders } = await import('@/lib/getAuthHeaders');
+      const records = parsed.map(item => ({
+        type: item.type,
+        userId: item.userId || uid,
+        userName: item.userName,
+        userEmail: item.userEmail || user?.email || '',
+        storeId,
+        leaveType: item.leaveType || 'annual',
+        dayoffType: item.dayoffType || 'regular',
+        startDate: item.startDate,
+        endDate: item.endDate,
+        dates: item.dates,
+        reason: item.reason,
+      }));
+
+      const res = await fetch('/api/hr/bulk-register', {
+        method: 'POST',
+        headers: await getAuthJsonHeaders(),
+        body: JSON.stringify({ records }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      showToast(`${data.created}건 등록 완료${data.failed > 0 ? `, ${data.failed}건 실패` : ''}`, data.failed === 0);
+      onSuccess();
+      onClose();
+    } catch (e: any) {
+      showToast(e.message || '등록 실패', false);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const LEAVE_TYPE_MAP: Record<string, string> = { annual: '연차', half_am: '반차(오전)', half_pm: '반차(오후)' };
+  const DAYOFF_TYPE_MAP: Record<string, string> = { regular: '정기휴무', substitute: '대체휴무', unpaid: '무급휴무' };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70" onClick={onClose} />
+      <div className="relative bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl shadow-2xl flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+        {/* 헤더 */}
+        <div className="flex items-center justify-between p-4 border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 bg-gradient-to-br from-violet-500 to-purple-600 rounded-lg flex items-center justify-center">
+              <Bot className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <h3 className="text-slate-100 font-bold text-sm">AI 일괄 등록</h3>
+              <p className="text-[10px] text-slate-500">연차/휴무를 자연어로 입력하세요</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 text-slate-500 hover:text-white rounded-lg hover:bg-slate-800">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* 채팅 영역 */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              {msg.role === 'ai' && (
+                <div className="w-6 h-6 bg-violet-600 rounded-full flex items-center justify-center mr-2 shrink-0 mt-0.5">
+                  <Bot className="w-3.5 h-3.5 text-white" />
+                </div>
+              )}
+              <div className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm whitespace-pre-wrap ${
+                msg.role === 'user'
+                  ? 'bg-violet-600 text-white rounded-tr-sm'
+                  : 'bg-slate-800 text-slate-200 rounded-tl-sm'
+              }`}>
+                {msg.text}
+              </div>
+            </div>
+          ))}
+
+          {loading && (
+            <div className="flex justify-start">
+              <div className="w-6 h-6 bg-violet-600 rounded-full flex items-center justify-center mr-2 shrink-0">
+                <Bot className="w-3.5 h-3.5 text-white" />
+              </div>
+              <div className="bg-slate-800 rounded-2xl rounded-tl-sm px-4 py-2.5 flex items-center gap-2">
+                <Loader2 className="w-3.5 h-3.5 text-violet-400 animate-spin" />
+                <span className="text-sm text-slate-400">파싱 중...</span>
+              </div>
+            </div>
+          )}
+
+          {/* 파싱 결과 프리뷰 */}
+          {parsed && parsed.length > 0 && (
+            <div className="bg-slate-800/60 border border-slate-700 rounded-xl p-3 space-y-2">
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">파싱 결과 미리보기</p>
+              <div className="space-y-1.5">
+                {parsed.map((item, i) => (
+                  <div key={i} className={`flex items-start gap-2.5 p-2 rounded-lg ${item.matched ? 'bg-slate-700/50' : 'bg-red-900/20 border border-red-800/40'}`}>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full shrink-0 font-medium ${
+                      item.type === 'leave' ? 'bg-green-900/50 text-green-300' : 'bg-blue-900/50 text-blue-300'
+                    }`}>
+                      {item.type === 'leave'
+                        ? (LEAVE_TYPE_MAP[item.leaveType || ''] || '연차')
+                        : (DAYOFF_TYPE_MAP[item.dayoffType || ''] || '휴무')}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm text-slate-200 font-medium">{item.userName}</span>
+                        {!item.matched && (
+                          <span className="text-[9px] text-red-400 bg-red-900/30 px-1.5 rounded">직원 미매칭</span>
+                        )}
+                      </div>
+                      <span className="text-xs text-slate-500">
+                        {item.type === 'leave'
+                          ? `${item.startDate} ~ ${item.endDate}`
+                          : (item.dates || []).join(', ')}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {parsed.some(p => !p.matched) && (
+                <p className="text-[10px] text-yellow-400/80 bg-yellow-900/20 px-2 py-1.5 rounded-lg">
+                  미매칭 직원은 이름만 저장됩니다. 직원 등록 후 재시도하면 userId가 연결됩니다.
+                </p>
+              )}
+              <button
+                onClick={handleBulkRegister}
+                disabled={submitting}
+                className="w-full py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition-colors flex items-center justify-center gap-2"
+              >
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                {submitting ? '등록 중...' : `${parsed.length}건 일괄 등록 (자동 승인)`}
+              </button>
+            </div>
+          )}
+
+          <div ref={bottomRef} />
+        </div>
+
+        {/* 입력 영역 */}
+        <div className="p-3 border-t border-slate-800 shrink-0">
+          <div className="flex gap-2">
+            <textarea
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+              placeholder="예: 홍길동 6월 1~5일 연차, 김철수 6월 1,3일 정기휴무 (Shift+Enter 줄바꿈)"
+              rows={2}
+              disabled={loading}
+              className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-violet-500 resize-none disabled:opacity-50"
+            />
+            <button
+              onClick={sendMessage}
+              disabled={loading || !input.trim()}
+              className="px-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white rounded-xl transition-colors self-end"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════════════ LEAVE PANEL ═══════════════════════ */
 const LEAVE_TYPE_LABELS: Record<string, string> = {
   annual: '연차', half_am: '반차(오전)', half_pm: '반차(오후)',
@@ -1006,13 +1317,13 @@ const STATUS_STYLE: Record<string, { label: string; cls: string }> = {
 };
 
 function LeavePanel({
-  uid, storeId, user, isAdmin, leaves, dayoffs, onReload, showToast,
+  uid, storeId, user, isAdmin, isSuperuser, leaves, dayoffs, onReload, showToast,
 }: {
-  uid: string; storeId: string; user: any; isAdmin: boolean;
+  uid: string; storeId: string; user: any; isAdmin: boolean; isSuperuser: boolean;
   leaves: any[]; dayoffs: any[];
   onReload: () => void; showToast: (msg: string, ok?: boolean) => void;
 }) {
-  const [modal,           setModal]           = useState<'leave' | 'dayoff' | null>(null);
+  const [modal,           setModal]           = useState<'leave' | 'dayoff' | 'aiBulk' | null>(null);
   const [leaveForm,       setLeaveForm]       = useState({ type: 'annual', startDate: '', endDate: '', reason: '' });
   const [dayoffForm,      setDayoffForm]      = useState({ type: 'regular', dates: [] as string[], reason: '' });
   const [dayoffDateInput, setDayoffDateInput] = useState('');
@@ -1107,6 +1418,18 @@ function LeavePanel({
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-6 h-full">
+      {/* 슈퍼유저 AI 일괄 등록 버튼 */}
+      {isSuperuser && (
+        <div className="flex justify-end">
+          <button
+            onClick={() => setModal('aiBulk')}
+            className="flex items-center gap-2 px-4 py-2 bg-violet-600/20 border border-violet-500/40 text-violet-300 rounded-xl text-xs hover:bg-violet-600/30 transition-colors"
+          >
+            <Bot className="w-3.5 h-3.5" /> AI 일괄 등록
+          </button>
+        </div>
+      )}
+
       {/* 연차 */}
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -1260,6 +1583,16 @@ function LeavePanel({
         </div>
       )}
 
+      {/* AI 일괄 등록 모달 */}
+      {modal === 'aiBulk' && (
+        <AiBulkLeaveModal
+          storeId={storeId} uid={uid} user={user}
+          onClose={() => setModal(null)}
+          onSuccess={onReload}
+          showToast={showToast}
+        />
+      )}
+
       {/* 휴무 신청 모달 */}
       {modal === 'dayoff' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1362,9 +1695,10 @@ export default function CalendarApp() {
   const [showMiniCal, setShowMiniCal] = useState(true);
 
   // ── 연차/휴무 ──
-  const [isAdmin,  setIsAdmin]  = useState(false);
-  const [leaves,   setLeaves]   = useState<any[]>([]);
-  const [dayoffs,  setDayoffs]  = useState<any[]>([]);
+  const [isAdmin,     setIsAdmin]     = useState(false);
+  const [isSuperuser, setIsSuperuser] = useState(false);
+  const [leaves,      setLeaves]      = useState<any[]>([]);
+  const [dayoffs,     setDayoffs]     = useState<any[]>([]);
 
   const showToast = useCallback((msg: string, ok = true) => {
     setToast({ msg, ok });
@@ -1376,7 +1710,7 @@ export default function CalendarApp() {
     getAuthHeaders()
       .then(headers => fetch(`/api/permissions?type=myAccess&uid=${uid}${storeId ? `&storeId=${storeId}` : ''}`, { headers }))
       .then(r => r.json())
-      .then(d => { setIsAdmin(['master', 'admin', 'owner'].includes(d.role || '')); })
+      .then(d => { setIsAdmin(['master', 'admin', 'owner'].includes(d.groupId || d.role || '')); })
       .catch(() => {});
   }, [uid, storeId]);
 
@@ -1476,21 +1810,20 @@ export default function CalendarApp() {
   const loadLeaves = useCallback(async () => {
     if (!uid) return;
     try {
-      const monthKey = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
       const headers = await getAuthHeaders();
       const [lRes, dRes] = await Promise.all([
         isAdmin
-          ? fetch(`/api/hr/leave?storeId=${storeId}&month=${monthKey}`, { headers })
-          : fetch(`/api/hr/leave?userId=${uid}&month=${monthKey}`, { headers }),
+          ? fetch(`/api/hr/leave?storeId=${storeId}`, { headers })
+          : fetch(`/api/hr/leave?userId=${uid}`, { headers }),
         isAdmin
-          ? fetch(`/api/hr/dayoff?storeId=${storeId}&month=${monthKey}`, { headers })
-          : fetch(`/api/hr/dayoff?userId=${uid}&month=${monthKey}`, { headers }),
+          ? fetch(`/api/hr/dayoff?storeId=${storeId}`, { headers })
+          : fetch(`/api/hr/dayoff?userId=${uid}`, { headers }),
       ]);
       const [lData, dData] = await Promise.all([lRes.json(), dRes.json()]);
       setLeaves(lData.requests || []);
       setDayoffs(dData.requests || []);
     } catch {}
-  }, [uid, storeId, cursor, isAdmin]);
+  }, [uid, storeId, isAdmin]);
 
   useEffect(() => { loadCalendars(); }, [loadCalendars]);
   useEffect(() => { loadEvents(); },   [loadEvents]);

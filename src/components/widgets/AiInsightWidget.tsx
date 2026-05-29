@@ -98,7 +98,13 @@ export default function AiInsightWidget({
         fetch(`/api/external/naver-trend${storeId ? `?storeId=${storeId}` : ''}`, { headers }).then(r => r.json()),
       ]);
 
-      if (insightRes.status === 'fulfilled') setData(insightRes.value);
+      if (insightRes.status === 'fulfilled') {
+        const d = insightRes.value;
+        if (d.error) setError(d.error);
+        else setData(d);
+      } else {
+        setError('AI 인사이트를 불러오지 못했습니다');
+      }
       if (trendRes.status === 'fulfilled' && trendRes.value.trends) setTrends(trendRes.value.trends);
       setUpdatedAt(new Date());
     } catch {
@@ -296,7 +302,7 @@ export default function AiInsightWidget({
 
         {/* 탭 헤더 */}
         <div className="flex items-center gap-1 px-3 pt-2 shrink-0 overflow-x-auto">
-          {!isExpanded && TABS.map(tab => (
+          {!isExpanded && data && !data.noData && TABS.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}

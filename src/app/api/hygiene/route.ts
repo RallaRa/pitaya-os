@@ -41,6 +41,7 @@ export async function GET(req: Request) {
       .get();
 
     let records = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
+    records = records.filter((r: any) => !!r.checkDate);
     if (startDate) records = records.filter((r: any) => r.checkDate >= startDate);
     if (endDate)   records = records.filter((r: any) => r.checkDate <= endDate);
     records.sort((a: any, b: any) => b.checkDate.localeCompare(a.checkDate));

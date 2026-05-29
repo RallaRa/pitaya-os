@@ -132,7 +132,13 @@ function buildDateMap(docs: any[], storeId: string): Map<string, number> {
     if (!existing || score(d) > score(existing)) byDate.set(d.reportDate, d);
   }
   const result = new Map<string, number>();
-  for (const [date, dr] of byDate) result.set(date, dr.netSales ?? dr.netSale ?? ((dr.totalSales ?? 0) - (dr.returnAmount ?? 0) - (dr.discountAmount ?? 0)));
+  for (const [date, dr] of byDate) {
+    const computedNet = (dr.totalSales ?? 0) - (dr.returnAmount ?? 0) - (dr.discountAmount ?? 0);
+    const net = (dr.netSales != null && dr.netSales !== 0) ? dr.netSales
+      : (dr.netSale != null && dr.netSale !== 0) ? dr.netSale
+      : dr.netSales ?? dr.netSale ?? computedNet;
+    result.set(date, net);
+  }
   return result;
 }
 
@@ -146,9 +152,10 @@ export default function ReportViewPage() {
   const [customStart, setCustomStart] = useState(init.start);
   const [customEnd, setCustomEnd]     = useState(init.end);
 
-  const [reports, setReports]   = useState<ReportRow[]>([]);
-  const [isLoading, setLoading] = useState(true);
-  const [error, setError]       = useState<string | null>(null);
+  const [reports, setReports]         = useState<ReportRow[]>([]);
+  const [isLoading, setLoading]       = useState(true);
+  const [isRefreshing, setRefreshing] = useState(false);
+  const [error, setError]             = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const unsubRef    = useRef<(() => void) | null>(null);
@@ -156,9 +163,6 @@ export default function ReportViewPage() {
   // 비교 데이터
   const [prevMonthMap, setPrevMonthMap] = useState<Map<string, number>>(new Map());
   const [prevYearMap,  setPrevYearMap]  = useState<Map<string, number>>(new Map());
-
-  // 전년 비교 옵션: 'date' = 동일 날짜, 'weekday' = 동월 동요일(52주 전)
-  const [yearMode, setYearMode] = useState<'date' | 'weekday'>('date');
 
   // ── 비교 범위 fetch 헬퍼 ────────────────────────────────────────
   const fetchComparison = useCallback(async (
@@ -178,12 +182,16 @@ export default function ReportViewPage() {
   }, []);
 
   // ── 메인 데이터 조회 ────────────────────────────────────────────
-  const fetchData = useCallback(async (start: string, end: string) => {
+  const fetchData = useCallback(async (start: string, end: string, background = false) => {
     if (!storesLoaded) return;
     const storeId = currentStore?.storeId;
     if (!storeId) { setLoading(false); return; }
 
-    setLoading(true);
+    if (background) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -220,7 +228,7 @@ export default function ReportViewPage() {
         reportDate:     dr.reportDate    ?? '',
         serialNumber:   dr.serialNumber  ?? '',
         totalSales:     dr.totalSales    ?? 0,
-        netSales:       dr.netSales ?? dr.netSale ?? ((dr.totalSales ?? 0) - (dr.returnAmount ?? 0) - (dr.discountAmount ?? 0)),
+        netSales:       (dr.netSales != null && dr.netSales !== 0) ? dr.netSales : (dr.netSale != null && dr.netSale !== 0) ? dr.netSale : dr.netSales ?? dr.netSale ?? ((dr.totalSales ?? 0) - (dr.returnAmount ?? 0) - (dr.discountAmount ?? 0)),
         customerCount:  dr.customerCount ?? 0,
         returnAmount:   dr.returnAmount  ?? 0,
         discountAmount: dr.discountAmount ?? 0,
@@ -269,6 +277,7 @@ export default function ReportViewPage() {
       setError('데이터 조회에 실패했습니다. 다시 시도해주세요.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [currentStore?.storeId, storesLoaded, fetchComparison]);
 
@@ -276,12 +285,21 @@ export default function ReportViewPage() {
     fetchData(range.start, range.end).then(() => setLastUpdated(new Date()));
   }, [range, fetchData]);
 
-  // 1분 자동 갱신
+  // 1분 자동 갱신 (visibilitychange 기반 — 백그라운드 탭 throttle 우회)
   useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      fetchData(range.start, range.end).then(() => setLastUpdated(new Date()));
-    }, 60 * 1000);
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    const tick = () => fetchData(range.start, range.end, true).then(() => setLastUpdated(new Date()));
+
+    intervalRef.current = setInterval(tick, 60 * 1000);
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [range, fetchData]);
 
   // 오늘 데이터 실시간 구독 (onSnapshot)
@@ -296,14 +314,16 @@ export default function ReportViewPage() {
       where('storeId',    '==', storeId),
       where('reportDate', '==', today),
     );
+    let isFirstFire = true;
     unsubRef.current = onSnapshot(q, () => {
-      fetchData(range.start, range.end).then(() => setLastUpdated(new Date()));
+      if (isFirstFire) { isFirstFire = false; return; } // 구독 직후 초기 발화 무시
+      fetchData(range.start, range.end, true).then(() => setLastUpdated(new Date()));
     }, () => {});
     return () => { if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; } };
   }, [currentStore?.storeId, range, fetchData]);
 
   useEffect(() => {
-    const onFocus = () => fetchData(range.start, range.end).then(() => setLastUpdated(new Date()));
+    const onFocus = () => fetchData(range.start, range.end, true).then(() => setLastUpdated(new Date()));
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [range, fetchData]);
@@ -332,10 +352,6 @@ export default function ReportViewPage() {
     if (typeof w === 'object') return `${w.condition} ${w.tempMin}°~${w.tempMax}°`;
     return w as string;
   };
-
-  // ── 전년 비교 날짜 계산 ──────────────────────────────────────────
-  const getPrevYearDate = (date: string) =>
-    yearMode === 'weekday' ? subtractOneYearSameWeekday(date) : subtractOneYear(date);
 
   // ── 렌더링 ───────────────────────────────────────────────────────
   return (
@@ -367,43 +383,17 @@ export default function ReportViewPage() {
         </div>
         <button
           onClick={() => fetchData(range.start, range.end).then(() => setLastUpdated(new Date()))}
-          disabled={isLoading}
+          disabled={isLoading || isRefreshing}
           className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 rounded-lg text-sm transition-colors disabled:opacity-50"
         >
-          <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-          새로고침
+          <RefreshCw className={`w-4 h-4 ${(isLoading || isRefreshing) ? 'animate-spin' : ''}`} />
+          {isRefreshing ? '갱신 중...' : '새로고침'}
         </button>
       </div>
 
-      {/* 기간 선택 + 전년 비교 옵션 */}
+      {/* 기간 선택 */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-5 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">기간 선택</p>
-          {/* 전년 비교 모드 토글 */}
-          <div className="flex items-center gap-1.5 text-xs">
-            <span className="text-slate-500">전년 대비:</span>
-            <button
-              onClick={() => setYearMode('date')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
-                yearMode === 'date'
-                  ? 'bg-violet-600 text-white'
-                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-              }`}
-            >
-              동일 날짜
-            </button>
-            <button
-              onClick={() => setYearMode('weekday')}
-              className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
-                yearMode === 'weekday'
-                  ? 'bg-violet-600 text-white'
-                  : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-              }`}
-            >
-              동월 동요일
-            </button>
-          </div>
-        </div>
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">기간 선택</p>
 
         <div className="flex flex-wrap gap-2">
           {(['week', 'month', 'lastMonth', 'custom'] as Preset[]).map(p => (
@@ -523,22 +513,24 @@ export default function ReportViewPage() {
 
           {/* 테이블 */}
           <div className="overflow-x-auto rounded-xl border border-slate-800">
-            <table className="w-full min-w-[1100px]">
+            <table className="w-full min-w-[1400px]">
               <thead>
                 <tr className="bg-slate-800 border-b border-slate-700">
                   {[
-                    { label: '날짜',        align: 'left'   },
-                    { label: '총매출',      align: 'right'  },
-                    { label: '순매출',      align: 'right'  },
-                    { label: '전월대비',    align: 'right'  },
-                    { label: '전년대비',    align: 'right'  },
-                    { label: '객수',        align: 'right'  },
-                    { label: '반품',        align: 'right'  },
-                    { label: '할인',        align: 'right'  },
-                    { label: '날씨',        align: 'center' },
-                    { label: '이슈/프로모션', align: 'left' },
-                    { label: '수정이력',    align: 'center' },
-                    { label: '액션',        align: 'center' },
+                    { label: '날짜',          align: 'left'   },
+                    { label: '총매출',        align: 'right'  },
+                    { label: '순매출',        align: 'right'  },
+                    { label: '포스별 매출',   align: 'right'  },
+                    { label: '전월대비',      align: 'right'  },
+                    { label: '전년(날짜)',    align: 'right'  },
+                    { label: '전년(동요일)',  align: 'right'  },
+                    { label: '객수',          align: 'right'  },
+                    { label: '반품',          align: 'right'  },
+                    { label: '할인',          align: 'right'  },
+                    { label: '날씨',          align: 'center' },
+                    { label: '이슈/프로모션', align: 'left'   },
+                    { label: '수정이력',      align: 'center' },
+                    { label: '액션',          align: 'center' },
                   ].map(h => (
                     <th key={h.label}
                       className={`px-3 py-3 text-slate-400 text-xs font-medium whitespace-nowrap text-${h.align}`}>
@@ -555,12 +547,15 @@ export default function ReportViewPage() {
                   const DOW_LABELS = ['일','월','화','수','목','금','토'];
                   const dowColor = dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : 'text-slate-300';
 
-                  const pmDate   = subtractOneMonth(report.reportDate);
-                  const pyDate   = getPrevYearDate(report.reportDate);
-                  const pmSales  = prevMonthMap.get(pmDate);
-                  const pySales  = prevYearMap.get(pyDate);
-                  const pmChg    = pctChange(report.netSales, pmSales);
-                  const pyChg    = pctChange(report.netSales, pySales);
+                  const pmDate    = subtractOneMonth(report.reportDate);
+                  const pyDateD   = subtractOneYear(report.reportDate);
+                  const pyDateW   = subtractOneYearSameWeekday(report.reportDate);
+                  const pmSales   = prevMonthMap.get(pmDate);
+                  const pySalesD  = prevYearMap.get(pyDateD);
+                  const pySalesW  = prevYearMap.get(pyDateW);
+                  const pmChg     = pctChange(report.netSales, pmSales);
+                  const pyChgD    = pctChange(report.netSales, pySalesD);
+                  const pyChgW    = pctChange(report.netSales, pySalesW);
 
                   return (
                     <tr key={report.id}
@@ -592,37 +587,37 @@ export default function ReportViewPage() {
                       </td>
 
                       {/* 총매출 */}
-                      <td className="px-3 py-3 text-right">
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
                         <Link href={`/dashboard/report/view/${report.id}`}
-                          className="text-teal-400 hover:text-teal-300 font-bold text-sm hover:underline whitespace-nowrap">
+                          className="text-teal-400 hover:text-teal-300 font-bold text-sm hover:underline">
                           {(report.totalSales || 0).toLocaleString()}원
                         </Link>
-                        {(report.posBreakdown?.length ?? 0) >= 2 && (
-                          <div className="mt-1 space-y-0.5">
-                            {report.posBreakdown!.map(pos => (
-                              <div key={pos.posNo} className="flex items-center justify-end gap-1 text-[10px]">
-                                <span className="text-slate-600 bg-slate-800 px-1 rounded">POS{pos.posNo}</span>
-                                <span className="text-slate-400 font-mono">{pos.totalSale.toLocaleString()}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
                       </td>
 
                       {/* 순매출 */}
-                      <td className="px-3 py-3 text-right">
-                        <span className="text-emerald-400 font-bold text-sm whitespace-nowrap">
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                        <span className="text-emerald-400 font-bold text-sm">
                           {(report.netSales || 0).toLocaleString()}원
                         </span>
-                        {(report.posBreakdown?.length ?? 0) >= 2 && (
-                          <div className="mt-1 space-y-0.5">
+                      </td>
+
+                      {/* 포스별 매출 */}
+                      <td className="px-3 py-3 text-right">
+                        {(report.posBreakdown?.length ?? 0) > 0 ? (
+                          <div className="space-y-1">
                             {report.posBreakdown!.map(pos => (
-                              <div key={pos.posNo} className="flex items-center justify-end gap-1 text-[10px]">
-                                <span className="text-slate-600 bg-slate-800 px-1 rounded">POS{pos.posNo}</span>
-                                <span className="text-slate-400 font-mono">{pos.netSale.toLocaleString()}</span>
+                              <div key={pos.posNo} className="flex items-center justify-end gap-1.5 text-xs">
+                                <span className="text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded text-[10px] font-mono">
+                                  POS{pos.posNo}
+                                </span>
+                                <span className="text-slate-300 font-mono whitespace-nowrap">
+                                  {pos.netSale.toLocaleString()}원
+                                </span>
                               </div>
                             ))}
                           </div>
+                        ) : (
+                          <span className="text-slate-600 text-xs">-</span>
                         )}
                       </td>
 
@@ -645,22 +640,37 @@ export default function ReportViewPage() {
                         )}
                       </td>
 
-                      {/* 전년 대비 */}
+                      {/* 전년(날짜) 대비 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
-                        {pySales != null ? (
+                        {pySalesD != null ? (
                           <div>
-                            <p className="text-slate-400 text-xs">{pySales.toLocaleString()}원</p>
-                            {pyChg ? (
+                            <p className="text-slate-400 text-xs">{pySalesD.toLocaleString()}원</p>
+                            {pyChgD ? (
                               <>
-                                <span className={`text-xs font-bold ${pyChg.color}`}>{pyChg.text}</span>
-                                <p className="text-slate-600 text-[10px]">
-                                  {pyDate.slice(0, 4)}년 {yearMode === 'weekday' ? '동요일' : pyDate.slice(5)} 대비
-                                </p>
+                                <span className={`text-xs font-bold ${pyChgD.color}`}>{pyChgD.text}</span>
+                                <p className="text-slate-600 text-[10px]">{pyDateD.slice(5)} 대비</p>
                               </>
                             ) : (
-                              <p className="text-slate-600 text-[10px]">
-                                {pyDate.slice(0, 4)}년 {yearMode === 'weekday' ? '동요일' : pyDate.slice(5)}
-                              </p>
+                              <p className="text-slate-600 text-[10px]">{pyDateD.slice(5)}</p>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-600 text-xs">-</span>
+                        )}
+                      </td>
+
+                      {/* 전년(동요일) 대비 */}
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                        {pySalesW != null ? (
+                          <div>
+                            <p className="text-slate-400 text-xs">{pySalesW.toLocaleString()}원</p>
+                            {pyChgW ? (
+                              <>
+                                <span className={`text-xs font-bold ${pyChgW.color}`}>{pyChgW.text}</span>
+                                <p className="text-slate-600 text-[10px]">{pyDateW.slice(5)} 동요일</p>
+                              </>
+                            ) : (
+                              <p className="text-slate-600 text-[10px]">{pyDateW.slice(5)} 동요일</p>
                             )}
                           </div>
                         ) : (
@@ -750,7 +760,7 @@ export default function ReportViewPage() {
                   <td className="px-3 py-3 text-slate-300 font-bold text-sm">합계 ({reports.length}일)</td>
                   <td className="px-3 py-3 text-right text-teal-400    font-bold text-sm">{totalSales.toLocaleString()}원</td>
                   <td className="px-3 py-3 text-right text-emerald-400 font-bold text-sm">{totalNetSales.toLocaleString()}원</td>
-                  <td className="px-3 py-3 text-right text-slate-500   text-xs" colSpan={2}>
+                  <td className="px-3 py-3 text-right text-slate-500   text-xs" colSpan={4}>
                     일평균 <span className="text-blue-300 font-semibold">{avgSales.toLocaleString()}원</span>
                     <span className="text-slate-600 ml-1">({elapsed}일 기준)</span>
                   </td>
