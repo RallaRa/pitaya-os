@@ -54,6 +54,11 @@ function ItemRow({ item, isTop }: { item: PredictionItem; isTop: boolean }) {
         {item.displayRecommend && (
           <p className="text-[10px] text-slate-500 mt-0.5 truncate">{item.displayRecommend}</p>
         )}
+        {item.reasonDetail && (
+          <p className="text-[10px] text-slate-400 mt-0.5 leading-snug line-clamp-2" title={item.reasonDetail}>
+            💡 {item.reasonDetail}
+          </p>
+        )}
       </div>
       <span className="text-[10px] text-slate-600 shrink-0">{item.confidence}%</span>
     </div>
@@ -128,10 +133,10 @@ export default function SalesPredictionWidget({
 
         {/* 서포터 의견 */}
         {data?.supporterComment && (
-          <div className="mx-2 mb-1 bg-blue-950/30 border border-blue-500/20 rounded-lg px-2.5 py-1.5 shrink-0">
-            <p className="text-[10px] text-slate-500 mb-0.5">🤖 서포터 의견</p>
-            <p className="text-[10px] text-blue-200/90 leading-tight">{boldify(data.supporterComment)}</p>
-            <p className="text-[9px] text-slate-600 mt-0.5">ℹ️ AI 분석 결과이며 참고용입니다</p>
+          <div className="mx-2 mb-1 bg-blue-950/30 border border-blue-500/20 rounded-lg px-2.5 py-2 shrink-0 max-h-28 overflow-y-auto">
+            <p className="text-[10px] text-slate-500 mb-1 sticky top-0 bg-blue-950/90">🤖 서포터 의견 (최대 300자)</p>
+            <p className="text-[11px] text-blue-200/90 leading-relaxed whitespace-pre-wrap">{boldify(data.supporterComment)}</p>
+            <p className="text-[9px] text-slate-600 mt-1">ℹ️ AI 분석 결과이며 참고용입니다</p>
           </div>
         )}
 
