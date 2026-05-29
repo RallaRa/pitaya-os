@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { useState, useEffect, useCallback } from 'react';
-import { Search, RefreshCw, TrendingDown, CreditCard, Banknote, AlertCircle } from 'lucide-react';
+import { Search, RefreshCw, TrendingDown, CreditCard, Banknote, AlertCircle, Image as ImageIcon, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { useStore } from '@/context/StoreContext';
@@ -16,6 +16,52 @@ interface Rec {
   id: string; purchaseDate: string; supplierName: string;
   items?: { name: string }[]; totalAmount: number;
   paymentMethod?: string; memo?: string;
+  imageUrls?: string[];
+}
+
+function ImageViewer({ urls, onClose }: { urls: string[]; onClose: () => void }) {
+  const [idx, setIdx] = useState(0);
+  const total = urls.length;
+  return (
+    <div className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center" onClick={onClose}>
+      <div className="relative bg-slate-900 rounded-2xl overflow-hidden max-w-4xl w-full mx-4 max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* 헤더 */}
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-700 shrink-0">
+          <ImageIcon className="w-4 h-4 text-teal-400" />
+          <span className="text-sm text-slate-300 flex-1">원본 문서</span>
+          <span className="text-xs text-slate-500">{idx + 1} / {total}</span>
+          <button onClick={onClose} className="text-slate-400 hover:text-white p-1"><X className="w-5 h-5" /></button>
+        </div>
+        {/* 이미지 */}
+        <div className="flex-1 bg-slate-950 flex items-center justify-center min-h-[300px] relative overflow-auto">
+          <img src={urls[idx]} alt={`문서 ${idx + 1}`} className="max-w-full max-h-[70vh] object-contain" />
+          {total > 1 && (
+            <>
+              <button onClick={() => setIdx(i => (i - 1 + total) % total)}
+                className="absolute left-2 top-1/2 -translate-y-1/2 bg-slate-800/80 hover:bg-slate-700 text-white rounded-full p-2">
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <button onClick={() => setIdx(i => (i + 1) % total)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 bg-slate-800/80 hover:bg-slate-700 text-white rounded-full p-2">
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </>
+          )}
+        </div>
+        {/* 썸네일 스트립 */}
+        {total > 1 && (
+          <div className="flex gap-2 px-4 py-2 border-t border-slate-700 overflow-x-auto shrink-0">
+            {urls.map((u, i) => (
+              <button key={i} onClick={() => setIdx(i)}
+                className={`shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 ${i === idx ? 'border-teal-400' : 'border-slate-700'}`}>
+                <img src={u} alt="" className="w-full h-full object-cover" />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function PurchaseLedgerPage() {
@@ -29,6 +75,7 @@ export default function PurchaseLedgerPage() {
   const [supplier, setSupp]    = useState('');
   const [records,  setRecords] = useState<Rec[]>([]);
   const [loading,  setLoading] = useState(false);
+  const [viewUrls, setViewUrls] = useState<string[] | null>(null);
 
   const load = useCallback(async () => {
     if (!storeId) return;
@@ -59,6 +106,7 @@ export default function PurchaseLedgerPage() {
 
   return (
     <div className="flex h-full min-h-screen bg-slate-950">
+      {viewUrls && <ImageViewer urls={viewUrls} onClose={() => setViewUrls(null)} />}
       <div className="flex-1 flex flex-col min-w-0 overflow-auto p-4 md:p-6 space-y-5">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">매입 원장</h1>
@@ -139,11 +187,12 @@ export default function PurchaseLedgerPage() {
                   <th className="px-4 py-3 text-right">금액</th>
                   <th className="px-4 py-3 text-left">결제</th>
                   <th className="px-4 py-3 text-left">메모</th>
+                  <th className="px-4 py-3 text-center">원본</th>
                 </tr>
               </thead>
               <tbody>
-                {loading && <tr><td colSpan={6} className="text-center py-8 text-slate-500">불러오는 중...</td></tr>}
-                {!loading && filtered.length === 0 && <tr><td colSpan={6} className="text-center py-8 text-slate-500">조회된 내역이 없습니다</td></tr>}
+                {loading && <tr><td colSpan={7} className="text-center py-8 text-slate-500">불러오는 중...</td></tr>}
+                {!loading && filtered.length === 0 && <tr><td colSpan={7} className="text-center py-8 text-slate-500">조회된 내역이 없습니다</td></tr>}
                 {filtered.map(r => (
                   <tr key={r.id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
                     <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{r.purchaseDate}</td>
@@ -156,6 +205,19 @@ export default function PurchaseLedgerPage() {
                         : '-'}
                     </td>
                     <td className="px-4 py-3 text-slate-500 truncate max-w-[120px]">{r.memo || '-'}</td>
+                    <td className="px-4 py-3 text-center">
+                      {r.imageUrls && r.imageUrls.length > 0 ? (
+                        <button
+                          onClick={() => setViewUrls(r.imageUrls!)}
+                          className="inline-flex items-center gap-1 text-[10px] text-teal-400 hover:text-teal-300 bg-teal-900/20 hover:bg-teal-900/40 px-2 py-1 rounded-lg transition-colors"
+                        >
+                          <ImageIcon className="w-3 h-3" />
+                          {r.imageUrls.length > 1 ? `${r.imageUrls.length}장` : '보기'}
+                        </button>
+                      ) : (
+                        <span className="text-slate-700">-</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
