@@ -1,0 +1,28 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // 매장 이미지 — 인증된 사용자 읽기, 쓰기는 API(Admin SDK) 경유 권장
+    match /stores/{storeId}/images/{category}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.auth.token.email == 'hipona00@gmail.com';
+    }
+
+    // 기존 서류 업로드 경로 (읽기 허용)
+    match /store_docs/{storeId}/{docType}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /purchase_images/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -9,8 +9,11 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ImageIcon } from 'lucide-react';
 import StoreDocuments from '@/components/store/StoreDocuments';
+import StoreImages from '@/components/store/StoreImages';
+import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { isSuperuserEmail } from '@/lib/auth/permissions';
 
 const SIDO_LIST = ['서울','부산','대구','인천','광주','대전','울산','세종',
   '경기','강원','충북','충남','전북','전남','경북','경남','제주'];
@@ -34,6 +37,9 @@ export default function StoreSettingsPage() {
   const [copied, setCopied] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
   const [error, setError] = useState('');
+
+  const canManageImages = isSuperuserEmail(user?.email) ||
+    ['owner', 'admin', 'master', 'superuser'].includes(currentStore?.role || '');
 
   useEffect(() => {
     if (currentStore) {
@@ -78,7 +84,7 @@ export default function StoreSettingsPage() {
     try {
       const res = await fetch('/api/store', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({
           storeId: currentStore?.storeId,
           ...form,
@@ -270,6 +276,21 @@ export default function StoreSettingsPage() {
         <p className="text-slate-400 text-sm">
           매장 ID를 공유하면 다른 계정이 이 매장에 연결할 수 있습니다.
         </p>
+      </div>
+
+      {/* 매장 이미지 및 서류 */}
+      <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 mb-6">
+        <h2 className="text-white font-bold mb-1 flex items-center gap-2">
+          <ImageIcon className="w-4 h-4 text-teal-400" />
+          매장 이미지 및 서류
+        </h2>
+        <p className="text-slate-500 text-xs mb-5">
+          로고, 외관, 내부 사진 및 각종 허가증을 카테고리별로 등록할 수 있습니다.
+          {!canManageImages && (
+            <span className="text-yellow-500/80 ml-1">(조회만 가능 — 업로드/삭제는 관리자만)</span>
+          )}
+        </p>
+        <StoreImages storeId={currentStore.storeId} canManage={canManageImages} />
       </div>
 
       {/* 서류 관리 */}
