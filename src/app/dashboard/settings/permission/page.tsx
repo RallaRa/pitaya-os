@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useStore } from '@/context/StoreContext';
+import { useAuth } from '@/context/AuthContext';
 import { ALL_MENUS, Role, DEFAULT_PERMISSIONS } from '@/lib/permissions';
+import { isSuperuserEmail } from '@/lib/auth/permissions';
 import { Shield, Loader2, Save, ArrowLeft, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
@@ -18,6 +20,7 @@ const CATEGORIES = [...new Set(ALL_MENUS.map(m => m.category))];
 
 export default function PermissionPage() {
   const { currentStore } = useStore();
+  const { user } = useAuth();
   const [permissions,      setPermissions]      = useState<Record<string, Record<string, boolean>>>({});
   const [savedPermissions, setSavedPermissions] = useState<Record<string, Record<string, boolean>>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -25,7 +28,7 @@ export default function PermissionPage() {
   const [saveMsg, setSaveMsg]     = useState('');
   const [error, setError]         = useState('');
 
-  const isSuperuser = currentStore?.role === 'superuser';
+  const isSuperuser = isSuperuserEmail(user?.email) || currentStore?.role === 'superuser';
 
   // 변경된 셀 목록 ("role:menuKey")
   const changedCells = new Set<string>();

@@ -243,8 +243,20 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: '해당 멤버를 찾을 수 없습니다.' }, { status: 404 });
       }
 
-      await snap.docs[0].ref.update({ role, updatedAt: FieldValue.serverTimestamp() });
-      return NextResponse.json({ success: true });
+      const roleToGroup: Record<string, string> = {
+        owner: 'master', admin: 'admin', user: 'user', staff: 'staff',
+      };
+      const groupId = roleToGroup[role] || role;
+      await snap.docs[0].ref.update({
+        role,
+        groupId,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      await adminDb.collection('users').doc(targetUid).update({
+        groupId,
+        updatedAt: FieldValue.serverTimestamp(),
+      }).catch(() => {});
+      return NextResponse.json({ success: true, groupId });
     }
 
     // [멤버 내보내기 (강제 탈퇴)]

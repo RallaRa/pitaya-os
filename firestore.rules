@@ -265,8 +265,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // dev_context: 슈퍼유저 읽기, 서버(Admin SDK)만 쓰기
+    match /dev_context/{docId} {
+      allow read: if request.auth != null && isSuperuser();
+      allow write: if false;
+    }
+
     // ──────────────────────────────────────────
-    // 슈퍼유저 헬퍼
     // ──────────────────────────────────────────
     function isSuperuser() {
       return request.auth != null

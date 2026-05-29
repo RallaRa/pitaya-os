@@ -7,7 +7,7 @@ import {
   Settings, MessageCircle, ShoppingCart, Sparkles,
   BarChart2, ClipboardCheck, X,
   Circle, CalendarDays, Tag, Scale, LineChart, Building2, SlidersHorizontal, Users, Crown, History, ChevronRight, ChevronDown,
-  FileText, TrendingUp, Truck, BookOpen, Hash,
+  FileText, TrendingUp, Truck, BookOpen, Hash, Code,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -332,6 +332,21 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               <div className="hidden md:block">
                 <NotificationHub label="알림" />
               </div>
+
+              {user?.email?.toLowerCase() === SUPERUSER_EMAIL.toLowerCase() && (
+                <Link
+                  href="/dashboard/dev-console"
+                  onClick={onClose}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm mt-1 ${
+                    pathname.startsWith('/dashboard/dev-console')
+                      ? 'bg-purple-600/20 text-purple-300 font-semibold border border-purple-500/20'
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-purple-300'
+                  }`}
+                >
+                  <Code className="w-4 h-4 shrink-0" />
+                  개발 콘솔
+                </Link>
+              )}
             </>
           )}
         </nav>

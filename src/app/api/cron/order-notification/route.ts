@@ -12,14 +12,18 @@ export async function POST(req: Request) {
     const storesSnap = await adminDb.collection('stores').get();
     let notified = 0;
 
+    const cronHeaders: Record<string, string> = {};
+    if (process.env.CRON_SECRET) cronHeaders['x-cron-secret'] = process.env.CRON_SECRET;
+
     for (const storeDoc of storesSnap.docs) {
       const storeId = storeDoc.id;
       try {
-        const res = await fetch(`${baseUrl}/api/order/check-delivery-gap?storeId=${storeId}`);
+        const res = await fetch(`${baseUrl}/api/order/check-delivery-gap?storeId=${storeId}`, {
+          headers: cronHeaders,
+        });
         const data = await res.json();
         if (!data.dDayType) continue;
 
-        // 매장 멤버 조회
         const membersSnap = await adminDb.collection('user_store_map')
           .where('storeId', '==', storeId).get();
 
@@ -28,25 +32,44 @@ export async function POST(req: Request) {
           'D-1': '📦 발주 마감이 내일입니다! 확인해주세요.',
           '당일': '🚨 오늘이 발주 마감일입니다!',
           '배송불가': '🚨 배송 불가 구간입니다. 긴급 발주가 필요합니다.',
-        }[data.dDayType] || '';
+        }[data.dDayType as string] || '';
 
         if (!notifMsg) continue;
 
+        let aiTip = '';
+        if (process.env.GEMINI_API_KEY) {
+          try {
+            const { GoogleGenerativeAI } = await import('@google/generative-ai');
+            const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+            const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+            const tip = await model.generateContent(
+              `정육점 발주 알림: ${data.dDayType}. ${notifMsg} 1문장 발주 조언만.`,
+            );
+            aiTip = tip.response.text().trim().slice(0, 120);
+          } catch { /* ignore */ }
+        }
+
+        const batch = adminDb.batch();
         for (const memberDoc of membersSnap.docs) {
           const uid = memberDoc.data().uid;
-          await adminDb.collection('notifications').doc(uid)
-            .collection('items').add({
-              type: 'order_alert',
-              title: '발주 알림',
-              message: notifMsg,
-              dDayType: data.dDayType,
-              storeId,
-              read: false,
-              createdAt: FieldValue.serverTimestamp(),
-            });
+          const ref = adminDb.collection('notifications').doc();
+          batch.set(ref, {
+            targetUid:  uid,
+            senderUid:  '',
+            senderName: 'Pitaya OS',
+            type:       'order_alert',
+            title:      '발주 알림',
+            message:    aiTip ? `${notifMsg}\n💡 ${aiTip}` : notifMsg,
+            link:       '/dashboard/suppliers',
+            dDayType:   data.dDayType,
+            storeId,
+            isRead:     false,
+            createdAt:  FieldValue.serverTimestamp(),
+          });
           notified++;
         }
-      } catch {}
+        await batch.commit();
+      } catch { /* skip store */ }
     }
 
     return NextResponse.json({ ok: true, notified });

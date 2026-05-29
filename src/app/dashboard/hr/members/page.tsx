@@ -4,6 +4,7 @@ import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '@/context/StoreContext';
 import { useAuth } from '@/context/AuthContext';
+import { isSuperuserEmail } from '@/lib/auth/permissions';
 import {
   UserCheck, UserX, Loader2, Users, Clock,
   ChevronDown, LogOut, ChevronRight, Store, Building2, Save, X, Check,
@@ -88,8 +89,8 @@ export default function MembersPage() {
   const [isSavingRoles, setIsSavingRoles] = useState(false);
   const [roleSaveSuccess, setRoleSaveSuccess] = useState(false);
 
-  const canManage = ['superuser', 'owner', 'admin'].includes(myRole);
-  const isSuperuser = myRole === 'superuser';
+  const canManage = isSuperuserEmail(user?.email) || ['owner', 'admin'].includes(myRole);
+  const isSuperuser = isSuperuserEmail(user?.email);
 
   const fetchMembers = useCallback(async () => {
     if (!currentStore?.storeId) return;
@@ -207,10 +208,14 @@ export default function MembersPage() {
       const authHeaders = await getAuthJsonHeaders();
       await Promise.all(entries.map(([key, role]) => {
         const [targetUid, storeId] = key.split(':');
-        return fetch('/api/store', {
-          method: 'POST',
+        const roleToGroup: Record<string, string> = {
+          owner: 'master', admin: 'admin', user: 'user', staff: 'staff',
+        };
+        const groupId = roleToGroup[role] || role;
+        return fetch('/api/users', {
+          method: 'PUT',
           headers: authHeaders,
-          body: JSON.stringify({ action: 'changeRole', targetUid, storeId, role }),
+          body: JSON.stringify({ action: 'assignGroup', uid: targetUid, storeId, groupId }),
         }).then(r => r.json().then(d => { if (!r.ok) throw new Error(d.error); }));
       }));
       setLocalRoleChanges({});

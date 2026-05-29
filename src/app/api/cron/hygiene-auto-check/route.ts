@@ -109,11 +109,12 @@ export async function POST(req: Request) {
   const { hour, dateStr } = kstNow();
 
   const sectionsToProcess: { key: string; name: string }[] = [];
+  if (hour >= 11 && hour < 14) sectionsToProcess.push({ key: '작업전', name: '위생상태(작업전)' });
   if (hour >= 14) sectionsToProcess.push({ key: '중간점검', name: '위생상태(작업중)' });
   if (hour >= 20) sectionsToProcess.push({ key: '마감점검', name: '위생상태(작업후)' });
 
   if (sectionsToProcess.length === 0) {
-    return NextResponse.json({ ok: true, skipped: true, reason: `kstHour=${hour} (not >= 14)` });
+    return NextResponse.json({ ok: true, skipped: true, reason: `kstHour=${hour} (not >= 11)` });
   }
 
   const storesSnap = await adminDb.collection('stores').get();

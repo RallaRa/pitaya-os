@@ -9,8 +9,11 @@ const DEFAULT_PERMISSIONS = {
   weekly_analysis:    { master: true, admin: true,  user: false, staff: false },
   yesterday_analysis: { master: true, admin: true,  user: true,  staff: false },
   quick_menu:         { master: true, admin: true,  user: true,  staff: true  },
-  ai_insight:         { master: true, admin: true,  user: false, staff: false },
-  total_partner:      { master: true, admin: true,  user: false, staff: false },
+  ai_insight:         { master: true, admin: true,  user: true,  staff: false },
+  total_partner:      { master: true, admin: true,  user: true,  staff: false },
+  sales_prediction:   { master: true, admin: true,  user: true,  staff: false },
+  today_sales:        { master: true, admin: true,  user: true,  staff: true  },
+  sales_compare:      { master: true, admin: true,  user: true,  staff: false },
 };
 
 export async function GET(req: Request) {

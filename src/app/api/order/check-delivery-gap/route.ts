@@ -26,8 +26,12 @@ async function fetchHolidays14Days(apiKey: string): Promise<string[]> {
 }
 
 export async function GET(req: Request) {
-  const authUser = await verifyToken(req);
-  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const cronSecret = req.headers.get('x-cron-secret');
+  const isCron = process.env.CRON_SECRET && cronSecret === process.env.CRON_SECRET;
+  if (!isCron) {
+    const authUser = await verifyToken(req);
+    if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
   const { searchParams } = new URL(req.url);
   const storeId = searchParams.get('storeId') || '';
