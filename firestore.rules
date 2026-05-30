@@ -138,6 +138,11 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /customer_request_logs/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
     // ──────────────────────────────────────────
     // pos_sales_header / pos_sales_detail / pos_finish_total / pos_sync_log
     // ──────────────────────────────────────────

@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/authVerify';
 import { queryCustomers, type CustomerSortField } from '@/lib/customerQuery';
+import type { VisitCycleStatus } from '@/lib/customerVisitCycle';
 
 const SORT_FIELDS: CustomerSortField[] = [
   'cusCode', 'point', 'totalPurchase', 'visitCount', 'joinDate', 'lastVisitDate', 'grade',
+  'avgCycleDays', 'daysSinceLastVisit', 'expectedNextVisit',
 ];
+
+const CYCLE_STATUSES: VisitCycleStatus[] = ['active', 'due_soon', 'overdue', 'new', 'unknown'];
 
 // GET /api/customers?storeId=...&grade=...&search=...&joinFrom=...&joinTo=...&visitFrom=...&visitTo=...&sortBy=...&sortOrder=...&page=...&limit=...&exportAll=1
 export async function GET(req: Request) {
@@ -22,6 +26,11 @@ export async function GET(req: Request) {
   const sortOrder = searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc';
   const exportAll = searchParams.get('exportAll') === '1';
 
+  const cycleStatusParam = searchParams.get('cycleStatus') || '';
+  const cycleStatus = CYCLE_STATUSES.includes(cycleStatusParam as VisitCycleStatus)
+    ? (cycleStatusParam as VisitCycleStatus)
+    : '';
+
   try {
     const result = await queryCustomers({
       storeId,
@@ -31,6 +40,7 @@ export async function GET(req: Request) {
       joinTo: searchParams.get('joinTo') || '',
       visitFrom: searchParams.get('visitFrom') || '',
       visitTo: searchParams.get('visitTo') || '',
+      cycleStatus,
       sortBy,
       sortOrder,
       page: Math.max(1, Number(searchParams.get('page') || '1')),

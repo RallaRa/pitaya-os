@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifyToken } from '@/lib/authVerify';
+import { normDateYMD } from '@/lib/dateUtils';
+import {
+  buildVisitDatesMap,
+  computeVisitCycle,
+  cycleDistributionBuckets,
+  mergeVisitCycle,
+} from '@/lib/customerVisitCycle';
 
 // GET /api/customers/analysis?storeId=X
 export async function GET(req: Request) {
@@ -17,18 +24,20 @@ export async function GET(req: Request) {
       adminDb.collection('pos_customers').where('storeId', '==', storeId).get(),
     ]);
 
+    const salesDocs = salesSnap.docs.map(d => d.data());
+    const visitDatesMap = buildVisitDatesMap(salesDocs);
+
     // ── 요일별 방문 패턴 ─────────────────────────────────────────
     const DOW_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
     const dowVisits  = Array(7).fill(0);
     const dowSales   = Array(7).fill(0);
 
-    for (const d of salesSnap.docs) {
-      const r = d.data();
-      const dateStr = r.date as string;
-      if (!dateStr || dateStr.length < 10) continue;
-      const dow = new Date(dateStr + 'T00:00:00').getDay();
-      dowVisits[dow] += Number(r.visitCount || 1);
-      dowSales[dow]  += Number(r.totalSale  || 0);
+    for (const r of salesDocs) {
+      const dateStr = normDateYMD(String(r.date || ''));
+      if (!dateStr) continue;
+      const dow = new Date(dateStr + 'T12:00:00+09:00').getDay();
+      dowVisits[dow] += 1;
+      dowSales[dow]  += Number(r.totalSale || 0);
     }
     const dowPattern = DOW_LABELS.map((label, i) => ({
       dow: label,
@@ -36,23 +45,20 @@ export async function GET(req: Request) {
       sales: dowSales[i],
     }));
 
-    // ── 재방문율 & 방문 빈도 분포 ────────────────────────────────
-    const visitMap: Record<string, number> = {};
-    for (const d of salesSnap.docs) {
-      const code = d.data().cusCode as string;
-      if (!code) continue;
-      visitMap[code] = (visitMap[code] || 0) + Number(d.data().visitCount || 1);
+    // ── 재방문율 & 방문 빈도 분포 (고유 방문일 기준) ─────────────
+    const visitDayMap: Record<string, number> = {};
+    for (const [code, dates] of visitDatesMap) {
+      visitDayMap[code] = dates.length;
     }
 
-    const totalCustomers   = Object.keys(visitMap).length;
-    const returnCustomers  = Object.values(visitMap).filter(v => v >= 2).length;
-    const returnRate       = totalCustomers > 0
-      ? Math.round((returnCustomers / totalCustomers) * 100)
+    const totalWithSales = Object.keys(visitDayMap).length;
+    const returnCustomers = Object.values(visitDayMap).filter(v => v >= 2).length;
+    const returnRate = totalWithSales > 0
+      ? Math.round((returnCustomers / totalWithSales) * 100)
       : 0;
 
-    // 방문 빈도 분포 (1회, 2~3회, 4~9회, 10회+)
     const freqBuckets = [0, 0, 0, 0];
-    for (const v of Object.values(visitMap)) {
+    for (const v of Object.values(visitDayMap)) {
       if      (v === 1)  freqBuckets[0]++;
       else if (v <= 3)   freqBuckets[1]++;
       else if (v <= 9)   freqBuckets[2]++;
@@ -65,6 +71,32 @@ export async function GET(req: Request) {
       { label: '10회+', count: freqBuckets[3] },
     ];
 
+    // ── 방문 주기 분포 & 이탈 ────────────────────────────────────
+    const cyclesForDist: Array<{ avgCycleDays: number | null }> = [];
+    let overdueCount = 0;
+    let dueSoonCount = 0;
+    let withCycleData = 0;
+
+    for (const d of customersSnap.docs) {
+      const r = d.data();
+      const code = String(r.cusCode || '');
+      const fromSales = computeVisitCycle(visitDatesMap.get(code) || []);
+      const cycle = mergeVisitCycle(
+        fromSales,
+        Number(r.visitCount || 0),
+        String(r.joinDate || r.writeDate || ''),
+        String(r.lastVisitDate || r.writeDate || ''),
+      );
+      if (cycle.avgCycleDays != null) {
+        withCycleData++;
+        cyclesForDist.push({ avgCycleDays: cycle.avgCycleDays });
+      }
+      if (cycle.cycleStatus === 'overdue') overdueCount++;
+      if (cycle.cycleStatus === 'due_soon') dueSoonCount++;
+    }
+
+    const cycleDistribution = cycleDistributionBuckets(cyclesForDist);
+
     // ── 등급별 분포 ──────────────────────────────────────────────
     const gradeMap: Record<string, { count: number; totalSales: number }> = {};
     for (const d of customersSnap.docs) {
@@ -72,14 +104,17 @@ export async function GET(req: Request) {
       if (!gradeMap[grade]) gradeMap[grade] = { count: 0, totalSales: 0 };
       gradeMap[grade].count++;
     }
-    // 매출 합산
-    for (const d of salesSnap.docs) {
-      const code = d.data().cusCode as string;
-      const cusDoc = customersSnap.docs.find(c => c.data().cusCode === code);
-      if (!cusDoc) continue;
-      const grade = (cusDoc.data().grade as string) || '미지정';
-      if (gradeMap[grade]) {
-        gradeMap[grade].totalSales += Number(d.data().totalSale || 0);
+    const salesByCode: Record<string, number> = {};
+    for (const r of salesDocs) {
+      const code = String(r.cusCode || '');
+      if (!code) continue;
+      salesByCode[code] = (salesByCode[code] || 0) + Number(r.totalSale || 0);
+    }
+    for (const d of customersSnap.docs) {
+      const code = String(d.data().cusCode || '');
+      const grade = (d.data().grade as string) || '미지정';
+      if (gradeMap[grade] && salesByCode[code]) {
+        gradeMap[grade].totalSales += salesByCode[code];
       }
     }
     const gradeDistribution = Object.entries(gradeMap)
@@ -95,7 +130,7 @@ export async function GET(req: Request) {
       monthlyNew[ym] = 0;
     }
     for (const d of customersSnap.docs) {
-      const wd = String(d.data().joinDate || d.data().writeDate || '').slice(0, 7);
+      const wd = normDateYMD(String(d.data().joinDate || d.data().writeDate || '')).slice(0, 7);
       if (wd in monthlyNew) monthlyNew[wd]++;
     }
     const newCustomerTrend = Object.entries(monthlyNew).map(([month, count]) => ({ month, count }));
@@ -106,9 +141,15 @@ export async function GET(req: Request) {
       freqDistribution,
       gradeDistribution,
       newCustomerTrend,
+      cycleDistribution,
+      overdueCount,
+      dueSoonCount,
+      withCycleData,
       totalCustomers: customersSnap.size,
+      salesHistoryDays: new Set(salesDocs.map(r => normDateYMD(String(r.date || ''))).filter(Boolean)).size,
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'Internal error';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

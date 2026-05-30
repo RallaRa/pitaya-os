@@ -91,3 +91,15 @@ export function avgDivisorForMonth(year: number, month: number): number {
   if (year === kst.year && month === kst.month) return kst.day;
   return daysInMonth;
 }
+
+/** YYYY-MM-DD 추출 (POS 다양한 날짜 형식) */
+export function normDateYMD(raw: string): string {
+  if (!raw) return '';
+  const iso = raw.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const compact = raw.replace(/\D/g, '');
+  if (compact.length >= 8) {
+    return `${compact.slice(0, 4)}-${compact.slice(4, 6)}-${compact.slice(6, 8)}`;
+  }
+  return raw.slice(0, 10);
+}
