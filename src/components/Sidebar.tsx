@@ -222,7 +222,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { key: 'suppliers' as const,             href: '/dashboard/suppliers',                           icon: <Building2          className="w-4 h-4" />, label: '거래처 관리' },
     { key: 'predictionVariables' as const,   href: '/dashboard/settings/prediction-variables',       icon: <SlidersHorizontal  className="w-4 h-4" />, label: 'AI 예측 변수' },
     { key: 'customers' as const,             href: '/dashboard/customers',                            icon: <Users              className="w-4 h-4" />, label: '고객 관리' },
-    { key: 'predictionHistory' as const,     href: '/dashboard/prediction-history',                   icon: <History            className="w-4 h-4" />, label: 'AI 예측 히스토리' },
+    { key: 'predictionHistory' as const,     href: '/dashboard/prediction-analysis',                    icon: <TrendingUp         className="w-4 h-4" />, label: '예측분석' },
     { key: 'items' as const,                 href: '/dashboard/items',                                icon: <Tag                className="w-4 h-4" />, label: '품목관리' },
     { key: 'store' as const,                 href: '/dashboard/coupons',                              icon: <Tag                className="w-4 h-4" />, label: '쿠폰 관리' },
   ];

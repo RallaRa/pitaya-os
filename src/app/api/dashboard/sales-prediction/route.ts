@@ -4,6 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getStoreCoords, getWeatherCondition, WEATHER_ICONS } from '@/lib/weather';
 import { verifyToken } from '@/lib/authVerify';
+import { getPredictionAnalysisInsights } from '@/lib/predictionAnalysis';
 
 function toYMD(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -157,10 +158,15 @@ export async function GET(req: Request) {
     activeVars.length > 0 ? `활성 날씨변수 ${activeVars.length}개` : '',
   ].filter(Boolean).join(' | ');
 
+  const predictionFeedback = storeId
+    ? await getPredictionAnalysisInsights(storeId).catch(() => '')
+    : '';
+
   const prompt = `정육점 AI 매출 예측 분석을 수행하세요.
 
 [컨텍스트]
 ${contextInfo}
+${predictionFeedback ? `\n[전일 예측분석 피드백 — 반영 필수]\n${predictionFeedback}` : ''}
 
 [최근 90일 판매 데이터 (상위20품목)]
 ${summaryLines}

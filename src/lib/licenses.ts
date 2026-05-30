@@ -52,6 +52,7 @@ export const MENU_KEY_TO_MODULE: Partial<Record<string, LicenseModuleKey>> = {
 
 export function pathToModule(pathname: string): LicenseModuleKey | null {
   if (pathname === '/dashboard' || pathname.startsWith('/dashboard/sales-forecast') ||
+      pathname.startsWith('/dashboard/prediction-analysis') ||
       pathname.startsWith('/dashboard/prediction-history') ||
       pathname.startsWith('/dashboard/settings/prediction-variables') ||
       pathname.startsWith('/dashboard/settings/widgets')) {

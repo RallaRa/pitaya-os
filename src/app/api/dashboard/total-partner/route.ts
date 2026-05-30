@@ -5,7 +5,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getStoreCoords, getWeatherCondition } from '@/lib/weather';
 import { verifyToken } from '@/lib/authVerify';
 import { fetchNaverTrendData } from '@/lib/naverTrendServer';
-import { storeHasSalesData } from '@/lib/dashboardSalesData';
+import { fetchDailyReportsSince, storeHasSalesData } from '@/lib/dashboardSalesData';
 
 interface PartnerItem { rank: number; item: string; action: string; expectedSales: string; reason: string; badge: string; }
 
@@ -163,9 +163,42 @@ async function collectFirestoreData(storeId: string) {
       itemMap[name].days.add(r.date||'');
     });
   }
-  const topItems90 = Object.entries(itemMap)
+  let topItems90 = Object.entries(itemMap)
     .map(([name,v]) => ({ name, qty: v.qty, amount: v.amount, days: v.days.size }))
     .sort((a,b) => b.qty - a.qty).slice(0, 30);
+
+  // daily_reports fallback (POS 미동기화 매장)
+  if (topItems90.length === 0 || dailyTotals.length === 0) {
+    const drSnap = await fetchDailyReportsSince(storeId, since90);
+    if (drSnap && !drSnap.empty) {
+      const drItemMap: Record<string, { qty: number; amount: number; days: Set<string> }> = {};
+      drSnap.docs.forEach(doc => {
+        const r = doc.data();
+        const rd = String(r.reportDate || '');
+        if (dailyTotals.every(d => d.date !== rd.replace(/-/g, ''))) {
+          dailyTotals.push({
+            date: rd.replace(/-/g, ''),
+            totalSale: Number(r.totalSales || r.netSales || 0),
+            transCount: Number(r.customerCount || r.transCount || 0),
+          });
+        }
+        (r.items || []).forEach((item: { name?: string; qty?: number; netSales?: number; amount?: number }) => {
+          const name = String(item.name || '').trim();
+          if (!name) return;
+          if (!drItemMap[name]) drItemMap[name] = { qty: 0, amount: 0, days: new Set() };
+          drItemMap[name].qty += Number(item.qty || 0);
+          drItemMap[name].amount += Number(item.netSales || item.amount || 0);
+          drItemMap[name].days.add(rd);
+        });
+      });
+      if (topItems90.length === 0) {
+        topItems90 = Object.entries(drItemMap)
+          .map(([name, v]) => ({ name, qty: v.qty, amount: v.amount, days: v.days.size }))
+          .sort((a, b) => b.qty - a.qty).slice(0, 30);
+      }
+      dailyTotals.sort((a, b) => b.date.localeCompare(a.date));
+    }
+  }
 
   // 90일 일마감 통계
   const closures: {date:string;netSale:number;totalSale:number}[] = [];
@@ -174,6 +207,25 @@ async function collectFirestoreData(storeId: string) {
       const r = d.data();
       closures.push({ date: r.date, netSale: r.netSale||0, totalSale: r.totalSale||0 });
     });
+  }
+
+  if (closures.length === 0) {
+    try {
+      const posSnap = await adminDb.collection('pos_daily_sales')
+        .where('storeId', '==', storeId)
+        .where('date', '>=', since90)
+        .limit(90)
+        .get();
+      posSnap.docs.forEach(d => {
+        const r = d.data();
+        closures.push({
+          date: String(r.date || '').replace(/-/g, ''),
+          netSale: Number(r.netSales || r.netSale || 0),
+          totalSale: Number(r.totalSales || r.totalSale || 0),
+        });
+      });
+      closures.sort((a, b) => b.date.localeCompare(a.date));
+    } catch { /* index 없으면 skip */ }
   }
 
   // 고객 분포

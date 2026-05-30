@@ -140,6 +140,14 @@
       ]
     },
     {
+      "collectionGroup": "pos_sales_detail",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "pos_finish_total",
       "queryScope": "COLLECTION",
       "fields": [
