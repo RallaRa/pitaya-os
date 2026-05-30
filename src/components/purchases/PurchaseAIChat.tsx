@@ -32,14 +32,51 @@ function genId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-const MAX_IMAGE_BYTES = 500 * 1024; // ~500KB per image (Vercel 4.5MB 한도)
-const MAX_PAYLOAD_BYTES = 3.2 * 1024 * 1024; // Vercel body limit 여유
+const MAX_IMAGE_BYTES = 600 * 1024; // 장당 ~600KB (요청 분할 전송)
+const BATCH_SAFE_BYTES = 2.5 * 1024 * 1024; // 요청 1회당 안전 한도
+const MAX_FILES_PER_BATCH = 2;
 
 async function compressImageFileWrapper(file: File): Promise<string> {
   return compressImageFile(file, 1024, 0.7);
 }
-function estimatePayloadSize(files: AttachedFile[]): number {
-  return files.reduce((sum, f) => sum + (f.content?.length || 0), 0);
+
+/** 업로드는 한 번에, API 요청은 용량 한도 내 배치로 분할 */
+function splitFilesIntoBatches(files: AttachedFile[]): AttachedFile[][] {
+  const batches: AttachedFile[][] = [];
+  let current: AttachedFile[] = [];
+  let currentSize = 0;
+
+  const flush = () => {
+    if (current.length) {
+      batches.push(current);
+      current = [];
+      currentSize = 0;
+    }
+  };
+
+  for (const file of files) {
+    const fileSize = (file.content?.length || 0) + 320;
+    const isHeavy = file.type === 'pdf' || fileSize > BATCH_SAFE_BYTES * 0.55;
+
+    if (isHeavy) {
+      flush();
+      batches.push([file]);
+      continue;
+    }
+
+    if (
+      current.length > 0
+      && (currentSize + fileSize > BATCH_SAFE_BYTES || current.length >= MAX_FILES_PER_BATCH)
+    ) {
+      flush();
+    }
+
+    current.push(file);
+    currentSize += fileSize;
+  }
+
+  flush();
+  return batches.length ? batches : [files];
 }
 
 async function shrinkImageDataUrl(dataUrl: string): Promise<string> {
@@ -80,7 +117,7 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'assistant',
-      content: '거래명세서·세금계산서 이미지나 파일을 첨부해 주세요. AI가 자동 분석합니다.\n\n이미지 드래그 앤 드랍, 클립보드 붙여넣기(Ctrl+V), 파일 선택 모두 지원합니다.',
+      content: '거래명세서·세금계산서 이미지나 파일을 첨부해 주세요. AI가 자동 분석합니다.\n\n여러 장을 한 번에 올려도 파일별로 순차 분석합니다.\n이미지 드래그 앤 드랍, 클립보드 붙여넣기(Ctrl+V), 파일 선택 모두 지원합니다.',
     },
   ]);
   const [input, setInput] = useState('');
@@ -188,70 +225,106 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
 
     try {
       if (sentFiles.length > 0) {
-        // 전송 직전 이미지 재압축 + 페이로드 검사
+        // 전송 직전 이미지 재압축
         for (let i = 0; i < sentFiles.length; i++) {
           const f = sentFiles[i];
           if (f.type === 'image' && f.content.startsWith('data:image')) {
             sentFiles[i] = { ...f, content: await shrinkImageDataUrl(f.content) };
           }
         }
-        if (estimatePayloadSize(sentFiles) > MAX_PAYLOAD_BYTES) {
+
+        const batches = splitFilesIntoBatches(sentFiles);
+        const headers = await getAuthJsonHeaders();
+        const allInvoices: Invoice[] = [];
+        const allQualities: unknown[] = [];
+        const batchErrors: string[] = [];
+
+        for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+          const batch = batches[batchIdx];
+          const batchLabel = batch.map(f => f.name).join(', ');
+
           setMessages(prev => {
             const next = [...prev];
             next[next.length - 1] = {
               role: 'assistant',
-              content: '⚠️ 이미지 용량이 너무 큽니다. 이미지 1~2장만 올리거나 더 작은 이미지를 사용해주세요. (500KB/장, 총 3.2MB 이하)',
+              content: batches.length > 1
+                ? `📄 분석 중... (${batchIdx + 1}/${batches.length})\n${batchLabel}`
+                : '',
             };
             return next;
           });
-          setLoading(false);
-          return;
+
+          try {
+            const res = await fetch('/api/purchases/analyze-multi', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                files: batch.map(f => ({ content: f.content, name: f.name, type: f.type })),
+                message: batchIdx === 0 ? (text || undefined) : undefined,
+              }),
+              signal: abortRef.current.signal,
+            });
+
+            if (res.status === 413) {
+              throw new Error('이미지 용량이 너무 큽니다.');
+            }
+
+            const raw = await res.text();
+            let data: { error?: string; reply?: string; invoices?: Invoice[]; qualities?: unknown[]; detail?: string };
+            try {
+              data = raw ? JSON.parse(raw) : {};
+            } catch {
+              throw new Error(`서버 응답 오류 (${res.status})`);
+            }
+
+            if (!res.ok) {
+              const detail = data.detail ? ` (${String(data.detail).slice(0, 100)})` : '';
+              throw new Error((data.error || data.detail || 'API 오류') + detail);
+            }
+
+            if (data.invoices?.length) {
+              allInvoices.push(...data.invoices);
+              onInvoicesFound(data.invoices, batch.map(f => ({
+                name: f.name,
+                type: f.type,
+                content: f.content,
+                preview: f.preview,
+              })));
+            }
+
+            if (data.qualities?.length) {
+              allQualities.push(...data.qualities);
+            }
+          } catch (batchErr: any) {
+            if (batchErr.name === 'AbortError') throw batchErr;
+            batchErrors.push(`${batchLabel}: ${batchErr.message || '분석 실패'}`);
+          }
+
+          if (batchIdx < batches.length - 1) {
+            await new Promise(r => setTimeout(r, 400));
+          }
         }
 
-        // Gemini 멀티모달 분석
-        const headers = await getAuthJsonHeaders();
-        const res = await fetch('/api/purchases/analyze-multi', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            files: sentFiles.map(f => ({ content: f.content, name: f.name, type: f.type })),
-            message: text || undefined,
-          }),
-          signal: abortRef.current.signal,
-        });
-        if (res.status === 413) throw new Error('이미지 용량이 너무 큽니다. 이미지 수를 줄이거나 더 작은 이미지를 사용해주세요.');
-        const raw = await res.text();
-        let data: { error?: string; reply?: string; invoices?: Invoice[]; qualities?: unknown[]; detail?: string };
-        try {
-          data = raw ? JSON.parse(raw) : {};
-        } catch {
-          throw new Error(`서버 응답 오류 (${res.status}). 잠시 후 다시 시도해주세요.`);
+        let reply = allInvoices.length > 0
+          ? `${allInvoices.length}건의 매입 내역을 추출했습니다. 시트에서 내용을 확인·수정 후 저장하세요.`
+          : '문서에서 매입 내역을 추출하지 못했습니다. 더 선명한 이미지로 다시 시도해보세요.';
+
+        if (batches.length > 1) {
+          reply = `${sentFiles.length}개 파일을 ${batches.length}회 나눠 분석했습니다.\n${reply}`;
         }
-        if (!res.ok) {
-          const detail = data.detail ? `\n(${String(data.detail).slice(0, 150)})` : '';
-          throw new Error((data.error || data.detail || 'API 오류') + detail);
+
+        if (batchErrors.length > 0) {
+          reply += `\n\n⚠️ ${batchErrors.length}개 배치 실패:\n${batchErrors.join('\n')}`;
         }
 
         setMessages(prev => {
           const next = [...prev];
-          next[next.length - 1] = {
-            role: 'assistant',
-            content: data.reply || '분석이 완료되었습니다.',
-          };
+          next[next.length - 1] = { role: 'assistant', content: reply };
           return next;
         });
 
-        if (data.invoices?.length > 0) {
-          onInvoicesFound(data.invoices, sentFiles.map(f => ({
-            name: f.name,
-            type: f.type,
-            content: f.content,
-            preview: f.preview,
-          })));
-        }
-
-        if (data.qualities?.length) {
-          const notes = data.qualities
+        if (allQualities.length) {
+          const notes = allQualities
             .filter((q: any) => q.quality !== 'good')
             .map((q: any) => `⚠️ ${q.fileName}: ${q.feedback || q.issues?.join(', ') || '품질 낮음'} (${q.confidence ?? '?'}%)`);
           setQualityNotes(notes);

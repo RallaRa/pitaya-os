@@ -185,7 +185,7 @@ export async function POST(req: Request) {
       if (rawText.length > VERCEL_BODY_LIMIT) {
         console.warn(`[analyze-multi] 413 body too large: ${rawText.length} chars`);
         return NextResponse.json(
-          { error: '이미지 용량이 너무 큽니다. 이미지 1~2장만 올리거나 더 작게 압축해주세요. (총 3.5MB 이하)' },
+          { error: '이미지 용량이 너무 큽니다. 더 작게 압축된 이미지로 다시 시도해주세요.' },
           { status: 413 },
         );
       }
