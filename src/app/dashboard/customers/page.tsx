@@ -1,10 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
-import { db } from '@/lib/firebase/firebase';
-import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, Legend,
@@ -12,9 +10,11 @@ import {
 import {
   Users, TrendingUp, UserPlus, ShoppingBag, RefreshCw,
   Search, ChevronLeft, ChevronRight, Lock, Unlock, Loader2,
-  BarChart2, PieChart as PieIcon, List,
+  BarChart2, PieChart as PieIcon, List, Download, ArrowUp, ArrowDown, ArrowUpDown,
 } from 'lucide-react';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import * as XLSX from 'xlsx';
+import type { CustomerSortField } from '@/lib/customerQuery';
 
 /* ── 타입 ── */
 interface Customer {
@@ -53,6 +53,8 @@ interface DecryptedInfo { cusCode: string; name: string; phone: string; birth: s
 const GRADE_COLORS = ['#14b8a6','#f97316','#a78bfa','#fb7185','#34d399','#60a5fa','#fbbf24'];
 const TABS = ['고객 목록', '방문 분석', '등급 현황'] as const;
 
+type SortField = CustomerSortField;
+
 export default function CustomersPage() {
   const { user } = useAuth();
   const { currentStore } = useStore();
@@ -74,6 +76,17 @@ export default function CustomersPage() {
   const [decrypted,    setDecrypted]    = useState<Record<string, DecryptedInfo>>({});
   const [decryptLoad,  setDecryptLoad]  = useState<Record<string, boolean>>({});
   const [groupId,      setGroupId]      = useState('');
+  const [sortBy,       setSortBy]       = useState<SortField>('lastVisitDate');
+  const [sortOrder,    setSortOrder]    = useState<'asc' | 'desc'>('desc');
+  const [joinFrom,     setJoinFrom]     = useState('');
+  const [joinTo,       setJoinTo]       = useState('');
+  const [visitFrom,    setVisitFrom]    = useState('');
+  const [visitTo,      setVisitTo]      = useState('');
+  const [joinFromDraft,setJoinFromDraft]= useState('');
+  const [joinToDraft,  setJoinToDraft]  = useState('');
+  const [visitFromDraft,setVisitFromDraft]= useState('');
+  const [visitToDraft, setVisitToDraft] = useState('');
+  const [exporting,    setExporting]    = useState(false);
 
   const LIMIT = 50;
   const canDecrypt = groupId === 'master' || groupId === 'superuser';
@@ -88,8 +101,41 @@ export default function CustomersPage() {
       .catch(() => {});
   }, [user?.uid, storeId]);
 
-  /* ── Firestore 실시간 고객 목록 ── */
-  useEffect(() => {
+  const buildQueryParams = useCallback((opts?: { page?: number; exportAll?: boolean }) => {
+    const params = new URLSearchParams({
+      storeId,
+      page: String(opts?.page ?? page),
+      limit: String(LIMIT),
+      sortBy,
+      sortOrder,
+    });
+    if (gradeFilter) params.set('grade', gradeFilter);
+    if (search.trim()) params.set('search', search.trim());
+    if (joinFrom) params.set('joinFrom', joinFrom);
+    if (joinTo) params.set('joinTo', joinTo);
+    if (visitFrom) params.set('visitFrom', visitFrom);
+    if (visitTo) params.set('visitTo', visitTo);
+    if (opts?.exportAll) params.set('exportAll', '1');
+    return params;
+  }, [storeId, page, sortBy, sortOrder, gradeFilter, search, joinFrom, joinTo, visitFrom, visitTo]);
+
+  const mapApiRow = (r: Record<string, unknown>): Customer => ({
+    id: String(r.cusCode || ''),
+    cusCode: String(r.cusCode || ''),
+    name: String(r.nameMasked || ''),
+    mobile: String(r.phoneMasked || ''),
+    cusGubun: String(r.cusGubun || ''),
+    cusClass: String(r.cusClass || r.grade || ''),
+    grade: String(r.grade || r.cusClass || ''),
+    point: Number(r.point || 0),
+    totalPurchase: Number(r.totalSales ?? r.totalPurchase ?? 0),
+    visitCount: Number(r.totalVisits ?? r.visitCount ?? 0),
+    lastVisitDate: String(r.lastVisit ?? r.lastVisitDate ?? ''),
+    joinDate: String(r.joinDate || r.writeDate || ''),
+  });
+
+  /* ── 고객 목록 (API) ── */
+  const loadCustomerList = useCallback(async () => {
     if (!storeId) {
       setCustomers([]);
       setLoading(false);
@@ -98,67 +144,98 @@ export default function CustomersPage() {
 
     setLoading(true);
     setListError(null);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/customers?${buildQueryParams()}`, { headers });
+      const d = await res.json();
+      if (d.error) throw new Error(d.error);
 
-    const mapDocs = (snap: { docs: Array<{ id: string; data: () => Record<string, unknown> }> }) => {
-      const list: Customer[] = snap.docs.map(d => {
-        const r = d.data();
-        return {
-          id: d.id,
-          cusCode: String(r.cusCode || ''),
-          name: r.nameEncrypted ? '● 암호화됨' : String(r.name || ''),
-          mobile: String(r.phoneMasked || ''),
-          cusGubun: String(r.cusGubun || ''),
-          cusClass: String(r.cusClass || r.grade || ''),
-          grade: String(r.grade || r.cusClass || ''),
-          point: Number(r.point || 0),
-          totalPurchase: Number(r.totalPurchase || 0),
-          visitCount: Number(r.visitCount || 0),
-          lastVisitDate: String(r.lastVisitDate || ''),
-          joinDate: String(r.joinDate || r.writeDate || ''),
-        };
-      });
-      list.sort((a, b) => b.lastVisitDate.localeCompare(a.lastVisitDate));
-      setCustomers(list);
-      setTotal(list.length);
+      setCustomers((d.customers || []).map(mapApiRow));
+      setTotal(d.total ?? 0);
+      if (d.stats) setStats(d.stats);
+      if (d.grades) setGrades(d.grades);
+    } catch (e) {
+      console.error('[customers] list error:', e);
+      setListError('고객 목록을 불러오지 못했습니다. 잠시 후 새로고침하세요.');
+      setCustomers([]);
+    } finally {
       setLoading(false);
-    };
+    }
+  }, [storeId, buildQueryParams]);
 
-    const q = query(
-      collection(db, 'pos_customers'),
-      where('storeId', '==', storeId),
-      orderBy('lastVisitDate', 'desc'),
-      limit(500),
-    );
+  useEffect(() => { loadCustomerList(); }, [loadCustomerList]);
 
-    let unsubFallback: (() => void) | undefined;
+  const applyDateFilters = () => {
+    setJoinFrom(joinFromDraft);
+    setJoinTo(joinToDraft);
+    setVisitFrom(visitFromDraft);
+    setVisitTo(visitToDraft);
+    setPage(1);
+  };
 
-    const unsub = onSnapshot(
-      q,
-      snap => mapDocs(snap),
-      err => {
-        console.warn('[customers] indexed query failed, fallback:', err);
-        const qFallback = query(
-          collection(db, 'pos_customers'),
-          where('storeId', '==', storeId),
-          limit(500),
-        );
-        unsubFallback = onSnapshot(
-          qFallback,
-          snap => mapDocs(snap),
-          err2 => {
-            console.error('[customers] onSnapshot error:', err2);
-            setListError('고객 데이터를 불러오지 못했습니다. POS에서 sync-customers를 실행하세요.');
-            setLoading(false);
-          },
-        );
-      },
-    );
+  const resetDateFilters = () => {
+    setJoinFromDraft('');
+    setJoinToDraft('');
+    setVisitFromDraft('');
+    setVisitToDraft('');
+    setJoinFrom('');
+    setJoinTo('');
+    setVisitFrom('');
+    setVisitTo('');
+    setPage(1);
+  };
 
-    return () => {
-      unsub();
-      unsubFallback?.();
-    };
-  }, [storeId]);
+  const handleSort = (field: SortField) => {
+    if (sortBy === field) {
+      setSortOrder(o => (o === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(field);
+      setSortOrder(field === 'cusCode' || field === 'grade' ? 'asc' : 'desc');
+    }
+    setPage(1);
+  };
+
+  const exportExcel = async () => {
+    if (!storeId || exporting) return;
+    setExporting(true);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/customers?${buildQueryParams({ exportAll: true, page: 1 })}`, { headers });
+      const d = await res.json();
+      if (d.error) throw new Error(d.error);
+
+      const rows = (d.customers || []).map((r: Record<string, unknown>) => ({
+        고객코드: String(r.cusCode || ''),
+        이름: String(r.nameMasked || ''),
+        전화: String(r.phoneMasked || ''),
+        회원구분: String(r.cusGubun || ''),
+        등급: String(r.cusClass || r.grade || ''),
+        포인트: Number(r.point || 0),
+        총구매액: Number(r.totalSales ?? r.totalPurchase ?? 0),
+        방문횟수: Number(r.totalVisits ?? r.visitCount ?? 0),
+        가입일: String(r.joinDate || r.writeDate || '').slice(0, 10),
+        최종방문일: String(r.lastVisit ?? r.lastVisitDate ?? '').slice(0, 10),
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, '고객목록');
+      const suffix = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `고객목록_${suffix}.xlsx`);
+    } catch (e) {
+      console.error('[customers] export error:', e);
+      alert('엑셀 다운로드에 실패했습니다.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortBy !== field) return <ArrowUpDown className="w-3 h-3 opacity-40" />;
+    return sortOrder === 'asc'
+      ? <ArrowUp className="w-3 h-3 text-teal-400" />
+      : <ArrowDown className="w-3 h-3 text-teal-400" />;
+  };
 
   /* ── 통계/등급 (API) ── */
   const loadStats = useCallback(async () => {
@@ -190,7 +267,6 @@ export default function CustomersPage() {
     finally { setAnalysisLoad(false); }
   }, [storeId]);
 
-  useEffect(() => { loadStats(); }, [loadStats]);
   useEffect(() => { if (tab !== '고객 목록') loadAnalysis(); }, [tab, loadAnalysis]);
 
   /* ── PII 복호화 ── */
@@ -210,19 +286,8 @@ export default function CustomersPage() {
     finally { setDecryptLoad(p => ({ ...p, [cusCode]: false })); }
   };
 
-  const filteredCustomers = useMemo(() => {
-    let list = customers;
-    if (gradeFilter) list = list.filter(c => c.grade === gradeFilter || c.cusClass === gradeFilter);
-    if (search) list = list.filter(c => c.cusCode.toLowerCase().includes(search.toLowerCase()));
-    return list;
-  }, [customers, gradeFilter, search]);
-
-  const paginatedCustomers = useMemo(() => {
-    const start = (page - 1) * LIMIT;
-    return filteredCustomers.slice(start, start + LIMIT);
-  }, [filteredCustomers, page]);
-
-  const totalPages = Math.ceil(filteredCustomers.length / LIMIT) || 1;
+  const paginatedCustomers = customers;
+  const totalPages = Math.ceil(total / LIMIT) || 1;
 
   /* ── 탭 버튼 ── */
   const TabBtn = ({ label }: { label: typeof TABS[number] }) => (
@@ -247,7 +312,10 @@ export default function CustomersPage() {
           <h1 className="text-lg font-bold">고객 관리</h1>
         </div>
         <button
-          onClick={() => { loadStats(); if (tab !== '고객 목록') loadAnalysis(); }}
+          onClick={() => {
+            if (tab === '고객 목록') loadCustomerList();
+            else { loadStats(); loadAnalysis(); }
+          }}
           className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition"
         >
           <RefreshCw className="w-3.5 h-3.5" />새로고침
@@ -278,26 +346,76 @@ export default function CustomersPage() {
       {/* 고객 목록 탭 */}
       {tab === '고객 목록' && (
         <div className="space-y-3">
-          {/* 검색 + 등급 필터 */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative flex-1 min-w-[160px]">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
-              <input
-                type="text"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="고객코드 검색..."
-                className="w-full pl-8 pr-3 py-2 bg-slate-800/60 border border-slate-700 rounded-lg text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-teal-500"
-              />
+          {/* 기간 · 검색 · 필터 */}
+          <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-3">
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <p className="text-[10px] text-slate-500 mb-1">가입일</p>
+                <div className="flex items-center gap-1.5">
+                  <input type="date" value={joinFromDraft} onChange={e => setJoinFromDraft(e.target.value)}
+                    className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200" />
+                  <span className="text-slate-600 text-xs">~</span>
+                  <input type="date" value={joinToDraft} onChange={e => setJoinToDraft(e.target.value)}
+                    className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200" />
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-500 mb-1">최종방문일</p>
+                <div className="flex items-center gap-1.5">
+                  <input type="date" value={visitFromDraft} onChange={e => setVisitFromDraft(e.target.value)}
+                    className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200" />
+                  <span className="text-slate-600 text-xs">~</span>
+                  <input type="date" value={visitToDraft} onChange={e => setVisitToDraft(e.target.value)}
+                    className="px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200" />
+                </div>
+              </div>
+              <button onClick={applyDateFilters}
+                className="px-3 py-1.5 bg-teal-600 hover:bg-teal-500 text-white rounded-lg text-xs font-medium">
+                기간 조회
+              </button>
+              <button onClick={resetDateFilters}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs">
+                초기화
+              </button>
             </div>
-            <select
-              value={gradeFilter}
-              onChange={e => { setGradeFilter(e.target.value); setPage(1); }}
-              className="px-3 py-2 bg-slate-800/60 border border-slate-700 rounded-lg text-xs text-slate-300 outline-none focus:border-teal-500"
-            >
-              <option value="">전체 등급</option>
-              {grades.map(g => <option key={g} value={g}>{g}</option>)}
-            </select>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="relative flex-1 min-w-[160px]">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => { setSearch(e.target.value); setPage(1); }}
+                  placeholder="고객코드 검색..."
+                  className="w-full pl-8 pr-3 py-2 bg-slate-800/60 border border-slate-700 rounded-lg text-xs text-slate-200 placeholder-slate-600 outline-none focus:border-teal-500"
+                />
+              </div>
+              <select
+                value={gradeFilter}
+                onChange={e => { setGradeFilter(e.target.value); setPage(1); }}
+                className="px-3 py-2 bg-slate-800/60 border border-slate-700 rounded-lg text-xs text-slate-300 outline-none focus:border-teal-500"
+              >
+                <option value="">전체 등급</option>
+                {grades.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+              <button
+                onClick={exportExcel}
+                disabled={exporting || loading}
+                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-700/40 hover:bg-emerald-600/50 border border-emerald-600/40 text-emerald-300 rounded-lg text-xs font-medium disabled:opacity-50"
+              >
+                {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                엑셀 다운로드
+              </button>
+            </div>
+
+            {(joinFrom || joinTo || visitFrom || visitTo) && (
+              <p className="text-[10px] text-slate-500">
+                적용 필터:
+                {joinFrom || joinTo ? ` 가입 ${joinFrom || '…'}~${joinTo || '…'}` : ''}
+                {visitFrom || visitTo ? ` · 방문 ${visitFrom || '…'}~${visitTo || '…'}` : ''}
+                · {total.toLocaleString()}명 · 정렬 {sortBy} {sortOrder === 'asc' ? '↑' : '↓'}
+              </p>
+            )}
           </div>
 
           {/* 테이블 */}
@@ -305,29 +423,58 @@ export default function CustomersPage() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-slate-800 text-slate-500">
-                  <th className="text-left px-3 py-2.5 font-medium">고객코드</th>
+                  <th className="text-left px-3 py-2.5 font-medium">
+                    <button type="button" onClick={() => handleSort('cusCode')} className="inline-flex items-center gap-1 hover:text-slate-300">
+                      고객코드 <SortIcon field="cusCode" />
+                    </button>
+                  </th>
                   <th className="text-left px-3 py-2.5 font-medium">이름</th>
                   <th className="text-left px-3 py-2.5 font-medium">전화</th>
                   <th className="text-left px-3 py-2.5 font-medium">회원구분</th>
-                  <th className="text-left px-3 py-2.5 font-medium">등급</th>
-                  <th className="text-right px-3 py-2.5 font-medium">포인트</th>
-                  <th className="text-right px-3 py-2.5 font-medium">총구매</th>
-                  <th className="text-right px-3 py-2.5 font-medium">방문</th>
-                  <th className="text-left px-3 py-2.5 font-medium">최근방문</th>
+                  <th className="text-left px-3 py-2.5 font-medium">
+                    <button type="button" onClick={() => handleSort('grade')} className="inline-flex items-center gap-1 hover:text-slate-300">
+                      등급 <SortIcon field="grade" />
+                    </button>
+                  </th>
+                  <th className="text-right px-3 py-2.5 font-medium">
+                    <button type="button" onClick={() => handleSort('point')} className="inline-flex items-center gap-1 hover:text-slate-300 ml-auto">
+                      포인트 <SortIcon field="point" />
+                    </button>
+                  </th>
+                  <th className="text-right px-3 py-2.5 font-medium">
+                    <button type="button" onClick={() => handleSort('totalPurchase')} className="inline-flex items-center gap-1 hover:text-slate-300 ml-auto">
+                      총구매 <SortIcon field="totalPurchase" />
+                    </button>
+                  </th>
+                  <th className="text-right px-3 py-2.5 font-medium">
+                    <button type="button" onClick={() => handleSort('visitCount')} className="inline-flex items-center gap-1 hover:text-slate-300 ml-auto">
+                      방문 <SortIcon field="visitCount" />
+                    </button>
+                  </th>
+                  <th className="text-left px-3 py-2.5 font-medium">
+                    <button type="button" onClick={() => handleSort('joinDate')} className="inline-flex items-center gap-1 hover:text-slate-300">
+                      가입일 <SortIcon field="joinDate" />
+                    </button>
+                  </th>
+                  <th className="text-left px-3 py-2.5 font-medium">
+                    <button type="button" onClick={() => handleSort('lastVisitDate')} className="inline-flex items-center gap-1 hover:text-slate-300">
+                      최근방문 <SortIcon field="lastVisitDate" />
+                    </button>
+                  </th>
                   {canDecrypt && <th className="text-center px-3 py-2.5 font-medium">복호화</th>}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={canDecrypt ? 10 : 9} className="text-center py-10 text-slate-600">
+                  <tr><td colSpan={canDecrypt ? 11 : 10} className="text-center py-10 text-slate-600">
                     <Loader2 className="w-5 h-5 animate-spin mx-auto" />
                   </td></tr>
                 ) : listError ? (
-                  <tr><td colSpan={canDecrypt ? 10 : 9} className="text-center py-10 text-red-400/80 text-xs">
+                  <tr><td colSpan={canDecrypt ? 11 : 10} className="text-center py-10 text-red-400/80 text-xs">
                     {listError}
                   </td></tr>
                 ) : paginatedCustomers.length === 0 ? (
-                  <tr><td colSpan={canDecrypt ? 10 : 9} className="text-center py-10 text-slate-600">
+                  <tr><td colSpan={canDecrypt ? 11 : 10} className="text-center py-10 text-slate-600">
                     고객 데이터가 없습니다.<br />
                     <span className="text-slate-500 text-[11px]">POS PC에서 `node bridge.js sync-customers` 실행 필요</span>
                   </td></tr>
@@ -354,9 +501,10 @@ export default function CustomersPage() {
                       </td>
                       <td className="px-3 py-2 text-right text-slate-300">{c.point.toLocaleString()}</td>
                       <td className="px-3 py-2 text-right text-slate-300">
-                        {c.totalPurchase ? `${Math.round(c.totalPurchase / 1000)}K` : ''}
+                        {c.totalPurchase ? c.totalPurchase.toLocaleString() : ''}
                       </td>
                       <td className="px-3 py-2 text-right text-slate-400">{c.visitCount || ''}</td>
+                      <td className="px-3 py-2 text-slate-500">{c.joinDate?.slice(0, 10) || ''}</td>
                       <td className="px-3 py-2 text-slate-500">{c.lastVisitDate?.slice(0, 10) || ''}</td>
                       {canDecrypt && (
                         <td className="px-3 py-2 text-center">
@@ -391,9 +539,12 @@ export default function CustomersPage() {
           </div>
 
           {/* 페이지네이션 */}
-          {totalPages > 1 && (
+          {(totalPages > 1 || total > 0) && (
             <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>{filteredCustomers.length.toLocaleString()}명 중 {((page - 1) * LIMIT + 1)}~{Math.min(page * LIMIT, filteredCustomers.length)}명</span>
+              <span>
+                {total.toLocaleString()}명
+                {totalPages > 1 && ` · ${((page - 1) * LIMIT + 1)}~${Math.min(page * LIMIT, total)}번째`}
+              </span>
               <div className="flex items-center gap-1">
                 <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
                   className="p-1 rounded hover:bg-slate-800 disabled:opacity-30 transition">

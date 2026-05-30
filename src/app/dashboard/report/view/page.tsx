@@ -93,25 +93,34 @@ function calendarDaysElapsed(start: string, end: string): number {
   return Math.round((b.getTime() - a.getTime()) / 86400000) + 1;
 }
 
+interface DayCompareSnapshot {
+  netSales: number;
+  customerCount: number;
+}
+
 function CmpCell({
-  sales, chg, dateLabel,
+  snap,
+  currentNet,
+  currentCustomers,
+  dateLabel,
 }: {
-  sales?: number;
-  chg: { text: string; color: string } | null;
+  snap?: DayCompareSnapshot;
+  currentNet: number;
+  currentCustomers: number;
   dateLabel: string;
 }) {
-  if (sales == null) return <span className="text-slate-600 text-xs">-</span>;
+  if (!snap) return <span className="text-slate-600 text-xs">-</span>;
+  const salesChg = pctChange(currentNet, snap.netSales);
+  const custChg  = pctChange(currentCustomers, snap.customerCount);
   return (
     <div>
-      <p className="text-slate-400 text-xs">{sales.toLocaleString()}원</p>
-      {chg ? (
-        <>
-          <span className={`text-xs font-bold ${chg.color}`}>{chg.text}</span>
-          <p className="text-slate-600 text-[10px]">{dateLabel}</p>
-        </>
-      ) : (
-        <p className="text-slate-600 text-[10px]">{dateLabel}</p>
-      )}
+      <p className="text-slate-400 text-xs">{snap.netSales.toLocaleString()}원</p>
+      {salesChg && <span className={`text-[10px] font-bold ${salesChg.color}`}>{salesChg.text}</span>}
+      <p className="text-blue-400/80 text-[10px] mt-0.5">
+        {snap.customerCount > 0 ? `${snap.customerCount}명` : '-'}
+        {custChg && <span className={`ml-1 font-bold ${custChg.color}`}>({custChg.text})</span>}
+      </p>
+      <p className="text-slate-600 text-[10px]">{dateLabel}</p>
     </div>
   );
 }
@@ -135,20 +144,23 @@ const score = (dr: any): number => {
   return s;
 };
 
-function buildDateMap(docs: any[], storeId: string): Map<string, number> {
+function buildDateMap(docs: any[], storeId: string): Map<string, DayCompareSnapshot> {
   const byDate = new Map<string, any>();
   for (const d of docs) {
     if (d.storeId !== storeId) continue;
     const existing = byDate.get(d.reportDate);
     if (!existing || score(d) > score(existing)) byDate.set(d.reportDate, d);
   }
-  const result = new Map<string, number>();
+  const result = new Map<string, DayCompareSnapshot>();
   for (const [date, dr] of byDate) {
     const computedNet = (dr.totalSales ?? 0) - (dr.returnAmount ?? 0) - (dr.discountAmount ?? 0);
     const net = (dr.netSales != null && dr.netSales !== 0) ? dr.netSales
       : (dr.netSale != null && dr.netSale !== 0) ? dr.netSale
       : dr.netSales ?? dr.netSale ?? computedNet;
-    result.set(date, net);
+    result.set(date, {
+      netSales: net,
+      customerCount: dr.customerCount ?? 0,
+    });
   }
   return result;
 }
@@ -172,14 +184,14 @@ export default function ReportViewPage() {
   const unsubRef    = useRef<(() => void) | null>(null);
 
   // 비교 데이터 (전일·전월·전년 등 통합)
-  const [compMap, setCompMap] = useState<Map<string, number>>(new Map());
+  const [compMap, setCompMap] = useState<Map<string, DayCompareSnapshot>>(new Map());
 
   // ── 비교 범위 fetch 헬퍼 ────────────────────────────────────────
   const fetchComparison = useCallback(async (
     storeId: string,
     cStart: string,
     cEnd: string,
-  ): Promise<Map<string, number>> => {
+  ): Promise<Map<string, DayCompareSnapshot>> => {
     if (!cStart || !cEnd || cStart > cEnd) return new Map();
     try {
       const snap = await getDocs(query(
@@ -585,16 +597,11 @@ export default function ReportViewPage() {
                   const pmDow   = cmp.lastMonthDow;
                   const pyDateD = cmp.lastYearMonthSame;
                   const pyDateW = cmp.lastYearMonthDow;
-                  const ySales   = compMap.get(yDate);
-                  const pmSales  = compMap.get(pmDate);
-                  const pmDowSales = compMap.get(pmDow);
-                  const pySalesD = compMap.get(pyDateD);
-                  const pySalesW = compMap.get(pyDateW);
-                  const yChg     = pctChange(report.netSales, ySales);
-                  const pmChg    = pctChange(report.netSales, pmSales);
-                  const pmDowChg = pctChange(report.netSales, pmDowSales);
-                  const pyChgD   = pctChange(report.netSales, pySalesD);
-                  const pyChgW   = pctChange(report.netSales, pySalesW);
+                  const ySnap      = compMap.get(yDate);
+                  const pmSnap     = compMap.get(pmDate);
+                  const pmDowSnap  = compMap.get(pmDow);
+                  const pySnapD    = compMap.get(pyDateD);
+                  const pySnapW    = compMap.get(pyDateW);
 
                   return (
                     <tr key={report.id}
@@ -662,27 +669,27 @@ export default function ReportViewPage() {
 
                       {/* 전일 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
-                        <CmpCell sales={ySales} chg={yChg} dateLabel={`${yDate} 대비`} />
+                        <CmpCell snap={ySnap} currentNet={report.netSales} currentCustomers={report.customerCount} dateLabel={`${yDate} 대비`} />
                       </td>
 
                       {/* 전월동일 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
-                        <CmpCell sales={pmSales} chg={pmChg} dateLabel={`${pmDate} 대비`} />
+                        <CmpCell snap={pmSnap} currentNet={report.netSales} currentCustomers={report.customerCount} dateLabel={`${pmDate} 대비`} />
                       </td>
 
                       {/* 전월동요일 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
-                        <CmpCell sales={pmDowSales} chg={pmDowChg} dateLabel={`${pmDow} 동요일`} />
+                        <CmpCell snap={pmDowSnap} currentNet={report.netSales} currentCustomers={report.customerCount} dateLabel={`${pmDow} 동요일`} />
                       </td>
 
                       {/* 전년동월동일 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
-                        <CmpCell sales={pySalesD} chg={pyChgD} dateLabel={`${pyDateD} 대비`} />
+                        <CmpCell snap={pySnapD} currentNet={report.netSales} currentCustomers={report.customerCount} dateLabel={`${pyDateD} 대비`} />
                       </td>
 
                       {/* 전년동월동요일 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
-                        <CmpCell sales={pySalesW} chg={pyChgW} dateLabel={`${pyDateW} 동요일`} />
+                        <CmpCell snap={pySnapW} currentNet={report.netSales} currentCustomers={report.customerCount} dateLabel={`${pyDateW} 동요일`} />
                       </td>
 
                       {/* 객수 */}
