@@ -67,6 +67,13 @@ const MODELS = [
 ] as const;
 
 type ModelId = typeof MODELS[number]['id'];
+type ChatMode = 'chat' | 'debate' | 'analysis';
+
+const CHAT_MODES: { id: ChatMode; label: string; desc: string }[] = [
+  { id: 'chat',     label: '일반 대화', desc: 'Pitaya OS 사용법·매장 데이터 Q&A' },
+  { id: 'debate',   label: '토론 모드', desc: '찬성/반대 번갈아 토론' },
+  { id: 'analysis', label: '분석 모드', desc: '매출·고객 데이터 심층 분석' },
+];
 
 // usedModel 문자열 → badge 스타일 맵
 const MODEL_BY_NAME: Record<string, typeof MODELS[number]> = {
@@ -93,6 +100,8 @@ interface Message {
   isAuto?: boolean;
   autoSelectedBy?: string;
   debate?: DebateEntry[];
+  debatePhase?: string;
+  chatMode?: ChatMode;
 }
 
 interface Conversation {
@@ -113,6 +122,8 @@ function normalizeMsg(msg: any): Message {
     isAuto:          msg.isAuto,
     autoSelectedBy:  msg.autoSelectedBy,
     debate:          msg.debate,
+    debatePhase:     msg.debatePhase,
+    chatMode:        msg.chatMode,
   };
 }
 
@@ -202,6 +213,7 @@ export default function AiChatPage() {
   const [editingId,      setEditingId]      = useState<string | null>(null);
   const [editTitle,      setEditTitle]      = useState('');
   const [selectedModel,  setSelectedModel]  = useState<ModelId>('auto');
+  const [chatMode,       setChatMode]       = useState<ChatMode>('chat');
   const [activeIds,      setActiveIds]      = useState<Set<string>>(new Set());
   const [sendError,      setSendError]      = useState<string | null>(null);
 
@@ -252,6 +264,7 @@ export default function AiChatPage() {
     setMessages([]);
     setInput('');
     setSendError(null);
+    setChatMode('chat');
     setShowSidebar(false);
   };
 
@@ -292,14 +305,15 @@ export default function AiChatPage() {
     setIsLoading(true);
 
     try {
-      const endpoint = selectedModel === 'auto' ? '/api/ai' : `/api/ai/${selectedModel}`;
-      const res = await fetch(endpoint, {
+      const res = await fetch('/api/ai', {
         method:  'POST',
         headers: await getAuthJsonHeaders(),
         body:    JSON.stringify({
-          message: userMsg.content,
-          history: historyForAI,
-          model:   selectedModel,
+          message:  userMsg.content,
+          history:  historyForAI,
+          model:    selectedModel,
+          storeId:  currentStore?.storeId || '',
+          chatMode,
         }),
       });
 
@@ -319,12 +333,15 @@ export default function AiChatPage() {
         usedModel:      data.usedModel || modelInfo.name,
         isAuto:         data.isAuto,
         autoSelectedBy: data.autoSelectedBy,
+        debatePhase:    data.debatePhase,
+        chatMode,
       };
 
       const finalMessages = [...newMessages, aiMsg];
       setMessages(finalMessages);
 
-      const title = userMsg.content.slice(0, 20) + (userMsg.content.length > 20 ? '...' : '');
+      const modePrefix = chatMode === 'debate' ? '[토론] ' : chatMode === 'analysis' ? '[분석] ' : '';
+      const title = modePrefix + userMsg.content.slice(0, 20) + (userMsg.content.length > 20 ? '...' : '');
       await saveConversation(finalMessages, title);
 
     } catch (e: any) {
@@ -359,9 +376,11 @@ export default function AiChatPage() {
         method:  'POST',
         headers: await getAuthJsonHeaders(),
         body:    JSON.stringify({
-          message: userMsg.content,
-          history: historyForAI,
-          model:   'debate',
+          message:  userMsg.content,
+          history:  historyForAI,
+          model:    'debate',
+          storeId:  currentStore?.storeId || '',
+          chatMode: 'chat',
         }),
       });
 
@@ -441,6 +460,15 @@ export default function AiChatPage() {
 
   const grouped = groupByDate(conversations);
   const isWorking = isLoading || isDebating;
+  const activeMode = CHAT_MODES.find(m => m.id === chatMode)!;
+  const inputPlaceholder =
+    chatMode === 'debate'
+      ? (messages.length === 0
+        ? '토론 주제를 입력하세요 (예: 주말 영업 확대)'
+        : '의견을 입력하세요. "종합" 입력 시 마무리')
+      : chatMode === 'analysis'
+        ? '매출·고객·매입 데이터 분석 질문을 입력하세요...'
+        : '메시지를 입력하세요... (Enter 전송, Shift+Enter 줄바꿈)';
 
   return (
     <div className="flex h-[calc(100vh-2rem)] bg-slate-950 rounded-xl overflow-hidden border border-slate-800">
@@ -550,17 +578,57 @@ export default function AiChatPage() {
           </div>
         </div>
 
+        {/* 모드 탭 */}
+        <div className="bg-slate-900/80 border-b border-slate-700 px-4 py-2">
+          <div className="flex items-center gap-1">
+            {CHAT_MODES.map(mode => (
+              <button
+                key={mode.id}
+                onClick={() => setChatMode(mode.id)}
+                title={mode.desc}
+                className={`
+                  px-4 py-2 rounded-lg text-xs font-semibold transition-all
+                  ${chatMode === mode.id
+                    ? 'bg-teal-600 text-white'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'}
+                `}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-slate-500 text-[11px] mt-1">{activeMode.desc}</p>
+        </div>
+
         {/* 메시지 목록 */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <Bot className="w-16 h-16 text-teal-400/30 mb-4" />
-              <h2 className="text-white font-bold text-xl mb-2">무엇을 분석해 드릴까요?</h2>
+              <h2 className="text-white font-bold text-xl mb-2">
+                {chatMode === 'debate' ? '어떤 주제로 토론할까요?' : chatMode === 'analysis' ? '무엇을 분석해 드릴까요?' : '무엇을 도와드릴까요?'}
+              </h2>
               <p className="text-slate-500 text-sm max-w-sm leading-relaxed">
-                Pitaya OS 전담 AI 분석가입니다.<br />
-                <span className="text-slate-400">🎯 Groq가 질문 분석 후 최적 AI 자동 선택</span><br />
-                <span className="text-slate-400">⚔️ 4AI 토론으로 다양한 관점 비교</span><br />
-                <span className="text-slate-400">🔍 이력번호 축산물 자동 조회</span>
+                {chatMode === 'debate' ? (
+                  <>
+                    토론 주제를 입력하면 AI가 찬성 입장부터 제시합니다.<br />
+                    <span className="text-slate-400">💬 의견 입력 → 반대 측 주장 → 반복</span><br />
+                    <span className="text-slate-400">📋 &quot;종합&quot; 입력 시 최종 의견</span>
+                  </>
+                ) : chatMode === 'analysis' ? (
+                  <>
+                    Pitaya OS 매장 데이터 기반 심층 분석입니다.<br />
+                    <span className="text-slate-400">📊 오늘/어제 매출, 고객 TOP5 자동 연동</span><br />
+                    <span className="text-slate-400">🔒 조회만 가능, 데이터 수정 불가</span>
+                  </>
+                ) : (
+                  <>
+                    Pitaya OS 전담 AI 분석가입니다.<br />
+                    <span className="text-slate-400">🎯 Groq가 질문 분석 후 최적 AI 자동 선택</span><br />
+                    <span className="text-slate-400">📊 매장 매출·고객 데이터 자동 연동</span><br />
+                    <span className="text-slate-400">🔍 이력번호 축산물 자동 조회</span>
+                  </>
+                )}
               </p>
             </div>
           )}
@@ -598,8 +666,17 @@ export default function AiChatPage() {
                   )}
 
                   {/* 모델 배지 */}
-                  {msg.role === 'model' && msg.usedModel && (
+                  {msg.role === 'model' && (msg.usedModel || msg.debatePhase) && (
                     <div className="flex items-center gap-1.5 flex-wrap">
+                      {msg.debatePhase && (
+                        <span className={`self-start text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                          msg.debatePhase === '찬성' ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                          : msg.debatePhase === '반대' ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                          : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                        }`}>
+                          {msg.debatePhase === '찬성' ? '✅ 찬성' : msg.debatePhase === '반대' ? '❌ 반대' : '📋 종합'}
+                        </span>
+                      )}
                       {msg.usedModel === '4AI 토론' ? (
                         <span className="self-start text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
                           ⚔️ 4AI 토론
@@ -670,7 +747,8 @@ export default function AiChatPage() {
             </div>
           )}
 
-          {/* 모델 선택 + 토론 버튼 */}
+          {/* 모델 선택 + 4AI 토론 (일반/분석 모드) */}
+          {chatMode !== 'debate' && (
           <div className="flex items-center gap-1.5 flex-wrap">
             {MODELS.map(m => {
               const isModelActive = m.id === 'auto'
@@ -717,6 +795,7 @@ export default function AiChatPage() {
               <span>4AI 토론</span>
             </button>
           </div>
+          )}
 
           {/* 텍스트 입력 */}
           <div className="flex items-end gap-2">
@@ -729,7 +808,7 @@ export default function AiChatPage() {
                   handleSend();
                 }
               }}
-              placeholder="메시지를 입력하세요... (Enter 전송, Shift+Enter 줄바꿈)"
+              placeholder={inputPlaceholder}
               rows={1}
               className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors resize-none"
             />

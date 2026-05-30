@@ -6,9 +6,24 @@ import { NextResponse } from 'next/server';
 import { trackUsage, trackTokens } from '@/lib/trackUsage';
 import { SYSTEM_PROMPT } from '@/lib/aiSystemPrompt';
 import { verifyToken } from '@/lib/authVerify';
+import {
+  buildDebateUserMessage,
+  buildStoreContextPrompt,
+  DEBATE_SYSTEM_PROMPT,
+  loadSystemContext,
+  resolveDebatePhase,
+  type DebatePhase,
+} from '@/lib/aiStoreContext';
 
 type GroqModel = 'groq-mixtral' | 'groq-llama';
 type ModelChoice = 'auto' | 'gemini' | 'claude' | 'gpt' | 'groq' | GroqModel | 'debate';
+type ChatMode = 'chat' | 'debate' | 'analysis';
+
+const DEBATE_PHASE_LABEL: Record<DebatePhase, string> = {
+  pro:     '찬성',
+  con:     '반대',
+  summary: '종합',
+};
 
 export interface DebateEntry {
   model: string;
@@ -19,8 +34,11 @@ export interface DebateEntry {
 }
 
 const SYSTEM_INSTRUCTIONS: Record<string, string> = {
-  default:  SYSTEM_PROMPT,
-  analyst:  '당신은 Pitaya OS의 AI 데이터 분석가입니다. 매출, 재고 등 수치와 팩트 기반으로 명확하게 요약 답변합니다.',
+  default: SYSTEM_PROMPT,
+  analyst: `당신은 Pitaya OS의 AI 데이터 분석가입니다.
+강서정육점 Pitaya OS AI 어시스턴트로, 매출·매입·고객·직원 데이터를 수치와 팩트 기반으로 분석합니다.
+조회만 가능하고 데이터 수정은 절대 불가합니다.
+전월·전년 대비, 이상 수치, 품목·고객 패턴을 명확하게 요약하고 실용적 조언을 제공합니다.`,
 };
 
 /* ── 축산물 이력번호 감지 및 조회 ── */
@@ -267,15 +285,44 @@ export async function POST(req: Request) {
   if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const { message, persona, history, model: modelChoice = 'auto' } =
-      await req.json() as { message: string; persona?: string; history?: any[]; model?: ModelChoice };
+    const {
+      message,
+      persona,
+      history,
+      model: modelChoice = 'auto',
+      storeId,
+      chatMode = 'chat',
+    } = await req.json() as {
+      message: string;
+      persona?: string;
+      history?: any[];
+      model?: ModelChoice;
+      storeId?: string;
+      chatMode?: ChatMode;
+    };
 
     if (!message?.trim()) {
       return NextResponse.json({ error: '메시지 없음' }, { status: 400 });
     }
 
-    let system = SYSTEM_INSTRUCTIONS[persona || 'default'] ?? SYSTEM_INSTRUCTIONS.default;
     const msgs = history || [];
+    let storeContext = null;
+    if (storeId) {
+      try {
+        storeContext = await loadSystemContext(storeId);
+      } catch (err) {
+        console.error('[AI] loadSystemContext failed:', err);
+      }
+    }
+
+    const basePersona =
+      chatMode === 'analysis' ? 'analyst'
+      : chatMode === 'debate' ? 'debate'
+      : (persona || 'default');
+    const baseSystem = basePersona === 'debate'
+      ? DEBATE_SYSTEM_PROMPT
+      : (SYSTEM_INSTRUCTIONS[basePersona] ?? SYSTEM_INSTRUCTIONS.default);
+    let system = buildStoreContextPrompt(baseSystem, storeContext);
 
     // ── 이력번호 자동 감지 → 정보 주입 ──
     const traceMatches = [...new Set(Array.from(message.matchAll(TRACE_NO_RE), m => m[1]))];
@@ -287,10 +334,19 @@ export async function POST(req: Request) {
       }
     }
 
-    // ── 4AI 토론 모드 ──
+    // ── 4AI 복합 토론 (model=debate) ──
     if ((modelChoice as string) === 'debate') {
       const debates = await runDebate(message, msgs, system);
       return NextResponse.json({ debate: debates, usedModel: '4AI 토론' });
+    }
+
+    // ── 찬반 토론 모드 (chatMode=debate) ──
+    let effectiveMessage = message;
+    let debatePhase: DebatePhase | undefined;
+    if (chatMode === 'debate') {
+      const topic = msgs.find(m => m.role === 'user')?.content || message;
+      debatePhase = resolveDebatePhase(msgs, message);
+      effectiveMessage = buildDebateUserMessage(topic, debatePhase, message);
     }
 
     // ── 모델 결정 ──
@@ -364,13 +420,13 @@ export async function POST(req: Request) {
 
     try {
       if (resolved === 'claude') {
-        result = await callClaude(message, msgs, system);
+        result = await callClaude(effectiveMessage, msgs, system);
       } else if (resolved === 'gpt') {
-        result = await callGPT(message, msgs, system);
+        result = await callGPT(effectiveMessage, msgs, system);
       } else if (resolved === 'groq-mixtral' || resolved === 'groq-llama') {
-        result = await callGroq(message, msgs, system, GROQ_MODEL_IDS[resolved as GroqModel]);
+        result = await callGroq(effectiveMessage, msgs, system, GROQ_MODEL_IDS[resolved as GroqModel]);
       } else {
-        result = await callGemini(message, msgs, system);
+        result = await callGemini(effectiveMessage, msgs, system);
       }
     } catch (callErr: any) {
       const errMsg = callErr.message || '알 수 없는 오류';
@@ -394,6 +450,8 @@ export async function POST(req: Request) {
       usedModel:       MODEL_NAMES[finalModel] || finalModel,
       isAuto:          modelChoice === 'auto',
       autoSelectedBy,
+      chatMode,
+      debatePhase:     debatePhase ? DEBATE_PHASE_LABEL[debatePhase] : undefined,
     });
 
   } catch (error: any) {
