@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '@/context/StoreContext';
 import { useAuth } from '@/context/AuthContext';
+import { isSuperuser } from '@/lib/auth/permissions';
+import { getRoleLabel, getAssignableGroupIds } from '@/lib/roleMapping';
 import { UserCog, Loader2, Users, Check, Clock, ChevronDown, Save, X } from 'lucide-react';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 
@@ -21,12 +23,11 @@ interface StoreUser {
 }
 
 const GROUP_COLORS: Record<string, string> = {
-  '':       'bg-orange-500',
-  master:   'bg-yellow-500',
-  admin:    'bg-blue-500',
-  user:     'bg-indigo-400',
-  staff:    'bg-slate-400',
-  guest:    'bg-slate-600',
+  '':         'bg-orange-500',
+  superuser:  'bg-purple-500',
+  master:     'bg-yellow-500',
+  admin:      'bg-blue-500',
+  user:       'bg-indigo-400',
 };
 
 function groupDot(groupId: string) {
@@ -36,6 +37,7 @@ function groupDot(groupId: string) {
 export default function MemberGroupPage() {
   const { currentStore } = useStore();
   const { user } = useAuth();
+  const [isSuperuserUser, setIsSuperuserUser] = useState(false);
 
   const [groups,      setGroups]      = useState<PermissionGroup[]>([]);
   const [storeUsers,  setStoreUsers]  = useState<StoreUser[]>([]);
@@ -69,9 +71,25 @@ export default function MemberGroupPage() {
     }
   }, [currentStore?.storeId]);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => {
+    if (!user?.uid) return;
+    getAuthJsonHeaders()
+      .then(headers => fetch(`/api/users?uid=${user.uid}`, { headers }))
+      .then(r => r.json())
+      .then(data => {
+        const role = data.user?.role;
+        const groupId = data.user?.groupId;
+        setIsSuperuserUser(isSuperuser(user?.email, role || groupId));
+      })
+      .catch(() => {});
+  }, [user?.uid, user?.email]);
 
-  // ── 드롭다운 변경 → 로컬 상태만 업데이트 ──
+  const assignableGroupIds = getAssignableGroupIds(isSuperuserUser);
+  const selectableGroups = groups.filter(g =>
+    g.isSystem ? assignableGroupIds.includes(g.groupId as any) : true
+  );
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
   const handleGroupChange = (uid: string, newGroupId: string) => {
     const original = storeUsers.find(u => u.uid === uid)?.groupId ?? '';
     setLocalChanges(prev => {
@@ -132,7 +150,7 @@ export default function MemberGroupPage() {
   // ── 정렬: 대기 → 그룹순 → 이름순 ──
   const groupOrder = (gid: string) => {
     if (!gid) return 0;
-    const idx = ['master', 'admin', 'user', 'staff', 'guest'].indexOf(gid);
+    const idx = ['superuser', 'master', 'admin', 'user'].indexOf(gid);
     return idx === -1 ? 10 : idx + 1;
   };
 
@@ -149,7 +167,7 @@ export default function MemberGroupPage() {
 
   const groupName = (gid: string) => {
     if (!gid) return '대기';
-    return groups.find(g => g.groupId === gid)?.groupName || gid;
+    return groups.find(g => g.groupId === gid)?.groupName || getRoleLabel(gid);
   };
 
   // ── Early returns ──
@@ -190,7 +208,7 @@ export default function MemberGroupPage() {
               <span className="text-orange-300">대기 <strong className="text-orange-200">{pendingCount}명</strong></span>
             </div>
           )}
-          {['master', 'admin', 'user', 'staff'].map(gid => {
+          {assignableGroupIds.map(gid => {
             const cnt = storeUsers.filter(u => u.groupId === gid).length;
             if (!cnt) return null;
             return (
@@ -308,7 +326,7 @@ export default function MemberGroupPage() {
                         }`}
                     >
                       <option value="">대기 (미배정)</option>
-                      {groups.map(g => (
+                      {selectableGroups.map(g => (
                         <option key={g.groupId} value={g.groupId}>
                           {g.groupName}
                         </option>

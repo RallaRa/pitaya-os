@@ -3,6 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifyToken } from '@/lib/authVerify';
 import { createHash } from 'crypto';
+import { learnAliasesFromCorrection } from '@/lib/applyItemAliases';
 
 export async function POST(req: Request) {
   const authUser = await verifyToken(req);
@@ -41,7 +42,14 @@ export async function POST(req: Request) {
       createdAt: FieldValue.serverTimestamp(),
     });
 
-    return NextResponse.json({ ok: true, id: docId });
+    const aliasesLearned = await learnAliasesFromCorrection(
+      storeId,
+      String(supplierName).trim(),
+      originalResult,
+      correctedResult,
+    );
+
+    return NextResponse.json({ ok: true, id: docId, aliasesLearned });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[save-correction]', msg);

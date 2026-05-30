@@ -6,6 +6,7 @@ import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGri
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
+import { isSuperuser } from '@/lib/auth/permissions';
 
 type MenuAccess = {
   ai: boolean; sales: boolean; purchase: boolean; report: boolean;
@@ -18,6 +19,7 @@ export default function SettingsPage() {
   const { currentStore, storesLoaded } = useStore();
   const [menuAccess, setMenuAccess] = useState<MenuAccess | null>(null);
   const [accessLoaded, setAccessLoaded] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   const [migrating, setMigrating]   = useState(false);
   const [migrateResult, setMigrateResult] = useState<{ migrated: number; skipped: number; message: string } | null>(null);
@@ -42,6 +44,15 @@ export default function SettingsPage() {
   const [initingItems,   setInitingItems]   = useState(false);
   const [initItemsResult, setInitItemsResult] = useState<{ saved: number; skipped: number; total: number } | null>(null);
   const [initItemsError,  setInitItemsError]  = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    getAuthHeaders()
+      .then(headers => fetch(`/api/users?uid=${user.uid}`, { headers }))
+      .then(r => r.json())
+      .then(data => setUserRole(data.user?.role || data.user?.groupId || null))
+      .catch(() => {});
+  }, [user?.uid]);
 
   useEffect(() => {
     if (!user?.uid || !storesLoaded) return;
@@ -115,6 +126,15 @@ export default function SettingsPage() {
       show: ['master', 'superuser', 'admin', 'owner'].includes(currentStore?.role || ''),
     },
   ].filter(m => m.show);
+
+  const isSuperuserUser = isSuperuser(user?.email, userRole || undefined);
+
+  const superuserMenus = isSuperuserUser ? [{
+    href: '/dashboard/settings/stores',
+    icon: <Shield className="w-5 h-5 text-purple-400" />,
+    label: '매장 승인 관리',
+    description: '신규 매장 등록 승인·거절·수정·삭제',
+  }] : [];
 
   const visibleMenus = menuAccess
     ? allMenus.filter(m => menuAccess[m.key])
@@ -263,10 +283,10 @@ export default function SettingsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {visibleMenus.length === 0 && adminOnlyMenus.length === 0 ? (
+          {visibleMenus.length === 0 && adminOnlyMenus.length === 0 && superuserMenus.length === 0 ? (
             <p className="text-slate-500 text-sm text-center py-8">접근 가능한 설정 항목이 없습니다.</p>
           ) : (
-            [...visibleMenus, ...hrMenus, ...adminOnlyMenus].map((menu) => (
+            [...superuserMenus, ...visibleMenus, ...hrMenus, ...adminOnlyMenus].map((menu) => (
               <Link
                 key={menu.href}
                 href={menu.href}

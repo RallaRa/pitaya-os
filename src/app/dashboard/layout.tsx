@@ -8,8 +8,8 @@ import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import Sidebar from '@/components/Sidebar';
 import NotificationHub from '@/components/NotificationHub';
-
-const SUPERUSER_EMAIL = process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || 'hipona00@gmail.com';
+import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import { isSuperuser } from '@/lib/auth/permissions';
 
 export default function DashboardLayout({
   children,
@@ -17,8 +17,9 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
   const { user, loading } = useAuth();
-  const { currentStore, myStores, refreshStores, setCurrentStore } = useStore();
+  const { currentStore, myStores, storesLoaded, refreshStores, setCurrentStore } = useStore();
   const router = useRouter();
 
   useEffect(() => {
@@ -27,7 +28,22 @@ export default function DashboardLayout({
     }
   }, [user, loading, router]);
 
-  // currentStore가 없으면 활성 매장 목록을 불러와 자동 설정
+  useEffect(() => {
+    if (!user?.uid) return;
+    getAuthHeaders()
+      .then(headers => fetch(`/api/users?uid=${user.uid}`, { headers }))
+      .then(r => r.json())
+      .then(data => setUserRole(data.user?.role || data.user?.groupId || null))
+      .catch(() => {});
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid || !storesLoaded) return;
+    if (myStores.length === 0) {
+      router.push('/select-store?mode=apply');
+    }
+  }, [user?.uid, storesLoaded, myStores.length, router]);
+
   useEffect(() => {
     if (!user?.uid || currentStore) return;
     if (myStores.length > 0) {
@@ -35,9 +51,15 @@ export default function DashboardLayout({
       return;
     }
     refreshStores(user.uid).then((stores) => {
-      if (stores.length === 1) setCurrentStore(stores[0]);
+      if (stores.length === 0) {
+        router.push('/select-store?mode=apply');
+      } else if (stores.length === 1) {
+        setCurrentStore(stores[0]);
+      } else {
+        router.push('/select-store');
+      }
     });
-  }, [user?.uid, currentStore, myStores]);
+  }, [user?.uid, currentStore, myStores, refreshStores, setCurrentStore, router]);
 
   if (loading || !user) {
     return (
@@ -47,17 +69,15 @@ export default function DashboardLayout({
     );
   }
 
-  const isSuperuser = SUPERUSER_EMAIL && user?.email?.toLowerCase() === SUPERUSER_EMAIL.toLowerCase();
+  const isSuperuserMode = isSuperuser(user?.email, userRole || undefined);
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
-      {/* 슈퍼유저 배너 */}
-      {isSuperuser && (
+      {isSuperuserMode && (
         <div className="shrink-0 bg-purple-900/80 border-b border-purple-700/60 text-purple-200 text-xs text-center py-1 px-4 tracking-wide">
           👑 슈퍼유저 모드 — 모든 매장 및 권한에 접근 가능합니다
         </div>
       )}
-      {/* 모바일 상단 헤더 */}
       <header className="md:hidden flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800 shrink-0">
         <Link href="/dashboard" className="text-teal-400 hover:text-teal-300 font-bold text-lg transition-colors">Pitaya OS</Link>
         <div className="flex items-center gap-1">

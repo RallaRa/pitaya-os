@@ -2,7 +2,14 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { isSuperuserEmail } from '@/lib/auth/permissions';
+import { isPlatformSuperuser } from '@/lib/superuserCheck';
 import { verifyToken } from '@/lib/authVerify';
+import {
+  normalizeGroupId,
+  normalizeRole,
+  groupIdToRole,
+  roleToGroupId,
+} from '@/lib/roleMapping';
 
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
@@ -18,7 +25,15 @@ export async function GET(req: Request) {
       if (!userDoc.exists) {
         return NextResponse.json({ error: '유저를 찾을 수 없습니다.' }, { status: 404 });
       }
-      return NextResponse.json({ user: { uid, ...userDoc.data() } });
+      const data = userDoc.data()!;
+      return NextResponse.json({
+        user: {
+          uid,
+          ...data,
+          role: normalizeRole(data.role),
+          groupId: normalizeGroupId(data.groupId),
+        },
+      });
     }
 
     if (!storeId) {
@@ -34,17 +49,28 @@ export async function GET(req: Request) {
 
     const users = await Promise.all(
       mapSnap.docs.map(async (mapDoc) => {
-        const { uid, role, groupId: storeGroupId } = mapDoc.data();
-        const userDoc = await adminDb.collection('users').doc(uid).get();
+        const { uid: memberUid, role, groupId: storeGroupId } = mapDoc.data();
+        const userDoc = await adminDb.collection('users').doc(memberUid).get();
         const userData = userDoc.exists ? userDoc.data() : null;
-        // storeGroupId가 명시적으로 설정된 경우 우선 사용
-        // ''(빈 문자열) = 대기 상태, undefined/null = 글로벌 groupId 사용
         const hasStoreGroup = storeGroupId !== undefined && storeGroupId !== null;
-        const effectiveGroupId = hasStoreGroup ? storeGroupId : (userData?.groupId || 'staff');
+        const effectiveGroupId = hasStoreGroup
+          ? normalizeGroupId(storeGroupId)
+          : roleToGroupId(role || userData?.role);
         if (userData) {
-          return { ...userData, uid, role, groupId: effectiveGroupId };
+          return {
+            ...userData,
+            uid: memberUid,
+            role: normalizeRole(role || userData.role),
+            groupId: effectiveGroupId,
+          };
         }
-        return { uid, role, groupId: effectiveGroupId, name: uid, email: '' };
+        return {
+          uid: memberUid,
+          role: normalizeRole(role),
+          groupId: effectiveGroupId,
+          name: memberUid,
+          email: '',
+        };
       })
     );
 
@@ -67,9 +93,9 @@ export async function POST(req: Request) {
     const existingDoc = await adminDb.collection('users').doc(uid).get();
     const existingData = existingDoc.exists ? existingDoc.data() : null;
 
-    const isSU = isSuperuserEmail(email);
-    const finalRole = isSU ? 'superuser' : (role || existingData?.role || 'staff');
-    const finalGroupId = isSU ? 'master' : (existingData?.groupId || 'staff');
+    const isSU = isSuperuserEmail(email) || existingData?.role === 'superuser';
+    const finalRole = isSU ? 'superuser' : normalizeRole(role || existingData?.role || 'user');
+    const finalGroupId = isSU ? 'superuser' : normalizeGroupId(existingData?.groupId || 'user');
 
     await adminDb.collection('users').doc(uid).set({
       uid,
@@ -93,10 +119,19 @@ export async function PUT(req: Request) {
 
   try {
     const body = await req.json();
-    const { action, uid, storeId, groupId } = body;
+    const { action, uid, storeId, groupId: rawGroupId } = body;
 
-    if (action !== 'assignGroup' || !uid || groupId === undefined) {
+    if (action !== 'assignGroup' || !uid || rawGroupId === undefined) {
       return NextResponse.json({ error: '잘못된 요청' }, { status: 400 });
+    }
+
+    const groupId = rawGroupId === '' ? '' : normalizeGroupId(rawGroupId);
+
+    if (groupId === 'superuser') {
+      const isSU = await isPlatformSuperuser(authUser.uid, authUser.email);
+      if (!isSU) {
+        return NextResponse.json({ error: '슈퍼유저 역할은 슈퍼유저만 부여할 수 있습니다.' }, { status: 403 });
+      }
     }
 
     if (storeId) {
@@ -107,23 +142,26 @@ export async function PUT(req: Request) {
       if (mapSnap.empty) {
         return NextResponse.json({ error: '해당 매장 멤버를 찾을 수 없습니다.' }, { status: 404 });
       }
-      const groupToRole: Record<string, string> = {
-        master: 'owner', admin: 'admin', user: 'user', staff: 'staff', owner: 'owner',
-      };
-      const roleFromGroup = groupId === ''
-        ? 'staff'
-        : (groupToRole[groupId] || 'user');
+      const roleFromGroup = groupId === '' ? 'user' : groupIdToRole(groupId);
       await mapSnap.docs[0].ref.update({
         groupId,
         role: roleFromGroup,
         updatedAt: FieldValue.serverTimestamp(),
       });
-      await adminDb.collection('users').doc(uid).update({
-        groupId: groupId || '',
-        updatedAt: FieldValue.serverTimestamp(),
-      }).catch(() => {});
+
+      if (groupId === 'superuser') {
+        await adminDb.collection('users').doc(uid).update({
+          role: 'superuser',
+          groupId: 'superuser',
+          updatedAt: FieldValue.serverTimestamp(),
+        }).catch(() => {});
+      }
     } else {
-      await adminDb.collection('users').doc(uid).update({ groupId, updatedAt: FieldValue.serverTimestamp() });
+      await adminDb.collection('users').doc(uid).update({
+        groupId,
+        role: groupId === '' ? 'user' : groupIdToRole(groupId),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
     }
 
     return NextResponse.json({ success: true });

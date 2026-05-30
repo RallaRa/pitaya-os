@@ -11,6 +11,7 @@ import {
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase/firebase';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { clearCustomerPiiSession } from '@/lib/customerPiiSession';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -66,6 +67,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (isDev) console.log('[Auth State]', currentUser?.email ?? 'none');
+      if (!currentUser) clearCustomerPiiSession();
       setUser(currentUser);
       setLoading(false);
 
@@ -119,6 +121,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const logout = async () => {
     try {
+      clearCustomerPiiSession();
       await signOut(auth);
       router.push('/login');
     } catch (error) {

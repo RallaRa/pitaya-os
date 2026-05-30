@@ -8,7 +8,8 @@ import {
   Store, Plus, Search, Loader2, ChevronRight,
   Shield, Clock, LogOut, CheckCircle, XCircle,
 } from 'lucide-react';
-import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { getRoleLabel } from '@/lib/roleMapping';
 
 const SIDO_LIST = ['서울','부산','대구','인천','광주','대전','울산','세종',
   '경기','강원','충북','충남','전북','전남','경북','경남','제주'];
@@ -47,7 +48,11 @@ function SelectStoreContent() {
     getAuthHeaders()
       .then(headers => fetch(`/api/users?uid=${user.uid}`, { headers }))
       .then(r => r.json())
-      .then(data => { if (data.user?.role === 'superuser') setIsSuperuser(true); })
+      .then(data => {
+        const role = data.user?.role;
+        const groupId = data.user?.groupId;
+        if (role === 'superuser' || groupId === 'superuser') setIsSuperuser(true);
+      })
       .catch(() => {});
   }, [user]);
 
@@ -57,32 +62,43 @@ function SelectStoreContent() {
 
   useEffect(() => {
     if (urlMode !== 'pending' || !user?.uid) return;
-    Promise.all([
-      fetch(`/api/store?uid=${user.uid}&status=pending`).then(r => r.json()),
-      fetch(`/api/store?uid=${user.uid}&status=rejected`).then(r => r.json()),
-    ]).then(([pendingData, rejectedData]) => {
+    getAuthHeaders().then(headers =>
+      Promise.all([
+        fetch(`/api/store?uid=${user.uid}&status=pending`, { headers }).then(r => r.json()),
+        fetch(`/api/store?uid=${user.uid}&status=rejected`, { headers }).then(r => r.json()),
+      ])
+    ).then(([pendingData, rejectedData]) => {
       setPendingStores(pendingData.stores || []);
       setRejectedStores(rejectedData.stores || []);
-    });
+    }).catch(() => {});
   }, [urlMode, user]);
 
   useEffect(() => {
-    if (urlMode !== 'apply' && internalMode !== 'link') return;
+    if ((urlMode !== 'apply' && internalMode !== 'link') || !user?.uid) return;
     setIsLoadingAll(true);
-    fetch('/api/store?search=')
-      .then(r => r.json())
+    getAuthHeaders()
+      .then(headers => fetch('/api/store?search=', { headers }))
+      .then(async r => {
+        if (r.status === 401) throw new Error('로그인이 필요합니다.');
+        return r.json();
+      })
       .then(data => { setAllStores(data.stores || []); setIsLoadingAll(false); })
-      .catch(() => setIsLoadingAll(false));
-  }, [urlMode, internalMode]);
+      .catch((e) => { setError(e.message || '매장 목록을 불러오지 못했습니다.'); setIsLoadingAll(false); });
+  }, [urlMode, internalMode, user?.uid]);
 
   useEffect(() => {
     if (searchKeyword.length < 2) { setSearchResults([]); return; }
     const timer = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const res = await fetch(`/api/store?search=${encodeURIComponent(searchKeyword)}`);
+        const headers = await getAuthHeaders();
+        const res = await fetch(`/api/store?search=${encodeURIComponent(searchKeyword)}`, { headers });
+        if (res.status === 401) throw new Error('로그인이 필요합니다.');
         const data = await res.json();
         setSearchResults(data.stores || []);
+      } catch (e: any) {
+        setError(e.message || '검색에 실패했습니다.');
+        setSearchResults([]);
       } finally { setIsSearching(false); }
     }, 300);
     return () => clearTimeout(timer);
@@ -108,7 +124,7 @@ function SelectStoreContent() {
     try {
       const res = await fetch('/api/store', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ action: 'apply', uid: user.uid, storeId: selectedStore.storeId }),
       });
       const data = await res.json();
@@ -130,7 +146,7 @@ function SelectStoreContent() {
       const action = isSuperuser ? 'link' : 'apply';
       const res = await fetch('/api/store', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ action, uid: user.uid, storeId: selectedStore.storeId }),
       });
       const data = await res.json();
@@ -162,11 +178,15 @@ function SelectStoreContent() {
     try {
       const res = await fetch('/api/store', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ action: 'create', uid: user?.uid, ...form }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      if (data.storeStatus === 'pending') {
+        router.push('/select-store?mode=pending');
+        return;
+      }
       await refreshStores(user!.uid);
       if (urlMode === 'apply') {
         router.push('/dashboard');
@@ -189,7 +209,9 @@ function SelectStoreContent() {
         </div>
         <div>
           <h1 className="text-xl font-bold text-white">신규 매장 등록</h1>
-          <p className="text-yellow-400 text-xs">Superuser 전용</p>
+          <p className="text-yellow-400 text-xs">
+            {isSuperuser ? '슈퍼유저 — 즉시 활성화' : '승인 후 이용 가능'}
+          </p>
         </div>
       </div>
 
@@ -415,7 +437,16 @@ function SelectStoreContent() {
                   className="w-full flex items-center justify-center gap-2 bg-yellow-900/20 hover:bg-yellow-900/30 border border-yellow-500/30 hover:border-yellow-500/50 text-yellow-400 py-3 rounded-xl text-sm font-medium transition-all mb-3"
                 >
                   <Shield className="w-4 h-4" />
-                  신규 매장 등록 (Superuser 전용)
+                  신규 매장 등록
+                </button>
+              )}
+              {!isSuperuser && (
+                <button
+                  onClick={() => { setInternalMode('create'); setError(''); }}
+                  className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 py-3 rounded-xl text-sm font-medium transition-all mb-3"
+                >
+                  <Plus className="w-4 h-4" />
+                  신규 매장 등록 (승인 필요)
                 </button>
               )}
 
@@ -437,7 +468,7 @@ function SelectStoreContent() {
             </div>
           )}
 
-          {internalMode === 'create' && isSuperuser && renderCreateForm('list')}
+          {internalMode === 'create' && renderCreateForm('list')}
         </div>
       </div>
     );
@@ -475,7 +506,7 @@ function SelectStoreContent() {
                       <div className="text-left">
                         <p className="text-white font-bold">{store.storeName}</p>
                         <p className="text-slate-400 text-sm">
-                          {store.region} · {store.role === 'owner' ? '대표' : '직원'}
+                          {store.region} · {getRoleLabel(store.role)}
                         </p>
                       </div>
                     </div>
@@ -493,15 +524,13 @@ function SelectStoreContent() {
                 <Search className="w-4 h-4" />
                 매장 소속 신청
               </button>
-              {isSuperuser && (
-                <button
-                  onClick={() => { setInternalMode('create'); setError(''); setSuccessMsg(''); }}
-                  className="bg-teal-600 hover:bg-teal-500 text-white py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  신규 매장 생성
-                </button>
-              )}
+              <button
+                onClick={() => { setInternalMode('create'); setError(''); setSuccessMsg(''); }}
+                className="bg-teal-600 hover:bg-teal-500 text-white py-3 rounded-xl font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                <Plus className="w-4 h-4" />
+                신규 매장 등록
+              </button>
             </div>
           </div>
         )}
@@ -575,7 +604,16 @@ function SelectStoreContent() {
                 className="w-full flex items-center justify-center gap-2 bg-yellow-900/20 hover:bg-yellow-900/30 border border-yellow-500/30 hover:border-yellow-500/50 text-yellow-400 py-3 rounded-xl text-sm font-medium transition-all mb-3"
               >
                 <Shield className="w-4 h-4" />
-                신규 매장 등록 (Superuser 전용)
+                신규 매장 등록
+              </button>
+            )}
+            {!isSuperuser && (
+              <button
+                onClick={() => { setInternalMode('create'); setError(''); }}
+                className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 py-3 rounded-xl text-sm font-medium transition-all mb-3"
+              >
+                <Plus className="w-4 h-4" />
+                신규 매장 등록 (승인 필요)
               </button>
             )}
 
@@ -597,7 +635,7 @@ function SelectStoreContent() {
           </div>
         )}
 
-        {internalMode === 'create' && isSuperuser && renderCreateForm('link')}
+        {internalMode === 'create' && renderCreateForm('link')}
       </div>
     </div>
   );

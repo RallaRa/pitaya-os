@@ -2,6 +2,19 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
+import { isPlatformSuperuser } from '@/lib/superuserCheck';
+import {
+  normalizeRole,
+  normalizeGroupId,
+  roleToGroupId,
+  groupIdToRole,
+} from '@/lib/roleMapping';
+
+async function requireSuperuser(authUser: { uid: string; email?: string }) {
+  const ok = await isPlatformSuperuser(authUser.uid, authUser.email);
+  if (!ok) return NextResponse.json({ error: '슈퍼유저 권한이 필요합니다.' }, { status: 403 });
+  return null;
+}
 
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
@@ -13,8 +26,22 @@ export async function GET(req: Request) {
     const searchQuery = searchParams.get('search');
     const storeId = searchParams.get('storeId');
     const status = searchParams.get('status') || 'active';
+    const allStores = searchParams.get('allStores') === 'true';
 
-    // 특정 매장의 멤버 목록 (storeId 기준)
+    const isSU = await isPlatformSuperuser(authUser.uid, authUser.email);
+
+    // 슈퍼유저: 전체 매장 목록 (승인 관리용)
+    if (allStores) {
+      const denied = await requireSuperuser(authUser);
+      if (denied) return denied;
+      const storesSnap = await adminDb.collection('stores').get();
+      const stores = storesSnap.docs
+        .map(d => ({ storeId: d.id, status: 'active', ...d.data() }))
+        .sort((a: any, b: any) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
+      return NextResponse.json({ stores });
+    }
+
+    // 특정 매장의 멤버 목록
     if (storeId) {
       const mapSnap = await adminDb.collection('user_store_map')
         .where('storeId', '==', storeId)
@@ -23,27 +50,38 @@ export async function GET(req: Request) {
 
       const members = await Promise.all(
         mapSnap.docs.map(async (doc) => {
-          const { uid: memberUid, role, status: memberStatus, appliedAt, linkedAt } = doc.data();
+          const mapData = doc.data();
+          const { uid: memberUid, role, status: memberStatus, appliedAt, linkedAt, groupId: mapGroupId } = mapData;
           const userDoc = await adminDb.collection('users').doc(memberUid).get();
+          const normalizedRole = normalizeRole(role);
+          const normalizedGroupId = normalizeGroupId(mapGroupId || roleToGroupId(role));
           return {
+            ...(userDoc.exists ? userDoc.data() : {}),
             mapId: doc.id,
             uid: memberUid,
-            role,
+            role: normalizedRole,
+            groupId: normalizedGroupId,
             status: memberStatus,
             appliedAt,
             linkedAt,
-            ...(userDoc.exists ? userDoc.data() : {}),
           };
         })
       );
       return NextResponse.json({ members });
     }
 
-    // 전체 매장 검색 (uid 없이 search 파라미터)
+    // 전체 매장 검색
     if (searchQuery !== null && !uid) {
       const storesSnap = await adminDb.collection('stores').get();
       const keyword = searchQuery.toLowerCase().trim();
-      const allDocs = storesSnap.docs.map(d => ({ storeId: d.id, ...d.data() }));
+      let allDocs = storesSnap.docs.map(d => ({
+        storeId: d.id,
+        status: 'active',
+        ...d.data(),
+      }));
+      if (!isSU) {
+        allDocs = allDocs.filter((s: any) => !s.status || s.status === 'active');
+      }
       const results = keyword === ''
         ? allDocs
         : allDocs.filter((store: any) =>
@@ -65,10 +103,21 @@ export async function GET(req: Request) {
 
     const stores = await Promise.all(
       mapSnap.docs.map(async (mapDoc) => {
-        const { storeId, role } = mapDoc.data();
-        const storeDoc = await adminDb.collection('stores').doc(storeId).get();
+        const mapData = mapDoc.data();
+        const { storeId: sid, role, groupId: mapGroupId, rejectedReason, rejectedAt } = mapData;
+        const storeDoc = await adminDb.collection('stores').doc(sid).get();
         if (!storeDoc.exists) return null;
-        return { storeId, role, status, ...storeDoc.data() };
+        const storeData = storeDoc.data()!;
+        if (status === 'active' && storeData.status && storeData.status !== 'active') return null;
+        return {
+          ...storeData,
+          storeId: sid,
+          role: normalizeRole(role),
+          groupId: normalizeGroupId(mapGroupId || roleToGroupId(role)),
+          mapStatus: status,
+          rejectedReason,
+          rejectedAt,
+        };
       })
     );
 
@@ -85,8 +134,9 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { action, uid } = body;
+    const isSU = await isPlatformSuperuser(authUser.uid, authUser.email);
 
-    // [신규 매장 생성]
+    // 신규 매장 생성
     if (action === 'create') {
       const { storeName, ownerName, regionSido, regionSigungu, address, phone, businessNumber } = body;
       if (!uid || !storeName || !regionSido || !regionSigungu) {
@@ -94,26 +144,37 @@ export async function POST(req: Request) {
       }
 
       const storeId = `STR-${Date.now()}`;
+      const storeStatus = isSU ? 'active' : 'pending';
+
       await adminDb.collection('stores').doc(storeId).set({
-        storeId, storeName,
+        storeId,
+        storeName,
         ownerName: ownerName || '',
         region: `${regionSido} ${regionSigungu}`,
-        regionSido, regionSigungu,
+        regionSido,
+        regionSigungu,
         address: address || '',
         phone: phone || '',
         businessNumber: businessNumber || '',
+        status: storeStatus,
         createdAt: FieldValue.serverTimestamp(),
       });
 
       await adminDb.collection('user_store_map').add({
-        uid, storeId, role: 'owner', groupId: 'master', status: 'active',
-        linkedAt: FieldValue.serverTimestamp(), unlinkedAt: null,
+        uid,
+        storeId,
+        role: 'owner',
+        groupId: 'master',
+        status: isSU ? 'active' : 'pending',
+        linkedAt: isSU ? FieldValue.serverTimestamp() : null,
+        appliedAt: isSU ? null : FieldValue.serverTimestamp(),
+        unlinkedAt: null,
       });
 
-      return NextResponse.json({ success: true, storeId });
+      return NextResponse.json({ success: true, storeId, storeStatus });
     }
 
-    // [매장 소속 신청 - pending 상태로 생성]
+    // 매장 소속 신청
     if (action === 'apply') {
       const { storeId } = body;
       if (!uid || !storeId) {
@@ -124,8 +185,14 @@ export async function POST(req: Request) {
       if (!storeDoc.exists) {
         return NextResponse.json({ error: '존재하지 않는 매장입니다.' }, { status: 404 });
       }
+      const storeData = storeDoc.data()!;
+      if (storeData.status === 'pending') {
+        return NextResponse.json({ error: '아직 승인되지 않은 매장입니다.' }, { status: 400 });
+      }
+      if (storeData.status === 'rejected') {
+        return NextResponse.json({ error: '거절된 매장입니다.' }, { status: 400 });
+      }
 
-      // 이미 신청/연결 여부 확인
       const existSnap = await adminDb.collection('user_store_map')
         .where('uid', '==', uid)
         .where('storeId', '==', storeId)
@@ -136,20 +203,29 @@ export async function POST(req: Request) {
         return NextResponse.json({
           error: existing.status === 'pending'
             ? '이미 승인 대기 중입니다.'
-            : '이미 해당 매장에 소속되어 있습니다.'
+            : '이미 해당 매장에 소속되어 있습니다.',
         }, { status: 409 });
       }
 
       await adminDb.collection('user_store_map').add({
-        uid, storeId, role: 'staff', status: 'pending',
-        appliedAt: FieldValue.serverTimestamp(), linkedAt: null, unlinkedAt: null,
+        uid,
+        storeId,
+        role: 'user',
+        groupId: 'user',
+        status: 'pending',
+        appliedAt: FieldValue.serverTimestamp(),
+        linkedAt: null,
+        unlinkedAt: null,
       });
 
       return NextResponse.json({ success: true, store: { storeId, ...storeDoc.data() } });
     }
 
-    // [기존 매장 연결 - active로 직접 연결 (superuser용)]
+    // 기존 매장 연결 (슈퍼유저용 즉시 active)
     if (action === 'link') {
+      const denied = await requireSuperuser(authUser);
+      if (denied) return denied;
+
       const { storeId } = body;
       if (!uid || !storeId) {
         return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
@@ -167,20 +243,32 @@ export async function POST(req: Request) {
 
       if (!existSnap.empty) {
         await existSnap.docs[0].ref.update({
-          status: 'active', linkedAt: FieldValue.serverTimestamp(), unlinkedAt: null,
+          status: 'active',
+          role: 'user',
+          groupId: 'user',
+          linkedAt: FieldValue.serverTimestamp(),
+          unlinkedAt: null,
         });
       } else {
         await adminDb.collection('user_store_map').add({
-          uid, storeId, role: 'staff', groupId: '', status: 'active',
-          linkedAt: FieldValue.serverTimestamp(), unlinkedAt: null,
+          uid,
+          storeId,
+          role: 'user',
+          groupId: 'user',
+          status: 'active',
+          linkedAt: FieldValue.serverTimestamp(),
+          unlinkedAt: null,
         });
       }
 
       return NextResponse.json({ success: true, store: { storeId, ...storeDoc.data() } });
     }
 
-    // [멤버 승인]
+    // 멤버 승인 (슈퍼유저 전용)
     if (action === 'approve') {
+      const denied = await requireSuperuser(authUser);
+      if (denied) return denied;
+
       const { targetUid, storeId } = body;
       if (!targetUid || !storeId) {
         return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
@@ -196,18 +284,25 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: '대기 중인 신청이 없습니다.' }, { status: 404 });
       }
 
+      const mapData = snap.docs[0].data();
+      const role = normalizeRole(mapData.role || 'user');
+      const groupId = normalizeGroupId(mapData.groupId || roleToGroupId(role));
+
       await snap.docs[0].ref.update({
         status: 'active',
-        groupId: snap.docs[0].data().groupId ?? '',
-        role: snap.docs[0].data().role || 'staff',
+        role,
+        groupId,
         linkedAt: FieldValue.serverTimestamp(),
       });
 
       return NextResponse.json({ success: true });
     }
 
-    // [멤버 거절] — 삭제 대신 status: 'rejected' 저장 (사유 포함)
+    // 멤버 거절 (슈퍼유저 전용)
     if (action === 'reject') {
+      const denied = await requireSuperuser(authUser);
+      if (denied) return denied;
+
       const { targetUid, storeId, reason } = body;
       if (!targetUid || !storeId) {
         return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
@@ -229,11 +324,90 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true });
     }
 
-    // [역할 변경]
+    // 매장 승인 (슈퍼유저 전용)
+    if (action === 'approveStore') {
+      const denied = await requireSuperuser(authUser);
+      if (denied) return denied;
+
+      const { storeId } = body;
+      if (!storeId) return NextResponse.json({ error: 'storeId 없음' }, { status: 400 });
+
+      const storeRef = adminDb.collection('stores').doc(storeId);
+      const storeDoc = await storeRef.get();
+      if (!storeDoc.exists) return NextResponse.json({ error: '매장 없음' }, { status: 404 });
+
+      await storeRef.update({
+        status: 'active',
+        approvedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+      const mapSnap = await adminDb.collection('user_store_map')
+        .where('storeId', '==', storeId)
+        .where('role', '==', 'owner')
+        .where('status', '==', 'pending')
+        .get();
+      for (const mapDoc of mapSnap.docs) {
+        await mapDoc.ref.update({
+          status: 'active',
+          groupId: 'master',
+          linkedAt: FieldValue.serverTimestamp(),
+        });
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
+    // 매장 거절 (슈퍼유저 전용)
+    if (action === 'rejectStore') {
+      const denied = await requireSuperuser(authUser);
+      if (denied) return denied;
+
+      const { storeId, reason } = body;
+      if (!storeId) return NextResponse.json({ error: 'storeId 없음' }, { status: 400 });
+
+      await adminDb.collection('stores').doc(storeId).update({
+        status: 'rejected',
+        rejectedReason: reason || '',
+        rejectedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+
+      return NextResponse.json({ success: true });
+    }
+
+    // 매장 삭제 (슈퍼유저 전용)
+    if (action === 'deleteStore') {
+      const denied = await requireSuperuser(authUser);
+      if (denied) return denied;
+
+      const { storeId } = body;
+      if (!storeId) return NextResponse.json({ error: 'storeId 없음' }, { status: 400 });
+
+      const mapSnap = await adminDb.collection('user_store_map')
+        .where('storeId', '==', storeId)
+        .get();
+      const batch = adminDb.batch();
+      mapSnap.docs.forEach(d => batch.delete(d.ref));
+      batch.delete(adminDb.collection('stores').doc(storeId));
+      await batch.commit();
+
+      return NextResponse.json({ success: true });
+    }
+
+    // 역할 변경
     if (action === 'changeRole') {
-      const { targetUid, storeId, role } = body;
-      if (!targetUid || !storeId || !role) {
+      const { targetUid, storeId, role: rawRole } = body;
+      if (!targetUid || !storeId || !rawRole) {
         return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
+      }
+
+      const role = normalizeRole(rawRole);
+      const groupId = roleToGroupId(role);
+
+      if (role === 'superuser') {
+        const denied = await requireSuperuser(authUser);
+        if (denied) return denied;
       }
 
       const snap = await adminDb.collection('user_store_map')
@@ -246,23 +420,24 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: '해당 멤버를 찾을 수 없습니다.' }, { status: 404 });
       }
 
-      const roleToGroup: Record<string, string> = {
-        owner: 'master', admin: 'admin', user: 'user', staff: 'staff',
-      };
-      const groupId = roleToGroup[role] || role;
       await snap.docs[0].ref.update({
         role,
         groupId,
         updatedAt: FieldValue.serverTimestamp(),
       });
-      await adminDb.collection('users').doc(targetUid).update({
-        groupId,
-        updatedAt: FieldValue.serverTimestamp(),
-      }).catch(() => {});
-      return NextResponse.json({ success: true, groupId });
+
+      if (role === 'superuser') {
+        await adminDb.collection('users').doc(targetUid).update({
+          role: 'superuser',
+          groupId: 'superuser',
+          updatedAt: FieldValue.serverTimestamp(),
+        }).catch(() => {});
+      }
+
+      return NextResponse.json({ success: true, role, groupId });
     }
 
-    // [멤버 내보내기 (강제 탈퇴)]
+    // 멤버 내보내기
     if (action === 'remove') {
       const { targetUid, storeId } = body;
       if (!targetUid || !storeId) {
@@ -299,9 +474,31 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: 'storeId 없음' }, { status: 400 });
     }
 
+    const isSU = await isPlatformSuperuser(authUser.uid, authUser.email);
+    if (!isSU) {
+      const mapSnap = await adminDb.collection('user_store_map')
+        .where('uid', '==', authUser.uid)
+        .where('storeId', '==', storeId)
+        .where('status', '==', 'active')
+        .get();
+      if (mapSnap.empty) {
+        return NextResponse.json({ error: '권한 없음' }, { status: 403 });
+      }
+      const role = normalizeRole(mapSnap.docs[0].data().role);
+      if (!['owner', 'admin', 'superuser'].includes(role)) {
+        return NextResponse.json({ error: '권한 없음' }, { status: 403 });
+      }
+    }
+
     await adminDb.collection('stores').doc(storeId).update({
-      storeName, ownerName: ownerName || '', region, regionSido, regionSigungu,
-      address: address || '', phone: phone || '', businessNumber: businessNumber || '',
+      storeName,
+      ownerName: ownerName || '',
+      region,
+      regionSido,
+      regionSigungu,
+      address: address || '',
+      phone: phone || '',
+      businessNumber: businessNumber || '',
       updatedAt: FieldValue.serverTimestamp(),
     });
 

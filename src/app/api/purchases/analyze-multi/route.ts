@@ -11,6 +11,7 @@ import {
 import {
   ensembleOcr,
 } from '@/lib/ensembleOcr';
+import { applyAliasesToInvoices, loadStoreAliases } from '@/lib/applyItemAliases';
 import {
   formatAiTag,
   formatEnsembleReplyBlock,
@@ -187,6 +188,7 @@ export async function POST(req: Request) {
 
     const imageFiles = files.filter((f: any) => f.type === 'image' || f.type === 'pdf');
     const textFiles  = files.filter((f: any) => f.type !== 'image' && f.type !== 'pdf');
+    const storeAliases = storeId ? await loadStoreAliases(storeId) : [];
 
     const fileNotes: string[] = [];
     const fileResults: FileAnalysisMeta[] = [];
@@ -263,6 +265,7 @@ export async function POST(req: Request) {
           ...inv,
           aiTag: ensembleResult.aiTag,
           _originalAiResult: { ...inv },
+          _conflicts: inv._conflicts || (ensembleResult.conflicts.length ? ensembleResult.conflicts : undefined),
         })));
       }
 
@@ -304,15 +307,24 @@ export async function POST(req: Request) {
     }
 
     const invoices = allInvoices;
+    const aliasResult = storeAliases.length
+      ? applyAliasesToInvoices(invoices, storeAliases)
+      : { invoices, applied: [] as Array<{ from: string; to: string; supplierName?: string }> };
+    const finalInvoices = aliasResult.invoices;
     const avgConfidence = fileResults.length
       ? Math.round(fileResults.reduce((s, f) => s + (f.confidence ?? 100), 0) / fileResults.length)
       : 0;
 
-    let reply = invoices.length > 0
-      ? `${invoices.length}건의 매입 내역을 추출했습니다 (앙상블 신뢰도 ${avgConfidence}%). 시트에서 내용을 확인·수정 후 저장하세요.`
+    let reply = finalInvoices.length > 0
+      ? `${finalInvoices.length}건의 매입 내역을 추출했습니다 (앙상블 신뢰도 ${avgConfidence}%). 시트에서 내용을 확인·수정 후 저장하세요.`
       : '문서에서 매입 내역을 추출하지 못했습니다.';
 
-    if (invoices.length === 0) {
+    if (aliasResult.applied.length > 0) {
+      const preview = aliasResult.applied.slice(0, 5).map(a => `${a.from}→${a.to}`).join(', ');
+      reply += `\n\n📚 **알리아스 자동 적용** ${aliasResult.applied.length}건 (${preview}${aliasResult.applied.length > 5 ? '…' : ''})`;
+    }
+
+    if (finalInvoices.length === 0) {
       reply += '\n\n💡 **개선 방법**\n• 밝은 곳에서 그림자 없이 전체 촬영\n• PDF 원본 업로드 (스크린샷보다 정확)\n• "품목명과 금액이 보이게 다시 분석"이라고 함께 입력';
     }
 
@@ -332,9 +344,9 @@ export async function POST(req: Request) {
       : '';
     reply += conflictNote;
 
-    console.log(`[analyze-multi] done invoices=${invoices.length}`);
+    console.log(`[analyze-multi] done invoices=${finalInvoices.length}`);
     return NextResponse.json({
-      invoices,
+      invoices: finalInvoices,
       reply,
       qualities: [],
       fileResults,

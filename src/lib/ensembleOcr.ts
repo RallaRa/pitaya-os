@@ -77,20 +77,44 @@ function parseOcrJson(text: string): Record<string, unknown>[] {
 async function loadCorrectionHint(storeId: string, supplierName?: string): Promise<string> {
   if (!storeId) return '';
   try {
-    let snap;
+    let q = adminDb.collection('ocr_corrections')
+      .where('storeId', '==', storeId)
+      .orderBy('createdAt', 'desc')
+      .limit(5);
     if (supplierName) {
-      snap = await adminDb.collection('ocr_corrections')
+      q = adminDb.collection('ocr_corrections')
         .where('storeId', '==', storeId)
         .where('supplierName', '==', supplierName)
-        .limit(3)
-        .get();
-    } else {
-      snap = await adminDb.collection('ocr_corrections')
-        .where('storeId', '==', storeId)
-        .limit(3)
-        .get();
+        .orderBy('createdAt', 'desc')
+        .limit(5);
     }
+    const snap = await q.get().catch(async () => {
+      const fallback = await adminDb.collection('ocr_corrections')
+        .where('storeId', '==', storeId)
+        .limit(5)
+        .get();
+      return fallback;
+    });
     if (snap.empty) return '';
+
+    const nameMaps: string[] = [];
+    snap.docs.forEach(doc => {
+      const data = doc.data();
+      const origItems = Array.isArray(data.originalResult?.items) ? data.originalResult.items : [];
+      const corrItems = Array.isArray(data.correctedResult?.items) ? data.correctedResult.items : [];
+      const len = Math.min(origItems.length, corrItems.length);
+      for (let i = 0; i < len; i++) {
+        const from = String(origItems[i]?.name || '').trim();
+        const to = String(corrItems[i]?.name || '').trim();
+        if (from && to && from !== to) nameMaps.push(`"${from}"→"${to}"`);
+      }
+    });
+
+    const unique = [...new Set(nameMaps)].slice(0, 12);
+    if (unique.length) {
+      return `\n\n[이전 수정 품목명 참고]\n${unique.join(', ')}`;
+    }
+
     const ex = snap.docs[0].data().correctedResult;
     const name = snap.docs[0].data().supplierName || supplierName || '거래처';
     return `\n\n[참고 — ${name} 이전 수정 패턴]\n${JSON.stringify(ex).slice(0, 800)}`;

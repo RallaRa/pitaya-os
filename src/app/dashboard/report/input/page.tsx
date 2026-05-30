@@ -11,6 +11,7 @@ import { WEATHER_ICONS, getStoreCoords, fetchWeather } from '@/lib/weather';
 import { useSearchParams } from 'next/navigation';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
+import { useManualSalesAccess } from '@/hooks/useManualSalesAccess';
 
 // --- 타입 정의 영역 ---
 type Message = {
@@ -43,6 +44,7 @@ type AttachedFileType = 'image' | 'excel';
 export default function ReportInputPage() {
   const { user } = useAuth();
   const { currentStore } = useStore();
+  const { loading: accessLoading, canAccess, isStoreMember, hasPosBridge } = useManualSalesAccess();
   const searchParams = useSearchParams();
   const [messages, setMessages] = useState<Message[]>([
     { id: 1, role: 'ai', text: "안녕하세요 대표님! 마감 내용을 입력하시거나, 분석할 매출 데이터(엑셀) 및 거래명세서(사진)를 업로드해주세요." }
@@ -714,6 +716,30 @@ const handleLoadReport = async () => {
       </div>
     );
   };
+
+  if (accessLoading) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-2rem)] bg-slate-950 text-slate-400">
+        <Loader2 className="w-6 h-6 animate-spin mr-2" />
+        접근 권한 확인 중...
+      </div>
+    );
+  }
+
+  if (!canAccess) {
+    const message = !currentStore?.storeId
+      ? '매장을 선택해 주세요.'
+      : !isStoreMember
+        ? '소속된 매장에서만 매출 키인을 사용할 수 있습니다.'
+        : hasPosBridge
+          ? 'POS 연동 매장은 자동으로 매출이 수집됩니다. 일마감내역에서 확인해 주세요.'
+          : '매출 키인 메뉴 사용 권한이 없습니다.';
+    return (
+      <div className="flex flex-col items-center justify-center h-[calc(100vh-2rem)] bg-slate-950 text-slate-400 gap-3">
+        <p>{message}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-2rem)] bg-slate-950 text-slate-100 p-4">

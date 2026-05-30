@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { DEFAULT_PERMISSIONS, ALL_MENUS, Role } from '@/lib/permissions';
-import { verifyToken, getActualGroupId, isAdminGroup, isMasterGroup, canManageStore } from '@/lib/authVerify';
-import { isSuperuserEmail } from '@/lib/auth/permissions';
+import { verifyToken, getActualGroupId, isAdminGroup, isMasterGroup, canManageStore, isActiveStoreMember } from '@/lib/authVerify';
+import { isPlatformSuperuser } from '@/lib/superuserCheck';
+import { storeHasPosBridge } from '@/lib/posBridgeStatus';
 
 type MenuAccess = {
   ai: boolean; sales: boolean; purchase: boolean; report: boolean;
@@ -34,9 +35,16 @@ const STAFF_ACCESS: MenuAccess = {
 
 const SYSTEM_GROUPS = [
   {
+    groupId: 'superuser',
+    storeId: 'global',
+    groupName: '슈퍼유저',
+    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: true, memberGroup: true, hygiene: true, hrCalendar: true, scaleCode: true, salesForecast: true, suppliers: true, predictionVariables: true, customers: true, predictionHistory: true, items: true },
+    isSystem: true,
+  },
+  {
     groupId: 'master',
     storeId: 'global',
-    groupName: '마스터',
+    groupName: '관리자',
     menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: true, memberGroup: true, hygiene: true, hrCalendar: true, scaleCode: true, salesForecast: true, suppliers: true, predictionVariables: true, customers: true, predictionHistory: true, items: true },
     isSystem: true,
   },
@@ -64,6 +72,7 @@ const OLD_GROUP_NAMES: Record<string, string> = {
   master: 'Master',
   admin: '관리자',
   user: '사용자',
+  superuser: 'Superuser',
 };
 
 async function ensureSystemGroups() {
@@ -84,7 +93,7 @@ async function ensureSystemGroups() {
       const missingKeys = Object.keys(group.menuAccess).filter(k => !(k in existingAccess));
       missingKeys.forEach(k => { patch[`menuAccess.${k}`] = (group.menuAccess as any)[k]; });
       // 구 기본 이름이면 새 이름으로 업데이트
-      if (existingData.groupName === OLD_GROUP_NAMES[group.groupId]) {
+      if (existingData.groupName === OLD_GROUP_NAMES[group.groupId] || existingData.groupName === '마스터') {
         patch.groupName = group.groupName;
       }
       if (Object.keys(patch).length > 0) {
@@ -108,6 +117,17 @@ async function ensureSystemGroups() {
   if (hasChanges) await batch.commit();
 }
 
+async function getStoreAccessContext(uid: string, storeId?: string | null) {
+  if (!storeId) {
+    return { isStoreMember: false, hasPosBridge: false };
+  }
+  const [isStoreMember, hasPosBridge] = await Promise.all([
+    isActiveStoreMember(uid, storeId),
+    storeHasPosBridge(storeId),
+  ]);
+  return { isStoreMember, hasPosBridge };
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -124,20 +144,21 @@ export async function GET(req: Request) {
       const uid = verified.uid;
       await ensureSystemGroups();
 
-      // 1. users 컬렉션에서 이메일 + groupId 조회
       const userDoc = await adminDb.collection('users').doc(uid).get();
       const userData = userDoc.exists ? userDoc.data() : null;
 
-      // 슈퍼유저 이메일은 항상 master 강제
-      if (isSuperuserEmail(userData?.email)) {
-        if (userData?.groupId !== 'master') {
-          await adminDb.collection('users').doc(uid).update({ groupId: 'master' });
-        }
-        const masterDoc = await adminDb.collection('permission_groups').doc('master').get();
-        const masterStored = masterDoc.exists ? masterDoc.data()?.menuAccess : {};
-        // 시스템 기본값과 저장값을 병합 (새 메뉴키 누락 방지)
-        const masterAccess = { ...SYSTEM_GROUPS[0].menuAccess, ...masterStored };
-        return NextResponse.json({ groupId: 'master', menuAccess: masterAccess, role: 'master' });
+      if (await isPlatformSuperuser(uid, userData?.email)) {
+        const suDoc = await adminDb.collection('permission_groups').doc('superuser').get();
+        const suStored = suDoc.exists ? suDoc.data()?.menuAccess : {};
+        const suAccess = { ...SYSTEM_GROUPS[0].menuAccess, ...suStored };
+        const storeContext = await getStoreAccessContext(uid, storeId);
+        return NextResponse.json({
+          groupId: 'superuser',
+          menuAccess: suAccess,
+          role: 'superuser',
+          isSuperuser: true,
+          ...storeContext,
+        });
       }
 
       let groupId: string | null = null;
@@ -164,17 +185,30 @@ export async function GET(req: Request) {
 
       // 4. 대기 상태 → 모든 메뉴 false
       if (groupId === '') {
-        return NextResponse.json({ groupId: '', role: '', menuAccess: ALL_FALSE });
+        const storeContext = await getStoreAccessContext(uid, storeId);
+        return NextResponse.json({ groupId: '', role: '', menuAccess: ALL_FALSE, ...storeContext });
       }
+
+      const storeContext = await getStoreAccessContext(uid, storeId);
 
       // 5. 그룹의 menuAccess 조회
       const groupDoc = await adminDb.collection('permission_groups').doc(groupId).get();
       if (groupDoc.exists) {
         const stored = groupDoc.data()?.menuAccess || {};
-        return NextResponse.json({ groupId, role: groupId, menuAccess: { ...ALL_FALSE, ...stored } });
+        return NextResponse.json({
+          groupId,
+          role: groupId,
+          menuAccess: { ...ALL_FALSE, ...stored },
+          ...storeContext,
+        });
       }
 
-      return NextResponse.json({ groupId: 'staff', role: 'staff', menuAccess: { ...ALL_FALSE, ...STAFF_ACCESS } });
+      return NextResponse.json({
+        groupId: 'user',
+        role: 'user',
+        menuAccess: { ...ALL_FALSE, ...STAFF_ACCESS },
+        ...storeContext,
+      });
     }
 
     // ── 권한 그룹 목록 조회 ──

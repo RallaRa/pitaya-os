@@ -17,6 +17,14 @@ import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import * as XLSX from 'xlsx';
 import type { CustomerSortField } from '@/lib/customerQuery';
 import type { VisitCycleStatus } from '@/lib/customerVisitCycle';
+import {
+  clearCustomerPiiSession,
+  loadCustomerPiiSession,
+  mergeDecryptedMaps,
+  mergeDecryptedRows,
+  saveCustomerPiiSession,
+  type DecryptedCustomer,
+} from '@/lib/customerPiiSession';
 import dynamic from 'next/dynamic';
 
 const CustomerRequestPanel = dynamic(
@@ -70,7 +78,7 @@ interface AnalysisData {
   totalCustomers:    number;
 }
 
-interface DecryptedInfo { cusCode: string; name: string; phone: string; birth: string }
+interface DecryptedInfo extends DecryptedCustomer {}
 
 interface DecryptLogRow {
   id: string;
@@ -137,7 +145,38 @@ export default function CustomersPage() {
     setPiiUnlocked(false);
     setDecryptedMap({});
     setDecryptedRows([]);
+    clearCustomerPiiSession();
   }, []);
+
+  /* 세션 복원 / 매장·계정 변경 시 */
+  useEffect(() => {
+    if (!user?.uid || !storeId) {
+      clearPii();
+      return;
+    }
+    const saved = loadCustomerPiiSession(user.uid, storeId);
+    if (saved && Object.keys(saved.decryptedMap).length > 0) {
+      setDecryptedMap(saved.decryptedMap);
+      setDecryptedRows(saved.decryptedRows || []);
+      setPiiUnlocked(true);
+    } else {
+      setDecryptedMap({});
+      setDecryptedRows([]);
+      setPiiUnlocked(false);
+    }
+  }, [user?.uid, storeId, clearPii]);
+
+  /* 복호화 상태 sessionStorage 동기화 */
+  useEffect(() => {
+    if (!user?.uid || !storeId || !piiUnlocked || Object.keys(decryptedMap).length === 0) return;
+    saveCustomerPiiSession({
+      uid: user.uid,
+      storeId,
+      decryptedMap,
+      decryptedRows,
+      unlockedAt: Date.now(),
+    });
+  }, [user?.uid, storeId, piiUnlocked, decryptedMap, decryptedRows]);
 
   /* ── 권한 조회 ── */
   useEffect(() => {
@@ -180,8 +219,6 @@ export default function CustomersPage() {
     sortBy,
     sortOrder,
   }), [storeId, gradeFilter, search, joinFrom, joinTo, visitFrom, visitTo, cycleFilter, sortBy, sortOrder]);
-
-  useEffect(() => { clearPii(); }, [clearPii, gradeFilter, search, joinFrom, joinTo, visitFrom, visitTo, cycleFilter, sortBy, sortOrder, storeId]);
 
   const mapApiRow = (r: Record<string, unknown>): Customer => ({
     id: String(r.cusCode || ''),
@@ -319,19 +356,20 @@ export default function CustomersPage() {
       const d = await res.json();
       if (d.error) throw new Error(d.error);
 
-      const map: Record<string, DecryptedInfo> = {};
+      const incomingMap: Record<string, DecryptedInfo> = {};
       for (const row of d.customers || []) {
-        map[row.cusCode] = {
+        incomingMap[row.cusCode] = {
           cusCode: row.cusCode,
           name: row.name,
           phone: row.phone,
           birth: row.birth,
         };
       }
-      setDecryptedMap(map);
-      setDecryptedRows(d.customers || []);
+      setDecryptedMap(prev => mergeDecryptedMaps(prev, incomingMap));
+      setDecryptedRows(prev => mergeDecryptedRows(prev, d.customers || []));
       setPiiUnlocked(true);
-      alert(`${(d.total ?? 0).toLocaleString()}명 개인정보가 복호화되었습니다.`);
+      const added = Object.keys(incomingMap).length;
+      alert(`${added.toLocaleString()}명 개인정보가 복호화되었습니다. (세션 만료 전까지 유지)`);
     } catch (e) {
       console.error('[customers] bulk decrypt error:', e);
       alert(e instanceof Error ? e.message : '복호화에 실패했습니다.');
@@ -341,13 +379,21 @@ export default function CustomersPage() {
   };
 
   const exportDecryptedExcel = () => {
-    if (!piiUnlocked || decryptedRows.length === 0) {
+    const sourceRows = decryptedRows.length > 0
+      ? decryptedRows
+      : Object.values(decryptedMap).map(d => ({
+          cusCode: d.cusCode,
+          name: d.name,
+          phone: d.phone,
+          birth: d.birth,
+        }));
+    if (sourceRows.length === 0) {
       alert('먼저 개인정보 복호화를 실행하세요.');
       return;
     }
     setExporting(true);
     try {
-      const rows = decryptedRows.map(r => ({
+      const rows = sourceRows.map(r => ({
         고객코드: String(r.cusCode || ''),
         이름: String(r.name || ''),
         전화: String(r.phone || ''),
@@ -604,16 +650,15 @@ export default function CustomersPage() {
               </button>
               {canDecrypt && (
                 <>
-                  {!piiUnlocked ? (
-                    <button
-                      onClick={handleBulkDecrypt}
-                      disabled={bulkDecrypting || loading}
-                      className="flex items-center gap-1.5 px-3 py-2 bg-violet-700/40 hover:bg-violet-600/50 border border-violet-600/40 text-violet-300 rounded-lg text-xs font-medium disabled:opacity-50"
-                    >
-                      {bulkDecrypting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
-                      개인정보 복호화
-                    </button>
-                  ) : (
+                  <button
+                    onClick={handleBulkDecrypt}
+                    disabled={bulkDecrypting || loading}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-violet-700/40 hover:bg-violet-600/50 border border-violet-600/40 text-violet-300 rounded-lg text-xs font-medium disabled:opacity-50"
+                  >
+                    {bulkDecrypting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
+                    {piiUnlocked ? '현재 목록 추가 복호화' : '개인정보 복호화'}
+                  </button>
+                  {piiUnlocked && (
                     <>
                       <button
                         onClick={clearPii}
@@ -647,7 +692,7 @@ export default function CustomersPage() {
             {piiUnlocked && (
               <p className="text-[10px] text-violet-400/90 flex items-center gap-1">
                 <Unlock className="w-3 h-3" />
-                {Object.keys(decryptedMap).length.toLocaleString()}명 개인정보 표시 중 · 조회 이력이 기록되었습니다
+                {Object.keys(decryptedMap).length.toLocaleString()}명 복호화 표시 중 · 로그아웃 또는 마스킹 전까지 유지
               </p>
             )}
 
@@ -738,7 +783,7 @@ export default function CustomersPage() {
                     <span className="text-slate-500 text-[11px]">POS: sync-customers + migrate(구매이력) 실행 필요</span>
                   </td></tr>
                 ) : paginatedCustomers.map(c => {
-                  const dec = piiUnlocked ? decryptedMap[c.cusCode] : undefined;
+                  const dec = decryptedMap[c.cusCode];
                   return (
                     <tr key={c.cusCode} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition">
                       <td className="px-3 py-2 font-mono text-slate-400">{c.cusCode}</td>

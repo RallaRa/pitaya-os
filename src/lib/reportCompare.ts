@@ -102,6 +102,61 @@ export function dailyReportDocId(storeId: string, date: string) {
   return `pos_${storeId}_${date}`;
 }
 
+/** daily_reports 중복 문서 선택 (POS bridge 우선) */
+export function scoreDailyReport(dr: { source?: string; totalSales?: number | null }): number {
+  const s = dr.totalSales || 0;
+  if (dr.source === 'pos_bridge' && s > 0) return Infinity;
+  if (dr.source === 'pos_bridge' && s === 0) return -1;
+  return s;
+}
+
+export function pickBestDailyReport<T extends { storeId?: string; reportDate?: string; source?: string; totalSales?: number | null }>(
+  docs: T[],
+  storeId: string,
+  date: string,
+): T | null {
+  let best: T | null = null;
+  for (const d of docs) {
+    if (d.storeId !== storeId || d.reportDate !== date) continue;
+    if (!best || scoreDailyReport(d) > scoreDailyReport(best)) best = d;
+  }
+  return best;
+}
+
+export function netSalesFromDailyReport(d: Record<string, unknown>): number {
+  const totalSales = (d.totalSales as number | undefined) ?? 0;
+  const netSales = d.netSales as number | undefined;
+  const netSale = d.netSale as number | undefined;
+  if (netSales != null && netSales !== 0) return netSales;
+  if (netSale != null && netSale !== 0) return netSale;
+  return totalSales - ((d.returnAmount as number | undefined) ?? 0) - ((d.discountAmount as number | undefined) ?? 0);
+}
+
+export interface DailyReportView extends ReportSnapshot {
+  isClosed?: boolean;
+  weather?: { condition?: string; tempMin?: number; tempMax?: number } | string | null;
+  issues?: Array<{ title?: string }> | string | null;
+  news?: { title?: string; description?: string } | null;
+}
+
+export function mapDailyReportDoc(d: Record<string, unknown>): DailyReportView {
+  return {
+    totalSales: (d.totalSales as number | undefined) ?? 0,
+    netSales: netSalesFromDailyReport(d),
+    customerCount: (d.customerCount as number | undefined) ?? 0,
+    returnAmount: (d.returnAmount as number | undefined) ?? 0,
+    cashSale: (d.cashSale as number | undefined) ?? 0,
+    cardSale: (d.cardSale as number | undefined) ?? 0,
+    posBreakdown: d.posBreakdown as ReportSnapshot['posBreakdown'],
+    items: d.items as ReportSnapshot['items'],
+    timeSlots: d.timeSlots as ReportSnapshot['timeSlots'],
+    isClosed: d.isClosed as boolean | undefined,
+    weather: (d.weather ?? null) as DailyReportView['weather'],
+    issues: (d.issues ?? null) as DailyReportView['issues'],
+    news: (d.news ?? null) as DailyReportView['news'],
+  };
+}
+
 export interface ReportSnapshot {
   totalSales?: number;
   netSales?: number;

@@ -1,18 +1,16 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 
 export default function LoginPage() {
-  const router = useRouter();
-  const { user, loading, signInWithGoogle } = useAuth();
+  const { user, loading, signInWithGoogle, checkAndRoute } = useAuth();
 
   useEffect(() => {
     if (!loading && user) {
-      router.push('/dashboard');
+      checkAndRoute(user.uid);
     }
-  }, [user, loading]);
+  }, [user, loading, checkAndRoute]);
 
   if (loading) {
     return (

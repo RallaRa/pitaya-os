@@ -7,7 +7,7 @@ import {
   Settings, MessageCircle, ShoppingCart, Sparkles,
   BarChart2, ClipboardCheck, X,
   Circle, CalendarDays, Tag, Scale, LineChart, Building2, SlidersHorizontal, Users, Crown, History, ChevronRight, ChevronDown,
-  FileText, TrendingUp, Truck, BookOpen, Hash, Code, LayoutGrid,
+  FileText, TrendingUp, Truck, BookOpen, Hash, Code, LayoutGrid, PenLine,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -76,6 +76,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const [menuAccess,    setMenuAccess]    = useState<MenuAccess>(ALL_FALSE);
   const [accessLoading, setAccessLoading] = useState(true);
   const [groupId,       setGroupId]       = useState<string | null>(null);
+  const [isStoreMember, setIsStoreMember] = useState(false);
+  const [hasPosBridge,  setHasPosBridge]  = useState(false);
   const [aiModels,      setAiModels]      = useState<AiModel[]>([]);
   const [unreadCount,   setUnreadCount]   = useState(0);
   const [showProfile,   setShowProfile]   = useState(false);
@@ -98,8 +100,14 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       .then(d => {
         if (d.menuAccess) setMenuAccess(d.menuAccess);
         if (d.groupId)    setGroupId(d.groupId);
+        setIsStoreMember(!!d.isStoreMember);
+        setHasPosBridge(!!d.hasPosBridge);
       })
-      .catch(() => setMenuAccess(ALL_FALSE))
+      .catch(() => {
+        setMenuAccess(ALL_FALSE);
+        setIsStoreMember(false);
+        setHasPosBridge(false);
+      })
       .finally(() => setAccessLoading(false));
   }, [user?.uid, currentStore?.storeId]);
 
@@ -210,6 +218,11 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { href: '/dashboard/report/purchases/trace-numbers',icon: <Hash className="w-3.5 h-3.5" />,         label: '이력번호 관리' },
   ];
 
+  const manualSalesMenus = [
+    { href: '/dashboard/report/input',    icon: <PenLine className="w-3.5 h-3.5" />,   label: '매출 키인' },
+    { href: '/dashboard/report/sales_ai', icon: <Sparkles className="w-3.5 h-3.5" />, label: '판매내역 분석' },
+  ];
+
   const mainMenus = [
     { key: 'ai' as const,        href: '/dashboard/ai',                    icon: <Sparkles className="w-4 h-4" />,       label: 'AI 대화모드' },
     { key: 'messenger' as const, href: '/dashboard/messenger',             icon: <MessageCircle className="w-4 h-4" />,  label: '메신저',      badge: unreadCount },
@@ -229,6 +242,11 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
   const isSuperuser = isSuperuserEmail(user?.email);
   const effectiveAccess = isSuperuser ? ALL_TRUE : menuAccess;
+  const showManualSales = !accessLoading
+    && effectiveAccess.sales
+    && isStoreMember
+    && !hasPosBridge
+    && hasModule('pos');
 
   const moduleAllowed = (menuKey: string) => {
     if (isSuperuser) return true;
@@ -314,6 +332,26 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                   </div>
                 );
               })()}
+
+              {/* POS 미연동 매장 — 매출 키인 (sales 권한 + 매장 소속) */}
+              {showManualSales && manualSalesMenus.map(sub => {
+                const subActive = pathname === sub.href || pathname.startsWith(`${sub.href}/`);
+                return (
+                  <Link
+                    key={sub.href}
+                    href={sub.href}
+                    onClick={onClose}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm ${
+                      subActive
+                        ? 'bg-teal-600/20 text-teal-300 font-semibold border border-teal-500/20'
+                        : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                    }`}
+                  >
+                    <span className={`shrink-0 ${subActive ? 'text-teal-400' : ''}`}>{sub.icon}</span>
+                    <span className="flex-1">{sub.label}</span>
+                  </Link>
+                );
+              })}
 
               {visibleMenus.map(item => {
                 const active = pathname.startsWith(item.href);

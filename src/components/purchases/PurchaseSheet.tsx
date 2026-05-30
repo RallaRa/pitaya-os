@@ -391,6 +391,15 @@ export default function PurchaseSheet({
                 </span>
               )}
 
+              {inv._conflicts && inv._conflicts.length > 0 && (
+                <span
+                  className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-full bg-amber-900/40 text-amber-400 border border-amber-500/30"
+                  title={inv._conflicts.map(c => `${c.field}: ${c.values.map(v => `${v.ai}=${v.value}`).join(' / ')}`).join('\n')}
+                >
+                  AI 불일치 {inv._conflicts.length}
+                </span>
+              )}
+
               <input
                 value={inv.invoiceNumber}
                 onChange={e => updateHeader(group.id, 'invoiceNumber', e.target.value)}

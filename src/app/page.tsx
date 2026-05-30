@@ -4,21 +4,21 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/lib/firebase/firebase';
+import { useAuth } from '@/context/AuthContext';
 import Image from 'next/image';
 
 export default function RootPage() {
   const router = useRouter();
+  const { checkAndRoute } = useAuth();
   const [visible, setVisible] = useState(false);
   const [showSplash, setShowSplash] = useState(false);
 
   useEffect(() => {
-    // 이미 이번 세션에 스플래시를 봤으면 인증 상태만 확인 후 바로 이동
     const seen = sessionStorage.getItem('splash_seen');
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        // 로그인 상태 → 대시보드 바로
-        router.replace('/dashboard');
+        checkAndRoute(user.uid);
         return;
       }
       // 비로그인
@@ -32,7 +32,7 @@ export default function RootPage() {
     });
 
     return () => unsubscribe();
-  }, [router]);
+  }, [router, checkAndRoute]);
 
   // 스플래시가 마운트된 후 페이드인 트리거
   useEffect(() => {

@@ -2,11 +2,11 @@
 
 import { useState, useRef, useEffect } from "react";
 import Papa from "papaparse";
-import { 
-  Bot, 
-  User, 
-  Paperclip, 
-  Send, 
+import {
+  Bot,
+  User,
+  Paperclip,
+  Send,
   Loader2,
   DollarSign,
   Users,
@@ -16,6 +16,8 @@ import {
   AlertTriangle,
   Sparkles
 } from "lucide-react";
+import { useStore } from '@/context/StoreContext';
+import { useManualSalesAccess } from '@/hooks/useManualSalesAccess';
 
 // --- 타입 정의 영역 --- //
 
@@ -45,6 +47,8 @@ interface AiReportData {
 // --- 메인 컴포넌트 --- //
 
 export default function SalesAiReportPage() {
+  const { currentStore } = useStore();
+  const { loading: accessLoading, canAccess, isStoreMember, hasPosBridge } = useManualSalesAccess();
   const [messages, setMessages] = useState<Message[]>([
     { id: 1, type: "ai", text: "안녕하세요 대표님! AI 마감 보고서를 준비했습니다. 오늘 포스기에서 다운로드하신 '단품별 상세 매출속보' CSV 파일을 업로드해주세요." }
   ]);
@@ -188,6 +192,30 @@ export default function SalesAiReportPage() {
   );
 
   // --- 메인 렌더링 --- //
+
+  if (accessLoading) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-80px)] text-gray-400">
+        <Loader2 className="w-6 h-6 animate-spin mr-2" />
+        접근 권한 확인 중...
+      </div>
+    );
+  }
+
+  if (!canAccess) {
+    const message = !currentStore?.storeId
+      ? '매장을 선택해 주세요.'
+      : !isStoreMember
+        ? '소속된 매장에서만 판매내역 분석을 사용할 수 있습니다.'
+        : hasPosBridge
+          ? 'POS 연동 매장은 자동으로 매출이 수집됩니다.'
+          : '판매내역 분석 메뉴 사용 권한이 없습니다.';
+    return (
+      <div className="flex flex-col items-center justify-center h-[calc(100vh-80px)] text-gray-400 gap-3">
+        <p>{message}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-80px)] max-w-4xl mx-auto bg-gray-900 rounded-xl overflow-hidden border border-gray-800 shadow-2xl">

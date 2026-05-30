@@ -17,6 +17,7 @@ import {
   formatDateShortWithDow,
 } from '@/lib/dateUtils';
 import { getComparisonFetchBounds, getCompareDates, calcAvgTicket } from '@/lib/reportCompare';
+import { useManualSalesAccess } from '@/hooks/useManualSalesAccess';
 
 // ── 타입 ──────────────────────────────────────────────────────────
 interface WeatherData { condition: string; tempMax: number; tempMin: number; }
@@ -184,6 +185,7 @@ function buildDateMap(docs: any[], storeId: string): Map<string, DayCompareSnaps
 // ── 컴포넌트 ──────────────────────────────────────────────────────
 export default function ReportViewPage() {
   const { currentStore, storesLoaded } = useStore();
+  const { canAccess: canManualSales } = useManualSalesAccess();
 
   const [preset, setPreset]          = useState<Preset>('month');
   const init                          = getThisMonth();
@@ -524,10 +526,12 @@ export default function ReportViewPage() {
         <div className="text-center py-20 text-slate-500">
           <ShoppingCart className="w-12 h-12 mx-auto mb-4 opacity-30" />
           <p>해당 기간에 보고서가 없습니다.</p>
-          <Link href="/dashboard/report/input"
-            className="text-teal-400 text-sm mt-2 block hover:underline">
-            마감 보고서 작성하기 →
-          </Link>
+          {canManualSales && (
+            <Link href="/dashboard/report/input"
+              className="text-teal-400 text-sm mt-2 block hover:underline">
+              마감 보고서 작성하기 →
+            </Link>
+          )}
         </div>
 
       ) : (
@@ -781,10 +785,12 @@ export default function ReportViewPage() {
                             className="inline-flex items-center gap-1 bg-slate-700 hover:bg-slate-600 text-slate-300 px-2 py-1.5 rounded-lg text-xs transition-colors">
                             상세 <ChevronRight className="w-3 h-3" />
                           </Link>
-                          <Link href={`/dashboard/report/input?editDate=${report.reportDate}`}
-                            className="inline-flex items-center gap-1 bg-amber-900/40 hover:bg-amber-800/60 text-amber-400 px-2 py-1.5 rounded-lg text-xs transition-colors">
-                            <Pencil className="w-3 h-3" />수정
-                          </Link>
+                          {canManualSales && (
+                            <Link href={`/dashboard/report/input?editDate=${report.reportDate}`}
+                              className="inline-flex items-center gap-1 bg-amber-900/40 hover:bg-amber-800/60 text-amber-400 px-2 py-1.5 rounded-lg text-xs transition-colors">
+                              <Pencil className="w-3 h-3" />수정
+                            </Link>
+                          )}
                         </div>
                       </td>
                     </tr>

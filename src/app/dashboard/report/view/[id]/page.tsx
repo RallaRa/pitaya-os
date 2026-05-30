@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { useManualSalesAccess } from '@/hooks/useManualSalesAccess';
 
 const WEATHER_ICONS: Record<string, string> = {
   '맑음': '☀️', '구름': '⛅', '안개': '🌫️', '비': '🌧️',
@@ -27,6 +28,7 @@ function fmtTs(ts: any): string {
 
 export default function ReportDetailPage() {
   const { id } = useParams();
+  const { canAccess: canManualSales } = useManualSalesAccess();
   const [report, setReport] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -82,13 +84,15 @@ export default function ReportDetailPage() {
             </p>
           )}
         </div>
-        <Link
-          href={`/dashboard/report/input?editDate=${report.reportDate}`}
-          className="flex items-center gap-2 bg-amber-700/40 hover:bg-amber-700/60 border border-amber-500/30 text-amber-400 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
-        >
-          <Pencil className="w-4 h-4" />
-          이 보고서 수정
-        </Link>
+        {canManualSales && (
+          <Link
+            href={`/dashboard/report/input?editDate=${report.reportDate}`}
+            className="flex items-center gap-2 bg-amber-700/40 hover:bg-amber-700/60 border border-amber-500/30 text-amber-400 px-4 py-2 rounded-xl text-sm font-semibold transition-colors"
+          >
+            <Pencil className="w-4 h-4" />
+            이 보고서 수정
+          </Link>
+        )}
       </div>
 
       {/* 요약 카드 */}

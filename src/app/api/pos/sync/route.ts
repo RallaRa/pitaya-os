@@ -415,6 +415,11 @@ export async function POST(req: Request) {
 
   await batch.commit();
 
+  await adminDb.collection('stores').doc(storeId).set(
+    { posBridgeEnabled: true, updatedAt: FieldValue.serverTimestamp() },
+    { merge: true },
+  );
+
   // 5. daily_reports 동시 저장 (실패해도 응답은 성공)
   let dailyReportSaved = false;
   try {

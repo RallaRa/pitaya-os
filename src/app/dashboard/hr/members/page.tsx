@@ -4,7 +4,11 @@ import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '@/context/StoreContext';
 import { useAuth } from '@/context/AuthContext';
-import { isSuperuserEmail } from '@/lib/auth/permissions';
+import { isSuperuser } from '@/lib/auth/permissions';
+import {
+  getRoleLabel,
+  getChangeableRoles,
+} from '@/lib/roleMapping';
 import {
   UserCheck, UserX, Loader2, Users, Clock,
   ChevronDown, LogOut, ChevronRight, Store, Building2, Save, X, Check,
@@ -28,17 +32,13 @@ interface StoreMembership {
   region?: string;
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  owner: '대표', admin: '관리자', user: '사용자', staff: '직원',
-};
 const ROLE_COLORS: Record<string, string> = {
+  superuser: 'bg-purple-900/40 text-purple-400 border border-purple-700/40',
   owner:     'bg-yellow-900/40 text-yellow-400 border border-yellow-700/40',
   admin:     'bg-blue-900/40 text-blue-400 border border-blue-700/40',
   user:      'bg-indigo-900/40 text-indigo-400 border border-indigo-700/40',
   staff:     'bg-slate-700 text-slate-300',
-  superuser: 'bg-purple-900/40 text-purple-400 border border-purple-700/40',
 };
-const CHANGEABLE_ROLES = ['admin', 'user', 'staff'];
 
 function MemberAvatar({ member, size = 'md' }: { member: Member; size?: 'sm' | 'md' }) {
   const cls = size === 'sm' ? 'w-7 h-7 text-xs' : 'w-9 h-9 text-sm';
@@ -56,7 +56,7 @@ function MemberAvatar({ member, size = 'md' }: { member: Member; size?: 'sm' | '
 function RoleBadge({ role }: { role: string }) {
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${ROLE_COLORS[role] ?? 'bg-slate-700 text-slate-300'}`}>
-      {ROLE_LABELS[role] || role}
+      {getRoleLabel(role)}
     </span>
   );
 }
@@ -71,7 +71,8 @@ export default function MembersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const [myRole, setMyRole] = useState('staff');
+  const [myRole, setMyRole] = useState('user');
+  const [isSuperuserUser, setIsSuperuserUser] = useState(false);
 
   // 탭 1 (멤버별)
   const [expandedUid, setExpandedUid] = useState<string | null>(null);
@@ -90,8 +91,9 @@ export default function MembersPage() {
   const [roleSaveSuccess, setRoleSaveSuccess] = useState(false);
   const [displayStoreName, setDisplayStoreName] = useState('');
 
-  const canManage = isSuperuserEmail(user?.email) || ['owner', 'admin'].includes(myRole);
-  const isSuperuser = isSuperuserEmail(user?.email);
+  const canManage = isSuperuserUser || ['owner', 'admin'].includes(myRole);
+  const canApprove = isSuperuserUser;
+  const changeableRoles = getChangeableRoles(isSuperuserUser);
   const hasRoleChanges = Object.keys(localRoleChanges).length > 0;
 
   useEffect(() => {
@@ -135,8 +137,11 @@ export default function MembersPage() {
       .then(r => r.json())
       .then(data => {
         const globalRole = data.user?.role;
-        if (globalRole === 'superuser') setMyRole('superuser');
-        else setMyRole(currentStore?.role || globalRole || 'staff');
+        const globalGroup = data.user?.groupId;
+        const su = isSuperuser(user?.email, globalRole || globalGroup);
+        setIsSuperuserUser(su);
+        if (su) setMyRole('superuser');
+        else setMyRole(currentStore?.role || globalRole || 'user');
       });
   }, [user?.uid, currentStore?.role]);
 
@@ -406,7 +411,7 @@ export default function MembersPage() {
                           <div className="min-w-0 pr-3">
                             <p className="text-slate-400 text-xs truncate">{member.email}</p>
                           </div>
-                          {canManage && (
+                          {canApprove && (
                             <div className="flex items-center gap-2 flex-shrink-0">
                               <button
                                 onClick={() => { setRejectTarget(member); setRejectReason(''); }}
@@ -463,7 +468,7 @@ export default function MembersPage() {
                         const isOwner = member.role === 'owner' || member.role === 'superuser';
                         const actionKey = `${member.uid}:${currentStore?.storeId}`;
                         const isActionLoading = actionLoading === actionKey;
-                        const canEdit = canManage && !isOwner && !isMe;
+                        const canEdit = canManage && !isMe && (isSuperuserUser || !isOwner);
                         const effectiveRole = localRoleChanges[actionKey] ?? member.role;
                         const isRoleChanged = localRoleChanges[actionKey] !== undefined;
 
@@ -494,13 +499,13 @@ export default function MembersPage() {
                                   </button>
                                   {openRoleMenuTab2 === member.uid && (
                                     <div className="absolute left-0 top-full mt-1 bg-slate-800 border border-slate-600 rounded-xl shadow-xl z-10 overflow-hidden min-w-[90px]">
-                                      {CHANGEABLE_ROLES.map(r => (
+                                      {changeableRoles.map(r => (
                                         <button
                                           key={r}
                                           onClick={() => handleChangeRole(member.uid, currentStore?.storeId || '', r)}
                                           className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-700 transition-colors ${effectiveRole === r ? 'text-teal-400 font-bold' : 'text-slate-300'}`}
                                         >
-                                          {ROLE_LABELS[r]}
+                                          {getRoleLabel(r)}
                                         </button>
                                       ))}
                                     </div>
@@ -590,9 +595,9 @@ export default function MembersPage() {
                                 <p className="text-slate-500 text-xs text-center py-4">소속 매장 없음</p>
                               ) : (
                                 stores.map(store => {
-                                  const canManageThis = isSuperuser ||
+                                  const canManageThis = isSuperuserUser ||
                                     (store.storeId === currentStore?.storeId && canManage &&
-                                      member.role !== 'owner' && !isMe);
+                                      (isSuperuserUser || member.role !== 'owner') && !isMe);
                                   const actionKey = `${member.uid}:${store.storeId}`;
                                   const isActionLoading = actionLoading === actionKey;
 
@@ -612,18 +617,18 @@ export default function MembersPage() {
                                               onClick={() => setOpenRoleMenuTab1(openRoleMenuTab1 === actionKey ? null : actionKey)}
                                               className={`flex items-center gap-1 text-xs border px-2 py-1 rounded-lg transition-colors ${isStoreRoleChanged ? 'text-amber-200 bg-amber-900/30 border-amber-600/60' : 'text-slate-300 bg-slate-800 hover:bg-slate-700 border-slate-600'}`}
                                             >
-                                              {ROLE_LABELS[storeEffectiveRole] || storeEffectiveRole}
+                                              {getRoleLabel(storeEffectiveRole)}
                                               <ChevronDown className="w-3 h-3" />
                                             </button>
                                             {openRoleMenuTab1 === actionKey && (
                                               <div className="absolute right-0 top-full mt-1 bg-slate-800 border border-slate-600 rounded-xl shadow-xl z-10 overflow-hidden min-w-[90px]">
-                                                {CHANGEABLE_ROLES.map(r => (
+                                                {changeableRoles.map(r => (
                                                   <button
                                                     key={r}
                                                     onClick={() => handleChangeRole(member.uid, store.storeId, r, true)}
                                                     className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-700 transition-colors ${storeEffectiveRole === r ? 'text-teal-400 font-bold' : 'text-slate-300'}`}
                                                   >
-                                                    {ROLE_LABELS[r]}
+                                                    {getRoleLabel(r)}
                                                   </button>
                                                 ))}
                                               </div>

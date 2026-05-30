@@ -8,24 +8,30 @@ export function isSuperuserEmail(email?: string | null): boolean {
   return email.toLowerCase() === SUPERUSER_EMAIL.toLowerCase();
 }
 
-export function isSuperuser(email?: string | null): boolean {
-  return isSuperuserEmail(email);
+/** 클라이언트: 이메일 또는 role/groupId 기반 슈퍼유저 판별 */
+export function isSuperuser(
+  email?: string | null,
+  roleOrGroupId?: string | null,
+): boolean {
+  if (isSuperuserEmail(email)) return true;
+  return roleOrGroupId === 'superuser';
 }
 
 export function isSuperOrMaster(groupId: string, email?: string | null): boolean {
-  return isSuperuserEmail(email) || groupId === 'master';
+  return isSuperuser(email, groupId) || groupId === 'master';
 }
 
 export function isAdminOrAbove(groupId: string, email?: string | null): boolean {
-  return isSuperuserEmail(email) || ['master', 'admin'].includes(groupId);
+  return isSuperuser(email, groupId) || ['master', 'admin'].includes(groupId);
 }
 
 export function hasPermission(
   menuAccess: Record<string, boolean> | null | undefined,
   key: string,
   email?: string | null,
+  roleOrGroupId?: string | null,
 ): boolean {
-  if (isSuperuserEmail(email)) return true;
+  if (isSuperuser(email, roleOrGroupId)) return true;
   if (!menuAccess) return false;
   return menuAccess[key] === true;
 }

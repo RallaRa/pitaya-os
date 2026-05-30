@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from '@/lib/firebase/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { Loader2, RefreshCw, BarChart2, Package } from 'lucide-react';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 import { getKSTTodayYMD, formatDateShortWithDow } from '@/lib/dateUtils';
@@ -14,10 +14,12 @@ import {
   aggregateTimeSlotsFromItems,
   calcAvgTicket,
   calcChange,
-  dailyReportDocId,
   getCompareDates,
+  mapDailyReportDoc,
   normalizePosBreakdown,
+  pickBestDailyReport,
   topItems,
+  type DailyReportView,
 } from '@/lib/reportCompare';
 
 interface RangeContext {
@@ -35,36 +37,30 @@ interface Props {
   rangeContext?: RangeContext | null;
 }
 
-interface ReportDoc extends ReportSnapshot {
-  isClosed?: boolean;
-  weather?: { condition?: string; tempMin?: number; tempMax?: number } | string | null;
-  issues?: Array<{ title?: string }> | string | null;
-  news?: { title?: string; description?: string } | null;
-}
+interface ReportDoc extends DailyReportView {}
 
-async function fetchReport(storeId: string, date: string): Promise<ReportDoc | null> {
-  const snap = await getDoc(doc(db, 'daily_reports', dailyReportDocId(storeId, date)));
-  if (!snap.exists()) return null;
-  const d = snap.data();
-  const net =
-    d.netSales != null && d.netSales !== 0 ? d.netSales
-    : d.netSale != null && d.netSale !== 0 ? d.netSale
-    : (d.totalSales ?? 0) - (d.returnAmount ?? 0) - (d.discountAmount ?? 0);
-  return {
-    totalSales: d.totalSales ?? 0,
-    netSales: net,
-    customerCount: d.customerCount ?? 0,
-    returnAmount: d.returnAmount ?? 0,
-    cashSale: d.cashSale ?? 0,
-    cardSale: d.cardSale ?? 0,
-    posBreakdown: d.posBreakdown,
-    items: d.items,
-    timeSlots: d.timeSlots,
-    isClosed: d.isClosed,
-    weather: d.weather ?? null,
-    issues: d.issues ?? null,
-    news: d.news ?? null,
-  };
+async function fetchReportsForCompare(
+  storeId: string,
+  baseDate: string,
+): Promise<Partial<Record<CompareKey, ReportDoc | null>>> {
+  const dates = getCompareDates(baseDate);
+  const allYmds = Object.values(dates);
+  const sorted = [...allYmds].sort();
+
+  const snap = await getDocs(query(
+    collection(db, 'daily_reports'),
+    where('storeId', '==', storeId),
+    where('reportDate', '>=', sorted[0]),
+    where('reportDate', '<=', sorted[sorted.length - 1]),
+  ));
+
+  const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Record<string, unknown>));
+  return Object.fromEntries(
+    Object.entries(dates).map(([key, date]) => {
+      const best = pickBestDailyReport(docs, storeId, date);
+      return [key, best ? mapDailyReportDoc(best) : null];
+    }),
+  );
 }
 
 const METRICS = [
@@ -99,15 +95,12 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate, r
   const load = useCallback(async () => {
     if (!storeId) return;
     setLoading(true);
-    const dates = getCompareDates(baseDate);
-    const entries = await Promise.all(
-      Object.entries(dates).map(async ([key, date]) => {
-        const r = await fetchReport(storeId, date);
-        return [key, r] as const;
-      }),
-    );
-    setData(Object.fromEntries(entries));
-    setLoading(false);
+    try {
+      const entries = await fetchReportsForCompare(storeId, baseDate);
+      setData(entries);
+    } finally {
+      setLoading(false);
+    }
   }, [storeId, baseDate]);
 
   useEffect(() => { load(); }, [load]);
@@ -140,7 +133,12 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate, r
         }),
       });
       const j = await res.json();
-      setReview(j.review || j.error || '리뷰 생성 실패');
+      if (!res.ok) {
+        setReview(j.error || 'AI 리뷰 생성 실패');
+        setReviewAi(null);
+        return;
+      }
+      setReview(j.review || '리뷰를 생성하지 못했습니다.');
       setReviewAi(j.ai || null);
     } catch {
       setReview('AI 리뷰를 불러오지 못했습니다.');
@@ -150,7 +148,13 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate, r
   }, [baseDate, data, compareDates, storeId, rangeContext]);
 
   useEffect(() => {
-    if (!loading && data.today) generateReview();
+    if (loading) return;
+    if (!data.today) {
+      setReview(`${baseDate} 일마감 데이터가 없습니다. POS 동기화 또는 매출 키인 후 분석됩니다.`);
+      setReviewAi(null);
+      return;
+    }
+    generateReview();
   }, [loading, data.today, baseDate, rangeContext]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const posKeys = useMemo(() => {
@@ -239,7 +243,9 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate, r
           <div className="h-10 bg-blue-900/30 rounded animate-pulse" />
         ) : (
           <>
-            <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">{review || '데이터 로딩 중...'}</p>
+            <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">
+              {reviewLoading ? '' : (review || '분석 데이터를 불러오는 중...')}
+            </p>
             <AiUsedBadge ai={reviewAi} className="mt-3 pt-3 border-t border-blue-900/30" />
           </>
         )}
