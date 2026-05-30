@@ -142,23 +142,13 @@ async function prepareImageContent(content: string, fileName: string) {
     ? content
     : `data:image/jpeg;base64,${stripBase64Data(content)}`;
 
-  try {
-    const { data, mimeType } = await compressBase64Image(normalized);
-    const base64Data = stripBase64Data(data);
-    if (estimateBase64Bytes(base64Data) > MAX_IMAGE_BYTES) {
-      console.warn(`[analyze-multi] 이미지 용량 초과: ${fileName}`);
-      return null;
-    }
-    return { base64Data, mimeType };
-  } catch (e: unknown) {
-    console.warn(`[analyze-multi] sharp 압축 실패, 원본 사용 (${fileName}):`, formatGeminiError(e));
-    const base64Data = stripBase64Data(normalized);
-    if (estimateBase64Bytes(base64Data) > MAX_IMAGE_BYTES) return null;
-    return {
-      base64Data,
-      mimeType: extractMimeType(normalized, 'image/jpeg'),
-    };
+  const { data, mimeType } = await compressBase64Image(normalized);
+  const base64Data = stripBase64Data(data);
+  if (estimateBase64Bytes(base64Data) > MAX_IMAGE_BYTES) {
+    console.warn(`[analyze-multi] 이미지 용량 초과: ${fileName}`);
+    return null;
   }
+  return { base64Data, mimeType };
 }
 
 export async function POST(req: Request) {

@@ -1,22 +1,12 @@
-import sharp from 'sharp';
+// 클라이언트에서 이미 canvas 압축 후 전송 — 서버 재압축(sharp) 불필요
 
-const MAX_PX = 1024;
-const JPEG_QUALITY = 70;
-
-/** 서버 base64/dataURL 이미지 → JPEG 1024px 이하로 재압축 */
-export async function compressBase64Image(content: string): Promise<{ data: string; mimeType: string }> {
+export async function compressBase64Image(
+  content: string,
+): Promise<{ data: string; mimeType: string }> {
   const match = content.match(/^data:([^;]+);base64,([\s\S]+)$/);
   const mimeType = match?.[1] || 'image/jpeg';
-  const raw = match?.[2] || content.replace(/^data:[^;]+;base64,/, '');
-
-  const input = Buffer.from(raw, 'base64');
-  const compressed = await sharp(input)
-    .rotate()
-    .resize(MAX_PX, MAX_PX, { fit: 'inside', withoutEnlargement: true })
-    .jpeg({ quality: JPEG_QUALITY })
-    .toBuffer();
-
-  return { data: compressed.toString('base64'), mimeType: 'image/jpeg' };
+  const data = match?.[2] || content.replace(/^data:[^;]+;base64,/, '');
+  return { data, mimeType };
 }
 
 export function estimateBase64Bytes(base64: string): number {
