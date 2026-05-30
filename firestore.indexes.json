@@ -178,6 +178,21 @@
         { "fieldPath": "storeId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "market_prices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "scrapedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "market_price_history",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "groupKey", "order": "ASCENDING" },
+        { "fieldPath": "scrapedAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

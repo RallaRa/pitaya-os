@@ -1,0 +1,69 @@
+{
+  "version": "2.0",
+  "origins": {
+    "미국": { "ko": "미국", "en": "USA", "keywords": ["미국", "미국산", "USA", "US", "스미스필드", "아이오와", "IBP"] },
+    "호주": { "ko": "호주", "en": "AUS", "keywords": ["호주", "호주산", "AUS", "호주우", "그레인", "그래스", "앵거스"] },
+    "캐나다": { "ko": "캐나다", "en": "CAN", "keywords": ["캐나다", "캐나다산", "CAN", "CA"] },
+    "덴마크": { "ko": "덴마크", "en": "DEN", "keywords": ["덴마크", "덴마크산", "DEN", "DK"] },
+    "스페인": { "ko": "스페인", "en": "ESP", "keywords": ["스페인", "스페인산", "ESP", "이베리코"] },
+    "칠레": { "ko": "칠레", "en": "CHI", "keywords": ["칠레", "칠레산", "CHI"] },
+    "뉴질랜드": { "ko": "뉴질랜드", "en": "NZL", "keywords": ["뉴질랜드", "뉴질", "NZL", "NZ"] },
+    "멕시코": { "ko": "멕시코", "en": "MEX", "keywords": ["멕시코", "멕시코산", "MEX"] },
+    "네덜란드": { "ko": "네덜란드", "en": "NED", "keywords": ["네덜란드", "네덜란드산", "NED"] },
+    "폴란드": { "ko": "폴란드", "en": "POL", "keywords": ["폴란드", "폴란드산", "POL"] },
+    "국내": { "ko": "국내", "en": "KOR", "keywords": ["한돈", "국내산", "한우", "육우", "국내", "KOR"] }
+  },
+  "animalTypes": {
+    "소": { "ko": "소", "en": "Beef", "keywords": ["소고기", "한우", "육우", "척아이", "부채살", "살치살", "꽃등심", "채끝", "안심", "등심", "갈비", "양지", "사태", "우둔", "홍두께", "앞다리", "설도"] },
+    "돼지": { "ko": "돼지", "en": "Pork", "keywords": ["돼지", "한돈", "삼겹", "목살", "항정", "가브리", "갈매기", "토시", "등갈비", "후지", "모돈"] },
+    "닭": { "ko": "닭", "en": "Chicken", "keywords": ["닭", "치킨", "가슴살", "닭다리", "닭날개"] }
+  },
+  "items": {
+    "삼겹살": { "standard": "삼겹살", "animalType": "돼지" },
+    "미박삼겹": { "standard": "삼겹살(미박)", "animalType": "돼지" },
+    "미박삼겹살": { "standard": "삼겹살(미박)", "animalType": "돼지" },
+    "목살": { "standard": "목살", "animalType": "돼지" },
+    "B목살": { "standard": "목살(B)", "animalType": "돼지" },
+    "앞다리살": { "standard": "앞다리살", "animalType": "돼지" },
+    "뒷다리살": { "standard": "뒷다리살", "animalType": "돼지" },
+    "항정살": { "standard": "항정살", "animalType": "돼지" },
+    "항정": { "standard": "항정살", "animalType": "돼지" },
+    "가브리살": { "standard": "가브리살", "animalType": "돼지" },
+    "가브리": { "standard": "가브리살", "animalType": "돼지" },
+    "갈매기살": { "standard": "갈매기살", "animalType": "돼지" },
+    "토시살": { "standard": "토시살", "animalType": "돼지" },
+    "등갈비": { "standard": "등갈비", "animalType": "돼지" },
+    "안심": { "standard": "안심", "animalType": "돼지" },
+    "등심": { "standard": "등심", "animalType": "돼지" },
+    "후지": { "standard": "후지", "animalType": "돼지" },
+    "모돈": { "standard": "모돈", "animalType": "돼지" },
+    "잡육": { "standard": "잡육", "animalType": "돼지" },
+    "한우등심": { "standard": "등심", "animalType": "소" },
+    "한우채끝": { "standard": "채끝", "animalType": "소" },
+    "한우안심": { "standard": "안심", "animalType": "소" },
+    "한우갈비": { "standard": "갈비", "animalType": "소" },
+    "한우양지": { "standard": "양지", "animalType": "소" },
+    "한우사태": { "standard": "사태", "animalType": "소" },
+    "한우우둔": { "standard": "우둔", "animalType": "소" },
+    "한우홍두께": { "standard": "홍두께", "animalType": "소" },
+    "척아이롤": { "standard": "척아이롤", "animalType": "소" },
+    "척아이": { "standard": "척아이롤", "animalType": "소" },
+    "부채살": { "standard": "부채살", "animalType": "소" },
+    "살치살": { "standard": "살치살", "animalType": "소" },
+    "꽃등심": { "standard": "꽃등심", "animalType": "소" },
+    "갈비살": { "standard": "갈비살", "animalType": "소" },
+    "이베리코": { "standard": "삼겹살", "animalType": "돼지", "origin": "스페인", "brand": "이베리코" },
+    "스미스필드": { "standard": "삼겹살", "animalType": "돼지", "origin": "미국", "brand": "스미스필드" }
+  },
+  "grades": {
+    "1++": "1++등급",
+    "1+": "1+등급",
+    "1등급": "1등급",
+    "2등급": "2등급",
+    "3등급": "3등급"
+  },
+  "storageTypes": {
+    "냉장": ["냉장", "냉장육", "fresh"],
+    "냉동": ["냉동", "냉동육", "frozen"]
+  }
+}

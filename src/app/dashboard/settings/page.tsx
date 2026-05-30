@@ -129,12 +129,20 @@ export default function SettingsPage() {
 
   const isSuperuserUser = isSuperuser(user?.email, userRole || undefined);
 
-  const superuserMenus = isSuperuserUser ? [{
-    href: '/dashboard/settings/stores',
-    icon: <Shield className="w-5 h-5 text-purple-400" />,
-    label: '매장 승인 관리',
-    description: '신규 매장 등록 승인·거절·수정·삭제',
-  }] : [];
+  const superuserMenus = isSuperuserUser ? [
+    {
+      href: '/dashboard/settings/stores',
+      icon: <Shield className="w-5 h-5 text-purple-400" />,
+      label: '매장 승인 관리',
+      description: '신규 매장 등록 승인·거절·수정·삭제',
+    },
+    {
+      href: '/dashboard/settings/scraper-sources',
+      icon: <Store className="w-5 h-5 text-teal-400" />,
+      label: '스크래핑 소스 관리',
+      description: '도매가 수집 사이트 추가·관리',
+    },
+  ] : [];
 
   const visibleMenus = menuAccess
     ? allMenus.filter(m => menuAccess[m.key])

@@ -318,6 +318,30 @@ service cloud.firestore {
     }
 
     // ──────────────────────────────────────────
+    // 매입단가 분석 (도매가 스크래핑)
+    // ──────────────────────────────────────────
+    match /market_prices/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /market_price_history/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /alias_dictionary/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /scraper_sources/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /scraper_meta/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ──────────────────────────────────────────
     // 슈퍼유저 헬퍼
     // ──────────────────────────────────────────
     function isSuperuser() {

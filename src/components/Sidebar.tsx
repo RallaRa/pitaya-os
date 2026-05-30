@@ -214,6 +214,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { href: '/dashboard/report/purchases/ledger',       icon: <BookOpen className="w-3.5 h-3.5" />,     label: '매입 원장' },
     { href: '/dashboard/report/purchases/by-supplier',  icon: <Truck className="w-3.5 h-3.5" />,        label: '거래처별 매입' },
     { href: '/dashboard/report/purchases/prices',       icon: <TrendingUp className="w-3.5 h-3.5" />,   label: '품목별 단가' },
+    { href: '/dashboard/report/purchases/price-analysis', icon: <BarChart2 className="w-3.5 h-3.5" />, label: '매입단가 분석' },
     { href: '/dashboard/report/purchases/trace-ledger', icon: <FileText className="w-3.5 h-3.5" />,     label: '거래내역서(법정)' },
     { href: '/dashboard/report/purchases/trace-numbers',icon: <Hash className="w-3.5 h-3.5" />,         label: '이력번호 관리' },
   ];
