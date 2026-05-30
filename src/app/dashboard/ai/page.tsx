@@ -75,6 +75,8 @@ const CHAT_MODES: { id: ChatMode; label: string; desc: string }[] = [
   { id: 'analysis', label: '분석 모드', desc: '매출·고객 데이터 심층 분석' },
 ];
 
+const DEBATE_TOPICS = ['주말 영업 확대', '온라인 판매 확대', '직원 추가 채용'];
+
 // usedModel 문자열 → badge 스타일 맵
 const MODEL_BY_NAME: Record<string, typeof MODELS[number]> = {
   'Gemini 2.5 Flash':  MODELS[1],
@@ -215,6 +217,7 @@ export default function AiChatPage() {
   const [selectedModel,  setSelectedModel]  = useState<ModelId>('auto');
   const [chatMode,       setChatMode]       = useState<ChatMode>('chat');
   const [activeIds,      setActiveIds]      = useState<Set<string>>(new Set());
+  const [modelsLoaded,   setModelsLoaded]   = useState(false);
   const [sendError,      setSendError]      = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -228,7 +231,8 @@ export default function AiChatPage() {
           setActiveIds(new Set(d.models.filter((m: any) => m.active).map((m: any) => m.id)));
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setModelsLoaded(true));
   }, []);
 
   const loadConversations = useCallback(async () => {
@@ -311,7 +315,7 @@ export default function AiChatPage() {
         body:    JSON.stringify({
           message:  userMsg.content,
           history:  historyForAI,
-          model:    selectedModel,
+          model:    chatMode === 'debate' ? 'auto' : selectedModel,
           storeId:  currentStore?.storeId || '',
           chatMode,
         }),
@@ -319,8 +323,9 @@ export default function AiChatPage() {
 
       const data = await res.json();
 
-      if (data.error && data.error !== 'api_key_missing') {
-        setSendError(`${modelInfo.name} 오류: ${data.error}`);
+      if (data.error || !res.ok) {
+        const errMsg = data.error || data.text || `API 오류 (${res.status})`;
+        setSendError(`${chatMode === 'debate' ? '토론' : modelInfo.name} 오류: ${errMsg}`);
         setMessages(historyForAI);
         setInput(userMsg.content);
         return;
@@ -386,12 +391,19 @@ export default function AiChatPage() {
 
       const data = await res.json();
 
+      if (!res.ok || data.error) {
+        throw new Error(data.error || data.text || `API 오류 (${res.status})`);
+      }
+      if (!Array.isArray(data.debate) || data.debate.length === 0) {
+        throw new Error('사용 가능한 AI 응답이 없습니다. API 키를 확인해주세요.');
+      }
+
       const aiMsg: Message = {
         role:      'model',
         content:   '4개 AI의 답변을 비교합니다:',
         timestamp: new Date().toISOString(),
         usedModel: '4AI 토론',
-        debate:    data.debate || [],
+        debate:    data.debate,
       };
 
       const finalMessages = [...newMessages, aiMsg];
@@ -460,6 +472,13 @@ export default function AiChatPage() {
 
   const grouped = groupByDate(conversations);
   const isWorking = isLoading || isDebating;
+  const hasAnyAi = !modelsLoaded || activeIds.size > 0;
+  const canSend = !isWorking && !!input.trim() && hasAnyAi;
+  const isModelActive = (id: ModelId) => {
+    if (!modelsLoaded) return true;
+    if (id === 'auto') return activeIds.size > 0;
+    return activeIds.has(id);
+  };
   const activeMode = CHAT_MODES.find(m => m.id === chatMode)!;
   const inputPlaceholder =
     chatMode === 'debate'
@@ -584,12 +603,13 @@ export default function AiChatPage() {
             {CHAT_MODES.map(mode => (
               <button
                 key={mode.id}
-                onClick={() => setChatMode(mode.id)}
+                type="button"
+                onClick={() => { setChatMode(mode.id); setSendError(null); }}
                 title={mode.desc}
                 className={`
                   px-4 py-2 rounded-lg text-xs font-semibold transition-all
                   ${chatMode === mode.id
-                    ? 'bg-teal-600 text-white'
+                    ? 'bg-teal-600 text-white ring-2 ring-teal-400/50 shadow-sm'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'}
                 `}
               >
@@ -747,57 +767,7 @@ export default function AiChatPage() {
             </div>
           )}
 
-          {/* 모델 선택 + 4AI 토론 (일반/분석 모드) */}
-          {chatMode !== 'debate' && (
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {MODELS.map(m => {
-              const isModelActive = m.id === 'auto'
-                ? activeIds.size > 0
-                : activeIds.size === 0 || activeIds.has(m.id);
-              const isSelected = selectedModel === m.id;
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => { if (isModelActive) setSelectedModel(m.id); }}
-                  title={!isModelActive ? 'API 키 미설정' : `${m.name} ${m.subName}`}
-                  disabled={!isModelActive}
-                  className={`
-                    flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
-                    border transition-all
-                    ${isSelected ? m.activeCls : isModelActive ? m.inactiveCls : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed opacity-40'}
-                  `}
-                >
-                  <span>{m.emoji}</span>
-                  <span>{m.name}</span>
-                  <span className={`text-[10px] font-normal ${isSelected ? 'opacity-80' : 'opacity-60'}`}>{m.subName}</span>
-                  {!isModelActive && <span className="text-[9px]">🔒</span>}
-                </button>
-              );
-            })}
-
-            {/* 구분선 */}
-            <div className="w-px h-5 bg-slate-700 mx-1" />
-
-            {/* 4AI 토론 버튼 */}
-            <button
-              onClick={handleDebate}
-              disabled={isWorking || !input.trim()}
-              title="4개 AI가 동시에 답변 — 다양한 관점 비교"
-              className={`
-                flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all
-                ${isDebating
-                  ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40 cursor-not-allowed'
-                  : 'bg-slate-800 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/10 disabled:opacity-40 disabled:cursor-not-allowed'
-                }
-              `}
-            >
-              <Swords className="w-3 h-3" />
-              <span>4AI 토론</span>
-            </button>
-          </div>
-          )}
-
-          {/* 텍스트 입력 */}
+          {/* 텍스트 입력 (버튼보다 위 — 입력 후 버튼 활성화) */}
           <div className="flex items-end gap-2">
             <textarea
               value={input}
@@ -813,13 +783,123 @@ export default function AiChatPage() {
               className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors resize-none"
             />
             <button
+              type="button"
               onClick={handleSend}
-              disabled={isWorking || !input.trim()}
-              className="bg-teal-600 hover:bg-teal-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white p-3 rounded-xl transition-colors flex-shrink-0"
+              disabled={!canSend}
+              title={chatMode === 'debate' ? '찬반 토론 진행' : '메시지 전송'}
+              className={`disabled:bg-slate-700 disabled:cursor-not-allowed text-white p-3 rounded-xl transition-colors flex-shrink-0 ${
+                chatMode === 'debate'
+                  ? 'bg-yellow-600 hover:bg-yellow-500'
+                  : 'bg-teal-600 hover:bg-teal-500'
+              }`}
             >
-              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+              {isLoading
+                ? <Loader2 className="w-5 h-5 animate-spin" />
+                : chatMode === 'debate'
+                  ? <Swords className="w-5 h-5" />
+                  : <Send className="w-5 h-5" />}
             </button>
           </div>
+
+          {/* 토론 모드: 빠른 주제 + 액션 버튼 */}
+          {chatMode === 'debate' && (
+            <div className="space-y-2">
+              {messages.length === 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {DEBATE_TOPICS.map(topic => (
+                    <button
+                      key={topic}
+                      type="button"
+                      onClick={() => setInput(topic)}
+                      className="px-3 py-1.5 rounded-full text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:border-yellow-500/40 hover:text-yellow-300 transition-colors"
+                    >
+                      {topic}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleSend}
+                  disabled={!canSend}
+                  title="AI가 찬성/반대 입장을 번갈아 제시합니다"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold border transition-all bg-yellow-600/90 text-white border-yellow-500 hover:bg-yellow-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Swords className="w-3.5 h-3.5" />
+                  찬반 토론 시작
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDebate}
+                  disabled={!canSend}
+                  title="4개 AI가 동시에 답변 — 다양한 관점 비교"
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold border transition-all ${
+                    isDebating
+                      ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40 cursor-not-allowed'
+                      : 'bg-slate-800 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/10 disabled:opacity-40 disabled:cursor-not-allowed'
+                  }`}
+                >
+                  <Swords className="w-3.5 h-3.5" />
+                  4AI 동시 비교
+                </button>
+                {!input.trim() && (
+                  <span className="text-[11px] text-slate-500">주제 입력 또는 위 예시 클릭 후 버튼 활성화</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 모델 선택 + 4AI 토론 (일반/분석 모드) */}
+          {chatMode !== 'debate' && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {MODELS.map(m => {
+              const modelActive = isModelActive(m.id);
+              const isSelected = selectedModel === m.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => { if (modelActive) setSelectedModel(m.id); }}
+                  title={!modelActive ? 'API 키 미설정' : `${m.name} ${m.subName}`}
+                  disabled={!modelActive}
+                  className={`
+                    flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
+                    border transition-all
+                    ${isSelected ? m.activeCls : modelActive ? m.inactiveCls : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed opacity-40'}
+                  `}
+                >
+                  <span>{m.emoji}</span>
+                  <span>{m.name}</span>
+                  <span className={`text-[10px] font-normal ${isSelected ? 'opacity-80' : 'opacity-60'}`}>{m.subName}</span>
+                  {!modelActive && <span className="text-[9px]">🔒</span>}
+                </button>
+              );
+            })}
+
+            <div className="w-px h-5 bg-slate-700 mx-1" />
+
+            <button
+              type="button"
+              onClick={handleDebate}
+              disabled={!canSend}
+              title={!input.trim() ? '메시지 입력 후 활성화' : '4개 AI가 동시에 답변 — 다양한 관점 비교'}
+              className={`
+                flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all
+                ${isDebating
+                  ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40 cursor-not-allowed'
+                  : 'bg-slate-800 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/10 disabled:opacity-40 disabled:cursor-not-allowed'
+                }
+              `}
+            >
+              <Swords className="w-3 h-3" />
+              <span>4AI 토론</span>
+            </button>
+            {!input.trim() && (
+              <span className="text-[11px] text-slate-500">메시지 입력 후 4AI 토론 활성화</span>
+            )}
+          </div>
+          )}
         </div>
       </div>
     </div>
