@@ -100,17 +100,19 @@ export async function buildKeywordMarketContext(storeId: string): Promise<Keywor
   const start14 = new Date(today);
   start14.setDate(start14.getDate() - 14);
 
-  const [recent, prev] = await Promise.all([
+  const [recent, prev] = await Promise.allSettled([
     fetchPeriodTotals(storeId, ymd(start7), todayStr, 'recent7d'),
     fetchPeriodTotals(storeId, ymd(start14), ymd(new Date(start7.getTime() - 86400000)), 'prev7d'),
   ]);
 
   let salesTrend: KeywordMarketContext['salesTrend'] = null;
-  if (recent.net > 0 || prev.net > 0) {
+  const recentVal = recent.status === 'fulfilled' ? recent.value : null;
+  const prevVal = prev.status === 'fulfilled' ? prev.value : null;
+  if (recentVal && prevVal && (recentVal.net > 0 || prevVal.net > 0)) {
     salesTrend = {
-      recent7dNet: recent.net,
-      prev7dNet: prev.net,
-      changePct: prev.net > 0 ? Math.round(((recent.net - prev.net) / prev.net) * 100) : 0,
+      recent7dNet: recentVal.net,
+      prev7dNet: prevVal.net,
+      changePct: prevVal.net > 0 ? Math.round(((recentVal.net - prevVal.net) / prevVal.net) * 100) : 0,
     };
   }
 
@@ -146,6 +148,11 @@ export function buildTrendGroupsFromKeywords(
     analysisNote: notes?.[theme.groupName] || theme.note,
     priorityScore: 100 - i * 5,
   })).filter(g => g.keywords.length > 0);
+}
+
+function parseGeminiJson(text: string): unknown {
+  const cleaned = text.trim().replace(/```json|```/g, '').trim();
+  return JSON.parse(cleaned);
 }
 
 function parseAiResult(raw: unknown): Partial<MarketKeywordResult> | null {
@@ -264,20 +271,24 @@ JSON만 반환:
       generationConfig: { responseMimeType: 'application/json' },
     });
 
-    const parsed = parseAiResult(JSON.parse(res.response.text().trim()));
+    const parsed = parseAiResult(parseGeminiJson(res.response.text()));
     if (!parsed) return fallbackResult(ctx);
 
     const marketKeywords = ensureMarketKeywordCount(parsed.marketKeywords || []);
     const noteMap = Object.fromEntries(
       (parsed.groups || []).map(g => [g.groupName, g.analysisNote]),
     );
-    const groups = (parsed.groups?.length === NAVER_TREND_GROUP_MAX)
+    let groups = (parsed.groups?.length === NAVER_TREND_GROUP_MAX)
       ? parsed.groups!.map((g, i) => ({
         ...g,
         keywords: g.keywords.slice(0, perGroup),
         priorityScore: g.priorityScore ?? 100 - i * 5,
       }))
       : buildTrendGroupsFromKeywords(marketKeywords, noteMap);
+
+    if (groups.length === 0) {
+      groups = buildTrendGroupsFromKeywords(marketKeywords, noteMap);
+    }
 
     return {
       marketKeywords,

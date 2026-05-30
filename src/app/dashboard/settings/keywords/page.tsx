@@ -88,7 +88,7 @@ export default function KeywordsPage() {
     setError('');
     try {
       const headers = await getAuthHeaders();
-      const res  = await fetch(`/api/keywords?storeId=${storeId}`, { headers });
+      const res  = await fetch(`/api/keywords?storeId=${encodeURIComponent(storeId)}&_=${Date.now()}`, { headers });
       if (!res.ok) throw new Error('키워드 불러오기 실패');
       const data = await res.json();
       setDoc(data);
@@ -166,25 +166,39 @@ export default function KeywordsPage() {
     }
   };
 
-  /* 즉시 갱신 (master만) */
+  /* 즉시 갱신 */
   const runCron = async () => {
     setIsUpdating(true);
     setError('');
+    setSuccess('');
     try {
       const headers = await getAuthHeaders();
-      const res = await fetch(`/api/cron/update-keywords?storeId=${storeId}`, {
+      const res = await fetch(`/api/cron/update-keywords?storeId=${encodeURIComponent(storeId)}`, {
         method: 'POST',
         headers,
       });
+      const data = await res.json().catch(() => ({}));
+      const result = (data.results || []).find((r: { storeId?: string }) => r.storeId === storeId)
+        || data.results?.[0];
+
       if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d.error || '갱신 실패');
+        throw new Error(data.error || result?.error || '갱신 실패');
       }
-      setSuccess('키워드가 자동 갱신되었습니다.');
-      setTimeout(() => setSuccess(''), 2500);
+      if (result?.status === 'error') {
+        throw new Error(String(result.error || '키워드 생성 중 오류'));
+      }
+      if (result?.status === 'skipped') {
+        throw new Error(String(result.reason || '키워드 생성 실패'));
+      }
+      if (!result || result.status !== 'updated') {
+        throw new Error('키워드 갱신 결과를 확인할 수 없습니다');
+      }
+
+      setSuccess(`키워드 ${result.keywordCount ?? 0}개 · 그룹 ${result.groupCount ?? 0}개 갱신 완료`);
+      setTimeout(() => setSuccess(''), 3500);
       await load();
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '갱신 실패');
     } finally {
       setIsUpdating(false);
     }

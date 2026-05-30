@@ -5,6 +5,7 @@ import { verifyToken } from '@/lib/authVerify';
 import {
   NAVER_TREND_GROUP_MAX,
   buildKeywordMarketContext,
+  buildTrendGroupsFromKeywords,
   generateMarketKeywords,
 } from '@/lib/naverKeywordGenerate';
 
@@ -39,35 +40,44 @@ export async function POST(req: Request) {
       if (storeIds.length === 0) storeIds = ['global'];
     }
 
-    const results: any[] = [];
+    const results: Array<Record<string, unknown>> = [];
 
     for (const storeId of storeIds) {
       try {
         const marketCtx = await buildKeywordMarketContext(storeId);
         const generated = await generateMarketKeywords(marketCtx);
 
-        if (generated.marketKeywords.length === 0) {
+        const marketKeywords = generated.marketKeywords || [];
+        let groups = generated.groups || [];
+        if (groups.length === 0 && marketKeywords.length > 0) {
+          groups = buildTrendGroupsFromKeywords(marketKeywords);
+        }
+
+        if (marketKeywords.length === 0 || groups.length === 0) {
           results.push({ storeId, status: 'skipped', reason: '키워드 생성 실패' });
           continue;
         }
 
         const docRef = adminDb.collection('naver_trend_keywords').doc(storeId);
         const docSnap = await docRef.get();
-        const existing: any[] = docSnap.exists ? (docSnap.data()?.keywordGroups || []) : [];
+        const existing: Array<Record<string, unknown>> = docSnap.exists
+          ? (docSnap.data()?.keywordGroups || [])
+          : [];
 
-        const existingMap: Record<string, any> = {};
-        existing.forEach(g => { existingMap[g.groupName] = g; });
+        const existingMap: Record<string, Record<string, unknown>> = {};
+        existing.forEach(g => { existingMap[String(g.groupName)] = g; });
 
-        const updatedGroups: any[] = [];
+        const updatedGroups: Record<string, unknown>[] = [];
         const usedIds = new Set<string>();
+        const nowIso = new Date().toISOString();
 
-        generated.groups.forEach((gen, idx) => {
+        groups.forEach((gen, idx) => {
           const prev = existingMap[gen.groupName];
           if (prev?.admin_edited) {
             updatedGroups.push({ ...prev, salesRank: idx + 1 });
-            usedIds.add(prev.id);
+            usedIds.add(String(prev.id));
           } else {
-            const id = prev?.id || crypto.randomUUID();
+            const id = String(prev?.id || crypto.randomUUID());
             updatedGroups.push({
               id,
               groupName: gen.groupName,
@@ -77,7 +87,7 @@ export async function POST(req: Request) {
               active: idx < NAVER_TREND_GROUP_MAX,
               source: 'auto',
               admin_edited: false,
-              lastUpdated: FieldValue.serverTimestamp(),
+              lastUpdated: nowIso,
               salesRank: idx + 1,
             });
             usedIds.add(id);
@@ -85,15 +95,15 @@ export async function POST(req: Request) {
         });
 
         existing.forEach(g => {
-          if (!g.admin_edited || usedIds.has(g.id)) return;
+          if (!g.admin_edited || usedIds.has(String(g.id))) return;
           updatedGroups.push(g);
         });
 
         const nextUpdate = nextMonday5am();
         await docRef.set({
           keywordGroups: updatedGroups,
-          marketKeywords: generated.marketKeywords,
-          operationHint: generated.operationHint,
+          marketKeywords,
+          operationHint: generated.operationHint || '',
           lastAutoUpdate: FieldValue.serverTimestamp(),
           nextAutoUpdate: nextUpdate,
           lastMarketContext: {
@@ -106,17 +116,26 @@ export async function POST(req: Request) {
         results.push({
           storeId,
           status: 'updated',
-          keywordCount: generated.marketKeywords.length,
+          keywordCount: marketKeywords.length,
           groupCount: updatedGroups.length,
+          marketKeywords,
+          operationHint: generated.operationHint,
         });
-      } catch (e: any) {
-        results.push({ storeId, status: 'error', error: e.message });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[update-keywords]', storeId, msg);
+        results.push({ storeId, status: 'error', error: msg });
       }
     }
 
-    return NextResponse.json({ success: true, results });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    const failed = results.filter(r => r.status !== 'updated');
+    return NextResponse.json({
+      success: failed.length === 0,
+      results,
+    }, { status: failed.length === results.length && results.length > 0 ? 500 : 200 });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
 
