@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback, DragEvent } from 'react';
 import {
   Bot, Send, X, Paperclip, FileSpreadsheet, FileText, Loader2,
-  Image as ImageIcon, ChevronUp, ChevronDown,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { compressImageFromDataUrl, compressImageFile } from '@/lib/compressImageClient';
@@ -131,7 +131,6 @@ export default function PurchaseAIChat({ onInvoicesFound, storeId = '', onAnalys
   const [attachments, setAttachments] = useState<AttachedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [qualityNotes, setQualityNotes] = useState<string[]>([]);
@@ -455,210 +454,200 @@ export default function PurchaseAIChat({ onInvoicesFound, storeId = '', onAnalys
       )}
 
       {/* 헤더 */}
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-700/60 shrink-0">
-        <Bot className="w-4 h-4 text-teal-400 shrink-0" />
+      <div className="flex items-center gap-1.5 px-2 py-2 border-b border-slate-700/60 shrink-0">
+        <Bot className="w-3.5 h-3.5 text-teal-400 shrink-0" />
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold text-teal-300">AI 매입 분석</p>
-          <p className="text-[10px] text-slate-500">파일 첨부 또는 질문 입력</p>
+          <p className="text-[10px] font-semibold text-teal-300">AI 매입 분석</p>
+          <p className="text-[9px] text-slate-500 truncate">파일 첨부 · 질문</p>
         </div>
-        <button
-          onClick={() => setCollapsed(c => !c)}
-          className="text-slate-500 hover:text-slate-300 transition-colors p-0.5"
-        >
-          {collapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-        </button>
       </div>
 
-      {!collapsed && (
-        <>
-          {/* 대화 영역 */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
-            {messages.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[92%] rounded-xl px-3 py-2 text-xs leading-relaxed ${
-                  msg.role === 'user'
-                    ? 'bg-teal-600/30 text-teal-100'
-                    : 'bg-slate-800 text-slate-200'
-                }`}>
-                  {/* 첨부파일 썸네일 */}
-                  {msg.files && msg.files.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mb-1.5">
-                      {msg.files.map((f, fi) => (
-                        <div key={fi} className="flex items-center gap-1 bg-slate-700/60 rounded-lg px-2 py-1 max-w-[120px]">
-                          {f.preview ? (
-                            <img src={f.preview} alt="" className="w-8 h-8 object-cover rounded" />
-                          ) : f.type === 'pdf' ? (
-                            <FileText className="w-4 h-4 text-red-400 shrink-0" />
-                          ) : (
-                            <FileSpreadsheet className="w-4 h-4 text-green-400 shrink-0" />
-                          )}
-                          <span className="text-[10px] text-slate-300 truncate">{f.name}</span>
-                        </div>
-                      ))}
+      {/* 대화 영역 */}
+      <div className="flex-1 overflow-y-auto p-2 space-y-2 min-h-0">
+        {messages.map((msg, i) => (
+          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[95%] rounded-lg px-2 py-1.5 text-[10px] leading-snug ${
+              msg.role === 'user'
+                ? 'bg-teal-600/30 text-teal-100'
+                : 'bg-slate-800 text-slate-200'
+            }`}>
+              {/* 첨부파일 썸네일 */}
+              {msg.files && msg.files.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-1">
+                  {msg.files.map((f, fi) => (
+                    <div key={fi} className="flex items-center gap-0.5 bg-slate-700/60 rounded px-1.5 py-0.5 max-w-[90px]">
+                      {f.preview ? (
+                        <img src={f.preview} alt="" className="w-6 h-6 object-cover rounded" />
+                      ) : f.type === 'pdf' ? (
+                        <FileText className="w-3 h-3 text-red-400 shrink-0" />
+                      ) : (
+                        <FileSpreadsheet className="w-3 h-3 text-green-400 shrink-0" />
+                      )}
+                      <span className="text-[9px] text-slate-300 truncate">{f.name}</span>
                     </div>
-                  )}
-
-                  {msg.content ? (
-                    <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                  ) : loading && i === messages.length - 1 && msg.role === 'assistant' ? (
-                    <span className="inline-flex gap-0.5 items-center h-4">
-                      {[0, 150, 300].map(d => (
-                        <span
-                          key={d}
-                          className="w-1 h-1 bg-teal-400 rounded-full animate-bounce"
-                          style={{ animationDelay: `${d}ms` }}
-                        />
-                      ))}
-                    </span>
-                  ) : null}
+                  ))}
                 </div>
-              </div>
-            ))}
-            <div ref={bottomRef} />
-          </div>
+              )}
 
-          {/* 퀵 프롬프트 */}
-          <div className="px-3 py-1.5 border-t border-slate-700/40 shrink-0">
-            <div className="flex gap-1.5 flex-wrap">
-              {QUICK_PROMPTS.map(q => (
-                <button
-                  key={q}
-                  onClick={() => setInput(q)}
-                  disabled={loading}
-                  className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 px-2 py-1 rounded-lg border border-slate-700/50 transition-colors disabled:opacity-40"
-                >
-                  {q}
-                </button>
-              ))}
+              {msg.content ? (
+                <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+              ) : loading && i === messages.length - 1 && msg.role === 'assistant' ? (
+                <span className="inline-flex gap-0.5 items-center h-3">
+                  {[0, 150, 300].map(d => (
+                    <span
+                      key={d}
+                      className="w-1 h-1 bg-teal-400 rounded-full animate-bounce"
+                      style={{ animationDelay: `${d}ms` }}
+                    />
+                  ))}
+                </span>
+              ) : null}
             </div>
           </div>
+        ))}
+        <div ref={bottomRef} />
+      </div>
 
-          {/* 첨부파일 미리보기 */}
-          {attachments.length > 0 && (
-            <div className="px-3 py-2 border-t border-slate-700/40 shrink-0">
-              <div className="flex flex-wrap gap-2">
-                {attachments.map(a => (
-                  <div key={a.id} className="relative group">
-                    {a.preview ? (
-                      <img
-                        src={a.preview}
-                        alt={a.name}
-                        className="w-14 h-14 object-cover rounded-lg border border-slate-700"
-                      />
-                    ) : (
-                      <div className="w-14 h-14 bg-slate-800 rounded-lg border border-slate-700 flex flex-col items-center justify-center gap-1">
-                        {a.type === 'pdf'
-                          ? <FileText className="w-5 h-5 text-red-400" />
-                          : <FileSpreadsheet className="w-5 h-5 text-green-400" />}
-                        <span className="text-[9px] text-slate-500 font-medium">
-                          {a.name.split('.').pop()?.toUpperCase()}
-                        </span>
-                      </div>
-                    )}
-                    <button
-                      onClick={() => removeAttachment(a.id)}
-                      className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-slate-600 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <X className="w-2.5 h-2.5 text-white" />
-                    </button>
-                    <p className="text-[9px] text-slate-600 truncate w-14 text-center mt-0.5">
-                      {a.name.length > 10 ? a.name.slice(0, 8) + '…' : a.name}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+      {/* 퀵 프롬프트 */}
+      <div className="px-2 py-1 border-t border-slate-700/40 shrink-0">
+        <div className="flex gap-1 flex-wrap">
+          {QUICK_PROMPTS.map(q => (
+            <button
+              key={q}
+              onClick={() => setInput(q)}
+              disabled={loading}
+              className="text-[9px] bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 px-1.5 py-0.5 rounded border border-slate-700/50 transition-colors disabled:opacity-40"
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+      </div>
 
-          {/* OCR 품질 피드백 */}
-          {qualityNotes.length > 0 && (
-            <div className="px-3 py-2 border-t border-slate-700/40 shrink-0 space-y-1">
-              {qualityNotes.map((n, i) => (
-                <p key={i} className="text-[11px] text-yellow-400/90 bg-yellow-900/20 border border-yellow-800/30 rounded-lg px-2 py-1">{n}</p>
-              ))}
-            </div>
-          )}
-
-          {/* 입력 영역 */}
-          <div className="px-3 pb-3 pt-2 shrink-0 border-t border-slate-700/40">
-            <div className="flex gap-2 items-center">
-              <div className="relative shrink-0">
-                <button
-                  onClick={() => setShowAttachMenu(v => !v)}
-                  disabled={loading}
-                  className="w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-xl flex items-center justify-center disabled:opacity-40"
-                >
-                  +
-                </button>
-                {showAttachMenu && (
-                  <div className="absolute bottom-12 left-0 bg-slate-900 border border-slate-700 rounded-xl shadow-xl overflow-hidden w-44 z-50">
-                    <label className="flex items-center gap-3 px-4 py-3 hover:bg-slate-800 cursor-pointer border-b border-slate-800 text-sm text-slate-200">
-                      📁 파일 첨부
-                      <input type="file" multiple accept="image/*,.pdf,.xlsx,.xls,.csv" className="hidden"
-                        onChange={e => { if (e.target.files) addFiles(e.target.files); setShowAttachMenu(false); e.target.value = ''; }} />
-                    </label>
-                    <button type="button" onClick={() => { setShowCamera(true); setShowAttachMenu(false); }}
-                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-800 border-b border-slate-800 text-sm text-slate-200">
-                      📷 카메라 촬영
-                    </button>
-                    <button type="button" onClick={async () => {
-                      setShowAttachMenu(false);
-                      try {
-                        const items = await navigator.clipboard.read();
-                        for (const item of items) {
-                          for (const type of item.types) {
-                            if (type.startsWith('image/')) {
-                              const blob = await item.getType(type);
-                              await addFiles([new File([blob], `clip_${Date.now()}.png`, { type })]);
-                              return;
-                            }
-                          }
-                        }
-                      } catch { /* ignore */ }
-                    }}
-                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-800 text-sm text-slate-200">
-                      📋 클립보드
-                    </button>
+      {/* 첨부파일 미리보기 */}
+      {attachments.length > 0 && (
+        <div className="px-2 py-1.5 border-t border-slate-700/40 shrink-0">
+          <div className="flex flex-wrap gap-1.5">
+            {attachments.map(a => (
+              <div key={a.id} className="relative group">
+                {a.preview ? (
+                  <img
+                    src={a.preview}
+                    alt={a.name}
+                    className="w-10 h-10 object-cover rounded border border-slate-700"
+                  />
+                ) : (
+                  <div className="w-10 h-10 bg-slate-800 rounded border border-slate-700 flex flex-col items-center justify-center gap-0.5">
+                    {a.type === 'pdf'
+                      ? <FileText className="w-3.5 h-3.5 text-red-400" />
+                      : <FileSpreadsheet className="w-3.5 h-3.5 text-green-400" />}
+                    <span className="text-[8px] text-slate-500 font-medium">
+                      {a.name.split('.').pop()?.toUpperCase()}
+                    </span>
                   </div>
                 )}
+                <button
+                  onClick={() => removeAttachment(a.id)}
+                  className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-slate-600 hover:bg-red-600 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <X className="w-2 h-2 text-white" />
+                </button>
+                <p className="text-[8px] text-slate-600 truncate w-10 text-center mt-0.5">
+                  {a.name.length > 8 ? a.name.slice(0, 6) + '…' : a.name}
+                </p>
               </div>
-              <CameraCapture
-                hideTrigger
-                batchMode
-                open={showCamera}
-                onOpenChange={setShowCamera}
-                onCapture={file => addFiles([file])}
-                onCaptureBatch={files => addFiles(files)}
-              />
-              <input
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    send();
-                  }
-                }}
-                placeholder={attachments.length > 0 ? '메시지 추가 (선택)...' : '질문 입력 또는 파일 첨부...'}
-                disabled={loading}
-                className="flex-1 bg-slate-800 border border-slate-700/60 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-teal-500/50 disabled:opacity-50 min-w-0"
-              />
-              <button
-                onClick={send}
-                disabled={loading || (!input.trim() && attachments.length === 0)}
-                className="bg-teal-600 hover:bg-teal-500 disabled:bg-slate-700 text-white p-2 rounded-lg transition-colors disabled:opacity-50 shrink-0"
-              >
-                {loading
-                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  : <Send className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-            <p className="text-[10px] text-slate-700 mt-1.5 text-center">
-              드래그 앤 드랍 · Ctrl+V 붙여넣기 지원
-            </p>
+            ))}
           </div>
-        </>
+        </div>
       )}
+
+      {/* OCR 품질 피드백 */}
+      {qualityNotes.length > 0 && (
+        <div className="px-2 py-1.5 border-t border-slate-700/40 shrink-0 space-y-0.5">
+          {qualityNotes.map((n, i) => (
+            <p key={i} className="text-[9px] text-yellow-400/90 bg-yellow-900/20 border border-yellow-800/30 rounded px-1.5 py-0.5">{n}</p>
+          ))}
+        </div>
+      )}
+
+      {/* 입력 영역 */}
+      <div className="px-2 pb-2 pt-1.5 shrink-0 border-t border-slate-700/40">
+        <div className="flex gap-1.5 items-center">
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setShowAttachMenu(v => !v)}
+              disabled={loading}
+              className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-lg flex items-center justify-center disabled:opacity-40"
+            >
+              +
+            </button>
+            {showAttachMenu && (
+              <div className="absolute bottom-10 left-0 bg-slate-900 border border-slate-700 rounded-lg shadow-xl overflow-hidden w-36 z-50">
+                <label className="flex items-center gap-2 px-3 py-2 hover:bg-slate-800 cursor-pointer border-b border-slate-800 text-[10px] text-slate-200">
+                  📁 파일 첨부
+                  <input type="file" multiple accept="image/*,.pdf,.xlsx,.xls,.csv" className="hidden"
+                    onChange={e => { if (e.target.files) addFiles(e.target.files); setShowAttachMenu(false); e.target.value = ''; }} />
+                </label>
+                <button type="button" onClick={() => { setShowCamera(true); setShowAttachMenu(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-800 border-b border-slate-800 text-[10px] text-slate-200">
+                  📷 카메라
+                </button>
+                <button type="button" onClick={async () => {
+                  setShowAttachMenu(false);
+                  try {
+                    const items = await navigator.clipboard.read();
+                    for (const item of items) {
+                      for (const type of item.types) {
+                        if (type.startsWith('image/')) {
+                          const blob = await item.getType(type);
+                          await addFiles([new File([blob], `clip_${Date.now()}.png`, { type })]);
+                          return;
+                        }
+                      }
+                    }
+                  } catch { /* ignore */ }
+                }}
+                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-slate-800 text-[10px] text-slate-200">
+                  📋 클립보드
+                </button>
+              </div>
+            )}
+          </div>
+          <CameraCapture
+            hideTrigger
+            batchMode
+            open={showCamera}
+            onOpenChange={setShowCamera}
+            onCapture={file => addFiles([file])}
+            onCaptureBatch={files => addFiles(files)}
+          />
+          <input
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
+            }}
+            placeholder={attachments.length > 0 ? '메시지 (선택)' : '질문 또는 파일 첨부...'}
+            disabled={loading}
+            className="flex-1 bg-slate-800 border border-slate-700/60 rounded-lg px-2 py-1.5 text-[10px] text-slate-200 placeholder-slate-600 focus:outline-none focus:border-teal-500/50 disabled:opacity-50 min-w-0"
+          />
+          <button
+            onClick={send}
+            disabled={loading || (!input.trim() && attachments.length === 0)}
+            className="bg-teal-600 hover:bg-teal-500 disabled:bg-slate-700 text-white p-1.5 rounded-lg transition-colors disabled:opacity-50 shrink-0"
+          >
+            {loading
+              ? <Loader2 className="w-3 h-3 animate-spin" />
+              : <Send className="w-3 h-3" />}
+          </button>
+        </div>
+        <p className="text-[8px] text-slate-700 mt-1 text-center">
+          드래그 · Ctrl+V
+        </p>
+      </div>
     </div>
   );
 }

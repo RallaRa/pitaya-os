@@ -1,13 +1,13 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import {
   ShoppingCart, Save, Loader2, CheckCircle, AlertCircle, Plus, X,
-  Search, Beef,
+  Search, Beef, Bot, ChevronLeft, ChevronRight, GripVertical,
 } from 'lucide-react';
 import type { Invoice, InvoiceGroup, AttachedFile } from '@/components/purchases/PurchaseSheet';
 
@@ -63,6 +63,37 @@ export default function PurchaseInputPage() {
   const [traceLoading, setTraceLoading] = useState(false);
   const [traceError, setTraceError] = useState('');
   const [historyRefresh, setHistoryRefresh] = useState(0);
+
+  // 레이아웃: 좌측 히스토리 / 우측 AI 패널
+  const [historyOpen, setHistoryOpen] = useState(true);
+  const [aiOpen, setAiOpen] = useState(true);
+  const [aiWidth, setAiWidth] = useState(280);
+  const resizingRef = useRef(false);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const next = window.innerWidth - e.clientX;
+      setAiWidth(Math.min(480, Math.max(220, next)));
+    };
+    const onUp = () => {
+      resizingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
+  const startAiResize = () => {
+    resizingRef.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
 
   const handleInvoicesFound = useCallback((invoices: Invoice[], files: AttachedFile[]) => {
     const newGroups: InvoiceGroup[] = invoices.map(inv => {
@@ -180,31 +211,50 @@ export default function PurchaseInputPage() {
   return (
     <div className="flex h-full bg-slate-950 text-slate-100 overflow-hidden">
 
-      {/* ── 좌측 분석 히스토리 ── */}
-      <div className="hidden lg:flex flex-col w-72 shrink-0 h-full">
-        <PurchaseAnalysisHistory
-          storeId={currentStore?.storeId || ''}
-          refreshKey={historyRefresh}
-        />
-      </div>
+      {/* ── 좌측 분석 히스토리 (축소) ── */}
+      {historyOpen ? (
+        <div className="hidden lg:flex flex-col w-44 shrink-0 h-full relative">
+          <button
+            type="button"
+            onClick={() => setHistoryOpen(false)}
+            className="absolute -right-2 top-1/2 -translate-y-1/2 z-10 w-4 h-8 bg-slate-800 border border-slate-700 rounded-r-md flex items-center justify-center text-slate-500 hover:text-teal-400 hover:bg-slate-700 transition-colors"
+            title="히스토리 접기"
+          >
+            <ChevronLeft className="w-3 h-3" />
+          </button>
+          <PurchaseAnalysisHistory
+            storeId={currentStore?.storeId || ''}
+            refreshKey={historyRefresh}
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setHistoryOpen(true)}
+          className="hidden lg:flex flex-col items-center justify-center w-7 shrink-0 h-full bg-slate-900 border-r border-slate-800 text-slate-500 hover:text-teal-400 hover:bg-slate-800/80 transition-colors"
+          title="분석 히스토리 펼치기"
+        >
+          <ChevronRight className="w-3.5 h-3.5" />
+        </button>
+      )}
 
       {/* ── 중앙 시트 영역 ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
         {/* 헤더 툴바 */}
-        <div className="flex items-center gap-3 px-5 py-2.5 border-b border-slate-800/60 bg-slate-900/60 shrink-0">
-          <ShoppingCart className="w-4 h-4 text-teal-400 shrink-0" />
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-800/60 bg-slate-900/60 shrink-0">
+          <ShoppingCart className="w-3.5 h-3.5 text-teal-400 shrink-0" />
           <div className="flex-1 min-w-0">
-            <h1 className="text-sm font-bold text-slate-100 leading-tight">AI 매입관리</h1>
+            <h1 className="text-xs font-bold text-slate-100 leading-tight">AI 매입관리</h1>
             {currentStore?.storeName && (
-              <p className="text-[10px] text-slate-500 truncate">{currentStore.storeName}</p>
+              <p className="text-[9px] text-slate-500 truncate">{currentStore.storeName}</p>
             )}
           </div>
 
           {/* 이력번호 조회 토글 */}
           <button
             onClick={() => { setTraceOpen(o => !o); setTraceInfo(null); setTraceError(''); }}
-            className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-colors ${
+            className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg transition-colors ${
               traceOpen
                 ? 'bg-amber-900/30 text-amber-300'
                 : 'text-amber-500 hover:text-amber-300 hover:bg-amber-900/20'
@@ -217,7 +267,7 @@ export default function PurchaseInputPage() {
           {/* 직접 추가 버튼 */}
           <button
             onClick={addBlankGroup}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg transition-colors"
+            className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded-lg transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
             직접 추가
@@ -228,7 +278,7 @@ export default function PurchaseInputPage() {
             <button
               onClick={saveAll}
               disabled={isSavingAll}
-              className="flex items-center gap-1.5 text-xs font-semibold text-black bg-teal-400 hover:bg-teal-300 disabled:opacity-60 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+              className="flex items-center gap-1 text-[10px] font-semibold text-black bg-teal-400 hover:bg-teal-300 disabled:opacity-60 px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
             >
               {isSavingAll
                 ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -321,7 +371,7 @@ export default function PurchaseInputPage() {
         )}
 
         {/* 시트 영역 */}
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="flex-1 overflow-y-auto px-3 py-3">
           <PurchaseSheet
             groups={groups}
             onGroupsChange={setGroups}
@@ -331,14 +381,49 @@ export default function PurchaseInputPage() {
         </div>
       </div>
 
-      {/* ── 우측 AI 채팅 패널 ── */}
-      <div className="hidden md:flex flex-col w-96 shrink-0 h-full">
-        <PurchaseAIChat
-          storeId={currentStore?.storeId || ''}
-          onInvoicesFound={handleInvoicesFound}
-          onAnalysisLogged={() => setHistoryRefresh(k => k + 1)}
-        />
-      </div>
+      {/* ── 우측 AI 채팅 패널 (접기 + 너비 조절) ── */}
+      {aiOpen ? (
+        <div
+          className="hidden md:flex shrink-0 h-full relative"
+          style={{ width: aiWidth }}
+        >
+          {/* 리사이즈 핸들 */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            onMouseDown={startAiResize}
+            className="absolute left-0 top-0 bottom-0 w-1.5 -ml-0.5 z-20 cursor-col-resize group flex items-center justify-center hover:bg-teal-500/20 transition-colors"
+            title="드래그하여 너비 조절"
+          >
+            <GripVertical className="w-3 h-3 text-slate-600 group-hover:text-teal-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </div>
+          <button
+            type="button"
+            onClick={() => setAiOpen(false)}
+            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full z-10 w-4 h-8 bg-slate-800 border border-slate-700 rounded-l-md flex items-center justify-center text-slate-500 hover:text-teal-400 hover:bg-slate-700 transition-colors"
+            title="AI 패널 접기"
+          >
+            <ChevronRight className="w-3 h-3" />
+          </button>
+          <div className="flex flex-col w-full h-full min-w-0">
+            <PurchaseAIChat
+              storeId={currentStore?.storeId || ''}
+              onInvoicesFound={handleInvoicesFound}
+              onAnalysisLogged={() => setHistoryRefresh(k => k + 1)}
+            />
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAiOpen(true)}
+          className="hidden md:flex flex-col items-center justify-center w-8 shrink-0 h-full bg-slate-900 border-l border-slate-800 text-slate-500 hover:text-teal-400 hover:bg-slate-800/80 transition-colors gap-1.5"
+          title="AI 패널 펼치기"
+        >
+          <Bot className="w-4 h-4" />
+          <span className="text-[9px] writing-mode-vertical" style={{ writingMode: 'vertical-rl' }}>AI</span>
+        </button>
+      )}
 
       {/* 모바일: 하단 플로팅 버튼 (AI 채팅) */}
       <div className="md:hidden">

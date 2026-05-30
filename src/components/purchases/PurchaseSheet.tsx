@@ -303,14 +303,14 @@ export default function PurchaseSheet({
     return (
       <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-3">
         <ShoppingCart className="w-10 h-10 opacity-20" />
-        <p className="text-sm">우측 AI 채팅에서 파일을 업로드하면 여기에 자동으로 표시됩니다.</p>
-        <p className="text-xs text-slate-600">이미지 드래그 앤 드랍, 클립보드 붙여넣기 모두 지원합니다.</p>
+        <p className="text-[11px]">우측 AI 채팅에서 파일을 업로드하면 여기에 자동으로 표시됩니다.</p>
+        <p className="text-[10px] text-slate-600">드래그 · Ctrl+V 붙여넣기 지원</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* 이미지 뷰어 모달 */}
       {viewer && viewerGroup && viewerGroup.attachedFiles && viewerGroup.attachedFiles.length > 0 && (
         <ImageViewerModal
@@ -323,14 +323,14 @@ export default function PurchaseSheet({
 
       {/* 선택 컬럼 토글 */}
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-[11px] text-slate-500">선택 컬럼:</span>
+        <span className="text-[10px] text-slate-500">선택 컬럼:</span>
         {OPTIONAL_COLS.map(col => {
           const active = visibleCols.has(col) || hasData[col];
           return (
             <button
               key={col}
               onClick={() => toggleCol(col)}
-              className={`flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full border transition-colors ${
+              className={`flex items-center gap-0.5 text-[9px] px-2 py-0.5 rounded-full border transition-colors ${
                 active
                   ? 'bg-teal-900/40 border-teal-600/60 text-teal-300'
                   : 'bg-slate-800 border-slate-700 text-slate-500 hover:border-slate-500 hover:text-slate-400'
@@ -358,33 +358,33 @@ export default function PurchaseSheet({
             }`}
           >
             {/* 그룹 헤더 */}
-            <div className={`flex items-center gap-2 px-3 py-2 ${group.isSaved ? 'bg-teal-900/15' : 'bg-slate-800/60'}`}>
+            <div className={`flex items-center gap-1 px-2 py-1.5 flex-wrap ${group.isSaved ? 'bg-teal-900/15' : 'bg-slate-800/60'}`}>
               <button
                 onClick={() => toggleExpand(group.id)}
                 className="text-slate-400 hover:text-white transition-colors shrink-0"
               >
                 {group.isExpanded
-                  ? <ChevronDown className="w-4 h-4" />
-                  : <ChevronRight className="w-4 h-4" />}
+                  ? <ChevronDown className="w-3.5 h-3.5" />
+                  : <ChevronRight className="w-3.5 h-3.5" />}
               </button>
 
               <input
                 value={inv.purchaseDate}
                 onChange={e => updateHeader(group.id, 'purchaseDate', e.target.value)}
                 type="date"
-                className="bg-transparent text-xs text-slate-400 focus:outline-none focus:bg-slate-800 rounded px-1 w-32 shrink-0"
+                className="bg-transparent text-[10px] text-slate-400 focus:outline-none focus:bg-slate-800 rounded px-0.5 w-[7.5rem] shrink-0"
               />
 
               <input
                 value={inv.supplierName}
                 onChange={e => updateHeader(group.id, 'supplierName', e.target.value)}
                 placeholder="공급업체명"
-                className="bg-transparent text-sm text-white font-semibold focus:outline-none focus:bg-slate-800 rounded px-1 flex-1 min-w-0 placeholder:text-slate-600"
+                className="bg-transparent text-[11px] text-white font-semibold focus:outline-none focus:bg-slate-800 rounded px-0.5 flex-1 min-w-[5rem] placeholder:text-slate-600"
               />
 
               {inv.aiTag && (
                 <span
-                  className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-slate-700/80 text-slate-300 border border-slate-600"
+                  className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-full bg-slate-700/80 text-slate-300 border border-slate-600 max-w-[5rem] truncate"
                   title="이 명세를 분석한 AI"
                 >
                   {inv.aiTag}
@@ -395,20 +395,20 @@ export default function PurchaseSheet({
                 value={inv.invoiceNumber}
                 onChange={e => updateHeader(group.id, 'invoiceNumber', e.target.value)}
                 placeholder="전표번호"
-                className="bg-transparent text-xs text-slate-500 focus:outline-none focus:bg-slate-800 rounded px-1 w-28 shrink-0 hidden sm:block placeholder:text-slate-700"
+                className="bg-transparent text-[10px] text-slate-500 focus:outline-none focus:bg-slate-800 rounded px-0.5 w-20 shrink-0 hidden sm:block placeholder:text-slate-700"
               />
 
               <select
                 value={inv.paymentMethod}
                 onChange={e => updateHeader(group.id, 'paymentMethod', e.target.value)}
-                className="bg-slate-800 border border-slate-600/60 text-xs text-slate-300 rounded px-1.5 py-0.5 focus:outline-none shrink-0"
+                className="bg-slate-800 border border-slate-600/60 text-[10px] text-slate-300 rounded px-1 py-0.5 focus:outline-none shrink-0"
               >
                 {PAYMENT_METHODS.map(m => (
                   <option key={m} value={m}>{m || '결제방법'}</option>
                 ))}
               </select>
 
-              <span className="text-sm text-teal-400 font-bold whitespace-nowrap shrink-0 hidden lg:block tabular-nums">
+              <span className="text-[11px] text-teal-400 font-bold whitespace-nowrap shrink-0 hidden lg:block tabular-nums">
                 {fmt(inv.totalAmount)}원
               </span>
 
@@ -416,35 +416,35 @@ export default function PurchaseSheet({
               {group.attachedFiles && group.attachedFiles.length > 0 && (
                 <button
                   onClick={() => setViewer({ groupId: group.id, index: 0 })}
-                  className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-teal-300 bg-slate-700/60 hover:bg-slate-700 px-2 py-1 rounded-lg transition-colors shrink-0"
+                  className="flex items-center gap-0.5 text-[9px] text-slate-400 hover:text-teal-300 bg-slate-700/60 hover:bg-slate-700 px-1.5 py-0.5 rounded transition-colors shrink-0"
                   title="원본 문서 보기"
                 >
                   {group.attachedFiles[0].type === 'image' && group.attachedFiles[0].preview ? (
                     <img
                       src={group.attachedFiles[0].preview}
                       alt=""
-                      className="w-5 h-5 object-cover rounded"
+                      className="w-4 h-4 object-cover rounded"
                     />
                   ) : (
-                    <ImageIcon className="w-3.5 h-3.5" />
+                    <ImageIcon className="w-3 h-3" />
                   )}
-                  <span>원본 {group.attachedFiles.length > 1 ? `${group.attachedFiles.length}장` : ''}</span>
+                  <span>원본{group.attachedFiles.length > 1 ? ` ${group.attachedFiles.length}` : ''}</span>
                 </button>
               )}
 
               {group.isSaved ? (
-                <span className="flex items-center gap-1 text-[10px] text-teal-400 shrink-0">
-                  <Check className="w-3 h-3" /> 저장됨
+                <span className="flex items-center gap-0.5 text-[9px] text-teal-400 shrink-0">
+                  <Check className="w-2.5 h-2.5" /> 저장
                 </span>
               ) : (
                 <button
                   onClick={() => onSaveGroup(group.id)}
                   disabled={isSaving}
-                  className="flex items-center gap-1 text-[10px] bg-teal-700 hover:bg-teal-600 disabled:bg-slate-700 text-white px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                  className="flex items-center gap-0.5 text-[9px] bg-teal-700 hover:bg-teal-600 disabled:bg-slate-700 text-white px-2 py-0.5 rounded transition-colors whitespace-nowrap shrink-0"
                 >
                   {isSaving
-                    ? <Loader2 className="w-3 h-3 animate-spin" />
-                    : <Save className="w-3 h-3" />}
+                    ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    : <Save className="w-2.5 h-2.5" />}
                   저장
                 </button>
               )}
@@ -453,36 +453,36 @@ export default function PurchaseSheet({
                 onClick={() => removeGroup(group.id)}
                 className="text-slate-700 hover:text-red-400 transition-colors p-0.5 shrink-0"
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <Trash2 className="w-3 h-3" />
               </button>
             </div>
 
             {/* 시트 테이블 */}
             {group.isExpanded && (
               <div className="overflow-x-auto">
-                <table className="w-full text-xs border-collapse">
+                <table className="w-full text-[10px] border-collapse table-fixed min-w-[640px]">
                   <thead>
                     <tr className="border-b border-slate-700/60 bg-slate-800/30">
-                      <th className="text-left text-slate-500 px-3 py-2 font-medium w-7">#</th>
-                      <th className="text-left text-slate-400 px-2 py-2 font-medium min-w-[120px]">품명</th>
-                      <th className="text-right text-slate-400 px-2 py-2 font-medium w-20">수량</th>
-                      <th className="text-left text-slate-400 px-2 py-2 font-medium w-16">단위</th>
-                      <th className="text-right text-slate-400 px-2 py-2 font-medium w-28">단가</th>
-                      <th className="text-right text-slate-400 px-2 py-2 font-medium w-28">공급가액</th>
-                      <th className="text-right text-slate-400 px-2 py-2 font-medium w-22">세액</th>
+                      <th className="text-left text-slate-500 px-1.5 py-1 font-medium w-6">#</th>
+                      <th className="text-left text-slate-400 px-1 py-1 font-medium w-[22%]">품명</th>
+                      <th className="text-right text-slate-400 px-1 py-1 font-medium w-12">수량</th>
+                      <th className="text-left text-slate-400 px-1 py-1 font-medium w-10">단위</th>
+                      <th className="text-right text-slate-400 px-1 py-1 font-medium w-16">단가</th>
+                      <th className="text-right text-slate-400 px-1 py-1 font-medium w-16">공급가</th>
+                      <th className="text-right text-slate-400 px-1 py-1 font-medium w-14">세액</th>
                       {shownCols.includes('traceNo') && (
-                        <th className="text-left text-slate-400 px-2 py-2 font-medium w-32">이력번호</th>
+                        <th className="text-left text-slate-400 px-1 py-1 font-medium w-24">이력번호</th>
                       )}
                       {shownCols.includes('origin') && (
-                        <th className="text-left text-slate-400 px-2 py-2 font-medium w-20">원산지</th>
+                        <th className="text-left text-slate-400 px-1 py-1 font-medium w-14">원산지</th>
                       )}
                       {shownCols.includes('cut') && (
-                        <th className="text-left text-slate-400 px-2 py-2 font-medium w-20">부위</th>
+                        <th className="text-left text-slate-400 px-1 py-1 font-medium w-14">부위</th>
                       )}
                       {shownCols.includes('grade') && (
-                        <th className="text-left text-slate-400 px-2 py-2 font-medium w-16">등급</th>
+                        <th className="text-left text-slate-400 px-1 py-1 font-medium w-10">등급</th>
                       )}
-                      <th className="w-8" />
+                      <th className="w-6" />
                     </tr>
                   </thead>
                   <tbody>
@@ -491,35 +491,35 @@ export default function PurchaseSheet({
                         key={idx}
                         className="border-b border-slate-800/50 hover:bg-slate-800/20 group"
                       >
-                        <td className="px-3 py-1 text-slate-600 tabular-nums">{idx + 1}</td>
+                        <td className="px-1.5 py-0.5 text-slate-600 tabular-nums">{idx + 1}</td>
 
                         {/* 품명 */}
-                        <td className="px-1 py-0.5">
+                        <td className="px-0.5 py-0">
                           <input
                             value={item.name}
                             onChange={e => updateItem(group.id, idx, 'name', e.target.value)}
-                            className="w-full bg-transparent px-2 py-1 text-slate-200 focus:outline-none focus:bg-slate-800 rounded"
+                            className="w-full bg-transparent px-1 py-0.5 text-[10px] text-slate-200 focus:outline-none focus:bg-slate-800 rounded truncate"
                           />
                         </td>
 
                         {/* 수량 */}
-                        <td className="px-1 py-0.5">
+                        <td className="px-0.5 py-0">
                           <input
                             value={item.qty || ''}
                             type="number"
                             min={0}
                             step="0.01"
                             onChange={e => updateItem(group.id, idx, 'qty', parseFloat(e.target.value) || 0)}
-                            className="w-full bg-transparent px-2 py-1 text-right text-slate-200 focus:outline-none focus:bg-slate-800 rounded tabular-nums"
+                            className="w-full bg-transparent px-1 py-0.5 text-right text-[10px] text-slate-200 focus:outline-none focus:bg-slate-800 rounded tabular-nums"
                           />
                         </td>
 
                         {/* 단위 */}
-                        <td className="px-1 py-0.5">
+                        <td className="px-0.5 py-0">
                           <select
                             value={item.unit}
                             onChange={e => updateItem(group.id, idx, 'unit', e.target.value)}
-                            className="w-full bg-transparent px-1 py-1 text-slate-300 focus:outline-none focus:bg-slate-800 rounded appearance-none cursor-pointer"
+                            className="w-full bg-transparent px-0.5 py-0.5 text-[10px] text-slate-300 focus:outline-none focus:bg-slate-800 rounded appearance-none cursor-pointer"
                           >
                             {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                             {!UNITS.includes(item.unit) && item.unit && (
@@ -529,84 +529,84 @@ export default function PurchaseSheet({
                         </td>
 
                         {/* 단가 */}
-                        <td className="px-1 py-0.5">
+                        <td className="px-0.5 py-0">
                           <input
                             value={item.unitPrice || ''}
                             type="number"
                             min={0}
                             onChange={e => updateItem(group.id, idx, 'unitPrice', parseInt(e.target.value) || 0)}
-                            className="w-full bg-transparent px-2 py-1 text-right text-slate-200 focus:outline-none focus:bg-slate-800 rounded tabular-nums"
+                            className="w-full bg-transparent px-1 py-0.5 text-right text-[10px] text-slate-200 focus:outline-none focus:bg-slate-800 rounded tabular-nums"
                           />
                         </td>
 
-                        {/* 공급가액 (직접 편집 가능) */}
-                        <td className="px-1 py-0.5">
+                        {/* 공급가액 */}
+                        <td className="px-0.5 py-0">
                           <input
                             value={item.supplyAmount || ''}
                             type="number"
                             min={0}
                             onChange={e => updateItem(group.id, idx, 'supplyAmount', parseInt(e.target.value) || 0)}
-                            className="w-full bg-transparent px-2 py-1 text-right text-slate-300 focus:outline-none focus:bg-slate-800 rounded tabular-nums"
+                            className="w-full bg-transparent px-1 py-0.5 text-right text-[10px] text-slate-300 focus:outline-none focus:bg-slate-800 rounded tabular-nums"
                           />
                         </td>
 
                         {/* 세액 */}
-                        <td className="px-1 py-0.5">
+                        <td className="px-0.5 py-0">
                           <input
                             value={item.taxAmount || ''}
                             type="number"
                             min={0}
                             onChange={e => updateItem(group.id, idx, 'taxAmount', parseInt(e.target.value) || 0)}
-                            className="w-full bg-transparent px-2 py-1 text-right text-slate-400 focus:outline-none focus:bg-slate-800 rounded tabular-nums"
+                            className="w-full bg-transparent px-1 py-0.5 text-right text-[10px] text-slate-400 focus:outline-none focus:bg-slate-800 rounded tabular-nums"
                           />
                         </td>
 
                         {shownCols.includes('traceNo') && (
-                          <td className="px-1 py-0.5">
+                          <td className="px-0.5 py-0">
                             <input
                               value={item.traceNo}
                               onChange={e => updateItem(group.id, idx, 'traceNo', e.target.value)}
-                              className="w-full bg-transparent px-2 py-1 text-slate-400 focus:outline-none focus:bg-slate-800 rounded font-mono text-[10px]"
+                              className="w-full bg-transparent px-1 py-0.5 text-slate-400 focus:outline-none focus:bg-slate-800 rounded font-mono text-[9px]"
                             />
                           </td>
                         )}
 
                         {shownCols.includes('origin') && (
-                          <td className="px-1 py-0.5">
+                          <td className="px-0.5 py-0">
                             <input
                               value={item.origin}
                               onChange={e => updateItem(group.id, idx, 'origin', e.target.value)}
-                              className="w-full bg-transparent px-2 py-1 text-slate-300 focus:outline-none focus:bg-slate-800 rounded"
+                              className="w-full bg-transparent px-1 py-0.5 text-[10px] text-slate-300 focus:outline-none focus:bg-slate-800 rounded"
                             />
                           </td>
                         )}
 
                         {shownCols.includes('cut') && (
-                          <td className="px-1 py-0.5">
+                          <td className="px-0.5 py-0">
                             <input
                               value={item.cut}
                               onChange={e => updateItem(group.id, idx, 'cut', e.target.value)}
-                              className="w-full bg-transparent px-2 py-1 text-slate-300 focus:outline-none focus:bg-slate-800 rounded"
+                              className="w-full bg-transparent px-1 py-0.5 text-[10px] text-slate-300 focus:outline-none focus:bg-slate-800 rounded"
                             />
                           </td>
                         )}
 
                         {shownCols.includes('grade') && (
-                          <td className="px-1 py-0.5">
+                          <td className="px-0.5 py-0">
                             <input
                               value={item.grade}
                               onChange={e => updateItem(group.id, idx, 'grade', e.target.value)}
-                              className="w-full bg-transparent px-2 py-1 text-slate-300 focus:outline-none focus:bg-slate-800 rounded"
+                              className="w-full bg-transparent px-1 py-0.5 text-[10px] text-slate-300 focus:outline-none focus:bg-slate-800 rounded"
                             />
                           </td>
                         )}
 
-                        <td className="px-2 py-1">
+                        <td className="px-1 py-0.5">
                           <button
                             onClick={() => removeItem(group.id, idx)}
                             className="text-slate-700 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-3 h-3" />
                           </button>
                         </td>
                       </tr>
@@ -616,19 +616,19 @@ export default function PurchaseSheet({
                   {/* 합계 */}
                   <tfoot>
                     <tr className="border-t border-slate-700/60 bg-slate-800/20">
-                      <td colSpan={5} className="px-3 py-1.5 text-right text-slate-500 text-[11px]">소계</td>
-                      <td className="px-2 py-1.5 text-right text-slate-200 font-semibold tabular-nums">
+                      <td colSpan={5} className="px-1.5 py-1 text-right text-slate-500 text-[9px]">소계</td>
+                      <td className="px-1 py-1 text-right text-slate-200 font-semibold tabular-nums text-[10px]">
                         {fmt(inv.supplyAmount)}
                       </td>
-                      <td className="px-2 py-1.5 text-right text-slate-400 tabular-nums">
+                      <td className="px-1 py-1 text-right text-slate-400 tabular-nums text-[10px]">
                         {fmt(inv.taxAmount)}
                       </td>
                       {shownCols.map(c => <td key={c} />)}
                       <td />
                     </tr>
                     <tr className="bg-slate-800/10">
-                      <td colSpan={5} className="px-3 py-2 text-right text-teal-400 text-[11px] font-medium">합계금액</td>
-                      <td colSpan={2} className="px-2 py-2 text-right text-teal-400 font-bold text-sm tabular-nums">
+                      <td colSpan={5} className="px-1.5 py-1 text-right text-teal-400 text-[9px] font-medium">합계</td>
+                      <td colSpan={2} className="px-1 py-1 text-right text-teal-400 font-bold text-[11px] tabular-nums">
                         {fmt(inv.totalAmount)}원
                       </td>
                       {shownCols.map(c => <td key={c} />)}
@@ -638,19 +638,19 @@ export default function PurchaseSheet({
                 </table>
 
                 {/* 품목 추가 + 메모 */}
-                <div className="flex items-center gap-4 px-3 py-2 border-t border-slate-800/40">
+                <div className="flex items-center gap-2 px-2 py-1.5 border-t border-slate-800/40">
                   <button
                     onClick={() => addItem(group.id)}
-                    className="flex items-center gap-1.5 text-[11px] text-slate-500 hover:text-teal-400 transition-colors"
+                    className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-teal-400 transition-colors shrink-0"
                   >
-                    <Plus className="w-3.5 h-3.5" />
+                    <Plus className="w-3 h-3" />
                     품목 추가
                   </button>
                   <input
                     value={inv.memo}
                     onChange={e => updateHeader(group.id, 'memo', e.target.value)}
-                    placeholder="메모 (특이사항)"
-                    className="flex-1 bg-transparent text-[11px] text-slate-500 placeholder:text-slate-700 focus:outline-none py-0.5"
+                    placeholder="메모"
+                    className="flex-1 bg-transparent text-[10px] text-slate-500 placeholder:text-slate-700 focus:outline-none py-0.5 min-w-0"
                   />
                 </div>
               </div>
