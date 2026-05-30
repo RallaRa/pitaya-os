@@ -13,6 +13,8 @@ interface KeywordGroup {
   id: string;
   groupName: string;
   keywords: string[];
+  analysisNote?: string;
+  priorityScore?: number;
   active: boolean;
   source: 'auto' | 'manual';
   admin_edited: boolean;
@@ -209,7 +211,9 @@ export default function KeywordsPage() {
         <Tag className="w-5 h-5 text-teal-400" />
         <h1 className="text-lg font-bold text-teal-400">네이버 트렌드 키워드 관리</h1>
       </div>
-      <p className="text-slate-400 text-sm mb-5">AI가 자동 생성한 검색 키워드를 확인하고 수정합니다.</p>
+      <p className="text-slate-400 text-sm mb-5">
+        AI가 계절·시장 이슈·매출 추세 등을 종합 분석해 네이버 검색 트렌드 모니터링용 키워드를 선정합니다. POS 품목과 1:1로 연결되지 않습니다.
+      </p>
 
       {/* 정보 바 */}
       <div className="flex flex-wrap gap-3 mb-5 p-3 bg-slate-800/50 rounded-xl border border-slate-700/40 text-xs text-slate-400">
@@ -297,15 +301,15 @@ export default function KeywordsPage() {
         <div className="flex flex-col items-center justify-center py-16 text-slate-500 gap-3">
           <Bot className="w-10 h-10 opacity-30" />
           <p className="text-sm">키워드 그룹이 없습니다.</p>
-          <p className="text-xs text-slate-600">일마감 데이터 입력 후 "지금 즉시 갱신"을 눌러주세요.</p>
+          <p className="text-xs text-slate-600">&quot;지금 즉시 갱신&quot;을 누르면 AI가 시장·통계 기준으로 검색 키워드를 다시 선정합니다.</p>
         </div>
       ) : (
         <div className="space-y-2">
           {/* 헤더 */}
           <div className="grid grid-cols-[32px_1fr_2fr_80px_80px] gap-3 px-4 py-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
             <span>순위</span>
-            <span>그룹명</span>
-            <span>키워드 목록</span>
+            <span>트렌드 테마</span>
+            <span>네이버 검색 키워드</span>
             <span>출처</span>
             <span className="text-center">활성</span>
           </div>
@@ -325,7 +329,7 @@ export default function KeywordsPage() {
                           value={editName}
                           onChange={e => setEditName(e.target.value)}
                           className="flex-1 bg-slate-800 border border-teal-500/50 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none"
-                          placeholder="그룹명"
+                          placeholder="검색 테마명"
                         />
                         <button
                           onClick={() => saveEdit(g.id)}
@@ -368,18 +372,25 @@ export default function KeywordsPage() {
                     <div className="grid grid-cols-[32px_1fr_2fr_80px_80px] gap-3 items-center">
                       <span className="text-slate-500 text-xs font-mono">#{g.salesRank ?? '-'}</span>
 
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-slate-100 text-sm font-medium truncate">{g.groupName}</span>
-                        <div className="flex gap-1 shrink-0">
-                          <button onClick={() => startEdit(g)} className="p-1 text-slate-500 hover:text-teal-400 transition-colors">
-                            <Edit2 className="w-3 h-3" />
-                          </button>
-                          {g.admin_edited && (
-                            <button onClick={() => resetToAuto(g.id)} title="자동갱신으로 초기화" className="p-1 text-slate-500 hover:text-orange-400 transition-colors">
-                              <RotateCcw className="w-3 h-3" />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-100 text-sm font-medium truncate">{g.groupName}</span>
+                          <div className="flex gap-1 shrink-0">
+                            <button onClick={() => startEdit(g)} className="p-1 text-slate-500 hover:text-teal-400 transition-colors">
+                              <Edit2 className="w-3 h-3" />
                             </button>
-                          )}
+                            {g.admin_edited && (
+                              <button onClick={() => resetToAuto(g.id)} title="자동갱신으로 초기화" className="p-1 text-slate-500 hover:text-orange-400 transition-colors">
+                                <RotateCcw className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
                         </div>
+                        {g.analysisNote && (
+                          <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-2" title={g.analysisNote}>
+                            {g.analysisNote}
+                          </p>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap gap-1">
