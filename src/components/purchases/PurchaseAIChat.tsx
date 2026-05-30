@@ -6,7 +6,7 @@ import {
   Image as ImageIcon, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
-import { compressImageFromDataUrl } from '@/lib/compressImageClient';
+import { compressImageFromDataUrl, compressImageFile } from '@/lib/compressImageClient';
 import type { Invoice, AttachedFile as SheetAttachedFile } from './PurchaseSheet';
 import CameraCapture from './CameraCapture';
 
@@ -33,9 +33,16 @@ function genId() {
 }
 
 const MAX_IMAGE_BYTES = 800 * 1024; // ~800KB per image after compress
-const MAX_PAYLOAD_BYTES = 3.5 * 1024 * 1024; // Vercel body limit 여유
+const MAX_PAYLOAD_BYTES = 9 * 1024 * 1024; // server body limit 10mb
 
-async function compressImage(dataUrl: string): Promise<string> {
+async function compressImageFileWrapper(file: File): Promise<string> {
+  return compressImageFile(file, 1024, 0.7);
+}
+function estimatePayloadSize(files: AttachedFile[]): number {
+  return files.reduce((sum, f) => sum + (f.content?.length || 0), 0);
+}
+
+async function shrinkImageDataUrl(dataUrl: string): Promise<string> {
   let result = await compressImageFromDataUrl(dataUrl, 1024, 0.7);
   let px = 1024;
   let q = 0.7;
@@ -45,15 +52,6 @@ async function compressImage(dataUrl: string): Promise<string> {
     result = await compressImageFromDataUrl(result, px, q);
   }
   return result;
-}
-
-async function compressImageFileWrapper(file: File): Promise<string> {
-  const dataUrl = await readFile(file);
-  if (!dataUrl.startsWith('data:image')) return dataUrl;
-  return compressImage(dataUrl);
-}
-function estimatePayloadSize(files: AttachedFile[]): number {
-  return files.reduce((sum, f) => sum + (f.content?.length || 0), 0);
 }
 
 function detectFileType(f: File): 'image' | 'pdf' | 'csv' | 'excel' {
@@ -194,7 +192,7 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
         for (let i = 0; i < sentFiles.length; i++) {
           const f = sentFiles[i];
           if (f.type === 'image' && f.content.startsWith('data:image')) {
-            sentFiles[i] = { ...f, content: await compressImage(f.content) };
+            sentFiles[i] = { ...f, content: await shrinkImageDataUrl(f.content) };
           }
         }
         if (estimatePayloadSize(sentFiles) > MAX_PAYLOAD_BYTES) {
@@ -202,7 +200,7 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
             const next = [...prev];
             next[next.length - 1] = {
               role: 'assistant',
-              content: '⚠️ 이미지 용량이 너무 큽니다. 이미지 수를 줄이거나 더 작은 이미지를 사용해주세요. (800KB/장, 총 3.5MB 이하 권장)',
+              content: '⚠️ 이미지 용량이 너무 큽니다. 이미지 수를 줄이거나 더 작은 이미지를 사용해주세요. (800KB/장, 총 9MB 이하 권장)',
             };
             return next;
           });
@@ -222,8 +220,14 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
           signal: abortRef.current.signal,
         });
         if (res.status === 413) throw new Error('이미지 용량이 너무 큽니다. 이미지 수를 줄이거나 더 작은 이미지를 사용해주세요.');
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'API 오류');
+        const raw = await res.text();
+        let data: { error?: string; reply?: string; invoices?: Invoice[]; qualities?: unknown[]; detail?: string };
+        try {
+          data = raw ? JSON.parse(raw) : {};
+        } catch {
+          throw new Error(`서버 응답 오류 (${res.status}). 잠시 후 다시 시도해주세요.`);
+        }
+        if (!res.ok) throw new Error(data.error || data.detail || 'API 오류');
 
         setMessages(prev => {
           const next = [...prev];

@@ -7,6 +7,33 @@ export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB per image (post-compress guard)
+const GEMINI_MODELS = ['gemini-2.0-flash-exp', 'gemini-1.5-flash'] as const;
+
+function stripBase64Data(content: string): string {
+  const trimmed = content.trim();
+  if (trimmed.startsWith('data:')) {
+    const comma = trimmed.indexOf(',');
+    return comma >= 0 ? trimmed.slice(comma + 1) : trimmed;
+  }
+  return trimmed;
+}
+
+function extractMimeType(content: string, fallback = 'image/jpeg'): string {
+  const match = content.match(/^data:([^;]+);base64,/);
+  return match?.[1] || fallback;
+}
+
+function formatGeminiError(err: unknown): string {
+  if (!err || typeof err !== 'object') return String(err);
+  const e = err as { message?: string; status?: number; statusText?: string; errorDetails?: unknown };
+  const parts = [e.message, e.status ? `HTTP ${e.status}` : '', e.statusText].filter(Boolean);
+  if (e.errorDetails) {
+    try {
+      parts.push(JSON.stringify(e.errorDetails));
+    } catch { /* ignore */ }
+  }
+  return parts.join(' | ') || 'Unknown Gemini error';
+}
 
 const SYSTEM_INSTRUCTION = `당신은 매입/구매 문서 전문 분석 AI입니다.
 하나 또는 여러 장의 거래명세서, 세금계산서, 매입전표, 영수증을 분석하여 정확한 JSON 배열로 반환합니다.
@@ -48,77 +75,123 @@ const SYSTEM_INSTRUCTION = `당신은 매입/구매 문서 전문 분석 AI입�
 - 이력번호/원산지/부위/등급이 없으면 빈 문자열 반환.
 - items가 없으면 [] 반환.`;
 
-async function generateWithRetry(model: any, contents: any, retryCount = 0): Promise<any> {
+async function generateWithRetry(
+  genAI: GoogleGenerativeAI,
+  contents: any,
+  retryCount = 0,
+  modelIndex = 0,
+): Promise<{ response: any; modelName: string }> {
+  const modelName = GEMINI_MODELS[modelIndex] ?? GEMINI_MODELS[GEMINI_MODELS.length - 1];
+  const model = genAI.getGenerativeModel({ model: modelName });
+
   try {
-    return await model.generateContent({
+    const result = await model.generateContent({
       contents,
       systemInstruction: { role: 'system', parts: [{ text: SYSTEM_INSTRUCTION }] },
       generationConfig: { responseMimeType: 'application/json' },
     });
+    return { response: result.response, modelName };
   } catch (err: any) {
+    const msg = formatGeminiError(err);
+    console.error(`[analyze-multi] Gemini generateContent failed model=${modelName} retry=${retryCount}:`, msg);
+
     if (err.message?.includes('503') && retryCount < 3) {
       await new Promise(res => setTimeout(res, 2000));
-      return generateWithRetry(model, contents, retryCount + 1);
+      return generateWithRetry(genAI, contents, retryCount + 1, modelIndex);
     }
-    throw err;
+
+    if (modelIndex < GEMINI_MODELS.length - 1) {
+      console.warn(`[analyze-multi] falling back to ${GEMINI_MODELS[modelIndex + 1]}`);
+      return generateWithRetry(genAI, contents, 0, modelIndex + 1);
+    }
+
+    throw new Error(msg);
   }
+}
+
+async function checkQuality(
+  genAI: GoogleGenerativeAI,
+  base64Data: string,
+  mimeType: string,
+  fileName: string,
+) {
+  for (let i = 0; i < GEMINI_MODELS.length; i++) {
+    const modelName = GEMINI_MODELS[i];
+    const model = genAI.getGenerativeModel({ model: modelName });
+    try {
+      const qRes = await model.generateContent({
+        contents: [{ role: 'user', parts: [
+          { inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Data } },
+          { text: `OCR 품질 평가. JSON만: {"quality":"good|poor|unreadable","issues":[],"confidence":0-100,"feedback":"한국어 피드백"}` },
+        ]}],
+        generationConfig: { responseMimeType: 'application/json' },
+      });
+      const qt = qRes.response.text().trim().replace(/```json|```/g, '').trim();
+      return { fileName, modelName, ...JSON.parse(qt) };
+    } catch (e: any) {
+      console.warn(`[analyze-multi] OCR 품질 평가 실패 (${fileName}, ${modelName}):`, formatGeminiError(e));
+    }
+  }
+  return { fileName, quality: 'good', confidence: 70, issues: [], feedback: '' };
 }
 
 async function prepareImageContent(content: string, fileName: string) {
   try {
-    const { data, mimeType } = await compressBase64Image(content);
-    if (estimateBase64Bytes(data) > MAX_IMAGE_BYTES) {
+    const normalized = content.startsWith('data:') ? content : `data:image/jpeg;base64,${stripBase64Data(content)}`;
+    const { data, mimeType } = await compressBase64Image(normalized);
+    const base64Data = stripBase64Data(data);
+    if (estimateBase64Bytes(base64Data) > MAX_IMAGE_BYTES) {
       console.warn(`[analyze-multi] 이미지 용량 초과: ${fileName}`);
       return null;
     }
-    return { base64Data: data, mimeType };
+    return { base64Data, mimeType };
   } catch (e: any) {
-    console.error(`[analyze-multi] 이미지 압축 실패 (${fileName}):`, e?.message || e);
+    console.error(`[analyze-multi] 이미지 압축 실패 (${fileName}):`, formatGeminiError(e));
     return null;
   }
 }
 
 export async function POST(req: Request) {
-  const authUser = await verifyToken(req);
-  if (!authUser) {
-    console.warn('[analyze-multi] Unauthorized');
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  const cloudKey  = process.env.GOOGLE_CLOUD_API_KEY;
-  if (!geminiKey && !cloudKey) {
-    console.error('[analyze-multi] GEMINI_API_KEY / GOOGLE_CLOUD_API_KEY 미설정');
-    return NextResponse.json({ error: 'GEMINI_API_KEY 또는 GOOGLE_CLOUD_API_KEY 미설정' }, { status: 500 });
-  }
-
-  let body: any;
   try {
-    const rawText = await req.text();
-    if (!rawText) {
-      return NextResponse.json({ error: '요청 본문이 비어 있습니다.' }, { status: 400 });
+    const authUser = await verifyToken(req);
+    if (!authUser) {
+      console.warn('[analyze-multi] Unauthorized');
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    if (rawText.length > 10 * 1024 * 1024) {
-      console.warn(`[analyze-multi] 413 body too large: ${rawText.length} chars`);
-      return NextResponse.json(
-        { error: '이미지 용량이 너무 큽니다. 이미지를 줄여서 다시 시도해주세요.' },
-        { status: 413 },
-      );
-    }
-    body = JSON.parse(rawText);
-  } catch (e: any) {
-    console.error('[analyze-multi] JSON 파싱 실패:', e?.message || e);
-    const msg = String(e?.message || '');
-    if (msg.includes('413') || msg.toLowerCase().includes('too large') || msg.toLowerCase().includes('limit')) {
-      return NextResponse.json(
-        { error: '이미지 용량이 너무 큽니다. 이미지를 줄여서 다시 시도해주세요.' },
-        { status: 413 },
-      );
-    }
-    return NextResponse.json({ error: '요청 파싱 실패. 파일 크기를 줄여주세요.' }, { status: 400 });
-  }
 
-  try {
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    const cloudKey  = process.env.GOOGLE_CLOUD_API_KEY;
+    if (!geminiKey && !cloudKey) {
+      console.error('[analyze-multi] GEMINI_API_KEY / GOOGLE_CLOUD_API_KEY 미설정');
+      return NextResponse.json({ error: 'GEMINI_API_KEY 또는 GOOGLE_CLOUD_API_KEY 미설정' }, { status: 500 });
+    }
+
+    let body: any;
+    try {
+      const rawText = await req.text();
+      if (!rawText) {
+        return NextResponse.json({ error: '요청 본문이 비어 있습니다.' }, { status: 400 });
+      }
+      if (rawText.length > 10 * 1024 * 1024) {
+        console.warn(`[analyze-multi] 413 body too large: ${rawText.length} chars`);
+        return NextResponse.json(
+          { error: '이미지 용량이 너무 큽니다. 이미지를 줄여서 다시 시도해주세요.' },
+          { status: 413 },
+        );
+      }
+      body = JSON.parse(rawText);
+    } catch (e: any) {
+      console.error('[analyze-multi] JSON 파싱 실패:', formatGeminiError(e));
+      const msg = String(e?.message || '');
+      if (msg.includes('413') || msg.toLowerCase().includes('too large') || msg.toLowerCase().includes('limit')) {
+        return NextResponse.json(
+          { error: '이미지 용량이 너무 큽니다. 이미지를 줄여서 다시 시도해주세요.' },
+          { status: 413 },
+        );
+      }
+      return NextResponse.json({ error: '요청 파싱 실패. 파일 크기를 줄여주세요.' }, { status: 400 });
+    }
+
     const { files, message } = body;
     if (!Array.isArray(files) || files.length === 0) {
       return NextResponse.json({ error: '분석할 파일이 없습니다.' }, { status: 400 });
@@ -127,7 +200,6 @@ export async function POST(req: Request) {
     console.log(`[analyze-multi] start user=${authUser.uid} files=${files.length}`);
 
     const genAI = new GoogleGenerativeAI(geminiKey || cloudKey!);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const imageFiles = files.filter((f: any) => f.type === 'image' || f.type === 'pdf');
     const textFiles  = files.filter((f: any) => f.type !== 'image' && f.type !== 'pdf');
@@ -135,31 +207,14 @@ export async function POST(req: Request) {
     const qualities: any[] = [];
     const allInvoices: any[] = [];
 
-    async function checkQuality(base64Data: string, mimeType: string, fileName: string) {
-      try {
-        const qRes = await model.generateContent({
-          contents: [{ role: 'user', parts: [
-            { inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Data } },
-            { text: `OCR 품질 평가. JSON만: {"quality":"good|poor|unreadable","issues":[],"confidence":0-100,"feedback":"한국어 피드백"}` },
-          ]}],
-          generationConfig: { responseMimeType: 'application/json' },
-        });
-        const qt = qRes.response.text().trim().replace(/```json|```/g, '').trim();
-        return { fileName, ...JSON.parse(qt) };
-      } catch (e: any) {
-        console.warn(`[analyze-multi] OCR 품질 평가 실패 (${fileName}):`, e?.message);
-        return { fileName, quality: 'good', confidence: 70, issues: [], feedback: '' };
-      }
-    }
-
     for (const file of imageFiles) {
       if (!file.content) continue;
 
       const prepared = file.type === 'image'
         ? await prepareImageContent(file.content, file.name || 'image')
         : {
-            base64Data: file.content.split(',')[1] || file.content,
-            mimeType: file.content.substring(file.content.indexOf(':') + 1, file.content.indexOf(';')) || 'application/pdf',
+            base64Data: stripBase64Data(file.content),
+            mimeType: extractMimeType(file.content, 'application/pdf'),
           };
 
       if (!prepared?.base64Data) {
@@ -175,7 +230,7 @@ export async function POST(req: Request) {
 
       const { base64Data, mimeType } = prepared;
 
-      const quality = await checkQuality(base64Data, mimeType, file.name);
+      const quality = await checkQuality(genAI, base64Data, mimeType, file.name);
       qualities.push(quality);
 
       if (quality.quality === 'unreadable' || (quality.confidence != null && quality.confidence < 30)) {
@@ -186,8 +241,9 @@ export async function POST(req: Request) {
       if (message?.trim()) parts.push({ text: message });
       parts.push({ inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Data } });
 
-      const result = await generateWithRetry(model, [{ role: 'user', parts }]);
-      const text = result.response.text().trim().replace(/```json|```/g, '').trim();
+      const { response, modelName } = await generateWithRetry(genAI, [{ role: 'user', parts }]);
+      const text = response.text().trim().replace(/```json|```/g, '').trim();
+      console.log(`[analyze-multi] parsed file=${file.name} model=${modelName} chars=${text.length}`);
       try {
         const parsed = JSON.parse(text);
         const invs = Array.isArray(parsed) ? parsed : [parsed];
@@ -209,8 +265,9 @@ export async function POST(req: Request) {
         if (file.content) parts.push({ text: `[파일: ${file.name}]\n${file.content}` });
       }
       if (parts.length > 0) {
-        const result = await generateWithRetry(model, [{ role: 'user', parts }]);
-        const text = result.response.text().trim().replace(/```json|```/g, '').trim();
+        const { response, modelName } = await generateWithRetry(genAI, [{ role: 'user', parts }]);
+        const text = response.text().trim().replace(/```json|```/g, '').trim();
+        console.log(`[analyze-multi] text files model=${modelName} chars=${text.length}`);
         try {
           const parsed = JSON.parse(text);
           const invs = Array.isArray(parsed) ? parsed : [parsed];
@@ -239,9 +296,9 @@ export async function POST(req: Request) {
     console.log(`[analyze-multi] done invoices=${invoices.length} qualities=${qualities.length}`);
     return NextResponse.json({ invoices, reply, qualities });
   } catch (e: any) {
-    const msg = e.message || '';
-    console.error('[analyze-multi] 오류:', msg, e?.stack);
-    let userError = msg || '분석 중 오류가 발생했습니다.';
+    const msg = formatGeminiError(e);
+    console.error('[analyze-multi]', msg, e?.stack);
+    let userError = e?.message || 'AI 분석 실패';
     let status = 500;
     if (msg.includes('503') || msg.includes('overloaded')) userError = 'Gemini 서버가 혼잡합니다. 잠시 후 재시도해주세요.';
     else if (msg.includes('429')) userError = 'API 요청 한도 초과입니다. 잠시 후 다시 시도해주세요.';
