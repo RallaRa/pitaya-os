@@ -5,6 +5,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getStoreCoords, getWeatherCondition } from '@/lib/weather';
 import { verifyToken } from '@/lib/authVerify';
 import { fetchNaverTrendData } from '@/lib/naverTrendServer';
+import { storeHasSalesData } from '@/lib/dashboardSalesData';
 
 interface PartnerItem { rank: number; item: string; action: string; expectedSales: string; reason: string; badge: string; }
 
@@ -286,10 +287,15 @@ export async function GET(req: Request) {
   const weekRange = `${String(weekStart.getMonth()+1).padStart(2,'0')}/${String(weekStart.getDate()).padStart(2,'0')}~${String(weekEnd.getMonth()+1).padStart(2,'0')}/${String(weekEnd.getDate()).padStart(2,'0')}`;
 
   // 판매 데이터 요약
-  const hasData = fs.topItems90.length > 0;
-  const salesSummary = fs.topItems90.slice(0,20).map(i =>
-    `${i.name}: 90일합계 ${i.qty}개/${(i.amount/10000).toFixed(0)}만원, ${i.days}일판매`
-  ).join('\n');
+  const hasData = fs.topItems90.length > 0 || fs.dailyTotals.length > 0 || fs.closures.length > 0
+    || await storeHasSalesData(storeId);
+  const salesSummary = fs.topItems90.length > 0
+    ? fs.topItems90.slice(0,20).map(i =>
+      `${i.name}: 90일합계 ${i.qty}개/${(i.amount/10000).toFixed(0)}만원, ${i.days}일판매`,
+    ).join('\n')
+    : fs.dailyTotals.slice(0, 20).map(d =>
+      `${d.date}: 매출 ${d.totalSale.toLocaleString()}원, ${d.transCount}건`,
+    ).join('\n') || '품목별 상세 없음 — POS 동기화 확인';
 
   // 일별 매출 요약 (최근 30일 평균)
   const recent30 = fs.dailyTotals.slice(0,30);

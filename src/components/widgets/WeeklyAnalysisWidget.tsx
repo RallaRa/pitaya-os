@@ -19,17 +19,23 @@ export default function WeeklyAnalysisWidget({
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
   const load = useCallback(async () => {
+    if (!storeId) {
+      setLoading(false);
+      setError('매장을 선택해주세요');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const q   = storeId ? `?storeId=${storeId}` : '';
-      const res = await fetch(`/api/dashboard/weekly-analysis${q}`, { headers: await getAuthHeaders() });
-      const d   = await res.json();
-      if (d.error) throw new Error(d.error);
+      const res = await fetch(`/api/dashboard/weekly-analysis?storeId=${storeId}`, {
+        headers: await getAuthHeaders(),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
       setData(d);
       setUpdatedAt(new Date());
-    } catch {
-      setError('분석 데이터를 불러오지 못했습니다');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '분석 데이터를 불러오지 못했습니다');
     } finally {
       setLoading(false);
     }

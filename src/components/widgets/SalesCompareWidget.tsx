@@ -27,11 +27,11 @@ export default function SalesCompareWidget({
         headers: await getAuthHeaders(),
       });
       const d = await res.json();
-      if (d.error) throw new Error(d.error);
+      if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
       setData(d);
       setUpdatedAt(new Date());
-    } catch {
-      setError('매출 비교 데이터를 불러오지 못했습니다');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '매출 비교 데이터를 불러오지 못했습니다');
     } finally {
       setLoading(false);
     }
