@@ -24,6 +24,8 @@ interface KeywordGroup {
 
 interface KeywordDoc {
   keywordGroups: KeywordGroup[];
+  marketKeywords?: string[];
+  operationHint?: string;
   lastAutoUpdate?: any;
   nextAutoUpdate?: any;
 }
@@ -212,7 +214,7 @@ export default function KeywordsPage() {
         <h1 className="text-lg font-bold text-teal-400">네이버 트렌드 키워드 관리</h1>
       </div>
       <p className="text-slate-400 text-sm mb-5">
-        AI가 계절·시장 이슈·매출 추세 등을 종합 분석해 네이버 검색 트렌드 모니터링용 키워드를 선정합니다. POS 품목과 1:1로 연결되지 않습니다.
+        AI가 시장 전반 참조 변수 <strong className="text-slate-300">검색 키워드 30개</strong>를 선정합니다. POS 품목과 무관하며, 운영방향·트렌드 분석의 기준값으로 사용됩니다.
       </p>
 
       {/* 정보 바 */}
@@ -253,6 +255,25 @@ export default function KeywordsPage() {
         <div className="bg-red-900/30 border border-red-500/30 rounded-xl px-4 py-3 mb-4 text-red-400 text-sm">
           {error}
           <button className="ml-2 underline text-xs" onClick={() => setError('')}>닫기</button>
+        </div>
+      )}
+
+      {/* 시장 참조 키워드 30개 */}
+      {!isLoading && doc?.marketKeywords && doc.marketKeywords.length > 0 && (
+        <div className="mb-5 bg-slate-900 border border-teal-700/30 rounded-xl p-4">
+          <h2 className="text-sm font-semibold text-teal-300 mb-2">
+            시장 참조 키워드 ({doc.marketKeywords.length}개)
+          </h2>
+          {doc.operationHint && (
+            <p className="text-xs text-slate-400 mb-3">{doc.operationHint}</p>
+          )}
+          <div className="flex flex-wrap gap-1.5">
+            {doc.marketKeywords.map((kw, i) => (
+              <span key={i} className="bg-teal-900/30 border border-teal-700/40 text-teal-200 text-xs rounded-full px-2.5 py-1">
+                {kw}
+              </span>
+            ))}
+          </div>
         </div>
       )}
 

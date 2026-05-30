@@ -3,8 +3,9 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
 import {
+  NAVER_TREND_GROUP_MAX,
   buildKeywordMarketContext,
-  generateSearchKeywordGroups,
+  generateMarketKeywords,
 } from '@/lib/naverKeywordGenerate';
 
 function nextMonday5am(): Date {
@@ -43,10 +44,10 @@ export async function POST(req: Request) {
     for (const storeId of storeIds) {
       try {
         const marketCtx = await buildKeywordMarketContext(storeId);
-        const generatedGroups = await generateSearchKeywordGroups(marketCtx);
+        const generated = await generateMarketKeywords(marketCtx);
 
-        if (generatedGroups.length === 0) {
-          results.push({ storeId, status: 'skipped', reason: '키워드 그룹 생성 실패' });
+        if (generated.marketKeywords.length === 0) {
+          results.push({ storeId, status: 'skipped', reason: '키워드 생성 실패' });
           continue;
         }
 
@@ -60,7 +61,7 @@ export async function POST(req: Request) {
         const updatedGroups: any[] = [];
         const usedIds = new Set<string>();
 
-        generatedGroups.forEach((gen, idx) => {
+        generated.groups.forEach((gen, idx) => {
           const prev = existingMap[gen.groupName];
           if (prev?.admin_edited) {
             updatedGroups.push({ ...prev, salesRank: idx + 1 });
@@ -73,7 +74,7 @@ export async function POST(req: Request) {
               keywords: gen.keywords,
               analysisNote: gen.analysisNote,
               priorityScore: gen.priorityScore ?? 100 - idx * 5,
-              active: updatedGroups.filter(g => g.active).length < 5,
+              active: idx < NAVER_TREND_GROUP_MAX,
               source: 'auto',
               admin_edited: false,
               lastUpdated: FieldValue.serverTimestamp(),
@@ -83,7 +84,6 @@ export async function POST(req: Request) {
           }
         });
 
-        // 관리자 수정 그룹은 AI 갱신과 무관하게 유지
         existing.forEach(g => {
           if (!g.admin_edited || usedIds.has(g.id)) return;
           updatedGroups.push(g);
@@ -92,17 +92,23 @@ export async function POST(req: Request) {
         const nextUpdate = nextMonday5am();
         await docRef.set({
           keywordGroups: updatedGroups,
+          marketKeywords: generated.marketKeywords,
+          operationHint: generated.operationHint,
           lastAutoUpdate: FieldValue.serverTimestamp(),
           nextAutoUpdate: nextUpdate,
           lastMarketContext: {
             today: marketCtx.today,
             season: marketCtx.season,
             salesTrend: marketCtx.salesTrend,
-            categoryMix: marketCtx.categoryMix,
           },
         }, { merge: true });
 
-        results.push({ storeId, status: 'updated', count: updatedGroups.length });
+        results.push({
+          storeId,
+          status: 'updated',
+          keywordCount: generated.marketKeywords.length,
+          groupCount: updatedGroups.length,
+        });
       } catch (e: any) {
         results.push({ storeId, status: 'error', error: e.message });
       }

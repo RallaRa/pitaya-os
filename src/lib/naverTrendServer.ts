@@ -15,17 +15,36 @@ function formatDate(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export async function loadActiveKeywordGroups(storeId: string) {
+export async function loadKeywordDoc(storeId: string) {
   const docId = storeId || 'global';
   const snap = await adminDb.collection('naver_trend_keywords').doc(docId).get();
-  if (!snap.exists) return [];
-  return (snap.data()?.keywordGroups || [])
+  if (!snap.exists) {
+    return { keywordGroups: [], marketKeywords: [] as string[], operationHint: '' };
+  }
+  const data = snap.data()!;
+  return {
+    keywordGroups: data.keywordGroups || [],
+    marketKeywords: (data.marketKeywords || []) as string[],
+    operationHint: String(data.operationHint || ''),
+  };
+}
+
+export async function loadActiveKeywordGroups(storeId: string) {
+  const { keywordGroups } = await loadKeywordDoc(storeId);
+  return keywordGroups
     .filter((g: { active?: boolean }) => g.active)
     .slice(0, 5);
 }
 
+export async function loadMarketKeywords(storeId: string) {
+  const { marketKeywords, operationHint } = await loadKeywordDoc(storeId);
+  return { marketKeywords, operationHint };
+}
+
 export async function fetchNaverTrendData(storeId: string): Promise<{
   trends: NaverTrendItem[];
+  marketKeywords?: string[];
+  operationHint?: string;
   error?: string;
   noKeywords?: boolean;
 }> {
@@ -33,9 +52,10 @@ export async function fetchNaverTrendData(storeId: string): Promise<{
     return { trends: [], error: '네이버 API 미연동' };
   }
 
+  const { marketKeywords, operationHint } = await loadMarketKeywords(storeId);
   const keywordGroups = await loadActiveKeywordGroups(storeId);
   if (keywordGroups.length === 0) {
-    return { trends: [], error: '키워드 미설정', noKeywords: true };
+    return { trends: [], marketKeywords, operationHint, error: '키워드 미설정', noKeywords: true };
   }
 
   const endDate = new Date();
@@ -83,9 +103,9 @@ export async function fetchNaverTrendData(storeId: string): Promise<{
       };
     });
 
-    return { trends };
+    return { trends, marketKeywords, operationHint };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { trends: [], error: msg };
+    return { trends: [], marketKeywords, operationHint, error: msg };
   }
 }

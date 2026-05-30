@@ -90,9 +90,14 @@ export async function GET(req: Request) {
     ? Math.round(((todaySale - yesterdaySale) / yesterdaySale) * 100)
     : null;
 
-  const trendText = trendResult.trends.length > 0
-    ? trendResult.trends.map(t => `${t.groupName}: 지수${t.current} (${t.change > 0 ? '+' : ''}${t.change}%)`).join('\n')
-    : (trendResult.error || '키워드 미설정');
+  const trendText = trendResult.marketKeywords?.length
+    ? `시장 참조 키워드: ${trendResult.marketKeywords.join(', ')}\n${trendResult.operationHint || ''}\n` +
+      (trendResult.trends.length > 0
+        ? trendResult.trends.map(t => `${t.groupName}: 지수${t.current} (${t.change > 0 ? '+' : ''}${t.change}%)`).join('\n')
+        : (trendResult.error || ''))
+    : trendResult.trends.length > 0
+      ? trendResult.trends.map(t => `${t.groupName}: 지수${t.current} (${t.change > 0 ? '+' : ''}${t.change}%)`).join('\n')
+      : (trendResult.error || '키워드 미설정');
 
   const customerText = storeContext?.topCustomers?.slice(0, 5).map((c, i) =>
     `${i + 1}. ${c.name} 포인트${c.point} 방문${c.visitCount}회`,
