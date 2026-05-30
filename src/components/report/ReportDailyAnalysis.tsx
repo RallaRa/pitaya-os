@@ -18,13 +18,29 @@ import {
   topItems,
 } from '@/lib/reportCompare';
 
+interface RangeContext {
+  start: string;
+  end: string;
+  totalNet: number;
+  days: number;
+  avgNet: number;
+}
+
 interface Props {
   storeId: string;
   storeName?: string;
   initialDate?: string;
+  rangeContext?: RangeContext | null;
 }
 
-async function fetchReport(storeId: string, date: string): Promise<ReportSnapshot | null> {
+interface ReportDoc extends ReportSnapshot {
+  isClosed?: boolean;
+  weather?: { condition?: string; tempMin?: number; tempMax?: number } | string | null;
+  issues?: Array<{ title?: string }> | string | null;
+  news?: { title?: string; description?: string } | null;
+}
+
+async function fetchReport(storeId: string, date: string): Promise<ReportDoc | null> {
   const snap = await getDoc(doc(db, 'daily_reports', dailyReportDocId(storeId, date)));
   if (!snap.exists()) return null;
   const d = snap.data();
@@ -42,6 +58,10 @@ async function fetchReport(storeId: string, date: string): Promise<ReportSnapsho
     posBreakdown: d.posBreakdown,
     items: d.items,
     timeSlots: d.timeSlots,
+    isClosed: d.isClosed,
+    weather: d.weather ?? null,
+    issues: d.issues ?? null,
+    news: d.news ?? null,
   };
 }
 
@@ -52,14 +72,20 @@ const METRICS = [
   { key: 'returnAmount', label: '반품' },
 ] as const;
 
-export default function ReportDailyAnalysis({ storeId, storeName, initialDate }: Props) {
+export default function ReportDailyAnalysis({ storeId, storeName, initialDate, rangeContext }: Props) {
   const [baseDate, setBaseDate] = useState(initialDate || getKSTTodayYMD());
   const [tab, setTab] = useState<'time' | 'items'>('time');
-  const [data, setData] = useState<Partial<Record<CompareKey, ReportSnapshot | null>>>({});
+  const [data, setData] = useState<Partial<Record<CompareKey, ReportDoc | null>>>({});
   const [loading, setLoading] = useState(true);
   const [review, setReview] = useState('');
   const [reviewLoading, setReviewLoading] = useState(false);
   const [itemCategory, setItemCategory] = useState('전체');
+
+  useEffect(() => {
+    if (initialDate) setBaseDate(initialDate);
+  }, [initialDate]);
+
+  const compareDates = useMemo(() => getCompareDates(baseDate), [baseDate]);
 
   const load = useCallback(async () => {
     if (!storeId) return;
@@ -85,13 +111,23 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate }:
         method: 'POST',
         headers,
         body: JSON.stringify({
+          storeId,
           date: baseDate,
           todayData: data.today,
           compareData: {
             yesterday: data.yesterday,
             lastMonthSame: data.lastMonthSame,
+            lastMonthDow: data.lastMonthDow,
             lastWeekDow: data.lastWeekDow,
+            lastYearMonthSame: data.lastYearMonthSame,
+            lastYearMonthDow: data.lastYearMonthDow,
           },
+          compareDates,
+          isClosed: data.today?.isClosed,
+          weather: data.today?.weather,
+          issues: data.today?.issues,
+          news: data.today?.news,
+          rangeContext: rangeContext ?? undefined,
         }),
       });
       const j = await res.json();
@@ -101,11 +137,11 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate }:
     } finally {
       setReviewLoading(false);
     }
-  }, [baseDate, data]);
+  }, [baseDate, data, compareDates, storeId, rangeContext]);
 
   useEffect(() => {
     if (!loading && data.today) generateReview();
-  }, [loading, data.today, baseDate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loading, data.today, baseDate, rangeContext]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const posKeys = useMemo(() => {
     const keys = new Set<string>();
@@ -130,7 +166,7 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate }:
 
   const getVal = (snap: ReportSnapshot | null | undefined, key: string) => {
     if (!snap) return null;
-    return (snap as any)[key] ?? null;
+    return (snap as Record<string, unknown>)[key] as number | null ?? null;
   };
 
   const rows = [
@@ -140,12 +176,21 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate }:
     { key: 'cashSale', label: '현금' },
   ];
 
+  const inProgress = baseDate === getKSTTodayYMD() && data.today?.isClosed === false;
+
   return (
     <div className="mb-6 space-y-4">
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
         <div>
           <h2 className="text-lg font-bold text-slate-200">일별 매출 분석</h2>
-          <p className="text-slate-500 text-xs">{storeName} · KST 기준</p>
+          <p className="text-slate-500 text-xs">
+            {storeName} · KST 기준
+            {rangeContext && (
+              <span className="text-slate-400 ml-2">
+                · 조회기간 {rangeContext.start} ~ {rangeContext.end}
+              </span>
+            )}
+          </p>
         </div>
         <div className="flex items-center gap-2 sm:ml-auto">
           <input
@@ -167,13 +212,20 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate }:
       <div className="bg-gradient-to-r from-blue-950/60 to-purple-950/60 border border-blue-800/40 rounded-xl p-4">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-lg">🤖</span>
-          <span className="font-semibold text-blue-300 text-sm">AI 매출 리뷰</span>
+          <span className="font-semibold text-blue-300 text-sm">
+            AI 매출 리뷰
+            {inProgress && (
+              <span className="ml-2 text-[10px] font-normal px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-400 border border-yellow-500/30">
+                영업중 · 동시간대 기준
+              </span>
+            )}
+          </span>
           <button onClick={generateReview} className="text-xs text-blue-400 ml-auto hover:underline">새로고침</button>
         </div>
         {reviewLoading ? (
           <div className="h-10 bg-blue-900/30 rounded animate-pulse" />
         ) : (
-          <p className="text-sm text-slate-300 leading-relaxed">{review || '데이터 로딩 중...'}</p>
+          <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">{review || '데이터 로딩 중...'}</p>
         )}
       </div>
 
@@ -209,7 +261,10 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate }:
                 <tr className="bg-slate-800 border-b border-slate-700">
                   <th className="sticky left-0 bg-slate-800 px-3 py-2 text-left text-slate-400 text-xs">구분</th>
                   {COMPARE_COLUMNS.map(c => (
-                    <th key={c.key} className={`px-3 py-2 text-right text-xs whitespace-nowrap ${c.color}`}>{c.label}</th>
+                    <th key={c.key} className={`px-3 py-2 text-right text-xs whitespace-nowrap ${c.color}`}>
+                      <div>{c.label}</div>
+                      <div className="text-[10px] font-normal text-slate-500">{compareDates[c.key]}</div>
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -317,7 +372,10 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate }:
                 <tr className="bg-slate-800">
                   <th className="sticky left-0 bg-slate-800 px-2 py-2 text-left text-slate-400">품목</th>
                   {COMPARE_COLUMNS.map(c => (
-                    <th key={c.key} className={`px-2 py-2 text-right whitespace-nowrap ${c.color}`}>{c.label}</th>
+                    <th key={c.key} className={`px-2 py-2 text-right whitespace-nowrap ${c.color}`}>
+                      <div>{c.label}</div>
+                      <div className="text-[9px] font-normal text-slate-500">{compareDates[c.key].slice(5)}</div>
+                    </th>
                   ))}
                 </tr>
               </thead>

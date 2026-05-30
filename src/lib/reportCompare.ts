@@ -37,6 +37,47 @@ export function getCompareDates(baseDate: string): Record<CompareKey, string> {
   };
 }
 
+/** MM-DD 또는 YYYY-MM-DD */
+export function formatCompareDate(ymd: string, fullYear = false): string {
+  if (fullYear) return ymd;
+  return ymd.slice(5);
+}
+
+/** 컬럼 헤더: "전일 (05-28)" */
+export function getCompareColumnLabel(key: CompareKey, baseDate: string): string {
+  const col = COMPARE_COLUMNS.find(c => c.key === key);
+  if (!col) return key;
+  const dates = getCompareDates(baseDate);
+  return `${col.label} (${formatCompareDate(dates[key])})`;
+}
+
+/** 기간 검색용 — 각 비교 키의 날짜 범위 */
+export function getCompareDateRanges(
+  rangeStart: string,
+  rangeEnd: string,
+): Record<Exclude<CompareKey, 'today'>, { start: string; end: string }> {
+  const startDates = getCompareDates(rangeStart);
+  const endDates = getCompareDates(rangeEnd);
+  const keys = COMPARE_COLUMNS.map(c => c.key).filter((k): k is Exclude<CompareKey, 'today'> => k !== 'today');
+  return Object.fromEntries(
+    keys.map(k => [k, { start: startDates[k], end: endDates[k] }]),
+  ) as Record<Exclude<CompareKey, 'today'>, { start: string; end: string }>;
+}
+
+/** 여러 기준일의 비교 대상 날짜 min~max (한 번에 fetch) */
+export function getComparisonFetchBounds(dates: string[]): { start: string; end: string } | null {
+  if (!dates.length) return null;
+  const all: string[] = [];
+  for (const d of dates) {
+    const cmp = getCompareDates(d);
+    Object.entries(cmp).forEach(([k, v]) => {
+      if (k !== 'today') all.push(v);
+    });
+  }
+  all.sort();
+  return { start: all[0], end: all[all.length - 1] };
+}
+
 export function calcChange(current: number, prev?: number | null) {
   if (prev == null || prev === 0) return null;
   const pct = ((current - prev) / prev) * 100;

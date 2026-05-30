@@ -2,20 +2,15 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifyToken } from '@/lib/authVerify';
 import { pickBestReportByDate } from '@/lib/reportDedup';
+import { addDaysYMD, getKSTTodayYMD } from '@/lib/dateUtils';
 
-function toYMD(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function formatRangeLabel(name: string, start: string, end: string): string {
+  return `${name} (${start.slice(5)}~${end.slice(5)})`;
 }
 
-function addDays(dateStr: string, days: number): string {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + days);
-  return toYMD(d);
-}
+interface PeriodStat { label: string; net: number; total: number; customers: number; start?: string; end?: string; }
 
-interface PeriodStat { label: string; net: number; total: number; customers: number; }
-
-async function fetchPeriod(storeId: string, start: string, end: string): Promise<{ net: number; total: number; customers: number }> {
+async function fetchPeriod(storeId: string, start: string, end: string, label: string): Promise<PeriodStat> {
   const snap = await adminDb.collection('daily_reports')
     .where('storeId', '==', storeId)
     .where('reportDate', '>=', start)
@@ -36,7 +31,7 @@ async function fetchPeriod(storeId: string, start: string, end: string): Promise
     total     += t;
     customers += row.customerCount ?? 0;
   }
-  return { net, total, customers };
+  return { label, net, total, customers, start, end };
 }
 
 export async function GET(req: Request) {
@@ -47,32 +42,33 @@ export async function GET(req: Request) {
   const storeId = searchParams.get('storeId') || '';
   if (!storeId) return NextResponse.json({ error: 'storeId required' }, { status: 400 });
 
-  const today = new Date();
-  const todayStr = toYMD(today);
+  const todayStr = getKSTTodayYMD();
+  const today = new Date(`${todayStr}T12:00:00+09:00`);
 
-  // 이번 주 (월~오늘)
-  const dayOfWeek = today.getDay(); // 0=일
+  // 이번 주 (월~오늘, KST)
+  const dayOfWeek = today.getDay();
   const daysFromMon = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-  const thisWeekStart = addDays(todayStr, -daysFromMon);
+  const thisWeekStart = addDaysYMD(todayStr, -daysFromMon);
 
   // 지난 주
-  const lastWeekEnd   = addDays(thisWeekStart, -1);
-  const lastWeekStart = addDays(lastWeekEnd, -6);
+  const lastWeekEnd   = addDaysYMD(thisWeekStart, -1);
+  const lastWeekStart = addDaysYMD(lastWeekEnd, -6);
 
   // 이번 달
-  const thisMonthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+  const thisMonthStart = `${todayStr.slice(0, 7)}-01`;
 
   // 지난 달
-  const firstOfThisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  const lastMonthEnd = new Date(firstOfThisMonth.getTime() - 86400000);
-  const lastMonthStart = `${lastMonthEnd.getFullYear()}-${String(lastMonthEnd.getMonth() + 1).padStart(2, '0')}-01`;
+  const firstOfThisMonth = new Date(`${todayStr.slice(0, 7)}-01T12:00:00+09:00`);
+  const lastMonthEndDate = new Date(firstOfThisMonth.getTime() - 86400000);
+  const lastMonthEnd = `${lastMonthEndDate.getFullYear()}-${String(lastMonthEndDate.getMonth() + 1).padStart(2, '0')}-${String(lastMonthEndDate.getDate()).padStart(2, '0')}`;
+  const lastMonthStart = `${lastMonthEndDate.getFullYear()}-${String(lastMonthEndDate.getMonth() + 1).padStart(2, '0')}-01`;
 
   try {
     const [thisWeek, lastWeek, thisMonth, lastMonth] = await Promise.all([
-      fetchPeriod(storeId, thisWeekStart, todayStr),
-      fetchPeriod(storeId, lastWeekStart, lastWeekEnd),
-      fetchPeriod(storeId, thisMonthStart, todayStr),
-      fetchPeriod(storeId, lastMonthStart, toYMD(lastMonthEnd)),
+      fetchPeriod(storeId, thisWeekStart, todayStr, formatRangeLabel('이번 주', thisWeekStart, todayStr)),
+      fetchPeriod(storeId, lastWeekStart, lastWeekEnd, formatRangeLabel('지난 주', lastWeekStart, lastWeekEnd)),
+      fetchPeriod(storeId, thisMonthStart, todayStr, formatRangeLabel('이번 달', thisMonthStart, todayStr)),
+      fetchPeriod(storeId, lastMonthStart, lastMonthEnd, formatRangeLabel('지난 달', lastMonthStart, lastMonthEnd)),
     ]);
 
     const pct = (cur: number, prev: number) =>
@@ -80,17 +76,20 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       week: {
-        current:  { label: '이번 주', ...thisWeek },
-        previous: { label: '지난 주', ...lastWeek },
+        current:  thisWeek,
+        previous: lastWeek,
         pct: pct(thisWeek.net, lastWeek.net),
+        range: { current: { start: thisWeekStart, end: todayStr }, previous: { start: lastWeekStart, end: lastWeekEnd } },
       },
       month: {
-        current:  { label: '이번 달', ...thisMonth },
-        previous: { label: '지난 달', ...lastMonth },
+        current:  thisMonth,
+        previous: lastMonth,
         pct: pct(thisMonth.net, lastMonth.net),
+        range: { current: { start: thisMonthStart, end: todayStr }, previous: { start: lastMonthStart, end: lastMonthEnd } },
       },
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

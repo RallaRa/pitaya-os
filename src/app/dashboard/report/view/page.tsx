@@ -10,7 +10,11 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import ReportDailyAnalysis from '@/components/report/ReportDailyAnalysis';
-import { getKSTTodayYMD } from '@/lib/dateUtils';
+import {
+  getKSTTodayYMD,
+  subtractMonthsYMD,
+} from '@/lib/dateUtils';
+import { getComparisonFetchBounds, getCompareDates } from '@/lib/reportCompare';
 
 // ── 타입 ──────────────────────────────────────────────────────────
 interface WeatherData { condition: string; tempMax: number; tempMin: number; }
@@ -50,61 +54,66 @@ const PRESET_LABELS: Record<Preset, string> = {
   week: '이번 주', month: '이번 달', lastMonth: '지난 달', custom: '직접입력',
 };
 
-// ── 날짜 유틸 ─────────────────────────────────────────────────────
-function toYMD(d: Date) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
 function getThisWeek() {
-  const today = new Date();
-  const sun = new Date(today);
-  sun.setDate(today.getDate() - today.getDay()); // 일요일로
-  return { start: toYMD(sun), end: toYMD(today) };
+  const today = getKSTTodayYMD();
+  const d = new Date(`${today}T12:00:00+09:00`);
+  const sun = new Date(d);
+  sun.setDate(d.getDate() - d.getDay());
+  const start = `${sun.getFullYear()}-${String(sun.getMonth() + 1).padStart(2, '0')}-${String(sun.getDate()).padStart(2, '0')}`;
+  return { start, end: today };
 }
 function getThisMonth() {
-  const t = new Date();
-  return { start: toYMD(new Date(t.getFullYear(), t.getMonth(), 1)), end: toYMD(t) };
+  const today = getKSTTodayYMD();
+  return { start: `${today.slice(0, 7)}-01`, end: today };
 }
 function getLastMonth() {
-  const t = new Date();
+  const today = getKSTTodayYMD();
+  const prev = subtractMonthsYMD(`${today.slice(0, 7)}-01`, 1);
+  const [y, m] = prev.split('-').map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
   return {
-    start: toYMD(new Date(t.getFullYear(), t.getMonth() - 1, 1)),
-    end:   toYMD(new Date(t.getFullYear(), t.getMonth(), 0)),
+    start: `${y}-${String(m).padStart(2, '0')}-01`,
+    end: `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`,
   };
+}
+
+function presetRangeLabel(p: Preset): string {
+  if (p === 'custom') return PRESET_LABELS.custom;
+  const r = p === 'week' ? getThisWeek() : p === 'month' ? getThisMonth() : getLastMonth();
+  return `${PRESET_LABELS[p]} (${r.start.slice(5)}~${r.end.slice(5)})`;
 }
 
 // 경과 일수 (start ~ min(today, end))
 function calendarDaysElapsed(start: string, end: string): number {
-  const today = toYMD(new Date());
+  const today = getKSTTodayYMD();
   const effectiveEnd = end < today ? end : today;
   if (effectiveEnd < start) return 1;
-  const a = new Date(start + 'T00:00:00');
-  const b = new Date(effectiveEnd + 'T00:00:00');
+  const a = new Date(start + 'T12:00:00+09:00');
+  const b = new Date(effectiveEnd + 'T12:00:00+09:00');
   return Math.round((b.getTime() - a.getTime()) / 86400000) + 1;
 }
 
-// 전월 동일 일자 (말일 초과 시 말일로 클램프)
-function subtractOneMonth(dateStr: string): string {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const ty = m === 1 ? y - 1 : y;
-  const tm = m === 1 ? 12 : m - 1;
-  const lastDay = new Date(ty, tm, 0).getDate();
-  return `${ty}-${String(tm).padStart(2, '0')}-${String(Math.min(d, lastDay)).padStart(2, '0')}`;
-}
-
-// 전년 동일 날짜
-function subtractOneYear(dateStr: string): string {
-  return `${parseInt(dateStr.slice(0, 4)) - 1}${dateStr.slice(4)}`;
-}
-
-// 전년 동월 동요일 (52주 = 364일 전 → 같은 요일 보장)
-function subtractOneYearSameWeekday(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() - 364);
-  return toYMD(d);
+function CmpCell({
+  sales, chg, dateLabel,
+}: {
+  sales?: number;
+  chg: { text: string; color: string } | null;
+  dateLabel: string;
+}) {
+  if (sales == null) return <span className="text-slate-600 text-xs">-</span>;
+  return (
+    <div>
+      <p className="text-slate-400 text-xs">{sales.toLocaleString()}원</p>
+      {chg ? (
+        <>
+          <span className={`text-xs font-bold ${chg.color}`}>{chg.text}</span>
+          <p className="text-slate-600 text-[10px]">{dateLabel}</p>
+        </>
+      ) : (
+        <p className="text-slate-600 text-[10px]">{dateLabel}</p>
+      )}
+    </div>
+  );
 }
 
 // % 변화량
@@ -162,9 +171,8 @@ export default function ReportViewPage() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const unsubRef    = useRef<(() => void) | null>(null);
 
-  // 비교 데이터
-  const [prevMonthMap, setPrevMonthMap] = useState<Map<string, number>>(new Map());
-  const [prevYearMap,  setPrevYearMap]  = useState<Map<string, number>>(new Map());
+  // 비교 데이터 (전일·전월·전년 등 통합)
+  const [compMap, setCompMap] = useState<Map<string, number>>(new Map());
 
   // ── 비교 범위 fetch 헬퍼 ────────────────────────────────────────
   const fetchComparison = useCallback(async (
@@ -246,33 +254,17 @@ export default function ReportViewPage() {
       rows.sort((a, b) => b.reportDate.localeCompare(a.reportDate));
       setReports(rows);
 
-      // 비교 데이터 fetch (병렬)
+      // 비교 데이터 fetch — 행별 비교일 전체를 한 번에
       if (rows.length > 0) {
-        const dates = rows.map(r => r.reportDate);
-
-        const pmDates = dates.map(subtractOneMonth);
-        const pmStart = pmDates.reduce((a, b) => a < b ? a : b);
-        const pmEnd   = pmDates.reduce((a, b) => a > b ? a : b);
-
-        // 전년: date 모드와 weekday 모드 양쪽 다 fetch (토글 시 재조회 없이 전환)
-        const pyDatesDate    = dates.map(subtractOneYear);
-        const pyDatesWeekday = dates.map(subtractOneYearSameWeekday);
-        const pyStartDate    = pyDatesDate.reduce((a, b) => a < b ? a : b);
-        const pyEndDate      = pyDatesDate.reduce((a, b) => a > b ? a : b);
-        const pyStartWday    = pyDatesWeekday.reduce((a, b) => a < b ? a : b);
-        const pyEndWday      = pyDatesWeekday.reduce((a, b) => a > b ? a : b);
-        const pyStart        = pyStartDate < pyStartWday ? pyStartDate : pyStartWday;
-        const pyEnd          = pyEndDate   > pyEndWday   ? pyEndDate   : pyEndWday;
-
-        const [pmMap, pyMap] = await Promise.all([
-          fetchComparison(storeId, pmStart, pmEnd),
-          fetchComparison(storeId, pyStart, pyEnd),
-        ]);
-        setPrevMonthMap(pmMap);
-        setPrevYearMap(pyMap);
+        const bounds = getComparisonFetchBounds(rows.map(r => r.reportDate));
+        if (bounds) {
+          const map = await fetchComparison(storeId, bounds.start, bounds.end);
+          setCompMap(map);
+        } else {
+          setCompMap(new Map());
+        }
       } else {
-        setPrevMonthMap(new Map());
-        setPrevYearMap(new Map());
+        setCompMap(new Map());
       }
     } catch (e: any) {
       console.error('[report/view] 조회 오류:', e);
@@ -308,7 +300,7 @@ export default function ReportViewPage() {
   useEffect(() => {
     if (unsubRef.current) { unsubRef.current(); unsubRef.current = null; }
     const storeId = currentStore?.storeId;
-    const today   = toYMD(new Date());
+    const today   = getKSTTodayYMD();
     if (!storeId || today < range.start || today > range.end) return;
 
     const q = query(
@@ -348,6 +340,20 @@ export default function ReportViewPage() {
   const elapsed  = calendarDaysElapsed(range.start, range.end);
   const avgSales = elapsed > 0 ? Math.round(totalNetSales / elapsed) : 0;
 
+  const analysisDate = (() => {
+    const today = getKSTTodayYMD();
+    if (today >= range.start && today <= range.end) return today;
+    return range.end;
+  })();
+
+  const rangeContext = {
+    start: range.start,
+    end: range.end,
+    totalNet: totalNetSales,
+    days: reports.length,
+    avgNet: avgSales,
+  };
+
   // ── 날씨 포맷 ────────────────────────────────────────────────────
   const fmtWeather = (w: any) => {
     if (!w) return '-';
@@ -363,6 +369,8 @@ export default function ReportViewPage() {
         <ReportDailyAnalysis
           storeId={currentStore.storeId}
           storeName={currentStore.storeName}
+          initialDate={analysisDate}
+          rangeContext={rangeContext}
         />
       )}
 
@@ -414,6 +422,11 @@ export default function ReportViewPage() {
               }`}
             >
               {PRESET_LABELS[p]}
+              {p !== 'custom' && (
+                <span className="block text-[10px] font-normal opacity-80 mt-0.5">
+                  {presetRangeLabel(p).match(/\((.+)\)/)?.[1]}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -431,6 +444,11 @@ export default function ReportViewPage() {
             >
               <Search className="w-4 h-4" />조회
             </button>
+            {customStart && customEnd && (
+              <span className="text-slate-500 text-xs">
+                선택: {customStart} ~ {customEnd}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -530,9 +548,11 @@ export default function ReportViewPage() {
                     { label: '총매출',        align: 'right'  },
                     { label: '순매출',        align: 'right'  },
                     { label: '포스별 매출',   align: 'right'  },
-                    { label: '전월대비',      align: 'right'  },
-                    { label: '전년(날짜)',    align: 'right'  },
-                    { label: '전년(동요일)',  align: 'right'  },
+                    { label: '전일',          align: 'right', sub: '비교일' },
+                    { label: '전월동일',      align: 'right', sub: '비교일' },
+                    { label: '전월동요일',    align: 'right', sub: '비교일' },
+                    { label: '전년동월동일',  align: 'right', sub: '비교일' },
+                    { label: '전년동월동요일', align: 'right', sub: '비교일' },
                     { label: '객수',          align: 'right'  },
                     { label: '반품',          align: 'right'  },
                     { label: '할인',          align: 'right'  },
@@ -544,6 +564,9 @@ export default function ReportViewPage() {
                     <th key={h.label}
                       className={`px-3 py-3 text-slate-400 text-xs font-medium whitespace-nowrap text-${h.align}`}>
                       {h.label}
+                      {'sub' in h && h.sub && (
+                        <span className="block text-[9px] font-normal text-slate-600">{h.sub}</span>
+                      )}
                     </th>
                   ))}
                 </tr>
@@ -556,15 +579,22 @@ export default function ReportViewPage() {
                   const DOW_LABELS = ['일','월','화','수','목','금','토'];
                   const dowColor = dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : 'text-slate-300';
 
-                  const pmDate    = subtractOneMonth(report.reportDate);
-                  const pyDateD   = subtractOneYear(report.reportDate);
-                  const pyDateW   = subtractOneYearSameWeekday(report.reportDate);
-                  const pmSales   = prevMonthMap.get(pmDate);
-                  const pySalesD  = prevYearMap.get(pyDateD);
-                  const pySalesW  = prevYearMap.get(pyDateW);
-                  const pmChg     = pctChange(report.netSales, pmSales);
-                  const pyChgD    = pctChange(report.netSales, pySalesD);
-                  const pyChgW    = pctChange(report.netSales, pySalesW);
+                  const cmp = getCompareDates(report.reportDate);
+                  const yDate   = cmp.yesterday;
+                  const pmDate  = cmp.lastMonthSame;
+                  const pmDow   = cmp.lastMonthDow;
+                  const pyDateD = cmp.lastYearMonthSame;
+                  const pyDateW = cmp.lastYearMonthDow;
+                  const ySales   = compMap.get(yDate);
+                  const pmSales  = compMap.get(pmDate);
+                  const pmDowSales = compMap.get(pmDow);
+                  const pySalesD = compMap.get(pyDateD);
+                  const pySalesW = compMap.get(pyDateW);
+                  const yChg     = pctChange(report.netSales, ySales);
+                  const pmChg    = pctChange(report.netSales, pmSales);
+                  const pmDowChg = pctChange(report.netSales, pmDowSales);
+                  const pyChgD   = pctChange(report.netSales, pySalesD);
+                  const pyChgW   = pctChange(report.netSales, pySalesW);
 
                   return (
                     <tr key={report.id}
@@ -630,61 +660,29 @@ export default function ReportViewPage() {
                         )}
                       </td>
 
-                      {/* 전월 대비 */}
+                      {/* 전일 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
-                        {pmSales != null ? (
-                          <div>
-                            <p className="text-slate-400 text-xs">{pmSales.toLocaleString()}원</p>
-                            {pmChg ? (
-                              <>
-                                <span className={`text-xs font-bold ${pmChg.color}`}>{pmChg.text}</span>
-                                <p className="text-slate-600 text-[10px]">{pmDate.slice(5)} 대비</p>
-                              </>
-                            ) : (
-                              <p className="text-slate-600 text-[10px]">{pmDate.slice(5)}</p>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-slate-600 text-xs">-</span>
-                        )}
+                        <CmpCell sales={ySales} chg={yChg} dateLabel={`${yDate} 대비`} />
                       </td>
 
-                      {/* 전년(날짜) 대비 */}
+                      {/* 전월동일 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
-                        {pySalesD != null ? (
-                          <div>
-                            <p className="text-slate-400 text-xs">{pySalesD.toLocaleString()}원</p>
-                            {pyChgD ? (
-                              <>
-                                <span className={`text-xs font-bold ${pyChgD.color}`}>{pyChgD.text}</span>
-                                <p className="text-slate-600 text-[10px]">{pyDateD.slice(5)} 대비</p>
-                              </>
-                            ) : (
-                              <p className="text-slate-600 text-[10px]">{pyDateD.slice(5)}</p>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-slate-600 text-xs">-</span>
-                        )}
+                        <CmpCell sales={pmSales} chg={pmChg} dateLabel={`${pmDate} 대비`} />
                       </td>
 
-                      {/* 전년(동요일) 대비 */}
+                      {/* 전월동요일 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
-                        {pySalesW != null ? (
-                          <div>
-                            <p className="text-slate-400 text-xs">{pySalesW.toLocaleString()}원</p>
-                            {pyChgW ? (
-                              <>
-                                <span className={`text-xs font-bold ${pyChgW.color}`}>{pyChgW.text}</span>
-                                <p className="text-slate-600 text-[10px]">{pyDateW.slice(5)} 동요일</p>
-                              </>
-                            ) : (
-                              <p className="text-slate-600 text-[10px]">{pyDateW.slice(5)} 동요일</p>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-slate-600 text-xs">-</span>
-                        )}
+                        <CmpCell sales={pmDowSales} chg={pmDowChg} dateLabel={`${pmDow} 동요일`} />
+                      </td>
+
+                      {/* 전년동월동일 */}
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                        <CmpCell sales={pySalesD} chg={pyChgD} dateLabel={`${pyDateD} 대비`} />
+                      </td>
+
+                      {/* 전년동월동요일 */}
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                        <CmpCell sales={pySalesW} chg={pyChgW} dateLabel={`${pyDateW} 동요일`} />
                       </td>
 
                       {/* 객수 */}
@@ -769,7 +767,7 @@ export default function ReportViewPage() {
                   <td className="px-3 py-3 text-slate-300 font-bold text-sm">합계 ({reports.length}일)</td>
                   <td className="px-3 py-3 text-right text-teal-400    font-bold text-sm">{totalSales.toLocaleString()}원</td>
                   <td className="px-3 py-3 text-right text-emerald-400 font-bold text-sm">{totalNetSales.toLocaleString()}원</td>
-                  <td className="px-3 py-3 text-right text-slate-500   text-xs" colSpan={4}>
+                  <td className="px-3 py-3 text-right text-slate-500   text-xs" colSpan={6}>
                     일평균 <span className="text-blue-300 font-semibold">{avgSales.toLocaleString()}원</span>
                     <span className="text-slate-600 ml-1">({elapsed}일 기준)</span>
                   </td>
