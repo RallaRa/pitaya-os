@@ -32,8 +32,8 @@ function genId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-const MAX_IMAGE_BYTES = 800 * 1024; // ~800KB per image after compress
-const MAX_PAYLOAD_BYTES = 9 * 1024 * 1024; // server body limit 10mb
+const MAX_IMAGE_BYTES = 500 * 1024; // ~500KB per image (Vercel 4.5MB 한도)
+const MAX_PAYLOAD_BYTES = 3.2 * 1024 * 1024; // Vercel body limit 여유
 
 async function compressImageFileWrapper(file: File): Promise<string> {
   return compressImageFile(file, 1024, 0.7);
@@ -200,7 +200,7 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
             const next = [...prev];
             next[next.length - 1] = {
               role: 'assistant',
-              content: '⚠️ 이미지 용량이 너무 큽니다. 이미지 수를 줄이거나 더 작은 이미지를 사용해주세요. (800KB/장, 총 9MB 이하 권장)',
+              content: '⚠️ 이미지 용량이 너무 큽니다. 이미지 1~2장만 올리거나 더 작은 이미지를 사용해주세요. (500KB/장, 총 3.2MB 이하)',
             };
             return next;
           });
@@ -227,7 +227,10 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
         } catch {
           throw new Error(`서버 응답 오류 (${res.status}). 잠시 후 다시 시도해주세요.`);
         }
-        if (!res.ok) throw new Error(data.error || data.detail || 'API 오류');
+        if (!res.ok) {
+          const detail = data.detail ? `\n(${String(data.detail).slice(0, 150)})` : '';
+          throw new Error((data.error || data.detail || 'API 오류') + detail);
+        }
 
         setMessages(prev => {
           const next = [...prev];

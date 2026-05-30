@@ -5,9 +5,11 @@ import { compressBase64Image, estimateBase64Bytes } from '@/lib/compressImageSer
 
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8MB per image (post-compress guard)
-const GEMINI_MODELS = ['gemini-2.0-flash-exp', 'gemini-1.5-flash'] as const;
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024; // Vercel 요청 한도 4.5MB 여유
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-1.5-flash'] as const;
+const VERCEL_BODY_LIMIT = 4.2 * 1024 * 1024; // chars (base64 JSON)
 
 function stripBase64Data(content: string): string {
   const trimmed = content.trim();
@@ -136,8 +138,11 @@ async function checkQuality(
 }
 
 async function prepareImageContent(content: string, fileName: string) {
+  const normalized = content.startsWith('data:')
+    ? content
+    : `data:image/jpeg;base64,${stripBase64Data(content)}`;
+
   try {
-    const normalized = content.startsWith('data:') ? content : `data:image/jpeg;base64,${stripBase64Data(content)}`;
     const { data, mimeType } = await compressBase64Image(normalized);
     const base64Data = stripBase64Data(data);
     if (estimateBase64Bytes(base64Data) > MAX_IMAGE_BYTES) {
@@ -145,9 +150,14 @@ async function prepareImageContent(content: string, fileName: string) {
       return null;
     }
     return { base64Data, mimeType };
-  } catch (e: any) {
-    console.error(`[analyze-multi] 이미지 압축 실패 (${fileName}):`, formatGeminiError(e));
-    return null;
+  } catch (e: unknown) {
+    console.warn(`[analyze-multi] sharp 압축 실패, 원본 사용 (${fileName}):`, formatGeminiError(e));
+    const base64Data = stripBase64Data(normalized);
+    if (estimateBase64Bytes(base64Data) > MAX_IMAGE_BYTES) return null;
+    return {
+      base64Data,
+      mimeType: extractMimeType(normalized, 'image/jpeg'),
+    };
   }
 }
 
@@ -172,10 +182,10 @@ export async function POST(req: Request) {
       if (!rawText) {
         return NextResponse.json({ error: '요청 본문이 비어 있습니다.' }, { status: 400 });
       }
-      if (rawText.length > 10 * 1024 * 1024) {
+      if (rawText.length > VERCEL_BODY_LIMIT) {
         console.warn(`[analyze-multi] 413 body too large: ${rawText.length} chars`);
         return NextResponse.json(
-          { error: '이미지 용량이 너무 큽니다. 이미지를 줄여서 다시 시도해주세요.' },
+          { error: '이미지 용량이 너무 큽니다. 이미지 1~2장만 올리거나 더 작게 압축해주세요. (총 3.5MB 이하)' },
           { status: 413 },
         );
       }
@@ -233,7 +243,8 @@ export async function POST(req: Request) {
       const quality = await checkQuality(genAI, base64Data, mimeType, file.name);
       qualities.push(quality);
 
-      if (quality.quality === 'unreadable' || (quality.confidence != null && quality.confidence < 30)) {
+      // 품질이 낮아도 분석 시도 (unreadable만 스킵)
+      if (quality.quality === 'unreadable') {
         continue;
       }
 
@@ -309,7 +320,7 @@ export async function POST(req: Request) {
       status = 413;
     }
     return NextResponse.json(
-      { error: userError, detail: process.env.NODE_ENV === 'development' ? msg : undefined },
+      { error: userError, detail: msg.slice(0, 300) },
       { status },
     );
   }
