@@ -10,7 +10,7 @@ import {
   Edit2, Check, X, AlertCircle, Home, Swords,
 } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
-import type { DebateEntry } from '@/app/api/ai/route';
+import type { DebateEntry, DebateRoundResult } from '@/app/api/ai/route';
 
 // ── 모델 정의 ──────────────────────────────────────────────────────
 const MODELS = [
@@ -71,7 +71,7 @@ type ChatMode = 'chat' | 'debate' | 'analysis';
 
 const CHAT_MODES: { id: ChatMode; label: string; desc: string }[] = [
   { id: 'chat',     label: '일반 대화', desc: 'Pitaya OS 사용법·매장 데이터 Q&A' },
-  { id: 'debate',   label: '토론 모드', desc: '찬성/반대 번갈아 토론' },
+  { id: 'debate',   label: '토론 모드', desc: '4개 AI가 3라운드 의견 교환 후 종합 답변' },
   { id: 'analysis', label: '분석 모드', desc: '매출·고객 데이터 심층 분석' },
 ];
 
@@ -102,6 +102,8 @@ interface Message {
   isAuto?: boolean;
   autoSelectedBy?: string;
   debate?: DebateEntry[];
+  debateRounds?: DebateRoundResult[];
+  debateSummary?: string;
   debatePhase?: string;
   chatMode?: ChatMode;
 }
@@ -124,6 +126,8 @@ function normalizeMsg(msg: any): Message {
     isAuto:          msg.isAuto,
     autoSelectedBy:  msg.autoSelectedBy,
     debate:          msg.debate,
+    debateRounds:    msg.debateRounds,
+    debateSummary:   msg.debateSummary,
     debatePhase:     msg.debatePhase,
     chatMode:        msg.chatMode,
   };
@@ -136,67 +140,84 @@ function toDate(val: any): Date {
   return new Date(val);
 }
 
-// ── 토론 카드 컴포넌트 ───────────────────────────────────────────────
-function DebateCards({ entries }: { entries: DebateEntry[] }) {
+// ── 협업 토론 UI (3라운드 + 종합) ─────────────────────────────────────
+function CollaborativeDebateView({
+  rounds,
+  summary,
+}: {
+  rounds: DebateRoundResult[];
+  summary?: string;
+}) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   return (
-    <div className="mt-3 w-full">
-      <div className="flex items-center gap-2 mb-3">
+    <div className="mt-3 w-full space-y-4">
+      <div className="flex items-center gap-2">
         <Swords className="w-4 h-4 text-yellow-400" />
-        <span className="text-yellow-400 text-xs font-bold uppercase tracking-wider">4AI 복합 토론</span>
-        <span className="text-slate-500 text-xs">— {entries.length}개 AI 동시 답변</span>
+        <span className="text-yellow-400 text-xs font-bold uppercase tracking-wider">4AI 협업 토론</span>
+        <span className="text-slate-500 text-xs">— 3라운드 의견 교환</span>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        {entries.map((entry) => {
-          const colors = DEBATE_COLORS[entry.model] ?? { border: 'border-slate-600', header: 'text-slate-300', badge: 'bg-slate-700 text-slate-300' };
-          const isExpanded = expanded[entry.model] ?? true;
-          const preview = entry.text.slice(0, 120);
-          const needsExpand = entry.text.length > 120;
 
-          return (
-            <div
-              key={entry.model}
-              className={`bg-slate-900 border ${colors.border} rounded-xl overflow-hidden`}
-            >
-              <div className={`flex items-center justify-between px-4 py-2.5 bg-slate-800/60`}>
-                <div className="flex items-center gap-2">
-                  <span className="text-base">{entry.emoji}</span>
-                  <span className={`font-semibold text-sm ${colors.header}`}>{entry.name}</span>
-                </div>
-                {!entry.error && (
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${colors.badge}`}>
-                    {entry.text ? `${entry.text.length}자` : '—'}
-                  </span>
-                )}
-              </div>
-              <div className="px-4 py-3">
-                {entry.error ? (
-                  <p className="text-red-400 text-xs flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" /> {entry.error}
-                  </p>
-                ) : (
-                  <>
-                    <p className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
-                      {isExpanded ? entry.text : preview + (needsExpand ? '...' : '')}
-                    </p>
-                    {needsExpand && (
-                      <button
-                        onClick={() => setExpanded(prev => ({ ...prev, [entry.model]: !isExpanded }))}
-                        className="mt-2 text-xs text-slate-500 hover:text-slate-300 transition-colors"
-                      >
-                        {isExpanded ? '접기 ▲' : '더 보기 ▼'}
-                      </button>
+      {rounds.map(round => (
+        <div key={round.round} className="space-y-2">
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{round.label}</p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+            {round.entries.map(entry => {
+              const key = `${round.round}-${entry.model}`;
+              const colors = DEBATE_COLORS[entry.model] ?? { border: 'border-slate-600', header: 'text-slate-300', badge: 'bg-slate-700 text-slate-300' };
+              const isExpanded = expanded[key] ?? true;
+              const preview = entry.text.slice(0, 120);
+              const needsExpand = entry.text.length > 120;
+
+              return (
+                <div key={key} className={`bg-slate-900 border ${colors.border} rounded-xl overflow-hidden`}>
+                  <div className="flex items-center justify-between px-3 py-2 bg-slate-800/60">
+                    <div className="flex items-center gap-2">
+                      <span>{entry.emoji}</span>
+                      <span className={`font-semibold text-xs ${colors.header}`}>{entry.name}</span>
+                    </div>
+                  </div>
+                  <div className="px-3 py-2.5">
+                    {entry.error ? (
+                      <p className="text-red-400 text-xs flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" /> {entry.error}
+                      </p>
+                    ) : (
+                      <>
+                        <p className="text-slate-300 text-xs leading-relaxed whitespace-pre-wrap">
+                          {isExpanded ? entry.text : preview + (needsExpand ? '...' : '')}
+                        </p>
+                        {needsExpand && (
+                          <button
+                            onClick={() => setExpanded(prev => ({ ...prev, [key]: !isExpanded }))}
+                            className="mt-1 text-[10px] text-slate-500 hover:text-slate-300"
+                          >
+                            {isExpanded ? '접기 ▲' : '더 보기 ▼'}
+                          </button>
+                        )}
+                      </>
                     )}
-                  </>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {summary && (
+        <div className="bg-amber-900/20 border border-amber-500/30 rounded-xl px-4 py-3">
+          <p className="text-amber-400 text-[11px] font-bold mb-1.5">📋 최종 종합 의견</p>
+          <p className="text-slate-200 text-sm leading-relaxed whitespace-pre-wrap">{summary}</p>
+        </div>
+      )}
     </div>
   );
+}
+
+// ── 레거시 단일 라운드 카드 (호환) ─────────────────────────────────────
+function DebateCards({ entries }: { entries: DebateEntry[] }) {
+  return <CollaborativeDebateView rounds={[{ round: 1, label: 'AI 의견', entries }]} />;
 }
 
 // ── 메인 컴포넌트 ────────────────────────────────────────────────────
@@ -289,76 +310,7 @@ export default function AiChatPage() {
     await loadConversations();
   };
 
-  // ── 일반 메시지 전송 ──
-  const handleSend = async () => {
-    if (!input.trim() || isLoading || isDebating) return;
-    setSendError(null);
-
-    const modelInfo = MODELS.find(m => m.id === selectedModel) ?? MODELS[0];
-
-    const userMsg: Message = {
-      role:      'user',
-      content:   input.trim(),
-      timestamp: new Date().toISOString(),
-    };
-
-    const historyForAI = [...messages];
-    const newMessages  = [...messages, userMsg];
-    setMessages(newMessages);
-    setInput('');
-    setIsLoading(true);
-
-    try {
-      const res = await fetch('/api/ai', {
-        method:  'POST',
-        headers: await getAuthJsonHeaders(),
-        body:    JSON.stringify({
-          message:  userMsg.content,
-          history:  historyForAI,
-          model:    chatMode === 'debate' ? 'auto' : selectedModel,
-          storeId:  currentStore?.storeId || '',
-          chatMode,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (data.error || !res.ok) {
-        const errMsg = data.error || data.text || `API 오류 (${res.status})`;
-        setSendError(`${chatMode === 'debate' ? '토론' : modelInfo.name} 오류: ${errMsg}`);
-        setMessages(historyForAI);
-        setInput(userMsg.content);
-        return;
-      }
-
-      const aiMsg: Message = {
-        role:           'model',
-        content:        data.text || '응답을 받지 못했습니다.',
-        timestamp:      new Date().toISOString(),
-        usedModel:      data.usedModel || modelInfo.name,
-        isAuto:         data.isAuto,
-        autoSelectedBy: data.autoSelectedBy,
-        debatePhase:    data.debatePhase,
-        chatMode,
-      };
-
-      const finalMessages = [...newMessages, aiMsg];
-      setMessages(finalMessages);
-
-      const modePrefix = chatMode === 'debate' ? '[토론] ' : chatMode === 'analysis' ? '[분석] ' : '';
-      const title = modePrefix + userMsg.content.slice(0, 20) + (userMsg.content.length > 20 ? '...' : '');
-      await saveConversation(finalMessages, title);
-
-    } catch (e: any) {
-      setSendError(`네트워크 오류: ${e.message}`);
-      setMessages(historyForAI);
-      setInput(userMsg.content);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // ── 4AI 토론 ──
+  // ── 4AI 협업 토론 (3라운드 + 종합) ──
   const handleDebate = async () => {
     if (!input.trim() || isLoading || isDebating) return;
     setSendError(null);
@@ -385,7 +337,7 @@ export default function AiChatPage() {
           history:  historyForAI,
           model:    'debate',
           storeId:  currentStore?.storeId || '',
-          chatMode: 'chat',
+          chatMode: 'debate',
         }),
       });
 
@@ -394,20 +346,30 @@ export default function AiChatPage() {
       if (!res.ok || data.error) {
         throw new Error(data.error || data.text || `API 오류 (${res.status})`);
       }
-      if (!Array.isArray(data.debate) || data.debate.length === 0) {
+      if (!Array.isArray(data.debateRounds) || data.debateRounds.length === 0) {
         throw new Error('사용 가능한 AI 응답이 없습니다. API 키를 확인해주세요.');
       }
 
+      const failed = (data.failedModels as { model: string; error: string }[] | undefined) ?? [];
+      const okCount = (data.debate as DebateEntry[] | undefined)?.filter(e => e.text && !e.error).length ?? 0;
+
       const aiMsg: Message = {
-        role:      'model',
-        content:   '4개 AI의 답변을 비교합니다:',
-        timestamp: new Date().toISOString(),
-        usedModel: '4AI 토론',
-        debate:    data.debate,
+        role:          'model',
+        content:       data.debateSummary || data.text || '토론이 완료되었습니다.',
+        timestamp:     new Date().toISOString(),
+        usedModel:     '4AI 토론',
+        debate:        data.debate,
+        debateRounds:  data.debateRounds,
+        debateSummary: data.debateSummary,
+        chatMode:      'debate',
       };
 
       const finalMessages = [...newMessages, aiMsg];
       setMessages(finalMessages);
+
+      if (failed.length > 0) {
+        setSendError(`${failed.length}개 AI 응답 실패 (${failed.map(f => f.model).join(', ')}) — ${okCount}개 AI 의견 반영됨`);
+      }
 
       const title = `[토론] ${userMsg.content.slice(0, 16)}...`;
       await saveConversation(finalMessages, title);
@@ -418,6 +380,77 @@ export default function AiChatPage() {
       setInput(savedInput);
     } finally {
       setIsDebating(false);
+    }
+  };
+
+  // ── 일반 메시지 전송 ──
+  const handleSend = async () => {
+    if (!input.trim() || isLoading || isDebating) return;
+    if (chatMode === 'debate') {
+      return handleDebate();
+    }
+    setSendError(null);
+
+    const modelInfo = MODELS.find(m => m.id === selectedModel) ?? MODELS[0];
+
+    const userMsg: Message = {
+      role:      'user',
+      content:   input.trim(),
+      timestamp: new Date().toISOString(),
+    };
+
+    const historyForAI = [...messages];
+    const newMessages  = [...messages, userMsg];
+    setMessages(newMessages);
+    setInput('');
+    setIsLoading(true);
+
+    try {
+      const res = await fetch('/api/ai', {
+        method:  'POST',
+        headers: await getAuthJsonHeaders(),
+        body:    JSON.stringify({
+          message:  userMsg.content,
+          history:  historyForAI,
+          model:    selectedModel,
+          storeId:  currentStore?.storeId || '',
+          chatMode,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.error || !res.ok) {
+        const errMsg = data.error || data.text || `API 오류 (${res.status})`;
+        setSendError(`${modelInfo.name} 오류: ${errMsg}`);
+        setMessages(historyForAI);
+        setInput(userMsg.content);
+        return;
+      }
+
+      const aiMsg: Message = {
+        role:           'model',
+        content:        data.text || '응답을 받지 못했습니다.',
+        timestamp:      new Date().toISOString(),
+        usedModel:      data.usedModel || modelInfo.name,
+        isAuto:         data.isAuto,
+        autoSelectedBy: data.autoSelectedBy,
+        chatMode,
+      };
+
+      const finalMessages = [...newMessages, aiMsg];
+      setMessages(finalMessages);
+
+      const modePrefix = chatMode === 'analysis' ? '[분석] ' : '';
+      const title = modePrefix + userMsg.content.slice(0, 20) + (userMsg.content.length > 20 ? '...' : '');
+      await saveConversation(finalMessages, title);
+
+    } catch (e: any) {
+      setSendError(`네트워크 오류: ${e.message}`);
+      setMessages(historyForAI);
+      setInput(userMsg.content);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -484,7 +517,7 @@ export default function AiChatPage() {
     chatMode === 'debate'
       ? (messages.length === 0
         ? '토론 주제를 입력하세요 (예: 주말 영업 확대)'
-        : '의견을 입력하세요. "종합" 입력 시 마무리')
+        : '추가 의견 입력 (선택)')
       : chatMode === 'analysis'
         ? '매출·고객·매입 데이터 분석 질문을 입력하세요...'
         : '메시지를 입력하세요... (Enter 전송, Shift+Enter 줄바꿈)';
@@ -631,9 +664,9 @@ export default function AiChatPage() {
               <p className="text-slate-500 text-sm max-w-sm leading-relaxed">
                 {chatMode === 'debate' ? (
                   <>
-                    토론 주제를 입력하면 AI가 찬성 입장부터 제시합니다.<br />
-                    <span className="text-slate-400">💬 의견 입력 → 반대 측 주장 → 반복</span><br />
-                    <span className="text-slate-400">📋 &quot;종합&quot; 입력 시 최종 의견</span>
+                    4개 AI가 주제에 대해 3라운드 의견을 교환합니다.<br />
+                    <span className="text-slate-400">1라운드: 초기 의견 → 2·3라운드: 서로 반응</span><br />
+                    <span className="text-slate-400">📋 마지막에 종합 권고안 제공</span>
                   </>
                 ) : chatMode === 'analysis' ? (
                   <>
@@ -655,7 +688,7 @@ export default function AiChatPage() {
 
           {messages.map((msg, idx) => (
             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`flex gap-3 ${msg.debate ? 'w-full max-w-4xl' : 'max-w-[75%]'} ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+              <div className={`flex gap-3 ${(msg.debateRounds?.length || msg.debate?.length) ? 'w-full max-w-4xl' : 'max-w-[75%]'} ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
                 <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
                   msg.role === 'user' ? 'bg-blue-600' : 'bg-teal-600'
                 }`}>
@@ -667,7 +700,7 @@ export default function AiChatPage() {
 
                 <div className="flex flex-col gap-1 min-w-0 flex-1">
                   {/* 말풍선 (토론은 헤더만, 개별 카드는 DebateCards에서) */}
-                  {(!msg.debate || msg.debate.length === 0) && (
+                  {(!msg.debateRounds?.length && (!msg.debate || msg.debate.length === 0)) && (
                     <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
                       msg.role === 'user'
                         ? 'bg-blue-600 text-white rounded-tr-sm'
@@ -680,8 +713,11 @@ export default function AiChatPage() {
                     </div>
                   )}
 
-                  {/* 토론 결과 카드 */}
-                  {msg.debate && msg.debate.length > 0 && (
+                  {msg.debateRounds && msg.debateRounds.length > 0 && (
+                    <CollaborativeDebateView rounds={msg.debateRounds} summary={msg.debateSummary || msg.content} />
+                  )}
+
+                  {(!msg.debateRounds?.length) && msg.debate && msg.debate.length > 0 && (
                     <DebateCards entries={msg.debate} />
                   )}
 
@@ -735,7 +771,7 @@ export default function AiChatPage() {
                 </div>
                 <div className="bg-slate-800 border border-slate-700 px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-2">
                   {isDebating && (
-                    <span className="text-yellow-400 text-xs font-medium mr-1">4개 AI 답변 수집 중...</span>
+                    <span className="text-yellow-400 text-xs font-medium mr-1">4AI 3라운드 토론 중... (30~90초)</span>
                   )}
                   <div className="flex gap-1">
                     {[0, 1, 2].map(i => (
@@ -786,7 +822,7 @@ export default function AiChatPage() {
               type="button"
               onClick={handleSend}
               disabled={!canSend}
-              title={chatMode === 'debate' ? '찬반 토론 진행' : '메시지 전송'}
+              title={chatMode === 'debate' ? '4AI 토론 시작' : '메시지 전송'}
               className={`disabled:bg-slate-700 disabled:cursor-not-allowed text-white p-3 rounded-xl transition-colors flex-shrink-0 ${
                 chatMode === 'debate'
                   ? 'bg-yellow-600 hover:bg-yellow-500'
@@ -821,27 +857,17 @@ export default function AiChatPage() {
               <div className="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
-                  onClick={handleSend}
-                  disabled={!canSend}
-                  title="AI가 찬성/반대 입장을 번갈아 제시합니다"
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold border transition-all bg-yellow-600/90 text-white border-yellow-500 hover:bg-yellow-500 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <Swords className="w-3.5 h-3.5" />
-                  찬반 토론 시작
-                </button>
-                <button
-                  type="button"
                   onClick={handleDebate}
                   disabled={!canSend}
-                  title="4개 AI가 동시에 답변 — 다양한 관점 비교"
+                  title="4개 AI가 3라운드 의견 교환 후 종합 답변"
                   className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold border transition-all ${
                     isDebating
                       ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40 cursor-not-allowed'
-                      : 'bg-slate-800 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/10 disabled:opacity-40 disabled:cursor-not-allowed'
+                      : 'bg-yellow-600/90 text-white border-yellow-500 hover:bg-yellow-500 disabled:opacity-40 disabled:cursor-not-allowed'
                   }`}
                 >
                   <Swords className="w-3.5 h-3.5" />
-                  4AI 동시 비교
+                  4AI 토론 시작
                 </button>
                 {!input.trim() && (
                   <span className="text-[11px] text-slate-500">주제 입력 또는 위 예시 클릭 후 버튼 활성화</span>
@@ -883,7 +909,7 @@ export default function AiChatPage() {
               type="button"
               onClick={handleDebate}
               disabled={!canSend}
-              title={!input.trim() ? '메시지 입력 후 활성화' : '4개 AI가 동시에 답변 — 다양한 관점 비교'}
+              title={!input.trim() ? '메시지 입력 후 활성화' : '4AI 3라운드 협업 토론'}
               className={`
                 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all
                 ${isDebating

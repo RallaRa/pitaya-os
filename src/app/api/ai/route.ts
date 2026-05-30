@@ -7,31 +7,25 @@ import { trackUsage, trackTokens } from '@/lib/trackUsage';
 import { SYSTEM_PROMPT } from '@/lib/aiSystemPrompt';
 import { verifyToken } from '@/lib/authVerify';
 import {
-  buildDebateUserMessage,
   buildStoreContextPrompt,
-  DEBATE_SYSTEM_PROMPT,
   loadSystemContext,
-  resolveDebatePhase,
-  type DebatePhase,
 } from '@/lib/aiStoreContext';
+import {
+  runCollaborativeDebate,
+  friendlyAiError,
+  type DebateEntry,
+  type DebateRoundResult,
+  type DebateProvider,
+} from '@/lib/aiCollaborativeDebate';
+
+export type { DebateEntry, DebateRoundResult };
+
+export const maxDuration = 120;
+export const dynamic = 'force-dynamic';
 
 type GroqModel = 'groq-mixtral' | 'groq-llama';
 type ModelChoice = 'auto' | 'gemini' | 'claude' | 'gpt' | 'groq' | GroqModel | 'debate';
 type ChatMode = 'chat' | 'debate' | 'analysis';
-
-const DEBATE_PHASE_LABEL: Record<DebatePhase, string> = {
-  pro:     '찬성',
-  con:     '반대',
-  summary: '종합',
-};
-
-export interface DebateEntry {
-  model: string;
-  name: string;
-  emoji: string;
-  text: string;
-  error?: string;
-}
 
 const SYSTEM_INSTRUCTIONS: Record<string, string> = {
   default: SYSTEM_PROMPT,
@@ -237,36 +231,39 @@ claude=깊은분석/추론/문서, gpt=코드/기술/수학, gemini=이미지/�
   }
 }
 
-/* ── 4AI 복합 토론: 모든 AI 병렬 호출 ── */
-async function runDebate(message: string, history: any[], system: string): Promise<DebateEntry[]> {
-  const tasks: Promise<DebateEntry>[] = [];
-
-  if (hasKey.gemini()) tasks.push(
-    callGemini(message, history, system)
-      .then(r => ({ model: 'gemini', name: 'Gemini 2.5 Flash', emoji: '⚡', text: r.text }))
-      .catch(e => ({ model: 'gemini', name: 'Gemini 2.5 Flash', emoji: '⚡', text: '', error: e.message }))
-  );
-  if (hasKey.claude()) tasks.push(
-    callClaude(message, history, system)
-      .then(r => ({ model: 'claude', name: 'Claude Sonnet 4.6', emoji: '🧠', text: r.text }))
-      .catch(e => ({ model: 'claude', name: 'Claude Sonnet 4.6', emoji: '🧠', text: '', error: e.message }))
-  );
-  if (hasKey.gpt()) tasks.push(
-    callGPT(message, history, system)
-      .then(r => ({ model: 'gpt', name: 'GPT-4o', emoji: '👔', text: r.text }))
-      .catch(e => ({ model: 'gpt', name: 'GPT-4o', emoji: '👔', text: '', error: e.message }))
-  );
-  if (hasKey.groq()) tasks.push(
-    callGroq(message, history, system, GROQ_MODEL_IDS['groq-llama'])
-      .then(r => ({ model: 'groq', name: 'Groq Llama3 70B', emoji: '🟠', text: r.text }))
-      .catch(e => ({ model: 'groq', name: 'Groq Llama3 70B', emoji: '🟠', text: '', error: e.message }))
-  );
-
-  if (tasks.length === 0) {
-    return [{ model: 'none', name: 'AI 없음', emoji: '❌', text: '', error: '사용 가능한 AI API 키가 없습니다.' }];
+/* ── 토론용 AI 프로바이더 목록 ── */
+function getDebateProviders(): DebateProvider[] {
+  const providers: DebateProvider[] = [];
+  if (hasKey.gemini()) {
+    providers.push({
+      id: 'gemini', name: 'Gemini 2.5 Flash', emoji: '⚡',
+      call: (msg, hist, sys) => callGemini(msg, hist, sys),
+    });
   }
+  if (hasKey.claude()) {
+    providers.push({
+      id: 'claude', name: 'Claude Sonnet 4.6', emoji: '🧠',
+      call: (msg, hist, sys) => callClaude(msg, hist, sys),
+    });
+  }
+  if (hasKey.gpt()) {
+    providers.push({
+      id: 'gpt', name: 'GPT-4o', emoji: '👔',
+      call: (msg, hist, sys) => callGPT(msg, hist, sys),
+    });
+  }
+  if (hasKey.groq()) {
+    providers.push({
+      id: 'groq', name: 'Groq Llama3 70B', emoji: '🟠',
+      call: (msg, hist, sys) => callGroq(msg, hist, sys, GROQ_MODEL_IDS['groq-llama']),
+    });
+  }
+  return providers;
+}
 
-  return Promise.all(tasks);
+async function runDebate(message: string, _history: any[], system: string) {
+  const topic = message.trim();
+  return runCollaborativeDebate(topic, getDebateProviders(), undefined, system);
 }
 
 export async function GET() {
@@ -317,11 +314,8 @@ export async function POST(req: Request) {
 
     const basePersona =
       chatMode === 'analysis' ? 'analyst'
-      : chatMode === 'debate' ? 'debate'
       : (persona || 'default');
-    const baseSystem = basePersona === 'debate'
-      ? DEBATE_SYSTEM_PROMPT
-      : (SYSTEM_INSTRUCTIONS[basePersona] ?? SYSTEM_INSTRUCTIONS.default);
+    const baseSystem = SYSTEM_INSTRUCTIONS[basePersona] ?? SYSTEM_INSTRUCTIONS.default;
     let system = buildStoreContextPrompt(baseSystem, storeContext);
 
     // ── 이력번호 자동 감지 → 정보 주입 ──
@@ -334,22 +328,25 @@ export async function POST(req: Request) {
       }
     }
 
-    // ── 4AI 복합 토론 (model=debate) ──
-    if ((modelChoice as string) === 'debate') {
-      const debates = await runDebate(message, msgs, system);
-      return NextResponse.json({ debate: debates, usedModel: '4AI 토론' });
-    }
-
-    // ── 찬반 토론 모드 (chatMode=debate) ──
-    let effectiveMessage = message;
-    let debatePhase: DebatePhase | undefined;
-    if (chatMode === 'debate') {
+    // ── 4AI 협업 토론 (model=debate 또는 chatMode=debate) ──
+    if ((modelChoice as string) === 'debate' || chatMode === 'debate') {
       const topic = msgs.find(m => m.role === 'user')?.content || message;
-      debatePhase = resolveDebatePhase(msgs, message);
-      effectiveMessage = buildDebateUserMessage(topic, debatePhase, message);
+      const debateResult = await runDebate(topic, msgs, system);
+      const failed = debateResult.debate.filter(e => e.error);
+      return NextResponse.json({
+        debate:        debateResult.debate,
+        debateRounds:  debateResult.rounds,
+        debateSummary: debateResult.summary,
+        summaryModel:  debateResult.summaryModel,
+        usedModel:     '4AI 토론',
+        text:          debateResult.summary,
+        chatMode:      'debate',
+        failedModels:  failed.map(f => ({ model: f.name, error: f.error })),
+      });
     }
 
     // ── 모델 결정 ──
+    let effectiveMessage = message;
     let resolved: ModelChoice;
     let autoSelectedBy: string | undefined;
 
@@ -398,11 +395,16 @@ export async function POST(req: Request) {
       resolved = fixed;
     } else {
       const keyMissing =
+        (resolved === 'gemini'        && !hasKey.gemini()) ||
         (resolved === 'claude'       && !hasKey.claude()) ||
         (resolved === 'gpt'          && !hasKey.gpt())    ||
         ((resolved === 'groq-mixtral' || resolved === 'groq-llama') && !hasKey.groq());
       if (keyMissing) {
-        const envKey = resolved === 'claude' ? 'ANTHROPIC_API_KEY' : resolved === 'gpt' ? 'OPENAI_API_KEY' : 'GROQ_API_KEY';
+        const envKey =
+          resolved === 'gemini' ? 'GEMINI_API_KEY'
+          : resolved === 'claude' ? 'ANTHROPIC_API_KEY'
+          : resolved === 'gpt' ? 'OPENAI_API_KEY'
+          : 'GROQ_API_KEY';
         return NextResponse.json({
           text:      `⚠️ ${MODEL_NAMES[resolved]} API 키가 설정되지 않았습니다. (${envKey} 미설정)`,
           usedModel: '',
@@ -410,9 +412,7 @@ export async function POST(req: Request) {
         }, { status: 503 });
       }
     }
-    if (!hasKey.gemini() && resolved === 'gemini') {
-      return NextResponse.json({ error: '사용 가능한 AI API 키가 없습니다.' }, { status: 500 });
-    }
+    // gemini key check (explicit select path covered above; auto path uses pickAvailable)
 
     // ── 호출 ──
     let result: CallResult;
@@ -429,7 +429,7 @@ export async function POST(req: Request) {
         result = await callGemini(effectiveMessage, msgs, system);
       }
     } catch (callErr: any) {
-      const errMsg = callErr.message || '알 수 없는 오류';
+      const errMsg = friendlyAiError(callErr.message || '알 수 없는 오류');
       return NextResponse.json({
         text:      `⚠️ ${MODEL_NAMES[resolved] || resolved} 오류: ${errMsg}`,
         usedModel: MODEL_NAMES[resolved] || resolved,
@@ -451,7 +451,6 @@ export async function POST(req: Request) {
       isAuto:          modelChoice === 'auto',
       autoSelectedBy,
       chatMode,
-      debatePhase:     debatePhase ? DEBATE_PHASE_LABEL[debatePhase] : undefined,
     });
 
   } catch (error: any) {
