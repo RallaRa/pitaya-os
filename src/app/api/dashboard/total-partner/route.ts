@@ -4,6 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getStoreCoords, getWeatherCondition } from '@/lib/weather';
 import { verifyToken } from '@/lib/authVerify';
+import { fetchNaverTrendData } from '@/lib/naverTrendServer';
 
 interface PartnerItem { rank: number; item: string; action: string; expectedSales: string; reason: string; badge: string; }
 
@@ -95,11 +96,8 @@ async function fetchMeatData(base: string) {
   };
 }
 
-async function fetchNaverTrend(base: string, storeId: string) {
-  try {
-    const r = await fetch(`${base}/api/external/naver-trend${storeId ? `?storeId=${storeId}` : ''}`, { signal: AbortSignal.timeout(10000) });
-    return await r.json();
-  } catch { return null; }
+async function fetchNaverTrend(_base: string, storeId: string) {
+  return fetchNaverTrendData(storeId);
 }
 
 function isMidnightFresh(ts: any) {
@@ -325,8 +323,8 @@ export async function GET(req: Request) {
 
   // 트렌드 텍스트
   const trendText = trend?.trends?.length > 0
-    ? trend.trends.map((t: { groupName: string; current: number; change: number }) => `${t.groupName}: 검색지수${t.current} 전일대비${t.change>0?'+':''}${t.change}%`).join('\n')
-    : '데이터없음';
+    ? trend.trends.map((t: { groupName: string; current: number; change: number }) => `${t.groupName}: 검색지수${t.current} 전일대비${t.change > 0 ? '+' : ''}${t.change}%`).join('\n')
+    : (trend?.error || '데이터없음');
 
   // 뉴스 텍스트
   const newsText = news.length > 0
@@ -337,7 +335,7 @@ export async function GET(req: Request) {
     salesHistory: { status: fs.topItems90.length > 0 ? 'ok' : 'empty', days: Math.min(90, fs.dailyTotals.length) },
     weather:      { status: weatherDays.length > 0 ? 'ok' : 'error' },
     meatPrice:    { status: meat.prices?.prices?.length > 0 ? 'ok' : 'error' },
-    trendData:    { status: trend?.trends?.length > 0 ? 'ok' : 'error' },
+    trendData:    { status: trend?.trends?.length > 0 ? 'ok' : trend?.noKeywords ? 'empty' : 'error', detail: trend?.error },
     newsData:     { status: news.length > 0 ? 'ok' : 'error', count: news.length },
   };
 

@@ -12,7 +12,7 @@ const WIDGET_LIST = [
   { key: 'weekly_analysis',    label: 'AI 주간 판매 분석', desc: '최근 7일 판매 AI 분석' },
   { key: 'yesterday_analysis', label: '전일 판매 분석',    desc: '전일 판매 TOP/BOTTOM' },
   { key: 'quick_menu',         label: '빠른 메뉴',         desc: '자주 쓰는 메뉴 바로가기' },
-  { key: 'ai_insight',         label: 'AI 인사이트',       desc: '금일 Best / 이슈 / 준비사항' },
+  { key: 'ai_insight',         label: 'AI 종합 운영의견', desc: '유동·상권·매출·트렌드·뉴스 종합 분석' },
   { key: 'total_partner',      label: 'AI 토탈 운영파트너', desc: '4기간 AI 운영 분석' },
   { key: 'sales_prediction',   label: 'AI 매출 예측',      desc: '예측 + AI 서포터 코멘트' },
   { key: 'today_sales',        label: '당일 매출 현황',    desc: '실시간 POS 매출' },

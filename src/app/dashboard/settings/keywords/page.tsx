@@ -1,6 +1,6 @@
 'use client';
 
-import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { getAuthJsonHeaders, getAuthHeaders } from '@/lib/getAuthHeaders';
 import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '@/context/StoreContext';
 import { useAuth } from '@/context/AuthContext';
@@ -26,6 +26,13 @@ interface KeywordDoc {
   nextAutoUpdate?: any;
 }
 
+interface TrendPreview {
+  groupName: string;
+  current: number;
+  change: number;
+  data: { period: string; ratio: number }[];
+}
+
 export default function KeywordsPage() {
   const { currentStore } = useStore();
   const { user } = useAuth();
@@ -39,25 +46,56 @@ export default function KeywordsPage() {
   const [editName,   setEditName]   = useState('');
   const [editTags,   setEditTags]   = useState<string[]>([]);
   const [newTag,     setNewTag]     = useState('');
+  const [trends,     setTrends]     = useState<TrendPreview[]>([]);
+  const [trendError, setTrendError] = useState('');
+  const [isTrendLoading, setIsTrendLoading] = useState(false);
   const [error,      setError]      = useState('');
   const [success,    setSuccess]    = useState('');
 
   const storeId = currentStore?.storeId || 'global';
 
+  const loadTrends = useCallback(async () => {
+    if (!storeId || storeId === 'global') return;
+    setIsTrendLoading(true);
+    setTrendError('');
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/external/naver-trend?storeId=${storeId}`, { headers });
+      const data = await res.json();
+      if (data.noKeywords) {
+        setTrendError('활성 키워드가 없습니다. 키워드를 활성화하거나 "지금 즉시 갱신"을 실행하세요.');
+        setTrends([]);
+      } else if (data.error && !data.trends?.length) {
+        setTrendError(data.error);
+        setTrends([]);
+      } else {
+        setTrends(data.trends || []);
+      }
+    } catch {
+      setTrendError('트렌드 조회 실패');
+      setTrends([]);
+    } finally {
+      setIsTrendLoading(false);
+    }
+  }, [storeId]);
+
   const load = useCallback(async () => {
     setIsLoading(true);
     setError('');
     try {
-      const res  = await fetch(`/api/keywords?storeId=${storeId}`);
+      const headers = await getAuthHeaders();
+      const res  = await fetch(`/api/keywords?storeId=${storeId}`, { headers });
+      if (!res.ok) throw new Error('키워드 불러오기 실패');
       const data = await res.json();
       setDoc(data);
       setGroups(data.keywordGroups || []);
+      await loadTrends();
     } catch {
       setError('데이터를 불러오지 못했습니다.');
     } finally {
       setIsLoading(false);
     }
-  }, [storeId]);
+  }, [storeId, loadTrends]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -116,6 +154,7 @@ export default function KeywordsPage() {
       if (!res.ok) throw new Error('저장 실패');
       setSuccess('저장되었습니다.');
       setTimeout(() => setSuccess(''), 2500);
+      await loadTrends();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -128,11 +167,15 @@ export default function KeywordsPage() {
     setIsUpdating(true);
     setError('');
     try {
+      const headers = await getAuthHeaders();
       const res = await fetch(`/api/cron/update-keywords?storeId=${storeId}`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${process.env.NEXT_PUBLIC_CRON_SECRET || ''}` },
+        headers,
       });
-      if (!res.ok) throw new Error('갱신 실패');
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || '갱신 실패');
+      }
       setSuccess('키워드가 자동 갱신되었습니다.');
       setTimeout(() => setSuccess(''), 2500);
       await load();
@@ -206,6 +249,42 @@ export default function KeywordsPage() {
         <div className="bg-red-900/30 border border-red-500/30 rounded-xl px-4 py-3 mb-4 text-red-400 text-sm">
           {error}
           <button className="ml-2 underline text-xs" onClick={() => setError('')}>닫기</button>
+        </div>
+      )}
+
+      {/* 트렌드 미리보기 */}
+      {!isLoading && (
+        <div className="mb-5 bg-slate-900 border border-slate-700 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-slate-200">네이버 검색 트렌드 (최근 7일)</h2>
+            <button
+              onClick={loadTrends}
+              disabled={isTrendLoading}
+              className="flex items-center gap-1 text-xs text-teal-400 hover:text-teal-300 disabled:opacity-50"
+            >
+              {isTrendLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+              새로고침
+            </button>
+          </div>
+          {trendError ? (
+            <p className="text-xs text-amber-400">{trendError}</p>
+          ) : trends.length === 0 ? (
+            <p className="text-xs text-slate-500">활성 키워드 그룹의 트렌드가 표시됩니다.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {trends.map(t => (
+                <div key={t.groupName} className="flex items-center justify-between bg-slate-800/60 rounded-lg px-3 py-2">
+                  <div>
+                    <p className="text-sm text-slate-200 font-medium">{t.groupName}</p>
+                    <p className="text-[10px] text-slate-500">검색지수 {t.current}</p>
+                  </div>
+                  <span className={`text-sm font-bold ${t.change > 0 ? 'text-green-400' : t.change < 0 ? 'text-red-400' : 'text-slate-400'}`}>
+                    {t.change > 0 ? '+' : ''}{t.change}%
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

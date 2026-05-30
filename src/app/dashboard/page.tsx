@@ -72,8 +72,8 @@ const WIDGET_META: WidgetMeta[] = [
   },
   {
     id: 'ai_insight',
-    title: 'AI 인사이트',
-    defaultItem: { i: 'ai_insight', x: 0, y: 7, w: 8, h: 5, minW: 5, minH: 4, maxW: 12, maxH: 8 },
+    title: 'AI 종합 운영의견',
+    defaultItem: { i: 'ai_insight', x: 0, y: 7, w: 12, h: 6, minW: 8, minH: 5, maxW: 12, maxH: 10 },
     permKey: 'ai_insight',
   },
   {
@@ -106,6 +106,17 @@ const DEFAULT_ACTIVE = ['weather', 'quick_menu', 'weekly_analysis', 'yesterday_a
 
 function makeDefaultLayout(ids: string[]): GridLayout {
   return WIDGET_META.filter(m => ids.includes(m.id)).map(m => ({ ...m.defaultItem }));
+}
+
+function mergeLayoutWithActiveWidgets(widgets: string[], layout: LayoutItem[]): LayoutItem[] {
+  const merged = [...layout];
+  for (const id of widgets) {
+    if (!merged.find(l => l.i === id)) {
+      const meta = WIDGET_META.find(m => m.id === id);
+      if (meta) merged.push({ ...meta.defaultItem, y: Infinity });
+    }
+  }
+  return merged.filter(l => widgets.includes(l.i));
 }
 
 /* ── 위젯 추가 모달 ── */
@@ -212,12 +223,14 @@ export default function DashboardPage() {
       .then(d => {
         if (d.layout && d.activeWidgets) {
           let widgets: string[] = d.activeWidgets;
-          let layout: LayoutItem[] = d.layout as LayoutItem[];
+          let layout: LayoutItem[] = mergeLayoutWithActiveWidgets(widgets, d.layout as LayoutItem[]);
           if (!widgets.includes('total_partner')) {
             widgets = [...widgets, 'total_partner'];
-            const meta = WIDGET_META.find(m => m.id === 'total_partner')!;
-            layout = [...layout, { ...meta.defaultItem, y: Infinity }];
           }
+          if (!widgets.includes('ai_insight')) {
+            widgets = [...widgets, 'ai_insight'];
+          }
+          layout = mergeLayoutWithActiveWidgets(widgets, layout);
           setLayouts({ lg: layout as GridLayout });
           setActiveWidgets(widgets);
         }
@@ -236,12 +249,10 @@ export default function DashboardPage() {
         const data = snap.data();
         if (data?.layout && data?.activeWidgets) {
           let widgets: string[] = data.activeWidgets;
-          let layout: LayoutItem[] = data.layout;
-          if (!widgets.includes('total_partner')) {
-            widgets = [...widgets, 'total_partner'];
-            const meta = WIDGET_META.find(m => m.id === 'total_partner')!;
-            layout = [...layout, { ...meta.defaultItem, y: Infinity }];
-          }
+          let layout: LayoutItem[] = mergeLayoutWithActiveWidgets(widgets, data.layout);
+          if (!widgets.includes('total_partner')) widgets = [...widgets, 'total_partner'];
+          if (!widgets.includes('ai_insight')) widgets = [...widgets, 'ai_insight'];
+          layout = mergeLayoutWithActiveWidgets(widgets, layout);
           setLayouts({ lg: layout as GridLayout });
           setActiveWidgets(widgets);
         }
@@ -457,7 +468,8 @@ export default function DashboardPage() {
             autoSize
           >
             {visibleActive.map(id => {
-              const item = currentLayout.find(l => l.i === id);
+              const meta = WIDGET_META.find(m => m.id === id);
+              const item = currentLayout.find(l => l.i === id) || (meta ? { ...meta.defaultItem, y: Infinity } : null);
               if (!item) return null;
               return (
                 <div key={id} className="relative">

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { verifyToken } from '@/lib/authVerify';
 
 function formatYMD(d: Date) {
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
@@ -17,10 +18,11 @@ function nextMonday5am(): Date {
 }
 
 export async function POST(req: Request) {
-  // 보안 검증
   const authHeader = req.headers.get('authorization') || '';
   const cronSecret = process.env.CRON_SECRET || '';
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  const authUser = await verifyToken(req);
+  const cronOk = cronSecret && authHeader === `Bearer ${cronSecret}`;
+  if (!authUser && !cronOk) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
