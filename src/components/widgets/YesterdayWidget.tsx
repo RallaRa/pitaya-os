@@ -39,7 +39,7 @@ export default function YesterdayWidget({
 
   useEffect(() => {
     load(false);
-    timerRef.current = setInterval(() => load(true), 60 * 1000);
+    timerRef.current = setInterval(() => load(true), 30 * 1000);
 
     const onVisible = () => { if (document.visibilityState === 'visible') load(true); };
     document.addEventListener('visibilitychange', onVisible);

@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024; // Vercel 요청 한도 4.5MB 여유
-const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest'] as const;
+const GEMINI_MODELS = ['gemini-2.0-flash'] as const;
 const VERCEL_BODY_LIMIT = 4.2 * 1024 * 1024; // chars (base64 JSON)
 
 function stripBase64Data(content: string): string {

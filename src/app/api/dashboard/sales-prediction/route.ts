@@ -197,7 +197,7 @@ reasonDetail은 반드시 100자 이내, "전주 동요일 대비 +12%", "최근
   if (process.env.GEMINI_API_KEY) {
     try {
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
       const result = await model.generateContent(prompt);
       const text = result.response.text().trim().replace(/```json|```/g,'').trim();
       const parsed = JSON.parse(text);

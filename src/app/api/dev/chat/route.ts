@@ -60,7 +60,7 @@ async function callModel(
   if (model === 'gemini') {
     const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_CLOUD_API_KEY;
     const genAI = new GoogleGenerativeAI(key!);
-    const m = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const m = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     const chat = m.startChat({
       history: history.map(h => ({
         role: h.role === 'assistant' ? 'model' : 'user',

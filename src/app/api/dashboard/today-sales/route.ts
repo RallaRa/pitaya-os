@@ -1,77 +1,79 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifyToken } from '@/lib/authVerify';
-import { getKSTTodayYMD, addDaysYMD } from '@/lib/dateUtils';
+import { getKSTTodayYMD, getKSTYesterdayYMD } from '@/lib/dateUtils';
+import {
+  getDisplayTotalSale,
+  getDisplayNetSales,
+  posDailySalesDocId,
+  type SalesDocData,
+} from '@/lib/posDailySales';
+import { dailyReportDocId } from '@/lib/reportCompare';
+
+async function loadSalesDoc(storeId: string, dateStr: string): Promise<SalesDocData | null> {
+  const posSnap = await adminDb.collection('pos_daily_sales')
+    .doc(posDailySalesDocId(storeId, dateStr))
+    .get();
+  if (posSnap.exists) return posSnap.data() as SalesDocData;
+
+  const reportSnap = await adminDb.collection('daily_reports')
+    .doc(dailyReportDocId(storeId, dateStr))
+    .get();
+  if (reportSnap.exists) return reportSnap.data() as SalesDocData;
+
+  const qSnap = await adminDb.collection('daily_reports')
+    .where('storeId', '==', storeId)
+    .where('reportDate', '==', dateStr)
+    .limit(5)
+    .get();
+  if (!qSnap.empty) {
+    const docs = qSnap.docs
+      .map(d => d.data() as SalesDocData & { source?: string; lastModifiedAt?: { toMillis?: () => number } })
+      .sort((a, b) => (b.lastModifiedAt?.toMillis?.() ?? 0) - (a.lastModifiedAt?.toMillis?.() ?? 0));
+    return docs.find(d => d.source === 'pos_bridge') || docs[0] || null;
+  }
+
+  return null;
+}
 
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
   if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const storeId  = searchParams.get('storeId') || '';
-  const todayStr = getKSTTodayYMD();
+  const storeId = searchParams.get('storeId') || '';
+  const dateParam = searchParams.get('date') || '';
+  const todayStr = dateParam || getKSTTodayYMD();
+  const yesterdayStr = getKSTYesterdayYMD();
 
   if (!storeId) return NextResponse.json({ error: 'storeId required' }, { status: 400 });
 
   try {
-    // 당일 daily_reports (orderBy 없이 클라이언트 정렬 — 복합 인덱스 불필요)
-    const snap = await adminDb.collection('daily_reports')
-      .where('storeId', '==', storeId)
-      .where('reportDate', '==', todayStr)
-      .limit(10)
-      .get();
+    const [todayDoc, yesterdayDoc] = await Promise.all([
+      loadSalesDoc(storeId, todayStr),
+      loadSalesDoc(storeId, yesterdayStr),
+    ]);
 
-    if (snap.empty) {
-      return NextResponse.json({ todayStr, totalSales: 0, netSales: 0, customerCount: 0, noData: true });
-    }
-
-    // pos_bridge 우선, 없으면 lastModifiedAt 기준 최신
-    const docs = snap.docs
-      .map(d => ({ id: d.id, ...d.data() } as any))
-      .sort((a: any, b: any) => (b.lastModifiedAt?.toMillis?.() ?? 0) - (a.lastModifiedAt?.toMillis?.() ?? 0));
-    const best = docs.find((d: any) => d.source === 'pos_bridge') || docs[0];
-
-    const totalSales    = best.totalSales    ?? 0;
-    const returnAmount  = best.returnAmount  ?? 0;
-    const discountAmount= best.discountAmount?? 0;
-    const netSales      = best.netSales ?? best.netSale ?? (totalSales - returnAmount - discountAmount);
-    const customerCount = best.customerCount ?? 0;
-    const isClosed      = best.isClosed      ?? false;
-    const syncedAt      = best.syncedAt      ?? null;
-
-    // 전일 비교
-    const yesterdayStr = addDaysYMD(todayStr, -1);
-    const ySnap = await adminDb.collection('daily_reports')
-      .where('storeId', '==', storeId)
-      .where('reportDate', '==', yesterdayStr)
-      .limit(5)
-      .get();
-
-    let yesterdayNet = 0;
-    if (!ySnap.empty) {
-      const yDocs = ySnap.docs.map(d => d.data() as any);
-      const yBest = yDocs.find(d => d.source === 'pos_bridge') || yDocs[0];
-      const yt = yBest.totalSales ?? 0;
-      yesterdayNet = yBest.netSales ?? yBest.netSale ?? (yt - (yBest.returnAmount ?? 0) - (yBest.discountAmount ?? 0));
-    }
-
-    const diffAmt = netSales - yesterdayNet;
-    const diffPct = yesterdayNet > 0 ? Math.round((diffAmt / yesterdayNet) * 100) : null;
+    const totalSales = getDisplayTotalSale(todayDoc);
+    const netSales = getDisplayNetSales(todayDoc);
+    const yesterdayTotal = getDisplayTotalSale(yesterdayDoc);
+    const yesterdayNet = getDisplayNetSales(yesterdayDoc);
 
     return NextResponse.json({
       todayStr,
+      yesterdayStr,
+      today: todayDoc,
+      yesterday: yesterdayDoc,
       totalSales,
       netSales,
-      returnAmount,
-      customerCount,
-      isClosed,
-      syncedAt,
+      yesterdayTotal,
       yesterdayNet,
-      diffAmt,
-      diffPct,
-      noData: false,
+      isClosed: todayDoc?.isClosed ?? false,
+      syncedAt: (todayDoc as { syncedAt?: string } | null)?.syncedAt ?? null,
+      noData: !todayDoc && !yesterdayDoc,
     });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

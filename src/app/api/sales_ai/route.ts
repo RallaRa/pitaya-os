@@ -172,7 +172,7 @@ export async function POST(req: Request) {
 
     const { text, fileContent, fileName, fileType, promotion, promotions } = body;
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
     let finalPrompt = text || '';
     let imageParts: Part[] = [];
@@ -343,7 +343,7 @@ JSON 외부에 어떠한 텍스트나 마크다운(\`\`\`)도 추가하지 마�
       userMessage = '⚠️ API 인증 오류입니다. Gemini API 키가 유효하지 않거나 만료되었습니다.';
       retryable = false;
     } else if (msg.includes('404')) {
-      userMessage = '⚠️ AI 모델을 찾을 수 없습니다. gemini-2.5-flash 모델명을 확인해주세요.';
+      userMessage = '⚠️ AI 모델을 찾을 수 없습니다. gemini-2.0-flash 모델명을 확인해주세요.';
       retryable = false;
     } else if (msg.includes('500')) {
       userMessage = '⚠️ Gemini 서버 내부 오류입니다. 잠시 후 재시도해주세요.';

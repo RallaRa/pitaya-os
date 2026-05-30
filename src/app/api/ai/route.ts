@@ -86,7 +86,7 @@ interface CallResult { text: string; inputTokens: number; outputTokens: number; 
 async function callGemini(message: string, history: any[], system: string): Promise<CallResult> {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   const genAI  = new GoogleGenerativeAI(apiKey!);
-  const model  = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const model  = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
   const geminiHistory = history.map((m: any) => ({
     role:  m.role as 'user' | 'model',

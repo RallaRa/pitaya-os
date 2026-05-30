@@ -1,100 +1,54 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import WidgetWrapper from './WidgetWrapper';
-import { db } from '@/lib/firebase/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { getKSTTodayYMD, getKSTYesterdayYMD } from '@/lib/dateUtils';
-import { getDisplayTotalSale, getDisplayNetSales, posDailySalesDocId } from '@/lib/posDailySales';
-import { dailyReportDocId } from '@/lib/reportCompare';
+import { getKSTTodayYMD } from '@/lib/dateUtils';
+import { getDisplayTotalSale, getDisplayNetSales, type SalesDocData } from '@/lib/posDailySales';
+import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { TrendingUp, RefreshCw } from 'lucide-react';
-
-interface SalesDoc {
-  isClosed?: boolean;
-  headers?: Array<{ totalSale?: number }>;
-  finish?: { totalSale?: number; netSale?: number };
-  totalSales?: number;
-  netSales?: number;
-  syncedAt?: string;
-}
 
 export default function TodaySalesWidget({
   editMode, onRemove, storeId,
 }: {
   editMode: boolean; onRemove: () => void; storeId?: string;
 }) {
-  const [todayDoc,     setTodayDoc]     = useState<SalesDoc | null>(null);
-  const [yesterdayDoc, setYesterdayDoc] = useState<SalesDoc | null>(null);
+  const [todayDoc,     setTodayDoc]     = useState<SalesDocData | null>(null);
+  const [yesterdayDoc, setYesterdayDoc] = useState<SalesDocData | null>(null);
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState<string | null>(null);
   const [updatedAt,    setUpdatedAt]    = useState<Date | null>(null);
-  const unsubRef = useRef<(() => void)[]>([]);
 
-  useEffect(() => {
-    unsubRef.current.forEach(u => u());
-    unsubRef.current = [];
-
+  const fetchData = useCallback(async () => {
     if (!storeId) {
       setLoading(false);
       return;
     }
-
-    setLoading(true);
-    setError(null);
-
-    const todayStr = getKSTTodayYMD();
-    const yesterdayStr = getKSTYesterdayYMD();
-
-    let todayPos: SalesDoc | null = null;
-    let todayReport: SalesDoc | null = null;
-    let yesterdayPos: SalesDoc | null = null;
-    let yesterdayReport: SalesDoc | null = null;
-
-    const mergeToday = () => {
-      setTodayDoc(todayPos ?? todayReport ?? null);
+    try {
+      const today = getKSTTodayYMD();
+      const headers = await getAuthHeaders();
+      const res = await fetch(
+        `/api/dashboard/today-sales?storeId=${encodeURIComponent(storeId)}&date=${today}`,
+        { headers },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '조회 실패');
+      setTodayDoc(data.today ?? null);
+      setYesterdayDoc(data.yesterday ?? null);
       setUpdatedAt(new Date());
+      setError(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '매출 데이터를 불러오지 못했습니다');
+    } finally {
       setLoading(false);
-    };
-    const mergeYesterday = () => {
-      setYesterdayDoc(yesterdayPos ?? yesterdayReport ?? null);
-    };
-
-    const todayPosRef = doc(db, 'pos_daily_sales', posDailySalesDocId(storeId, todayStr));
-    const todayReportRef = doc(db, 'daily_reports', dailyReportDocId(storeId, todayStr));
-    const yesterdayPosRef = doc(db, 'pos_daily_sales', posDailySalesDocId(storeId, yesterdayStr));
-    const yesterdayReportRef = doc(db, 'daily_reports', dailyReportDocId(storeId, yesterdayStr));
-
-    const unsubTodayPos = onSnapshot(todayPosRef, snap => {
-      todayPos = snap.exists() ? (snap.data() as SalesDoc) : null;
-      mergeToday();
-    }, err => {
-      console.warn('[TodaySalesWidget] pos_daily_sales unavailable, using daily_reports fallback:', err);
-      todayPos = null;
-      mergeToday();
-    });
-
-    const unsubTodayReport = onSnapshot(todayReportRef, snap => {
-      todayReport = snap.exists() ? (snap.data() as SalesDoc) : null;
-      mergeToday();
-    }, err => console.error('[TodaySalesWidget] today daily_reports:', err));
-
-    const unsubYesterdayPos = onSnapshot(yesterdayPosRef, snap => {
-      yesterdayPos = snap.exists() ? (snap.data() as SalesDoc) : null;
-      mergeYesterday();
-    }, err => console.error('[TodaySalesWidget] yesterday pos_daily_sales:', err));
-
-    const unsubYesterdayReport = onSnapshot(yesterdayReportRef, snap => {
-      yesterdayReport = snap.exists() ? (snap.data() as SalesDoc) : null;
-      mergeYesterday();
-    }, err => console.error('[TodaySalesWidget] yesterday daily_reports:', err));
-
-    unsubRef.current.push(unsubTodayPos, unsubTodayReport, unsubYesterdayPos, unsubYesterdayReport);
-
-    return () => {
-      unsubRef.current.forEach(u => u());
-      unsubRef.current = [];
-    };
+    }
   }, [storeId]);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchData();
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
 
   const fmt = (n: number) => (n || 0).toLocaleString('ko-KR');
   const todayTotal = getDisplayTotalSale(todayDoc);
@@ -102,12 +56,14 @@ export default function TodaySalesWidget({
   const yesterdayTotal = getDisplayTotalSale(yesterdayDoc);
   const isClosed = todayDoc?.isClosed ?? false;
   const todayStr = getKSTTodayYMD();
+  const syncedAt = (todayDoc as { syncedAt?: string } | null)?.syncedAt;
 
   return (
     <WidgetWrapper
       title="📊 당일 매출 현황"
       editMode={editMode}
       onRemove={onRemove}
+      onRefresh={fetchData}
       updatedAt={updatedAt}
       loading={loading}
       error={error}
@@ -142,9 +98,9 @@ export default function TodaySalesWidget({
             어제 ₩ {fmt(yesterdayTotal)}
           </p>
 
-          {todayDoc?.syncedAt && (
+          {syncedAt && (
             <p className="text-slate-600 text-[9px] text-right">
-              POS 동기화 {new Date(todayDoc.syncedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+              POS 동기화 {new Date(syncedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
             </p>
           )}
         </div>

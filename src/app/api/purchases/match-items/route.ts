@@ -29,7 +29,7 @@ async function findSimilarViaGemini(itemName: string, supplierName: string, stor
   if (snap.empty) return [];
 
   const itemsList = snap.docs.map(d => ({ id: d.id, name: d.data().name || d.data().cut || '' }));
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
   const prompt = `아래 품목명과 가장 유사한 항목을 목록에서 찾아줘.
 유사도 점수(0-100)와 근거를 JSON 배열로만 반환해. score 70 이상만 포함.
@@ -56,7 +56,7 @@ async function findSimilarViaGemini(itemName: string, supplierName: string, stor
 }
 
 async function suggestFromName(itemName: string) {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
   const prompt = `정육점 품목명 "${itemName}"에서 정보를 추출해 JSON으로만 반환해.
 {"category":"한우|한돈|수입우|수입돈|계육|기타","cut":"부위명","storage":"냉장|냉동","unit":"kg|개|박스"}`;
   try {

@@ -179,24 +179,15 @@ highlights 4~6개, actions 3개`;
 
   try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-    let result: {
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const res = await model.generateContent(prompt);
+    const text = res.response.text().trim().replace(/```json|```/g, '').trim();
+    const result: {
       summary: string;
       opinion: string;
       highlights: { tag: string; text: string }[];
       actions: string[];
-    };
-
-    try {
-      const res = await model.generateContent(prompt);
-      const text = res.response.text().trim().replace(/```json|```/g, '').trim();
-      result = JSON.parse(text);
-    } catch {
-      const fallback = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-      const res = await fallback.generateContent(prompt);
-      const text = res.response.text().trim().replace(/```json|```/g, '').trim();
-      result = JSON.parse(text);
-    }
+    } = JSON.parse(text);
 
     const payload = {
       ...result,

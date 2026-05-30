@@ -444,7 +444,7 @@ topItems/bottomItems badge는: HOT(+30%↑) | UP(+10~30%) | 주의(-10%↓) | �
   let result: GeminiResult | null = null;
   try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', generationConfig: { temperature: 0.3 } });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash', generationConfig: { temperature: 0.3 } });
     const res   = await model.generateContent(prompt);
     const text  = res.response.text().trim().replace(/^```json\s*/,'').replace(/\s*```$/,'').trim();
     result = JSON.parse(text) as GeminiResult;
