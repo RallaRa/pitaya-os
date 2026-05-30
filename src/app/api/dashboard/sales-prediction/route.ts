@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getStoreCoords, getWeatherCondition, WEATHER_ICONS } from '@/lib/weather';
 import { verifyToken } from '@/lib/authVerify';
 import { getPredictionAnalysisInsights } from '@/lib/predictionAnalysis';
+import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
+import { providerOrderForUseCase } from '@/lib/aiRouter';
 
 function toYMD(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -200,13 +201,10 @@ reasonDetail은 반드시 100자 이내, "전주 동요일 대비 +12%", "최근
   let supporterComment = '';
   let keyFactors: string[] = [];
 
-  if (process.env.GEMINI_API_KEY) {
+  if (hasAnyAiProvider()) {
     try {
-      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-      const result = await model.generateContent(prompt);
-      const text = result.response.text().trim().replace(/```json|```/g,'').trim();
-      const parsed = JSON.parse(text);
+      const { text } = await generateTextWithFallback({ prompt, json: true, order: providerOrderForUseCase('prediction') });
+      const parsed = JSON.parse(stripJsonMarkdown(text));
       topItems    = (parsed.topItems    || []).slice(0,5).map((it: any) => ({
         ...it,
         reasonDetail: String(it.reasonDetail || '').slice(0, 100),

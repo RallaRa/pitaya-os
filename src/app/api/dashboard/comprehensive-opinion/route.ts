@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
+import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
+import { providerOrderForUseCase } from '@/lib/aiRouter';
 import { getKSTTodayYMD, getKSTYesterdayYMD } from '@/lib/dateUtils';
 import { getDisplayTotalSale, posDailySalesDocId } from '@/lib/posDailySales';
 import { loadSystemContext } from '@/lib/aiStoreContext';
@@ -136,9 +137,9 @@ export async function GET(req: Request) {
     });
   }
 
-  if (!process.env.GEMINI_API_KEY) {
+  if (!hasAnyAiProvider()) {
     return NextResponse.json({
-      summary: 'GEMINI_API_KEY 미설정',
+      summary: 'AI API 키 미설정',
       opinion: '',
       highlights: [],
       trends: trendResult.trends,
@@ -178,16 +179,13 @@ JSON 형식:
 highlights 4~6개, actions 3개`;
 
   try {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    const res = await model.generateContent(prompt);
-    const text = res.response.text().trim().replace(/```json|```/g, '').trim();
+    const { text } = await generateTextWithFallback({ prompt, json: true, order: providerOrderForUseCase('insight') });
     const result: {
       summary: string;
       opinion: string;
       highlights: { tag: string; text: string }[];
       actions: string[];
-    } = JSON.parse(text);
+    } = JSON.parse(stripJsonMarkdown(text));
 
     const payload = {
       ...result,

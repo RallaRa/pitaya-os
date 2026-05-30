@@ -7,6 +7,9 @@ import {
 } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { compressImageFromDataUrl, compressImageFile } from '@/lib/compressImageClient';
+import type { FileAnalysisMeta } from '@/lib/purchaseAiLabels';
+import { formatEnsembleReplyBlock, formatFileResultLine } from '@/lib/purchaseAiLabels';
+import { logPurchaseAnalysis } from '@/components/purchases/PurchaseAnalysisHistory';
 import type { Invoice, AttachedFile as SheetAttachedFile } from './PurchaseSheet';
 import CameraCapture from './CameraCapture';
 
@@ -26,18 +29,22 @@ interface ChatMessage {
 
 interface Props {
   onInvoicesFound: (invoices: Invoice[], files: SheetAttachedFile[]) => void;
+  storeId?: string;
+  onAnalysisLogged?: () => void;
 }
 
 function genId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-const MAX_IMAGE_BYTES = 600 * 1024; // 장당 ~600KB (요청 분할 전송)
-const BATCH_SAFE_BYTES = 2.5 * 1024 * 1024; // 요청 1회당 안전 한도
+const MAX_IMAGE_BYTES = 900 * 1024; // OCR용 — 해상도 우선
+const BATCH_SAFE_BYTES = 2.5 * 1024 * 1024;
 const MAX_FILES_PER_BATCH = 2;
+const OCR_MAX_PX = 1536;
+const OCR_QUALITY = 0.85;
 
 async function compressImageFileWrapper(file: File): Promise<string> {
-  return compressImageFile(file, 1024, 0.7);
+  return compressImageFile(file, OCR_MAX_PX, OCR_QUALITY, true);
 }
 
 /** 업로드는 한 번에, API 요청은 용량 한도 내 배치로 분할 */
@@ -80,13 +87,13 @@ function splitFilesIntoBatches(files: AttachedFile[]): AttachedFile[][] {
 }
 
 async function shrinkImageDataUrl(dataUrl: string): Promise<string> {
-  let result = await compressImageFromDataUrl(dataUrl, 1024, 0.7);
-  let px = 1024;
-  let q = 0.7;
-  while (result.length > MAX_IMAGE_BYTES && (q > 0.35 || px > 640)) {
-    if (q > 0.35) q = Math.round((q - 0.1) * 100) / 100;
-    else px = Math.round(px * 0.85);
-    result = await compressImageFromDataUrl(result, px, q);
+  let result = await compressImageFromDataUrl(dataUrl, OCR_MAX_PX, OCR_QUALITY, true);
+  let px = OCR_MAX_PX;
+  let q = OCR_QUALITY;
+  while (result.length > MAX_IMAGE_BYTES && (q > 0.5 || px > 1024)) {
+    if (q > 0.5) q = Math.round((q - 0.08) * 100) / 100;
+    else px = Math.round(px * 0.9);
+    result = await compressImageFromDataUrl(result, px, q, true);
   }
   return result;
 }
@@ -113,11 +120,11 @@ function readFile(f: File): Promise<string> {
 
 const QUICK_PROMPTS = ['단가 검토해줘', '누락 항목 확인', '총액 계산해줘'];
 
-export default function PurchaseAIChat({ onInvoicesFound }: Props) {
+export default function PurchaseAIChat({ onInvoicesFound, storeId = '', onAnalysisLogged }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'assistant',
-      content: '거래명세서·세금계산서 이미지나 파일을 첨부해 주세요. AI가 자동 분석합니다.\n\n여러 장을 한 번에 올려도 파일별로 순차 분석합니다.\n이미지 드래그 앤 드랍, 클립보드 붙여넣기(Ctrl+V), 파일 선택 모두 지원합니다.',
+      content: '거래명세서·세금계산서 이미지나 파일을 첨부해 주세요. AI가 자동 분석합니다.\n\n📷 **인식 잘 되는 촬영 팁**\n• 밝은 곳에서 그림자 없이 촬영\n• 문서 전체가 화면에 들어오게 (기울이지 않기)\n• 흐릿하면 카메라 초점 맞춘 뒤 다시 촬영\n• PDF 원본이 있으면 이미지보다 PDF가 더 정확합니다\n\n여러 장을 한 번에 올려도 파일별로 순차 분석합니다.\n드래그 앤 드랍 · Ctrl+V 붙여넣기 · 파일 선택 모두 지원합니다.',
     },
   ]);
   const [input, setInput] = useState('');
@@ -237,7 +244,10 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
         const headers = await getAuthJsonHeaders();
         const allInvoices: Invoice[] = [];
         const allQualities: unknown[] = [];
+        const allFileResults: FileAnalysisMeta[] = [];
         const batchErrors: string[] = [];
+
+        const batchReplies: string[] = [];
 
         for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
           const batch = batches[batchIdx];
@@ -261,6 +271,7 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
               body: JSON.stringify({
                 files: batch.map(f => ({ content: f.content, name: f.name, type: f.type })),
                 message: batchIdx === 0 ? (text || undefined) : undefined,
+                storeId: storeId || undefined,
               }),
               signal: abortRef.current.signal,
             });
@@ -270,7 +281,15 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
             }
 
             const raw = await res.text();
-            let data: { error?: string; reply?: string; invoices?: Invoice[]; qualities?: unknown[]; detail?: string };
+            let data: {
+              error?: string;
+              reply?: string;
+              invoices?: Invoice[];
+              qualities?: unknown[];
+              fileResults?: FileAnalysisMeta[];
+              detail?: string;
+              confidence?: number;
+            };
             try {
               data = raw ? JSON.parse(raw) : {};
             } catch {
@@ -292,6 +311,14 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
               })));
             }
 
+            if (data.fileResults?.length) {
+              allFileResults.push(...data.fileResults);
+            }
+
+            if (data.reply) {
+              batchReplies.push(data.reply);
+            }
+
             if (data.qualities?.length) {
               allQualities.push(...data.qualities);
             }
@@ -305,17 +332,37 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
           }
         }
 
-        let reply = allInvoices.length > 0
-          ? `${allInvoices.length}건의 매입 내역을 추출했습니다. 시트에서 내용을 확인·수정 후 저장하세요.`
-          : '문서에서 매입 내역을 추출하지 못했습니다. 더 선명한 이미지로 다시 시도해보세요.';
+        let reply = batchReplies.length > 0
+          ? batchReplies[batchReplies.length - 1]
+          : allInvoices.length > 0
+            ? `${allInvoices.length}건의 매입 내역을 추출했습니다. 시트에서 내용을 확인·수정 후 저장하세요.`
+            : '문서에서 매입 내역을 추출하지 못했습니다.\n\n💡 **다시 시도 팁**\n• 더 밝고 선명한 사진 (또는 PDF 원본)\n• 문서가 잘리지 않았는지 확인\n• "품목명, 수량, 금액이 보이게 다시 분석해줘"라고 함께 입력';
 
-        if (batches.length > 1) {
-          reply = `${sentFiles.length}개 파일을 ${batches.length}회 나눠 분석했습니다.\n${reply}`;
+        if (batches.length > 1 && allInvoices.length > 0) {
+          reply = `${sentFiles.length}개 파일을 ${batches.length}회 나눠 분석했습니다.\n${allInvoices.length}건 추출 완료.`;
+          const ensembleBlock = formatEnsembleReplyBlock(allFileResults);
+          if (ensembleBlock) reply += ensembleBlock;
         }
 
         if (batchErrors.length > 0) {
           reply += `\n\n⚠️ ${batchErrors.length}개 배치 실패:\n${batchErrors.join('\n')}`;
         }
+
+        if (!batchReplies.length && allFileResults.length > 0 && !formatEnsembleReplyBlock(allFileResults)) {
+          reply += `\n\n🏷️ **AI 분석 이력**\n${allFileResults.map(formatFileResultLine).join('\n')}`;
+        }
+
+        await logPurchaseAnalysis({
+          storeId,
+          userMessage: text || '파일을 분석해 주세요.',
+          fileNames: sentFiles.map(f => f.name),
+          fileResults: allFileResults,
+          invoiceCount: allInvoices.length,
+          suppliers: [...new Set(allInvoices.map(i => i.supplierName).filter(Boolean))],
+          success: allInvoices.length > 0,
+          errors: batchErrors,
+        });
+        onAnalysisLogged?.();
 
         setMessages(prev => {
           const next = [...prev];
@@ -373,7 +420,7 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
         const msg = err.message || '';
         let userMsg = '⚠️ 오류가 발생했습니다. 다시 시도해 주세요.';
         if (msg.includes('503') || msg.includes('overloaded')) userMsg = '⚠️ Gemini 서버가 혼잡합니다. 잠시 후 재시도해주세요.';
-        else if (msg.includes('429')) userMsg = '⚠️ API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.';
+        else if (msg.includes('429') || msg.includes('모든 AI API')) userMsg = '⚠️ AI API 요청 한도를 초과했습니다. Gemini → Claude → Groq 순으로 재시도했으나 실패했습니다. 잠시 후 다시 시도해주세요.';
         else if (msg.includes('413') || msg.includes('용량이 너무')) userMsg = `⚠️ ${msg}`;
         else if (msg.includes('400')) userMsg = '⚠️ 이미지 처리 오류입니다. 다른 파일을 시도해주세요.';
         else if (msg.includes('GEMINI_API_KEY') || msg.includes('API_KEY')) userMsg = '⚠️ GEMINI_API_KEY가 설정되지 않았습니다. 관리자에게 문의하세요.';
@@ -388,7 +435,7 @@ export default function PurchaseAIChat({ onInvoicesFound }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [input, attachments, loading, messages, onInvoicesFound]);
+  }, [input, attachments, loading, messages, onInvoicesFound, storeId, onAnalysisLogged]);
 
   return (
     <div

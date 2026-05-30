@@ -1,15 +1,30 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI, Part } from '@google/generative-ai';
 import { verifyToken } from '@/lib/authVerify';
 import { compressBase64Image, estimateBase64Bytes } from '@/lib/compressImageServer';
+import {
+  formatAiError,
+  generateTextWithFallback,
+  hasAnyAiProvider,
+  isQuotaOrRateLimitError,
+  stripJsonMarkdown,
+} from '@/lib/aiProviderFallback';
+import { providerOrderForUseCase } from '@/lib/aiRouter';
+import {
+  ensembleOcr,
+} from '@/lib/ensembleOcr';
+import {
+  formatAiTag,
+  formatEnsembleReplyBlock,
+  formatFileResultLine,
+  type FileAnalysisMeta,
+} from '@/lib/purchaseAiLabels';
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const MAX_IMAGE_BYTES = 4 * 1024 * 1024; // Vercel 요청 한도 4.5MB 여유
-const GEMINI_MODELS = ['gemini-2.0-flash'] as const;
-const VERCEL_BODY_LIMIT = 4.2 * 1024 * 1024; // chars (base64 JSON)
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const VERCEL_BODY_LIMIT = 4.2 * 1024 * 1024;
 
 function stripBase64Data(content: string): string {
   const trimmed = content.trim();
@@ -25,116 +40,106 @@ function extractMimeType(content: string, fallback = 'image/jpeg'): string {
   return match?.[1] || fallback;
 }
 
-function formatGeminiError(err: unknown): string {
-  if (!err || typeof err !== 'object') return String(err);
-  const e = err as { message?: string; status?: number; statusText?: string; errorDetails?: unknown };
-  const parts = [e.message, e.status ? `HTTP ${e.status}` : '', e.statusText].filter(Boolean);
-  if (e.errorDetails) {
-    try {
-      parts.push(JSON.stringify(e.errorDetails));
-    } catch { /* ignore */ }
-  }
-  return parts.join(' | ') || 'Unknown Gemini error';
-}
+const SYSTEM_INSTRUCTION = `당신은 한국 정육점·식자재 매입 문서(거래명세서, 세금계산서, 매입전표, 영수증) 전문 OCR·분석 AI입니다.
 
-const SYSTEM_INSTRUCTION = `당신은 매입/구매 문서 전문 분석 AI입니다.
-하나 또는 여러 장의 거래명세서, 세금계산서, 매입전표, 영수증을 분석하여 정확한 JSON 배열로 반환합니다.
-
-**중요**: 반드시 아래 구조의 JSON 배열만 반환하세요. 마크다운(\`\`\`)이나 다른 텍스트는 절대 포함하지 마세요.
+작업:
+1. 이미지/PDF에서 **모든 글자**를 읽는다 (작은 글씨, 표, 손글씨 포함).
+2. 공급업체·날짜·품목·수량·단가·공급가·세액·합계를 추출한다.
+3. 아래 JSON **배열**만 반환한다 (마크다운·설명 금지).
 
 [
   {
     "purchaseDate": "YYYY-MM-DD",
     "supplierName": "공급업체명",
-    "invoiceNumber": "전표/세금계산서 번호 (없으면 빈 문자열)",
+    "invoiceNumber": "전표번호 (없으면 빈 문자열)",
     "items": [
       {
         "name": "품명",
         "qty": 수량(숫자),
-        "unit": "단위(kg/개/박스 등)",
+        "unit": "kg|개|박스 등",
         "unitPrice": 단가(숫자),
         "supplyAmount": 공급가액(숫자),
         "taxAmount": 세액(숫자),
         "traceNo": "이력번호 (없으면 빈 문자열)",
-        "origin": "원산지 (없으면 빈 문자열)",
-        "cut": "부위명 (없으면 빈 문자열)",
-        "grade": "등급 (없으면 빈 문자열)"
+        "origin": "원산지",
+        "cut": "부위",
+        "grade": "등급"
       }
     ],
-    "supplyAmount": 공급가액합계(숫자),
-    "taxAmount": 세액합계(숫자),
-    "totalAmount": 합계금액(숫자),
-    "paymentMethod": "결제방법 (현금/카드/외상/이체, 없으면 빈 문자열)",
-    "memo": "특이사항 (없으면 빈 문자열)"
+    "supplyAmount": 공급가액합계,
+    "taxAmount": 세액합계,
+    "totalAmount": 합계금액,
+    "paymentMethod": "현금|카드|외상|이체",
+    "memo": "특이사항"
   }
 ]
 
 규칙:
-- 여러 장의 문서가 있으면 각 문서를 별도 객체로 반환.
-- 한 이미지에 여러 업체 명세가 있으면 각각 별도 객체로.
-- purchaseDate: 문서에서 날짜 추출, 형식은 YYYY-MM-DD. 추출 불가 시 오늘 날짜.
-- 금액은 콤마 제거한 순수 숫자 (예: 1,250,000 → 1250000).
-- 이력번호/원산지/부위/등급이 없으면 빈 문자열 반환.
-- items가 없으면 [] 반환.`;
+- 글자가 흐려도 **추정 가능한 숫자·품목명은 반드시 포함**. 빈 배열 [] 반환 금지 (최소 1건 객체).
+- supplierName을 못 읽으면 "미확인" + items 또는 totalAmount라도 채운다.
+- 금액 콤마 제거 (1,250,000 → 1250000).
+- 여러 장/여러 업체 → 각각 별도 객체.
+- 정육: 이력번호·원산지·부위·등급 있으면 추출.`;
 
-async function generateWithRetry(
-  genAI: GoogleGenerativeAI,
-  contents: any,
-  retryCount = 0,
-  modelIndex = 0,
-): Promise<{ response: any; modelName: string }> {
-  const modelName = GEMINI_MODELS[modelIndex] ?? GEMINI_MODELS[GEMINI_MODELS.length - 1];
-  const model = genAI.getGenerativeModel({ model: modelName });
-
-  try {
-    const result = await model.generateContent({
-      contents,
-      systemInstruction: { role: 'system', parts: [{ text: SYSTEM_INSTRUCTION }] },
-      generationConfig: { responseMimeType: 'application/json' },
-    });
-    return { response: result.response, modelName };
-  } catch (err: any) {
-    const msg = formatGeminiError(err);
-    console.error(`[analyze-multi] Gemini generateContent failed model=${modelName} retry=${retryCount}:`, msg);
-
-    if (err.message?.includes('503') && retryCount < 3) {
-      await new Promise(res => setTimeout(res, 2000));
-      return generateWithRetry(genAI, contents, retryCount + 1, modelIndex);
-    }
-
-    if (modelIndex < GEMINI_MODELS.length - 1) {
-      console.warn(`[analyze-multi] falling back to ${GEMINI_MODELS[modelIndex + 1]}`);
-      return generateWithRetry(genAI, contents, 0, modelIndex + 1);
-    }
-
-    throw new Error(msg);
-  }
+function normalizeInvoice(raw: Record<string, unknown>) {
+  const items = Array.isArray(raw.items) ? raw.items : [];
+  const supplierName = String(raw.supplierName || '').trim() || (items.length ? '미확인' : '');
+  const { _conflicts, ...rest } = raw;
+  return {
+    ...rest,
+    supplierName,
+    items,
+    totalAmount: Number(raw.totalAmount || 0),
+    supplyAmount: Number(raw.supplyAmount || 0),
+    taxAmount: Number(raw.taxAmount || 0),
+    _conflicts,
+  };
 }
 
-async function checkQuality(
-  genAI: GoogleGenerativeAI,
-  base64Data: string,
-  mimeType: string,
-  fileName: string,
-) {
-  for (let i = 0; i < GEMINI_MODELS.length; i++) {
-    const modelName = GEMINI_MODELS[i];
-    const model = genAI.getGenerativeModel({ model: modelName });
+function isValidInvoice(inv: Record<string, unknown>): boolean {
+  if (!inv) return false;
+  const name = String(inv.supplierName || '').trim();
+  const items = Array.isArray(inv.items) ? inv.items : [];
+  const hasItems = items.some((it: { name?: string; qty?: number }) =>
+    String(it?.name || '').trim() || Number(it?.qty || 0) > 0,
+  );
+  const hasTotal = Number(inv.totalAmount || 0) > 0 || Number(inv.supplyAmount || 0) > 0;
+  return !!(name && name !== '미확인' ? true : hasItems || hasTotal);
+}
+
+function parseInvoices(text: string) {
+  const cleaned = stripJsonMarkdown(text);
+  const candidates: unknown[] = [];
+
+  const tryParse = (raw: string) => {
     try {
-      const qRes = await model.generateContent({
-        contents: [{ role: 'user', parts: [
-          { inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Data } },
-          { text: `OCR 품질 평가. JSON만: {"quality":"good|poor|unreadable","issues":[],"confidence":0-100,"feedback":"한국어 피드백"}` },
-        ]}],
-        generationConfig: { responseMimeType: 'application/json' },
-      });
-      const qt = qRes.response.text().trim().replace(/```json|```/g, '').trim();
-      return { fileName, modelName, ...JSON.parse(qt) };
-    } catch (e: any) {
-      console.warn(`[analyze-multi] OCR 품질 평가 실패 (${fileName}, ${modelName}):`, formatGeminiError(e));
+      return JSON.parse(raw);
+    } catch {
+      return null;
     }
+  };
+
+  let parsed = tryParse(cleaned);
+  if (!parsed) {
+    const arrMatch = cleaned.match(/\[[\s\S]*\]/);
+    const objMatch = cleaned.match(/\{[\s\S]*\}/);
+    parsed = arrMatch ? tryParse(arrMatch[0]) : objMatch ? tryParse(objMatch[0]) : null;
   }
-  return { fileName, quality: 'good', confidence: 70, issues: [], feedback: '' };
+
+  if (!parsed) return [];
+
+  if (Array.isArray(parsed)) {
+    candidates.push(...parsed);
+  } else if (parsed && typeof parsed === 'object') {
+    const p = parsed as Record<string, unknown>;
+    if (Array.isArray(p.invoices)) candidates.push(...p.invoices);
+    else if (Array.isArray(p.data)) candidates.push(...p.data);
+    else candidates.push(parsed);
+  }
+
+  return candidates
+    .map(c => normalizeInvoice(c as Record<string, unknown>))
+    .filter(isValidInvoice);
 }
 
 async function prepareImageContent(content: string, fileName: string) {
@@ -155,57 +160,40 @@ export async function POST(req: Request) {
   try {
     const authUser = await verifyToken(req);
     if (!authUser) {
-      console.warn('[analyze-multi] Unauthorized');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    const cloudKey  = process.env.GOOGLE_CLOUD_API_KEY;
-    if (!geminiKey && !cloudKey) {
-      console.error('[analyze-multi] GEMINI_API_KEY / GOOGLE_CLOUD_API_KEY 미설정');
-      return NextResponse.json({ error: 'GEMINI_API_KEY 또는 GOOGLE_CLOUD_API_KEY 미설정' }, { status: 500 });
+    if (!hasAnyAiProvider()) {
+      return NextResponse.json({ error: 'AI API 키가 설정되지 않았습니다.' }, { status: 500 });
     }
 
     let body: any;
     try {
       const rawText = await req.text();
-      if (!rawText) {
-        return NextResponse.json({ error: '요청 본문이 비어 있습니다.' }, { status: 400 });
-      }
+      if (!rawText) return NextResponse.json({ error: '요청 본문이 비어 있습니다.' }, { status: 400 });
       if (rawText.length > VERCEL_BODY_LIMIT) {
-        console.warn(`[analyze-multi] 413 body too large: ${rawText.length} chars`);
-        return NextResponse.json(
-          { error: '이미지 용량이 너무 큽니다. 더 작게 압축된 이미지로 다시 시도해주세요.' },
-          { status: 413 },
-        );
+        return NextResponse.json({ error: '이미지 용량이 너무 큽니다.' }, { status: 413 });
       }
       body = JSON.parse(rawText);
-    } catch (e: any) {
-      console.error('[analyze-multi] JSON 파싱 실패:', formatGeminiError(e));
-      const msg = String(e?.message || '');
-      if (msg.includes('413') || msg.toLowerCase().includes('too large') || msg.toLowerCase().includes('limit')) {
-        return NextResponse.json(
-          { error: '이미지 용량이 너무 큽니다. 이미지를 줄여서 다시 시도해주세요.' },
-          { status: 413 },
-        );
-      }
+    } catch {
       return NextResponse.json({ error: '요청 파싱 실패. 파일 크기를 줄여주세요.' }, { status: 400 });
     }
 
-    const { files, message } = body;
+    const { files, message, storeId } = body;
     if (!Array.isArray(files) || files.length === 0) {
       return NextResponse.json({ error: '분석할 파일이 없습니다.' }, { status: 400 });
     }
 
-    console.log(`[analyze-multi] start user=${authUser.uid} files=${files.length}`);
-
-    const genAI = new GoogleGenerativeAI(geminiKey || cloudKey!);
+    console.log(`[analyze-multi] start user=${authUser.uid} files=${files.length} ensemble=1`);
 
     const imageFiles = files.filter((f: any) => f.type === 'image' || f.type === 'pdf');
     const textFiles  = files.filter((f: any) => f.type !== 'image' && f.type !== 'pdf');
 
-    const qualities: any[] = [];
+    const fileNotes: string[] = [];
+    const fileResults: FileAnalysisMeta[] = [];
     const allInvoices: any[] = [];
+    const allEnsemble: unknown[] = [];
+    const allConflicts: unknown[] = [];
 
     for (const file of imageFiles) {
       if (!file.content) continue;
@@ -218,100 +206,155 @@ export async function POST(req: Request) {
           };
 
       if (!prepared?.base64Data) {
-        qualities.push({
-          fileName: file.name,
-          quality: 'unreadable',
-          confidence: 0,
-          issues: ['용량 초과 또는 압축 실패'],
-          feedback: '이미지 용량이 너무 큽니다. 더 작은 이미지로 다시 시도해주세요.',
-        });
+        fileNotes.push(`${file.name}: 용량 초과 — 더 작은 파일로 시도`);
         continue;
       }
 
       const { base64Data, mimeType } = prepared;
+      const userPrompt = [
+        message?.trim(),
+        '거래명세서/세금계산서의 품목·수량·단가·합계를 모두 추출하세요.',
+      ].filter(Boolean).join('\n');
 
-      const quality = await checkQuality(genAI, base64Data, mimeType, file.name);
-      qualities.push(quality);
+      const ensembleResult = await ensembleOcr(base64Data, mimeType, {
+        storeId: storeId || '',
+        userPrompt,
+      });
 
-      // 품질이 낮아도 분석 시도 (unreadable만 스킵)
-      if (quality.quality === 'unreadable') {
-        continue;
+      allEnsemble.push({
+        fileName: file.name,
+        individual: ensembleResult.individual,
+        confidence: ensembleResult.confidence,
+        exclusions: ensembleResult.exclusions,
+      });
+      allConflicts.push(...ensembleResult.conflicts);
+
+      const normalized = ensembleResult.merged
+        .map(inv => normalizeInvoice(inv))
+        .filter(isValidInvoice);
+
+      console.log(`[analyze-multi] file=${file.name} confidence=${ensembleResult.confidence}% invoices=${normalized.length}`);
+
+      fileResults.push({
+        fileName: file.name || 'image',
+        provider: 'ensemble',
+        model: 'claude+gpt4o+gemini',
+        attempt: 1,
+        invoiceCount: normalized.length,
+        success: normalized.length > 0,
+        ensemble: ensembleResult.individual.map(ind => ({
+          ai: ind.ai,
+          modelKey: ind.modelKey,
+          success: ind.success,
+          invoiceCount: ind.invoiceCount,
+          exclusionReason: ind.exclusionReason,
+        })),
+        confidence: ensembleResult.confidence,
+        exclusions: ensembleResult.exclusions,
+        conflicts: ensembleResult.conflicts,
+      });
+
+      if (normalized.length === 0) {
+        const failedAis = ensembleResult.exclusions.length
+          ? ensembleResult.exclusions.join(' / ')
+          : '모든 AI 추출 실패';
+        fileNotes.push(`${file.name}: ${failedAis}`);
+      } else {
+        allInvoices.push(...normalized.map((inv: Record<string, unknown>) => ({
+          ...inv,
+          aiTag: ensembleResult.aiTag,
+          _originalAiResult: { ...inv },
+        })));
       }
 
-      const parts: Part[] = [];
-      if (message?.trim()) parts.push({ text: message });
-      parts.push({ inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Data } });
-
-      const { response, modelName } = await generateWithRetry(genAI, [{ role: 'user', parts }]);
-      const text = response.text().trim().replace(/```json|```/g, '').trim();
-      console.log(`[analyze-multi] parsed file=${file.name} model=${modelName} chars=${text.length}`);
-      try {
-        const parsed = JSON.parse(text);
-        const invs = Array.isArray(parsed) ? parsed : [parsed];
-        allInvoices.push(...invs.filter((inv: any) => inv && (inv.supplierName || inv.items?.length > 0)));
-      } catch {
-        const match = text.match(/\[[\s\S]*\]/);
-        if (match) {
-          const invs = JSON.parse(match[0]);
-          allInvoices.push(...invs.filter((inv: any) => inv && (inv.supplierName || inv.items?.length > 0)));
-        }
-      }
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 200));
     }
 
     if (textFiles.length > 0) {
-      const parts: Part[] = [];
-      if (message?.trim()) parts.push({ text: message });
-      for (const file of textFiles) {
-        if (file.content) parts.push({ text: `[파일: ${file.name}]\n${file.content}` });
-      }
-      if (parts.length > 0) {
-        const { response, modelName } = await generateWithRetry(genAI, [{ role: 'user', parts }]);
-        const text = response.text().trim().replace(/```json|```/g, '').trim();
-        console.log(`[analyze-multi] text files model=${modelName} chars=${text.length}`);
-        try {
-          const parsed = JSON.parse(text);
-          const invs = Array.isArray(parsed) ? parsed : [parsed];
-          allInvoices.push(...invs.filter((inv: any) => inv && (inv.supplierName || inv.items?.length > 0)));
-        } catch (parseErr: any) {
-          console.warn('[analyze-multi] 텍스트 파일 JSON 파싱 실패:', parseErr?.message);
-        }
-      }
-    }
+      const textPrompt = [
+        message?.trim(),
+        ...textFiles.map((file: any) => file.content ? `[파일: ${file.name}]\n${file.content}` : ''),
+      ].filter(Boolean).join('\n\n');
 
-    if (imageFiles.length === 0 && textFiles.length === 0) {
-      return NextResponse.json({ error: '분석할 내용이 없습니다.' }, { status: 400 });
+      const { text, provider, model } = await generateTextWithFallback({
+        system: SYSTEM_INSTRUCTION,
+        prompt: textPrompt,
+        json: true,
+        order: providerOrderForUseCase('ocr'),
+      });
+      const aiTag = formatAiTag(provider, model);
+      const parsed = parseInvoices(text);
+      const names = textFiles.map((f: { name?: string }) => f.name || 'text').join(', ');
+      fileResults.push({
+        fileName: names,
+        provider,
+        model,
+        attempt: 1,
+        invoiceCount: parsed.length,
+        success: parsed.length > 0,
+      });
+      if (parsed.length) {
+        allInvoices.push(...parsed.map(inv => ({
+          ...inv,
+          aiTag,
+          _originalAiResult: { ...inv },
+        })));
+      } else {
+        fileNotes.push('텍스트 파일: 매입 항목 추출 실패');
+      }
     }
 
     const invoices = allInvoices;
+    const avgConfidence = fileResults.length
+      ? Math.round(fileResults.reduce((s, f) => s + (f.confidence ?? 100), 0) / fileResults.length)
+      : 0;
 
     let reply = invoices.length > 0
-      ? `${invoices.length}건의 매입 내역을 추출했습니다. 시트에서 내용을 확인·수정 후 저장하세요.`
-      : '문서에서 매입 내역을 추출하지 못했습니다. 더 선명한 이미지로 다시 시도해보세요.';
+      ? `${invoices.length}건의 매입 내역을 추출했습니다 (앙상블 신뢰도 ${avgConfidence}%). 시트에서 내용을 확인·수정 후 저장하세요.`
+      : '문서에서 매입 내역을 추출하지 못했습니다.';
 
-    const poor = qualities.filter(q => q.quality !== 'good');
-    if (poor.length > 0) {
-      reply += `\n\n⚠️ ${poor.length}개 파일 품질 주의: ${poor.map((q: any) => q.feedback || q.fileName).join(' / ')}`;
+    if (invoices.length === 0) {
+      reply += '\n\n💡 **개선 방법**\n• 밝은 곳에서 그림자 없이 전체 촬영\n• PDF 원본 업로드 (스크린샷보다 정확)\n• "품목명과 금액이 보이게 다시 분석"이라고 함께 입력';
     }
 
-    console.log(`[analyze-multi] done invoices=${invoices.length} qualities=${qualities.length}`);
-    return NextResponse.json({ invoices, reply, qualities });
+    const ensembleBlock = formatEnsembleReplyBlock(fileResults);
+    if (ensembleBlock) {
+      reply += ensembleBlock;
+    } else if (fileResults.length > 0) {
+      reply += `\n\n🏷️ **AI 분석 이력**\n${fileResults.map(formatFileResultLine).join('\n')}`;
+    }
+
+    if (fileNotes.length > 0) {
+      reply += `\n\n⚠️ ${fileNotes.join('\n')}`;
+    }
+
+    const conflictNote = allConflicts.length > 0
+      ? `\n\n⚠️ AI 간 불일치 ${allConflicts.length}건 — 다수결·중앙값으로 합산했습니다. 시트에서 확인하세요.`
+      : '';
+    reply += conflictNote;
+
+    console.log(`[analyze-multi] done invoices=${invoices.length}`);
+    return NextResponse.json({
+      invoices,
+      reply,
+      qualities: [],
+      fileResults,
+      fileNotes,
+      ensemble: allEnsemble,
+      conflicts: allConflicts,
+      confidence: avgConfidence,
+    });
   } catch (e: any) {
-    const msg = formatGeminiError(e);
+    const msg = formatAiError(e);
     console.error('[analyze-multi]', msg, e?.stack);
     let userError = e?.message || 'AI 분석 실패';
     let status = 500;
-    if (msg.includes('503') || msg.includes('overloaded')) userError = 'Gemini 서버가 혼잡합니다. 잠시 후 재시도해주세요.';
-    else if (msg.includes('429')) userError = 'API 요청 한도 초과입니다. 잠시 후 다시 시도해주세요.';
-    else if (msg.includes('400') || msg.includes('invalid')) userError = '이미지 처리 오류입니다. 더 선명한 이미지로 다시 시도해주세요.';
-    else if (msg.includes('JSON') || msg.includes('파싱')) userError = 'AI 분석 결과 파싱 실패. 문서를 다시 업로드해보세요.';
+    if (msg.includes('503') || msg.includes('overloaded')) userError = 'AI 서버가 혼잡합니다. 잠시 후 재시도해주세요.';
+    else if (isQuotaOrRateLimitError(e)) userError = '모든 AI API 한도가 초과되었습니다. 잠시 후 다시 시도해주세요.';
     else if (msg.toLowerCase().includes('too large') || msg.includes('413')) {
-      userError = '이미지 용량이 너무 큽니다. 이미지를 줄여서 다시 시도해주세요.';
+      userError = '이미지 용량이 너무 큽니다.';
       status = 413;
     }
-    return NextResponse.json(
-      { error: userError, detail: msg.slice(0, 300) },
-      { status },
-    );
+    return NextResponse.json({ error: userError, detail: msg.slice(0, 300) }, { status });
   }
 }

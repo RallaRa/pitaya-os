@@ -162,6 +162,22 @@
         { "fieldPath": "storeId", "order": "ASCENDING" },
         { "fieldPath": "predictionDate", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "purchase_analysis_history",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ocr_corrections",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

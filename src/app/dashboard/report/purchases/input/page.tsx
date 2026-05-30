@@ -13,6 +13,10 @@ import type { Invoice, InvoiceGroup, AttachedFile } from '@/components/purchases
 
 const PurchaseAIChat = dynamic(() => import('@/components/purchases/PurchaseAIChat'), { ssr: false });
 const PurchaseSheet = dynamic(() => import('@/components/purchases/PurchaseSheet'), { ssr: false });
+const PurchaseAnalysisHistory = dynamic(
+  () => import('@/components/purchases/PurchaseAnalysisHistory'),
+  { ssr: false },
+);
 
 function genId() {
   return `inv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -58,15 +62,20 @@ export default function PurchaseInputPage() {
   const [traceInfo, setTraceInfo] = useState<TraceInfo | null>(null);
   const [traceLoading, setTraceLoading] = useState(false);
   const [traceError, setTraceError] = useState('');
+  const [historyRefresh, setHistoryRefresh] = useState(0);
 
   const handleInvoicesFound = useCallback((invoices: Invoice[], files: AttachedFile[]) => {
-    const newGroups: InvoiceGroup[] = invoices.map(inv => ({
-      id: genId(),
-      invoice: inv,
-      isSaved: false,
-      isExpanded: true,
-      attachedFiles: files.length > 0 ? files : undefined,
-    }));
+    const newGroups: InvoiceGroup[] = invoices.map(inv => {
+      const { _originalAiResult, _conflicts, ...clean } = inv;
+      return {
+        id: genId(),
+        invoice: clean,
+        originalAiResult: _originalAiResult || JSON.parse(JSON.stringify(clean)),
+        isSaved: false,
+        isExpanded: true,
+        attachedFiles: files.length > 0 ? files : undefined,
+      };
+    });
     setGroups(prev => [...prev, ...newGroups]);
   }, []);
 
@@ -95,6 +104,20 @@ export default function PurchaseInputPage() {
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.error || '저장 실패');
+
+      if (group.originalAiResult && group.invoice.supplierName) {
+        fetch('/api/purchases/save-correction', {
+          method: 'POST',
+          headers: await getAuthJsonHeaders(),
+          body: JSON.stringify({
+            storeId: currentStore.storeId,
+            supplierName: group.invoice.supplierName,
+            originalResult: group.originalAiResult,
+            correctedResult: group.invoice,
+          }),
+        }).catch(() => {});
+      }
+
       setGroups(prev => prev.map(g =>
         g.id === groupId
           ? { ...g, isSaved: true, savedImageUrls: data.imageUrls || [] }
@@ -156,6 +179,14 @@ export default function PurchaseInputPage() {
 
   return (
     <div className="flex h-full bg-slate-950 text-slate-100 overflow-hidden">
+
+      {/* ── 좌측 분석 히스토리 ── */}
+      <div className="hidden lg:flex flex-col w-72 shrink-0 h-full">
+        <PurchaseAnalysisHistory
+          storeId={currentStore?.storeId || ''}
+          refreshKey={historyRefresh}
+        />
+      </div>
 
       {/* ── 중앙 시트 영역 ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -302,7 +333,11 @@ export default function PurchaseInputPage() {
 
       {/* ── 우측 AI 채팅 패널 ── */}
       <div className="hidden md:flex flex-col w-96 shrink-0 h-full">
-        <PurchaseAIChat onInvoicesFound={handleInvoicesFound} />
+        <PurchaseAIChat
+          storeId={currentStore?.storeId || ''}
+          onInvoicesFound={handleInvoicesFound}
+          onAnalysisLogged={() => setHistoryRefresh(k => k + 1)}
+        />
       </div>
 
       {/* 모바일: 하단 플로팅 버튼 (AI 채팅) */}

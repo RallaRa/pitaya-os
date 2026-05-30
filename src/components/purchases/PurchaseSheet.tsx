@@ -30,6 +30,11 @@ export interface Invoice {
   totalAmount: number;
   paymentMethod: string;
   memo: string;
+  /** AI 분석에 사용된 모델 꼬리표 (비교용) */
+  aiTag?: string;
+  /** 앙상블 OCR 원본 (수정 학습용) */
+  _originalAiResult?: Omit<Invoice, '_originalAiResult' | '_conflicts'>;
+  _conflicts?: Array<{ field: string; values: Array<{ ai: string; value: unknown }> }>;
 }
 
 export interface AttachedFile {
@@ -46,6 +51,7 @@ export interface InvoiceGroup {
   isExpanded: boolean;
   attachedFiles?: AttachedFile[];
   savedImageUrls?: string[];
+  originalAiResult?: Invoice['_originalAiResult'];
 }
 
 interface Props {
@@ -375,6 +381,15 @@ export default function PurchaseSheet({
                 placeholder="공급업체명"
                 className="bg-transparent text-sm text-white font-semibold focus:outline-none focus:bg-slate-800 rounded px-1 flex-1 min-w-0 placeholder:text-slate-600"
               />
+
+              {inv.aiTag && (
+                <span
+                  className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-slate-700/80 text-slate-300 border border-slate-600"
+                  title="이 명세를 분석한 AI"
+                >
+                  {inv.aiTag}
+                </span>
+              )}
 
               <input
                 value={inv.invoiceNumber}

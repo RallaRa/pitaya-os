@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { verifyToken } from '@/lib/authVerify';
 import { getKSTTodayYMD } from '@/lib/dateUtils';
+import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
+import { providerOrderForUseCase } from '@/lib/aiRouter';
 
 function midnightMs() {
   const d = new Date();
@@ -67,11 +68,11 @@ export async function GET(req: Request) {
     return NextResponse.json({ ...fallback, cached: false });
   }
 
-  if (!process.env.GEMINI_API_KEY) {
+  if (!hasAnyAiProvider()) {
     return NextResponse.json({
       todayBest: [],
       mainIssues: [],
-      improvements: [{ category: '설정', suggestion: 'GEMINI_API_KEY 설정 시 AI 인사이트를 이용할 수 있습니다.' }],
+      improvements: [{ category: '설정', suggestion: 'AI API 키 설정 시 AI 인사이트를 이용할 수 있습니다.' }],
       tomorrowPrep: [],
       summary: 'AI 키 미설정 상태입니다.',
       noData: true,
@@ -122,11 +123,8 @@ todayBest 최대 3개, mainIssues 최대 4개, improvements 최대 4개, tomorro
 
   let result: any;
   try {
-    const genAI  = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-    const model  = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    const res    = await model.generateContent(prompt);
-    const text   = res.response.text().trim().replace(/```json|```/g, '').trim();
-    result = JSON.parse(text);
+    const { text } = await generateTextWithFallback({ prompt, json: true, order: providerOrderForUseCase('insight') });
+    result = JSON.parse(stripJsonMarkdown(text));
   } catch (e: any) {
     // Gemini 실패 시 이전 캐시 반환
     try {

@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifyToken } from '@/lib/authVerify';
 import { FieldValue } from 'firebase-admin/firestore';
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_CLOUD_API_KEY || '');
+import { generateTextWithFallback, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 
 async function checkAlias(alias: string, supplierId: string | null, storeId: string) {
   const key = `${storeId}_${alias}`;
@@ -29,7 +27,6 @@ async function findSimilarViaGemini(itemName: string, supplierName: string, stor
   if (snap.empty) return [];
 
   const itemsList = snap.docs.map(d => ({ id: d.id, name: d.data().name || d.data().cut || '' }));
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
   const prompt = `아래 품목명과 가장 유사한 항목을 목록에서 찾아줘.
 유사도 점수(0-100)와 근거를 JSON 배열로만 반환해. score 70 이상만 포함.
@@ -41,9 +38,9 @@ async function findSimilarViaGemini(itemName: string, supplierName: string, stor
 [{"name":"항목명","score":85,"reason":"근거"}]`;
 
   try {
-    const result = await model.generateContent(prompt);
-    const text = result.response.text().trim();
-    const match = text.match(/\[[\s\S]*\]/);
+    const { text } = await generateTextWithFallback({ prompt, json: true });
+    const cleaned = stripJsonMarkdown(text);
+    const match = cleaned.match(/\[[\s\S]*\]/);
     if (!match) return [];
     const parsed = JSON.parse(match[0]);
     return parsed.map((p: any) => {
@@ -56,13 +53,12 @@ async function findSimilarViaGemini(itemName: string, supplierName: string, stor
 }
 
 async function suggestFromName(itemName: string) {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
   const prompt = `정육점 품목명 "${itemName}"에서 정보를 추출해 JSON으로만 반환해.
 {"category":"한우|한돈|수입우|수입돈|계육|기타","cut":"부위명","storage":"냉장|냉동","unit":"kg|개|박스"}`;
   try {
-    const result = await model.generateContent(prompt);
-    const text = result.response.text().trim();
-    const match = text.match(/\{[\s\S]*\}/);
+    const { text } = await generateTextWithFallback({ prompt, json: true });
+    const cleaned = stripJsonMarkdown(text);
+    const match = cleaned.match(/\{[\s\S]*\}/);
     return match ? JSON.parse(match[0]) : {};
   } catch {
     return {};

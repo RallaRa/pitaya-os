@@ -17,6 +17,20 @@ import {
   type DebateRoundResult,
   type DebateProvider,
 } from '@/lib/aiCollaborativeDebate';
+import {
+  getTextFallbackOrder,
+  hasProviderKey,
+  isOverloadError,
+  isQuotaOrRateLimitError,
+  type AiProviderId,
+} from '@/lib/aiProviderFallback';
+import {
+  CHAT_ROUTE_LABELS,
+  chatRouteToModelChoice,
+  classifyAiExclusion,
+  routeChatModel,
+  type ChatRouteModel,
+} from '@/lib/aiRouter';
 
 export type { DebateEntry, DebateRoundResult };
 
@@ -73,6 +87,18 @@ const GROQ_MODEL_IDS: Record<GroqModel, string> = {
   'groq-mixtral': 'llama-3.1-8b-instant',
   'groq-llama':   'llama-3.3-70b-versatile',
 };
+
+const MODEL_TO_ROUTE_KEY: Partial<Record<ModelChoice, ChatRouteModel>> = {
+  'groq-llama': 'groq',
+  'groq-mixtral': 'groq',
+  claude: 'claude',
+  gpt: 'gpt4o',
+  gemini: 'gemini',
+};
+
+function modelChoiceToRouteKey(model: ModelChoice): ChatRouteModel | undefined {
+  return MODEL_TO_ROUTE_KEY[model];
+}
 
 const hasKey = {
   gemini: () => !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY),
@@ -349,6 +375,8 @@ export async function POST(req: Request) {
     let effectiveMessage = message;
     let resolved: ModelChoice;
     let autoSelectedBy: string | undefined;
+    let chatRouteLabel: string | undefined;
+    const aiExclusions: string[] = [];
 
     const effectiveChoice: ModelChoice =
       (modelChoice as string) === 'groq' ? 'groq-llama' : modelChoice;
@@ -359,17 +387,10 @@ export async function POST(req: Request) {
       if (hasImage) {
         resolved = 'gemini';
       } else {
-        // Groq가 메시지를 분석해 최적 AI 선택
-        const groqPick = await groqAutoSelect(message);
-
-        if      (groqPick === 'claude' && hasKey.claude()) { resolved = 'claude'; autoSelectedBy = 'groq'; }
-        else if (groqPick === 'gpt'    && hasKey.gpt())    { resolved = 'gpt';    autoSelectedBy = 'groq'; }
-        else if (groqPick === 'gemini' && hasKey.gemini()) { resolved = 'gemini'; autoSelectedBy = 'groq'; }
-        else if (groqPick === 'groq'   && hasKey.groq())   { resolved = 'groq-llama'; autoSelectedBy = 'groq'; }
-        else if (hasKey.groq())   resolved = 'groq-llama';
-        else if (hasKey.claude()) resolved = 'claude';
-        else if (hasKey.gpt())    resolved = 'gpt';
-        else                      resolved = 'gemini';
+        const route = routeChatModel(message);
+        resolved = chatRouteToModelChoice(route);
+        autoSelectedBy = 'router';
+        chatRouteLabel = CHAT_ROUTE_LABELS[route];
       }
     } else {
       resolved = effectiveChoice;
@@ -415,26 +436,55 @@ export async function POST(req: Request) {
     // gemini key check (explicit select path covered above; auto path uses pickAvailable)
 
     // ── 호출 ──
-    let result: CallResult;
+    let result: CallResult | undefined;
     let finalModel = resolved;
 
-    try {
-      if (resolved === 'claude') {
-        result = await callClaude(effectiveMessage, msgs, system);
-      } else if (resolved === 'gpt') {
-        result = await callGPT(effectiveMessage, msgs, system);
-      } else if (resolved === 'groq-mixtral' || resolved === 'groq-llama') {
-        result = await callGroq(effectiveMessage, msgs, system, GROQ_MODEL_IDS[resolved as GroqModel]);
-      } else {
-        result = await callGemini(effectiveMessage, msgs, system);
+    const invokeProvider = async (provider: ModelChoice): Promise<CallResult> => {
+      if (provider === 'claude') return callClaude(effectiveMessage, msgs, system);
+      if (provider === 'gpt') return callGPT(effectiveMessage, msgs, system);
+      if (provider === 'groq-mixtral' || provider === 'groq-llama') {
+        return callGroq(effectiveMessage, msgs, system, GROQ_MODEL_IDS[provider as GroqModel]);
       }
+      return callGemini(effectiveMessage, msgs, system);
+    };
+
+    try {
+      result = await invokeProvider(resolved);
     } catch (callErr: any) {
-      const errMsg = friendlyAiError(callErr.message || '알 수 없는 오류');
-      return NextResponse.json({
-        text:      `⚠️ ${MODEL_NAMES[resolved] || resolved} 오류: ${errMsg}`,
-        usedModel: MODEL_NAMES[resolved] || resolved,
-        error:     errMsg,
-      }, { status: 502 });
+      const routeKey = modelChoiceToRouteKey(resolved);
+      if (routeKey) {
+        aiExclusions.push(classifyAiExclusion(callErr, routeKey));
+      }
+      const shouldFallback = isQuotaOrRateLimitError(callErr) || isOverloadError(callErr);
+      if (shouldFallback) {
+        const order = getTextFallbackOrder();
+        const start = order.indexOf(resolved as AiProviderId);
+        const candidates = (start >= 0 ? order.slice(start + 1) : order.slice(1)).filter(hasProviderKey);
+        for (const provider of candidates) {
+          let mapped: ModelChoice = 'gemini';
+          try {
+            mapped =
+              provider === 'groq' ? 'groq-llama'
+              : provider === 'gemini' ? 'gemini'
+              : provider;
+            result = await invokeProvider(mapped);
+            finalModel = mapped;
+            console.warn(`[ai/route] ${resolved} 실패 → ${provider} fallback`);
+            break;
+          } catch (fallbackErr) {
+            const fbKey = modelChoiceToRouteKey(mapped);
+            if (fbKey) aiExclusions.push(classifyAiExclusion(fallbackErr, fbKey));
+          }
+        }
+      }
+      if (!result) {
+        const errMsg = friendlyAiError(callErr.message || '알 수 없는 오류');
+        return NextResponse.json({
+          text:      `⚠️ ${MODEL_NAMES[resolved] || resolved} 오류: ${errMsg}`,
+          usedModel: MODEL_NAMES[resolved] || resolved,
+          error:     errMsg,
+        }, { status: 502 });
+      }
     }
 
     // ── 사용량 추적 ──
@@ -445,11 +495,18 @@ export async function POST(req: Request) {
       trackTokens(trackProvider, result.inputTokens, result.outputTokens).catch(() => {});
     }
 
+    let responseText = result.text;
+    if (aiExclusions.length > 0) {
+      responseText += `\n\n---\n⛔ **제외된 AI**\n${aiExclusions.map(e => `• ${e}`).join('\n')}\n✅ **응답 AI:** ${MODEL_NAMES[finalModel] || finalModel}`;
+    }
+
     return NextResponse.json({
-      text:            result.text,
+      text:            responseText,
       usedModel:       MODEL_NAMES[finalModel] || finalModel,
       isAuto:          modelChoice === 'auto',
       autoSelectedBy,
+      chatRoute:       chatRouteLabel,
+      aiExclusions:    aiExclusions.length ? aiExclusions : undefined,
       chatMode,
     });
 

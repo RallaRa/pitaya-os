@@ -1,8 +1,9 @@
-/** 클라이언트 이미지 압축 — canvas, max 1024px, JPEG quality 0.7 */
+/** 클라이언트 이미지 압축 — canvas, 문서 OCR용 고해상도 옵션 지원 */
 export async function compressImageFromDataUrl(
   dataUrl: string,
   maxPx = 1024,
   quality = 0.7,
+  enhanceDocument = false,
 ): Promise<string> {
   return new Promise(resolve => {
     const img = new Image();
@@ -21,7 +22,11 @@ export async function compressImageFromDataUrl(
       const canvas = document.createElement('canvas');
       canvas.width = w;
       canvas.height = h;
-      canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
+      const ctx = canvas.getContext('2d')!;
+      if (enhanceDocument) {
+        ctx.filter = 'contrast(1.2) brightness(1.06)';
+      }
+      ctx.drawImage(img, 0, 0, w, h);
       resolve(canvas.toDataURL('image/jpeg', quality));
     };
     img.onerror = () => resolve(dataUrl);
@@ -29,8 +34,13 @@ export async function compressImageFromDataUrl(
   });
 }
 
-/** File → JPEG dataURL (1024px, quality 0.7) */
-export async function compressImageFile(file: File, maxPx = 1024, quality = 0.7): Promise<string> {
+/** File → JPEG dataURL */
+export async function compressImageFile(
+  file: File,
+  maxPx = 1024,
+  quality = 0.7,
+  enhanceDocument = false,
+): Promise<string> {
   if (!file.type.startsWith('image/')) {
     const dataUrl = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
@@ -60,7 +70,11 @@ export async function compressImageFile(file: File, maxPx = 1024, quality = 0.7)
       }
       canvas.width = w;
       canvas.height = h;
-      canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
+      const ctx = canvas.getContext('2d')!;
+      if (enhanceDocument) {
+        ctx.filter = 'contrast(1.2) brightness(1.06)';
+      }
+      ctx.drawImage(img, 0, 0, w, h);
       resolve(canvas.toDataURL('image/jpeg', quality));
     };
     img.onerror = () => {

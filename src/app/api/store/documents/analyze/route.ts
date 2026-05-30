@@ -1,9 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { NextResponse } from 'next/server';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb, adminStorage } from '@/lib/firebase/admin';
 import { verifyToken } from '@/lib/authVerify';
-import { trackTokens } from '@/lib/trackUsage';
+import { generateVisionWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 
 const DOC_PROMPTS: Record<string, string> = {
   business_registration: `한국 사업자등록증 이미지를 분석하여 아래 JSON만 반환하세요 (마크다운·설명 없이):
@@ -26,8 +25,8 @@ export async function POST(req: Request) {
   const authUser = await verifyToken(req);
   if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return NextResponse.json({ error: 'ANTHROPIC_API_KEY 미설정' }, { status: 503 });
+  if (!hasAnyAiProvider()) {
+    return NextResponse.json({ error: 'AI API 키 미설정' }, { status: 503 });
   }
 
   const body = await req.json();
@@ -64,31 +63,14 @@ export async function POST(req: Request) {
   const prompt = DOC_PROMPTS[docType] ?? DOC_PROMPTS.other;
 
   try {
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-    const contentBlock = isPdf
-      ? {
-          type: 'document' as const,
-          source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: base64 },
-        }
-      : {
-          type: 'image' as const,
-          source: { type: 'base64' as const, media_type: mimeType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp', data: base64 },
-        };
-
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
-      messages: [{
-        role: 'user',
-        content: [contentBlock, { type: 'text' as const, text: prompt }],
-      }],
+    const { text, provider } = await generateVisionWithFallback({
+      prompt,
+      images: [{ base64, mimeType }],
+      json: true,
     });
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : '';
-    trackTokens('claude', response.usage.input_tokens, response.usage.output_tokens).catch(() => {});
-
-    const cleaned = text.replace(/```json?\n?/g, '').replace(/```\n?/g, '').trim();
+    const cleaned = stripJsonMarkdown(text);
+    console.log(`[store/documents/analyze] provider=${provider}`);
 
     let extracted: Record<string, any>;
     try {

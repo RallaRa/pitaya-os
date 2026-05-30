@@ -1,6 +1,6 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { adminDb } from '@/lib/firebase/admin';
 import { fetchPeriodTotals } from '@/lib/dashboardSalesData';
+import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 
 /** 시장 참조 검색 키워드 목표 개수 */
 export const MARKET_KEYWORD_TARGET = 30;
@@ -233,8 +233,7 @@ function formatContextForPrompt(ctx: KeywordMarketContext): string {
 export async function generateMarketKeywords(
   ctx: KeywordMarketContext,
 ): Promise<MarketKeywordResult> {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!apiKey) return fallbackResult(ctx);
+  if (!hasAnyAiProvider()) return fallbackResult(ctx);
 
   const perGroup = KEYWORDS_PER_TREND_GROUP;
 
@@ -264,14 +263,8 @@ JSON만 반환:
 }`;
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    const res = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json' },
-    });
-
-    const parsed = parseAiResult(parseGeminiJson(res.response.text()));
+    const { text } = await generateTextWithFallback({ prompt, json: true });
+    const parsed = parseAiResult(parseGeminiJson(stripJsonMarkdown(text)));
     if (!parsed) return fallbackResult(ctx);
 
     const marketKeywords = ensureMarketKeywordCount(parsed.marketKeywords || []);

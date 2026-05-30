@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { verifyToken } from '@/lib/authVerify';
 import { fetchWeeklyItemAggregates } from '@/lib/dashboardSalesData';
+import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -61,33 +61,20 @@ export async function GET(req: Request) {
     let bottom: Array<{ name: string; qty: number }> = [];
     let insight = '';
 
-    if (process.env.GEMINI_API_KEY) {
+    if (hasAnyAiProvider()) {
       try {
-        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        const models = ['gemini-2.0-flash'];
         const prompt = `다음은 정육점의 최근 7일 판매 데이터입니다.\n${summaryText}\n\n분석해서 반드시 아래 JSON 형식으로만 응답하세요 (마크다운 없이):\n{"top":[{"name":"품목명","qty":숫자,"amount":숫자}],"bottom":[{"name":"품목명","qty":숫자}],"insight":"한 줄 인사이트"}\ntop은 판매량 상위 3개, bottom은 판매량 하위 3개(qty>0), insight는 50자 이내 한국어.`;
 
-        let parsed: { top?: unknown[]; bottom?: unknown[]; insight?: string } | null = null;
-        for (const modelName of models) {
-          try {
-            const model = genAI.getGenerativeModel({ model: modelName });
-            const result = await model.generateContent(prompt);
-            const text = result.response.text().trim().replace(/```json|```/g, '').trim();
-            parsed = JSON.parse(text);
-            break;
-          } catch { /* try next model */ }
-        }
-
-        if (parsed) {
-          top = (parsed.top || []).slice(0, 3).map((t: { name: string; qty: number; amount?: number }) => ({
-            ...t,
-            pctChange: prevItemMap[t.name]?.qty
-              ? Math.round(((t.qty - prevItemMap[t.name].qty) / prevItemMap[t.name].qty) * 100)
-              : null,
-          }));
-          bottom = (parsed.bottom || []).slice(0, 3) as typeof bottom;
-          insight = parsed.insight || '';
-        }
+        const { text } = await generateTextWithFallback({ prompt, json: true });
+        const parsed = JSON.parse(stripJsonMarkdown(text)) as { top?: unknown[]; bottom?: unknown[]; insight?: string };
+        top = (parsed.top || []).slice(0, 3).map((t: { name: string; qty: number; amount?: number }) => ({
+          ...t,
+          pctChange: prevItemMap[t.name]?.qty
+            ? Math.round(((t.qty - prevItemMap[t.name].qty) / prevItemMap[t.name].qty) * 100)
+            : null,
+        }));
+        bottom = (parsed.bottom || []).slice(0, 3) as typeof bottom;
+        insight = parsed.insight || '';
       } catch {
         /* fallback below */
       }

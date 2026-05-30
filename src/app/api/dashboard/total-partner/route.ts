@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getStoreCoords, getWeatherCondition } from '@/lib/weather';
 import { verifyToken } from '@/lib/authVerify';
 import { fetchNaverTrendData } from '@/lib/naverTrendServer';
 import { fetchDailyReportsSince, storeHasSalesData } from '@/lib/dashboardSalesData';
+import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
+import { providerOrderForUseCase } from '@/lib/aiRouter';
 
 interface PartnerItem { rank: number; item: string; action: string; expectedSales: string; reason: string; badge: string; }
 
@@ -277,9 +278,9 @@ export async function GET(req: Request) {
     } catch {}
   }
 
-  if (!process.env.GEMINI_API_KEY) {
+  if (!hasAnyAiProvider()) {
     return NextResponse.json({
-      error: 'GEMINI_API_KEY 미설정',
+      error: 'AI API 키 미설정',
       today: null, tomorrow: null, thisWeek: null, thisMonth: null,
       noData: true, cached: false,
     }, { status: 200 });
@@ -495,11 +496,8 @@ topItems/bottomItems badge는: HOT(+30%↑) | UP(+10~30%) | 주의(-10%↓) | �
 
   let result: GeminiResult | null = null;
   try {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash', generationConfig: { temperature: 0.3 } });
-    const res   = await model.generateContent(prompt);
-    const text  = res.response.text().trim().replace(/^```json\s*/,'').replace(/\s*```$/,'').trim();
-    result = JSON.parse(text) as GeminiResult;
+    const { text } = await generateTextWithFallback({ prompt, json: true, temperature: 0.3, order: providerOrderForUseCase('insight') });
+    result = JSON.parse(stripJsonMarkdown(text)) as GeminiResult;
   } catch (e: unknown) {
     // Gemini 실패 시 최소 폴백
     result = {

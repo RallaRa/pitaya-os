@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { verifyToken } from '@/lib/authVerify';
+import { generateTextWithFallback, hasAnyAiProvider } from '@/lib/aiProviderFallback';
 import { adminDb } from '@/lib/firebase/admin';
 import { getStoreCoords, fetchWeather } from '@/lib/weather';
 import { getCompareDates, formatCompareDate, topItems, aggregateTimeSlotsFromItems } from '@/lib/reportCompare';
@@ -88,8 +88,7 @@ export async function POST(req: Request) {
   const authUser = await verifyToken(req);
   if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!geminiKey) return NextResponse.json({ error: 'GEMINI_API_KEY 미설정' }, { status: 500 });
+  if (!hasAnyAiProvider()) return NextResponse.json({ error: 'AI API 키 미설정' }, { status: 500 });
 
   try {
     const body = await req.json();
@@ -226,10 +225,8 @@ ${meatLines || '없음'}
 
 본문만 출력.`;
 
-    const genAI = new GoogleGenerativeAI(geminiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-    const result = await model.generateContent(prompt);
-    const review = result.response.text().trim().slice(0, 400);
+    const { text } = await generateTextWithFallback({ prompt });
+    const review = text.trim().slice(0, 400);
 
     return NextResponse.json({ review, meta: { inProgress, kstHour, compareDates: dates } });
   } catch (e: unknown) {
