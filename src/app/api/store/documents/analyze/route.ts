@@ -3,6 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb, adminStorage } from '@/lib/firebase/admin';
 import { verifyToken } from '@/lib/authVerify';
 import { generateVisionWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
+import { aiMetaJson } from '@/lib/aiProviderMeta';
 
 const DOC_PROMPTS: Record<string, string> = {
   business_registration: `한국 사업자등록증 이미지를 분석하여 아래 JSON만 반환하세요 (마크다운·설명 없이):
@@ -63,11 +64,13 @@ export async function POST(req: Request) {
   const prompt = DOC_PROMPTS[docType] ?? DOC_PROMPTS.other;
 
   try {
-    const { text, provider } = await generateVisionWithFallback({
+    const result = await generateVisionWithFallback({
       prompt,
       images: [{ base64, mimeType }],
       json: true,
+      useCase: 'ocr',
     });
+    const { text, provider } = result;
 
     const cleaned = stripJsonMarkdown(text);
     console.log(`[store/documents/analyze] provider=${provider}`);
@@ -86,7 +89,7 @@ export async function POST(req: Request) {
       });
     }
 
-    return NextResponse.json({ success: true, extracted, docType });
+    return NextResponse.json({ success: true, extracted, docType, ...aiMetaJson(result) });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

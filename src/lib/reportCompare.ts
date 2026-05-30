@@ -1,7 +1,9 @@
 import {
   addDaysYMD,
+  formatDateShortWithDow,
   getLastMonthSameDowYMD,
   getLastYearSameDowYMD,
+  getWeekdayKo,
   subtractMonthsYMD,
   subtractYearsYMD,
 } from '@/lib/dateUtils';
@@ -43,13 +45,21 @@ export function formatCompareDate(ymd: string, fullYear = false): string {
   return ymd.slice(5);
 }
 
-/** 컬럼 헤더: "전일 (05-28)" */
+/** 컬럼 헤더: "전일 05-28(수)" */
 export function getCompareColumnLabel(key: CompareKey, baseDate: string): string {
   const col = COMPARE_COLUMNS.find(c => c.key === key);
   if (!col) return key;
   const dates = getCompareDates(baseDate);
-  return `${col.label} (${formatCompareDate(dates[key])})`;
+  return `${col.label} ${formatDateShortWithDow(dates[key])}`;
 }
+
+/** 객단가 (순매출 ÷ 객수) */
+export function calcAvgTicket(netSales?: number | null, customerCount?: number | null): number | null {
+  if (customerCount == null || customerCount <= 0 || netSales == null) return null;
+  return Math.round(netSales / customerCount);
+}
+
+export { getWeekdayKo, formatDateShortWithDow };
 
 /** 기간 검색용 — 각 비교 키의 날짜 범위 */
 export function getCompareDateRanges(

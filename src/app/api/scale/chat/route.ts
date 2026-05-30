@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
-import Groq from 'groq-sdk';
 import { verifyToken } from '@/lib/authVerify';
+import {
+  generateTextWithFallback,
+  hasAnyAiProvider,
+  stripJsonMarkdown,
+} from '@/lib/aiProviderFallback';
+import { aiMetaJson } from '@/lib/aiProviderMeta';
 
 const SYSTEM_PROMPT = `너는 정육점 저울 코드 관리 도우미야.
 사용자 입력을 분석해서 반드시 아래 JSON만 반환해.
@@ -41,40 +46,35 @@ export async function POST(req: Request) {
     const { message, history } = await req.json();
     if (!message?.trim()) return NextResponse.json({ error: '메시지를 입력해주세요' }, { status: 400 });
 
-    const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey) return NextResponse.json({ error: 'GROQ_API_KEY 미설정' }, { status: 500 });
-
-    const groq = new Groq({ apiKey });
-
-    const messages: Groq.Chat.ChatCompletionMessageParam[] = [
-      { role: 'system', content: SYSTEM_PROMPT },
-      ...((history || []) as Groq.Chat.ChatCompletionMessageParam[]).slice(-6),
-      { role: 'user', content: message },
-    ];
-
-    const completion = await groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages,
-      temperature: 0.1,
-      max_tokens: 1024,
-    });
-
-    const raw = completion.choices[0]?.message?.content?.trim() || '{}';
-    let parsed: any;
-    try {
-      const cleaned = raw.replace(/```json|```/g, '').trim();
-      parsed = JSON.parse(cleaned);
-    } catch {
-      parsed = {
-        action: 'chat',
-        items: [],
-        filter: null,
-        message: raw,
-      };
+    if (!hasAnyAiProvider()) {
+      return NextResponse.json({ error: 'AI API 키 미설정' }, { status: 503 });
     }
 
-    return NextResponse.json(parsed);
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    const historyLines = ((history || []) as { role: string; content: string }[])
+      .slice(-6)
+      .map(m => `${m.role}: ${m.content}`)
+      .join('\n');
+    const prompt = historyLines ? `${historyLines}\nuser: ${message}` : message;
+
+    const aiResult = await generateTextWithFallback({
+      system: SYSTEM_PROMPT,
+      prompt,
+      json: true,
+      temperature: 0.1,
+      useCase: 'fast',
+    });
+
+    const raw = stripJsonMarkdown(aiResult.text) || '{}';
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = { action: 'chat', items: [], filter: null, message: raw };
+    }
+
+    return NextResponse.json({ ...parsed, ...aiMetaJson(aiResult) });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

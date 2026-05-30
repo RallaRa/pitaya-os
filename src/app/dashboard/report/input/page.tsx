@@ -10,6 +10,7 @@ import { useStore } from '@/context/StoreContext';
 import { WEATHER_ICONS, getStoreCoords, fetchWeather } from '@/lib/weather';
 import { useSearchParams } from 'next/navigation';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 
 // --- 타입 정의 영역 ---
 type Message = {
@@ -19,6 +20,7 @@ type Message = {
   image?: string;
   attachedFileName?: string;
   attachedFileUrl?: string;
+  ai?: AiMetaDisplay;
 };
 
 interface ExtractedData {
@@ -291,6 +293,7 @@ export default function ReportInputPage() {
           id: Date.now() + 1,
           role: 'ai',
           text: data.text || "분석이 완료되었습니다.",
+          ai: data.ai,
       }]);
 
       // 2. 정형 데이터가 있으면 UI 패널 오픈
@@ -779,6 +782,7 @@ const handleLoadReport = async () => {
               }`}>
                 {msg.image && <img src={msg.image} alt="첨부" className="rounded-lg mb-3 max-w-full h-auto" />} 
                 <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>
+                {msg.role === 'ai' && <AiUsedBadge ai={msg.ai} className="mt-2 pt-2 border-t border-slate-700/60" />}
                 
                 {/* 다운로드 가능한 엑셀 파일명 UI */}
                 {msg.attachedFileName && msg.attachedFileUrl ? (

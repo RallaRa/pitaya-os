@@ -3,7 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
-import { providerOrderForUseCase } from '@/lib/aiRouter';
+import { aiMetaJson } from '@/lib/aiProviderMeta';
 import { getKSTTodayYMD, getKSTYesterdayYMD } from '@/lib/dateUtils';
 import { getDisplayTotalSale, posDailySalesDocId } from '@/lib/posDailySales';
 import { loadSystemContext } from '@/lib/aiStoreContext';
@@ -179,16 +179,17 @@ JSON 형식:
 highlights 4~6개, actions 3개`;
 
   try {
-    const { text } = await generateTextWithFallback({ prompt, json: true, order: providerOrderForUseCase('insight') });
+    const aiResult = await generateTextWithFallback({ prompt, json: true, useCase: 'insight' });
     const result: {
       summary: string;
       opinion: string;
       highlights: { tag: string; text: string }[];
       actions: string[];
-    } = JSON.parse(stripJsonMarkdown(text));
+    } = JSON.parse(stripJsonMarkdown(aiResult.text));
 
     const payload = {
       ...result,
+      ...aiMetaJson(aiResult),
       trends: trendResult.trends,
       news,
       footTraffic,

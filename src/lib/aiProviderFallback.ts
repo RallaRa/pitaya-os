@@ -3,6 +3,13 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import Groq from 'groq-sdk';
 import { trackTokens, trackUsage } from '@/lib/trackUsage';
+import {
+  buildFullFallbackOrder,
+  classifyAiExclusion,
+  providerIdToModelKeyForExclusion,
+  providerOrderForUseCase,
+  type AiUseCase,
+} from '@/lib/aiRouter';
 
 export type AiProviderId = 'gemini' | 'claude' | 'gpt' | 'groq';
 
@@ -12,6 +19,8 @@ export interface FallbackResult {
   model: string;
   inputTokens?: number;
   outputTokens?: number;
+  /** fallback 중 제외된 AI와 사유 */
+  exclusions?: string[];
 }
 
 export interface VisionPart {
@@ -25,6 +34,8 @@ export interface TextGenerateOptions {
   json?: boolean;
   temperature?: number;
   order?: AiProviderId[];
+  /** order 미지정 시 용도별 전체 fallback (Groq 마지막) */
+  useCase?: AiUseCase;
 }
 
 export interface VisionGenerateOptions {
@@ -33,6 +44,7 @@ export interface VisionGenerateOptions {
   images: VisionPart[];
   json?: boolean;
   order?: AiProviderId[];
+  useCase?: AiUseCase;
 }
 
 const GEMINI_MODEL = 'gemini-2.0-flash';
@@ -40,8 +52,8 @@ const CLAUDE_MODEL = 'claude-sonnet-4-6';
 const GPT_MODEL = 'gpt-4o';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
-const DEFAULT_TEXT_ORDER: AiProviderId[] = ['gemini', 'claude', 'gpt', 'groq'];
-const DEFAULT_VISION_ORDER: AiProviderId[] = ['gemini', 'claude', 'gpt'];
+const DEFAULT_TEXT_ORDER: AiProviderId[] = buildFullFallbackOrder(['gemini']);
+const DEFAULT_VISION_ORDER: AiProviderId[] = buildFullFallbackOrder(['claude'], { vision: true });
 
 function formatError(err: unknown): string {
   if (!err || typeof err !== 'object') return String(err);
@@ -70,12 +82,17 @@ function parseOrder(raw: string | undefined, fallback: AiProviderId[]): AiProvid
   return parsed.length > 0 ? parsed : fallback;
 }
 
-export function getTextFallbackOrder(): AiProviderId[] {
+export function getTextFallbackOrder(useCase?: AiUseCase): AiProviderId[] {
+  if (useCase) return providerOrderForUseCase(useCase);
   return parseOrder(process.env.AI_PROVIDER_FALLBACK_ORDER, DEFAULT_TEXT_ORDER);
 }
 
-export function getVisionFallbackOrder(): AiProviderId[] {
-  return parseOrder(process.env.AI_VISION_FALLBACK_ORDER || process.env.AI_PROVIDER_FALLBACK_ORDER, DEFAULT_VISION_ORDER);
+export function getVisionFallbackOrder(useCase?: AiUseCase): AiProviderId[] {
+  if (useCase) return providerOrderForUseCase(useCase, true);
+  return parseOrder(
+    process.env.AI_VISION_FALLBACK_ORDER || process.env.AI_PROVIDER_FALLBACK_ORDER,
+    DEFAULT_VISION_ORDER,
+  );
 }
 
 export function hasProviderKey(provider: AiProviderId): boolean {
@@ -332,6 +349,7 @@ async function runWithFallback<T extends TextGenerateOptions | VisionGenerateOpt
     throw new Error('사용 가능한 AI API 키가 없습니다. (GEMINI / ANTHROPIC / OPENAI / GROQ)');
   }
 
+  const exclusions: string[] = [];
   let lastError: unknown;
   for (let i = 0; i < available.length; i++) {
     const provider = available[i];
@@ -341,9 +359,13 @@ async function runWithFallback<T extends TextGenerateOptions | VisionGenerateOpt
         console.warn(`[ai-fallback] ${label}: ${available[0]} 실패 → ${provider} 사용 (${result.model})`);
       }
       trackResult(result);
-      return result;
+      return {
+        ...result,
+        exclusions: exclusions.length ? exclusions : undefined,
+      };
     } catch (err) {
       lastError = err;
+      exclusions.push(classifyAiExclusion(err, providerIdToModelKeyForExclusion(provider)));
       const msg = formatError(err);
       const canFallback = i < available.length - 1;
 
@@ -353,20 +375,18 @@ async function runWithFallback<T extends TextGenerateOptions | VisionGenerateOpt
           try {
             const result = await invoke(provider, opts);
             trackResult(result);
-            return result;
+            return {
+              ...result,
+              exclusions: exclusions.length ? exclusions : undefined,
+            };
           } catch (retryErr) {
             lastError = retryErr;
           }
         }
       }
 
-      if (canFallback && (isQuotaOrRateLimitError(err) || isOverloadError(err))) {
-        console.warn(`[ai-fallback] ${label}: ${provider} 한도/혼잡 (${msg.slice(0, 120)}) → ${available[i + 1]} 시도`);
-        continue;
-      }
-
       if (canFallback) {
-        console.warn(`[ai-fallback] ${label}: ${provider} 오류 → ${available[i + 1]} 시도: ${msg.slice(0, 120)}`);
+        console.warn(`[ai-fallback] ${label}: ${provider} 실패 (${msg.slice(0, 100)}) → ${available[i + 1]} 시도`);
         continue;
       }
     }
@@ -375,15 +395,27 @@ async function runWithFallback<T extends TextGenerateOptions | VisionGenerateOpt
   throw lastError instanceof Error ? lastError : new Error(formatError(lastError));
 }
 
-/** Gemini 프리티어 초과 시 Claude → GPT → Groq 순으로 텍스트 생성 */
-export async function generateTextWithFallback(opts: TextGenerateOptions): Promise<FallbackResult> {
-  return runWithFallback(opts.order ?? getTextFallbackOrder(), invokeTextProvider, opts, 'text');
+function resolveTextOrder(opts: TextGenerateOptions): AiProviderId[] {
+  if (opts.order?.length) return opts.order;
+  if (opts.useCase) return providerOrderForUseCase(opts.useCase);
+  return getTextFallbackOrder();
 }
 
-/** Gemini 프리티어 초과 시 Claude → GPT 순으로 이미지/PDF 분석 */
+function resolveVisionOrder(opts: VisionGenerateOptions): AiProviderId[] {
+  if (opts.order?.length) return opts.order;
+  if (opts.useCase) return providerOrderForUseCase(opts.useCase, true);
+  return getVisionFallbackOrder();
+}
+
+/** 용도별 1순위 → 전체 AI 순차 시도 → Groq 마지막 */
+export async function generateTextWithFallback(opts: TextGenerateOptions): Promise<FallbackResult> {
+  return runWithFallback(resolveTextOrder(opts), invokeTextProvider, opts, 'text');
+}
+
+/** Vision: Claude → GPT → Gemini 순차 (Groq 제외) */
 export async function generateVisionWithFallback(opts: VisionGenerateOptions): Promise<FallbackResult> {
   if (!opts.images.length) throw new Error('Vision 요청에 이미지가 없습니다.');
-  return runWithFallback(opts.order ?? getVisionFallbackOrder(), invokeVisionProvider, opts, 'vision');
+  return runWithFallback(resolveVisionOrder(opts), invokeVisionProvider, opts, 'vision');
 }
 
 export function stripJsonMarkdown(text: string): string {

@@ -26,9 +26,13 @@ import {
 } from '@/lib/aiProviderFallback';
 import {
   CHAT_ROUTE_LABELS,
+  chatFallbackOrder,
   chatRouteToModelChoice,
+  chatRouteToProvider,
   classifyAiExclusion,
   routeChatModel,
+  buildFullFallbackOrder,
+  providerIdToModelKeyForExclusion,
   type ChatRouteModel,
 } from '@/lib/aiRouter';
 
@@ -455,18 +459,24 @@ export async function POST(req: Request) {
       if (routeKey) {
         aiExclusions.push(classifyAiExclusion(callErr, routeKey));
       }
-      const shouldFallback = isQuotaOrRateLimitError(callErr) || isOverloadError(callErr);
+      const shouldFallback = isQuotaOrRateLimitError(callErr) || isOverloadError(callErr) || true;
       if (shouldFallback) {
-        const order = getTextFallbackOrder();
-        const start = order.indexOf(resolved as AiProviderId);
-        const candidates = (start >= 0 ? order.slice(start + 1) : order.slice(1)).filter(hasProviderKey);
-        for (const provider of candidates) {
-          let mapped: ModelChoice = 'gemini';
+        const order = effectiveChoice === 'auto' && !/data:image/.test(message)
+          ? chatFallbackOrder(message)
+          : buildFullFallbackOrder(
+              resolved.startsWith('groq') ? 'groq' : (resolved as AiProviderId),
+            ).filter(hasProviderKey);
+        const start = order.indexOf(
+          resolved.startsWith('groq') ? 'groq' : (resolved as AiProviderId),
+        );
+        const rest = start >= 0 ? order.slice(start + 1) : order.slice(1);
+        for (const provider of rest) {
+          let mapped: ModelChoice =
+            provider === 'groq' ? 'groq-llama'
+            : provider === 'gemini' ? 'gemini'
+            : provider;
+          if (mapped === resolved) continue;
           try {
-            mapped =
-              provider === 'groq' ? 'groq-llama'
-              : provider === 'gemini' ? 'gemini'
-              : provider;
             result = await invokeProvider(mapped);
             finalModel = mapped;
             console.warn(`[ai/route] ${resolved} 실패 → ${provider} fallback`);

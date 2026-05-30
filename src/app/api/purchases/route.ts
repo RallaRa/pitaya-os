@@ -9,7 +9,9 @@ import {
   hasAnyAiProvider,
   isQuotaOrRateLimitError,
   stripJsonMarkdown,
+  type FallbackResult,
 } from '@/lib/aiProviderFallback';
+import { aiMetaJson } from '@/lib/aiProviderMeta';
 
 const SYSTEM_INSTRUCTION = `당신은 매입/구매 문서 전문 분석 AI입니다.
 거래명세서, 세금계산서, 매입전표, 영수증 이미지 또는 데이터를 분석하여 정확한 JSON을 반환합니다.
@@ -43,38 +45,38 @@ async function analyzePurchaseDocument(body: {
   fileName?: string;
   fileType?: string;
   text?: string;
-}) {
+}): Promise<FallbackResult> {
   const { fileContent, fileName, fileType, text } = body;
   let prompt = text || '이 매입 문서를 분석해주세요.';
 
   if ((fileType === 'csv' || fileType === 'excel') && fileContent) {
     prompt += `\n\n--- CSV 데이터: ${fileName} ---\n${fileContent}\n---`;
-    const { text: responseText } = await generateTextWithFallback({
+    return generateTextWithFallback({
       system: SYSTEM_INSTRUCTION,
       prompt,
       json: true,
+      useCase: 'ocr',
     });
-    return responseText;
   }
 
   if (fileType === 'image' && fileContent) {
     const mimeType = fileContent.substring(fileContent.indexOf(':') + 1, fileContent.indexOf(';'));
     const base64Data = fileContent.split(',')[1];
-    const { text: responseText } = await generateVisionWithFallback({
+    return generateVisionWithFallback({
       system: SYSTEM_INSTRUCTION,
       prompt,
       images: [{ base64: base64Data, mimeType }],
       json: true,
+      useCase: 'ocr',
     });
-    return responseText;
   }
 
-  const { text: responseText } = await generateTextWithFallback({
+  return generateTextWithFallback({
     system: SYSTEM_INSTRUCTION,
     prompt,
     json: true,
+    useCase: 'ocr',
   });
-  return responseText;
 }
 
 export async function GET(req: Request) {
@@ -180,7 +182,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'AI API 키 미설정', text: '⚠️ AI API 키가 설정되지 않았습니다.', parsedData: null }, { status: 503 });
     }
 
-    const responseText = stripJsonMarkdown(await analyzePurchaseDocument(body));
+    const aiResult = await analyzePurchaseDocument(body);
+    const responseText = stripJsonMarkdown(aiResult.text);
 
     let parsed;
     try {
@@ -191,7 +194,7 @@ export async function POST(req: Request) {
       parsed = JSON.parse(match[0]);
     }
 
-    return NextResponse.json({ text: parsed.reply, parsedData: parsed.data });
+    return NextResponse.json({ text: parsed.reply, parsedData: parsed.data, ...aiMetaJson(aiResult) });
   } catch (error: any) {
     const msg = error.message || '';
     let userMessage = '⚠️ 오류가 발생했습니다. 다시 시도해주세요.';

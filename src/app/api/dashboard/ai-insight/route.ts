@@ -4,7 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
 import { getKSTTodayYMD } from '@/lib/dateUtils';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
-import { providerOrderForUseCase } from '@/lib/aiRouter';
+import { aiMetaJson } from '@/lib/aiProviderMeta';
 
 function midnightMs() {
   const d = new Date();
@@ -123,8 +123,8 @@ todayBest 최대 3개, mainIssues 최대 4개, improvements 최대 4개, tomorro
 
   let result: any;
   try {
-    const { text } = await generateTextWithFallback({ prompt, json: true, order: providerOrderForUseCase('insight') });
-    result = JSON.parse(stripJsonMarkdown(text));
+    const aiResult = await generateTextWithFallback({ prompt, json: true, useCase: 'insight' });
+    result = { ...JSON.parse(stripJsonMarkdown(aiResult.text)), ...aiMetaJson(aiResult) };
   } catch (e: any) {
     // Gemini 실패 시 이전 캐시 반환
     try {

@@ -38,7 +38,7 @@ async function findSimilarViaGemini(itemName: string, supplierName: string, stor
 [{"name":"항목명","score":85,"reason":"근거"}]`;
 
   try {
-    const { text } = await generateTextWithFallback({ prompt, json: true });
+    const { text } = await generateTextWithFallback({ prompt, json: true, useCase: 'fast' });
     const cleaned = stripJsonMarkdown(text);
     const match = cleaned.match(/\[[\s\S]*\]/);
     if (!match) return [];
@@ -56,7 +56,7 @@ async function suggestFromName(itemName: string) {
   const prompt = `정육점 품목명 "${itemName}"에서 정보를 추출해 JSON으로만 반환해.
 {"category":"한우|한돈|수입우|수입돈|계육|기타","cut":"부위명","storage":"냉장|냉동","unit":"kg|개|박스"}`;
   try {
-    const { text } = await generateTextWithFallback({ prompt, json: true });
+    const { text } = await generateTextWithFallback({ prompt, json: true, useCase: 'fast' });
     const cleaned = stripJsonMarkdown(text);
     const match = cleaned.match(/\{[\s\S]*\}/);
     return match ? JSON.parse(match[0]) : {};

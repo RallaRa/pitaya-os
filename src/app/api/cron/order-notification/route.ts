@@ -37,15 +37,14 @@ export async function POST(req: Request) {
         if (!notifMsg) continue;
 
         let aiTip = '';
-        if (process.env.GEMINI_API_KEY) {
+        if (process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.GROQ_API_KEY) {
           try {
-            const { GoogleGenerativeAI } = await import('@google/generative-ai');
-            const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-            const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
-            const tip = await model.generateContent(
-              `정육점 발주 알림: ${data.dDayType}. ${notifMsg} 1문장 발주 조언만.`,
-            );
-            aiTip = tip.response.text().trim().slice(0, 120);
+            const { generateTextWithFallback } = await import('@/lib/aiProviderFallback');
+            const { text } = await generateTextWithFallback({
+              prompt: `정육점 발주 알림: ${data.dDayType}. ${notifMsg} 1문장 발주 조언만.`,
+              useCase: 'fast',
+            });
+            aiTip = text.trim().slice(0, 120);
           } catch { /* ignore */ }
         }
 

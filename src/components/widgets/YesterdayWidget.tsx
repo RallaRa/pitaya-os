@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import WidgetWrapper from './WidgetWrapper';
+import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 interface Item { name: string; qty: number; amount: number; }
-interface YesterdayData { dateLabel: string; top: Item[]; bottom: Item[]; noData?: boolean; }
+interface YesterdayData { dateLabel: string; top: Item[]; bottom: Item[]; noData?: boolean; ai?: AiMetaDisplay; }
 
 export default function YesterdayWidget({
   editMode, onRemove, storeId,
@@ -112,6 +113,7 @@ export default function YesterdayWidget({
               </div>
             </>
           )}
+          <AiUsedBadge ai={data.ai} className="pt-2 border-t border-slate-800/60" />
         </div>
       )}
     </WidgetWrapper>

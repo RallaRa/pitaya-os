@@ -263,7 +263,7 @@ JSON만 반환:
 }`;
 
   try {
-    const { text } = await generateTextWithFallback({ prompt, json: true });
+    const { text } = await generateTextWithFallback({ prompt, json: true, useCase: 'insight' });
     const parsed = parseAiResult(parseGeminiJson(stripJsonMarkdown(text)));
     if (!parsed) return fallbackResult(ctx);
 

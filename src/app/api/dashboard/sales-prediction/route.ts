@@ -5,7 +5,7 @@ import { getStoreCoords, getWeatherCondition, WEATHER_ICONS } from '@/lib/weathe
 import { verifyToken } from '@/lib/authVerify';
 import { getPredictionAnalysisInsights } from '@/lib/predictionAnalysis';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
-import { providerOrderForUseCase } from '@/lib/aiRouter';
+import { aiMetaJson } from '@/lib/aiProviderMeta';
 
 function toYMD(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -196,6 +196,7 @@ bottomItems: 오늘 판매 감소 예상 TOP5
 badges는 조건에 따라: 🔥HOT(+30%↑), ⬆️UP(+10~30%), 📉DOWN(-20%↓), 💡추천(confidence90+)
 reasonDetail은 반드시 100자 이내, "전주 동요일 대비 +12%", "최근7일 일평균 3.2kg" 같은 구체 수치 포함`;
 
+  let aiInfo: ReturnType<typeof aiMetaJson> | undefined;
   let topItems: any[] = [];
   let bottomItems: any[] = [];
   let supporterComment = '';
@@ -203,8 +204,9 @@ reasonDetail은 반드시 100자 이내, "전주 동요일 대비 +12%", "최근
 
   if (hasAnyAiProvider()) {
     try {
-      const { text } = await generateTextWithFallback({ prompt, json: true, order: providerOrderForUseCase('prediction') });
-      const parsed = JSON.parse(stripJsonMarkdown(text));
+      const aiResult = await generateTextWithFallback({ prompt, json: true, useCase: 'prediction' });
+      const parsed = JSON.parse(stripJsonMarkdown(aiResult.text));
+      aiInfo = aiMetaJson(aiResult);
       topItems    = (parsed.topItems    || []).slice(0,5).map((it: any) => ({
         ...it,
         reasonDetail: String(it.reasonDetail || '').slice(0, 100),
@@ -233,7 +235,7 @@ reasonDetail은 반드시 100자 이내, "전주 동요일 대비 +12%", "최근
         badges: ['📉DOWN'], reasons: ['하위 판매 이력'],
         reasonDetail: `90일 일평균 ${Math.round(d.qty / Math.max(d.days,1))}kg, 하위권 품목`,
       }));
-      supporterComment = '**통계 기반** 예측입니다. AI 분석을 위해 Gemini API 키를 확인하세요.';
+      supporterComment = '**통계 기반** 예측입니다. AI 분석 API 키를 확인하세요.';
     }
   }
 
@@ -244,6 +246,7 @@ reasonDetail은 반드시 100자 이내, "전주 동요일 대비 +12%", "최근
     modelAccuracy: Math.min(95, Math.max(40, sales.length * 0.8 + activeVars.length * 2)),
     noData: false,
     generatedAt: FieldValue.serverTimestamp(),
+    ...(aiInfo || {}),
   };
 
   await cacheRef.set(resultObj).catch(()=>{});

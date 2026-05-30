@@ -13,8 +13,10 @@ import ReportDailyAnalysis from '@/components/report/ReportDailyAnalysis';
 import {
   getKSTTodayYMD,
   subtractMonthsYMD,
+  DOW_KO,
+  formatDateShortWithDow,
 } from '@/lib/dateUtils';
-import { getComparisonFetchBounds, getCompareDates } from '@/lib/reportCompare';
+import { getComparisonFetchBounds, getCompareDates, calcAvgTicket } from '@/lib/reportCompare';
 
 // ── 타입 ──────────────────────────────────────────────────────────
 interface WeatherData { condition: string; tempMax: number; tempMin: number; }
@@ -96,6 +98,7 @@ function calendarDaysElapsed(start: string, end: string): number {
 interface DayCompareSnapshot {
   netSales: number;
   customerCount: number;
+  avgTicket: number | null;
 }
 
 function CmpCell({
@@ -103,23 +106,35 @@ function CmpCell({
   currentNet,
   currentCustomers,
   dateLabel,
+  compareLabel,
 }: {
   snap?: DayCompareSnapshot;
   currentNet: number;
   currentCustomers: number;
   dateLabel: string;
+  compareLabel: string;
 }) {
   if (!snap) return <span className="text-slate-600 text-xs">-</span>;
   const salesChg = pctChange(currentNet, snap.netSales);
   const custChg  = pctChange(currentCustomers, snap.customerCount);
+  const curTicket = calcAvgTicket(currentNet, currentCustomers);
+  const prevTicket = snap.avgTicket;
+  const ticketChg = curTicket != null && prevTicket != null ? pctChange(curTicket, prevTicket) : null;
   return (
     <div>
+      <p className="text-slate-500 text-[10px] font-medium mb-0.5">{compareLabel}</p>
       <p className="text-slate-400 text-xs">{snap.netSales.toLocaleString()}원</p>
       {salesChg && <span className={`text-[10px] font-bold ${salesChg.color}`}>{salesChg.text}</span>}
       <p className="text-blue-400/80 text-[10px] mt-0.5">
         {snap.customerCount > 0 ? `${snap.customerCount}명` : '-'}
         {custChg && <span className={`ml-1 font-bold ${custChg.color}`}>({custChg.text})</span>}
       </p>
+      {prevTicket != null && (
+        <p className="text-violet-400/80 text-[10px] mt-0.5">
+          객단가 {prevTicket.toLocaleString()}원
+          {ticketChg && <span className={`ml-1 font-bold ${ticketChg.color}`}>({ticketChg.text})</span>}
+        </p>
+      )}
       <p className="text-slate-600 text-[10px]">{dateLabel}</p>
     </div>
   );
@@ -160,6 +175,7 @@ function buildDateMap(docs: any[], storeId: string): Map<string, DayCompareSnaps
     result.set(date, {
       netSales: net,
       customerCount: dr.customerCount ?? 0,
+      avgTicket: calcAvgTicket(net, dr.customerCount ?? 0),
     });
   }
   return result;
@@ -352,6 +368,8 @@ export default function ReportViewPage() {
   const elapsed  = calendarDaysElapsed(range.start, range.end);
   const avgSales = elapsed > 0 ? Math.round(totalNetSales / elapsed) : 0;
 
+  const avgTicketPeriod = totalCustomer > 0 ? Math.round(totalNetSales / totalCustomer) : null;
+
   const analysisDate = (() => {
     const today = getKSTTodayYMD();
     if (today >= range.start && today <= range.end) return today;
@@ -515,12 +533,14 @@ export default function ReportViewPage() {
       ) : (
         <>
           {/* 통계 카드 */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-5">
             {[
               { icon: <TrendingUp className="w-3.5 h-3.5 text-teal-400"    />, label: '총 매출',    value: `${totalSales.toLocaleString()}원`,    color: 'text-teal-400' },
               { icon: <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />, label: '총 순매출',  value: `${totalNetSales.toLocaleString()}원`,  color: 'text-emerald-400' },
-              { icon: <Users      className="w-3.5 h-3.5 text-blue-400"   />, label: '일평균 순매출', value: `${avgSales.toLocaleString()}원`,    color: 'text-blue-400',
+              { icon: <TrendingUp className="w-3.5 h-3.5 text-blue-400"   />, label: '일평균 순매출', value: `${avgSales.toLocaleString()}원`,    color: 'text-blue-400',
                 sub: `${elapsed}일 기준` },
+              { icon: <Users      className="w-3.5 h-3.5 text-violet-400" />, label: '평균 객단가', value: avgTicketPeriod ? `${avgTicketPeriod.toLocaleString()}원` : '-', color: 'text-violet-400',
+                sub: totalCustomer > 0 ? `총 ${totalCustomer}명` : undefined },
               { icon: <RotateCcw  className="w-3.5 h-3.5 text-red-400"    />, label: '총 반품',    value: totalReturn   > 0 ? `${totalReturn.toLocaleString()}원`   : '-', color: 'text-red-400' },
               { icon: <Tag        className="w-3.5 h-3.5 text-yellow-400" />, label: '총 할인',    value: totalDiscount > 0 ? `${totalDiscount.toLocaleString()}원` : '-', color: 'text-yellow-400' },
             ].map(c => (
@@ -560,12 +580,12 @@ export default function ReportViewPage() {
                     { label: '총매출',        align: 'right'  },
                     { label: '순매출',        align: 'right'  },
                     { label: '포스별 매출',   align: 'right'  },
-                    { label: '전일',          align: 'right', sub: '비교일' },
-                    { label: '전월동일',      align: 'right', sub: '비교일' },
-                    { label: '전월동요일',    align: 'right', sub: '비교일' },
-                    { label: '전년동월동일',  align: 'right', sub: '비교일' },
-                    { label: '전년동월동요일', align: 'right', sub: '비교일' },
+                    { label: '전일',           align: 'right', sub: '순매출·객수·객단가' },
+                    { label: '전주동요일',     align: 'right', sub: '7일 전' },
+                    { label: '전월동요일',     align: 'right', sub: '전월 같은 요일' },
+                    { label: '전년동월동요일', align: 'right', sub: '전년 같은 요일' },
                     { label: '객수',          align: 'right'  },
+                    { label: '객단가',        align: 'right'  },
                     { label: '반품',          align: 'right'  },
                     { label: '할인',          align: 'right'  },
                     { label: '날씨',          align: 'center' },
@@ -587,21 +607,19 @@ export default function ReportViewPage() {
                 {reports.map((report, idx) => {
                   const isPOS = report.source === 'pos_bridge' || report.source === 'pos_bridge_migration';
 
-                  const dow = report.reportDate ? new Date(report.reportDate + 'T00:00:00').getDay() : -1;
-                  const DOW_LABELS = ['일','월','화','수','목','금','토'];
+                  const dow = report.reportDate ? new Date(report.reportDate + 'T12:00:00+09:00').getDay() : -1;
                   const dowColor = dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : 'text-slate-300';
 
                   const cmp = getCompareDates(report.reportDate);
                   const yDate   = cmp.yesterday;
-                  const pmDate  = cmp.lastMonthSame;
+                  const lwDate  = cmp.lastWeekDow;
                   const pmDow   = cmp.lastMonthDow;
-                  const pyDateD = cmp.lastYearMonthSame;
                   const pyDateW = cmp.lastYearMonthDow;
                   const ySnap      = compMap.get(yDate);
-                  const pmSnap     = compMap.get(pmDate);
+                  const lwSnap     = compMap.get(lwDate);
                   const pmDowSnap  = compMap.get(pmDow);
-                  const pySnapD    = compMap.get(pyDateD);
                   const pySnapW    = compMap.get(pyDateW);
+                  const rowAvgTicket = calcAvgTicket(report.netSales, report.customerCount);
 
                   return (
                     <tr key={report.id}
@@ -617,7 +635,7 @@ export default function ReportViewPage() {
                                 })
                               : '-'}
                             {dow >= 0 && (
-                              <span className={`text-xs font-bold ${dowColor}`}>({DOW_LABELS[dow]})</span>
+                              <span className={`text-xs font-bold ${dowColor}`}>({DOW_KO[dow]})</span>
                             )}
                           </p>
                           {isPOS ? (
@@ -669,33 +687,39 @@ export default function ReportViewPage() {
 
                       {/* 전일 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
-                        <CmpCell snap={ySnap} currentNet={report.netSales} currentCustomers={report.customerCount} dateLabel={`${yDate} 대비`} />
+                        <CmpCell snap={ySnap} currentNet={report.netSales} currentCustomers={report.customerCount}
+                          compareLabel="전일" dateLabel={formatDateShortWithDow(yDate)} />
                       </td>
 
-                      {/* 전월동일 */}
+                      {/* 전주동요일 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
-                        <CmpCell snap={pmSnap} currentNet={report.netSales} currentCustomers={report.customerCount} dateLabel={`${pmDate} 대비`} />
+                        <CmpCell snap={lwSnap} currentNet={report.netSales} currentCustomers={report.customerCount}
+                          compareLabel="전주동요일" dateLabel={formatDateShortWithDow(lwDate)} />
                       </td>
 
                       {/* 전월동요일 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
-                        <CmpCell snap={pmDowSnap} currentNet={report.netSales} currentCustomers={report.customerCount} dateLabel={`${pmDow} 동요일`} />
-                      </td>
-
-                      {/* 전년동월동일 */}
-                      <td className="px-3 py-3 text-right whitespace-nowrap">
-                        <CmpCell snap={pySnapD} currentNet={report.netSales} currentCustomers={report.customerCount} dateLabel={`${pyDateD} 대비`} />
+                        <CmpCell snap={pmDowSnap} currentNet={report.netSales} currentCustomers={report.customerCount}
+                          compareLabel="전월동요일" dateLabel={formatDateShortWithDow(pmDow)} />
                       </td>
 
                       {/* 전년동월동요일 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
-                        <CmpCell snap={pySnapW} currentNet={report.netSales} currentCustomers={report.customerCount} dateLabel={`${pyDateW} 동요일`} />
+                        <CmpCell snap={pySnapW} currentNet={report.netSales} currentCustomers={report.customerCount}
+                          compareLabel="전년동요일" dateLabel={formatDateShortWithDow(pyDateW)} />
                       </td>
 
                       {/* 객수 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
                         <span className="text-blue-400 font-bold text-sm">
                           {report.customerCount ? `${report.customerCount}명` : '-'}
+                        </span>
+                      </td>
+
+                      {/* 객단가 */}
+                      <td className="px-3 py-3 text-right whitespace-nowrap">
+                        <span className="text-violet-400 font-bold text-sm">
+                          {rowAvgTicket != null ? `${rowAvgTicket.toLocaleString()}원` : '-'}
                         </span>
                       </td>
 
@@ -774,11 +798,14 @@ export default function ReportViewPage() {
                   <td className="px-3 py-3 text-slate-300 font-bold text-sm">합계 ({reports.length}일)</td>
                   <td className="px-3 py-3 text-right text-teal-400    font-bold text-sm">{totalSales.toLocaleString()}원</td>
                   <td className="px-3 py-3 text-right text-emerald-400 font-bold text-sm">{totalNetSales.toLocaleString()}원</td>
-                  <td className="px-3 py-3 text-right text-slate-500   text-xs" colSpan={6}>
+                  <td className="px-3 py-3 text-right text-slate-500   text-xs" colSpan={4}>
                     일평균 <span className="text-blue-300 font-semibold">{avgSales.toLocaleString()}원</span>
                     <span className="text-slate-600 ml-1">({elapsed}일 기준)</span>
                   </td>
                   <td className="px-3 py-3 text-right text-blue-400    font-bold text-sm">{totalCustomer}명</td>
+                  <td className="px-3 py-3 text-right text-violet-400  font-bold text-sm">
+                    {avgTicketPeriod ? `${avgTicketPeriod.toLocaleString()}원` : '-'}
+                  </td>
                   <td className="px-3 py-3 text-right text-red-400     font-bold text-sm">
                     {totalReturn > 0 ? `${totalReturn.toLocaleString()}원` : '-'}
                   </td>

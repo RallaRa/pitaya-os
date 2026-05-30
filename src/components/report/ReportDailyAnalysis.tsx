@@ -4,13 +4,15 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from '@/lib/firebase/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { Loader2, RefreshCw, BarChart2, Package } from 'lucide-react';
-import { getKSTTodayYMD } from '@/lib/dateUtils';
+import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
+import { getKSTTodayYMD, formatDateShortWithDow } from '@/lib/dateUtils';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import {
   COMPARE_COLUMNS,
   CompareKey,
   ReportSnapshot,
   aggregateTimeSlotsFromItems,
+  calcAvgTicket,
   calcChange,
   dailyReportDocId,
   getCompareDates,
@@ -69,8 +71,14 @@ const METRICS = [
   { key: 'totalSales', label: '총매출' },
   { key: 'netSales', label: '순매출' },
   { key: 'customerCount', label: '객수', suffix: '명' },
+  { key: 'avgTicket', label: '객단가' },
   { key: 'returnAmount', label: '반품' },
 ] as const;
+
+/** 분석 테이블 — 전일·동요일 비교 중심 */
+const ANALYSIS_COMPARE_KEYS: CompareKey[] = [
+  'today', 'yesterday', 'lastWeekDow', 'lastMonthDow', 'lastYearMonthDow',
+];
 
 export default function ReportDailyAnalysis({ storeId, storeName, initialDate, rangeContext }: Props) {
   const [baseDate, setBaseDate] = useState(initialDate || getKSTTodayYMD());
@@ -78,6 +86,7 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate, r
   const [data, setData] = useState<Partial<Record<CompareKey, ReportDoc | null>>>({});
   const [loading, setLoading] = useState(true);
   const [review, setReview] = useState('');
+  const [reviewAi, setReviewAi] = useState<AiMetaDisplay | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [itemCategory, setItemCategory] = useState('전체');
 
@@ -132,6 +141,7 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate, r
       });
       const j = await res.json();
       setReview(j.review || j.error || '리뷰 생성 실패');
+      setReviewAi(j.ai || null);
     } catch {
       setReview('AI 리뷰를 불러오지 못했습니다.');
     } finally {
@@ -166,8 +176,11 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate, r
 
   const getVal = (snap: ReportSnapshot | null | undefined, key: string) => {
     if (!snap) return null;
+    if (key === 'avgTicket') return calcAvgTicket(snap.netSales, snap.customerCount);
     return (snap as Record<string, unknown>)[key] as number | null ?? null;
   };
+
+  const analysisColumns = COMPARE_COLUMNS.filter(c => ANALYSIS_COMPARE_KEYS.includes(c.key));
 
   const rows = [
     ...METRICS,
@@ -225,7 +238,10 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate, r
         {reviewLoading ? (
           <div className="h-10 bg-blue-900/30 rounded animate-pulse" />
         ) : (
-          <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">{review || '데이터 로딩 중...'}</p>
+          <>
+            <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">{review || '데이터 로딩 중...'}</p>
+            <AiUsedBadge ai={reviewAi} className="mt-3 pt-3 border-t border-blue-900/30" />
+          </>
         )}
       </div>
 
@@ -260,10 +276,12 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate, r
               <thead>
                 <tr className="bg-slate-800 border-b border-slate-700">
                   <th className="sticky left-0 bg-slate-800 px-3 py-2 text-left text-slate-400 text-xs">구분</th>
-                  {COMPARE_COLUMNS.map(c => (
+                  {analysisColumns.map(c => (
                     <th key={c.key} className={`px-3 py-2 text-right text-xs whitespace-nowrap ${c.color}`}>
                       <div>{c.label}</div>
-                      <div className="text-[10px] font-normal text-slate-500">{compareDates[c.key]}</div>
+                      <div className="text-[10px] font-normal text-slate-500">
+                        {formatDateShortWithDow(compareDates[c.key])}
+                      </div>
                     </th>
                   ))}
                 </tr>
@@ -272,7 +290,7 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate, r
                 {rows.map(row => (
                   <tr key={row.label} className="border-b border-slate-800/80">
                     <td className="sticky left-0 bg-slate-900 px-3 py-2 text-slate-400 text-xs whitespace-nowrap">{row.label}</td>
-                    {COMPARE_COLUMNS.map(col => {
+                    {analysisColumns.map(col => {
                       const snap = data[col.key];
                       let val: number | null = null;
                       if ('isPos' in row && row.isPos) {
@@ -371,10 +389,12 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate, r
               <thead>
                 <tr className="bg-slate-800">
                   <th className="sticky left-0 bg-slate-800 px-2 py-2 text-left text-slate-400">품목</th>
-                  {COMPARE_COLUMNS.map(c => (
+                  {analysisColumns.map(c => (
                     <th key={c.key} className={`px-2 py-2 text-right whitespace-nowrap ${c.color}`}>
                       <div>{c.label}</div>
-                      <div className="text-[9px] font-normal text-slate-500">{compareDates[c.key].slice(5)}</div>
+                      <div className="text-[9px] font-normal text-slate-500">
+                        {formatDateShortWithDow(compareDates[c.key])}
+                      </div>
                     </th>
                   ))}
                 </tr>
@@ -383,7 +403,7 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate, r
                 {todayItems.slice(0, 10).map(item => (
                   <tr key={item.name} className="border-t border-slate-800/60">
                     <td className="sticky left-0 bg-slate-900 px-2 py-1.5 text-slate-300 truncate max-w-[120px]">{item.name}</td>
-                    {COMPARE_COLUMNS.map(col => {
+                    {analysisColumns.map(col => {
                       const items = topItems(data[col.key]?.items, 100);
                       const found = items.find(i => i.name === item.name);
                       return (

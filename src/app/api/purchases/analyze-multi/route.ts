@@ -8,7 +8,6 @@ import {
   isQuotaOrRateLimitError,
   stripJsonMarkdown,
 } from '@/lib/aiProviderFallback';
-import { providerOrderForUseCase } from '@/lib/aiRouter';
 import {
   ensembleOcr,
 } from '@/lib/ensembleOcr';
@@ -276,11 +275,11 @@ export async function POST(req: Request) {
         ...textFiles.map((file: any) => file.content ? `[파일: ${file.name}]\n${file.content}` : ''),
       ].filter(Boolean).join('\n\n');
 
-      const { text, provider, model } = await generateTextWithFallback({
+    const { text, provider, model } = await generateTextWithFallback({
         system: SYSTEM_INSTRUCTION,
         prompt: textPrompt,
         json: true,
-        order: providerOrderForUseCase('ocr'),
+        useCase: 'ocr',
       });
       const aiTag = formatAiTag(provider, model);
       const parsed = parseInvoices(text);

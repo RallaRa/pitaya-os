@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AlertTriangle, RefreshCw, Package, TrendingUp, TrendingDown, ChevronDown, ChevronUp, Truck } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
+import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 interface PartnerItem {
@@ -34,6 +35,7 @@ interface PartnerData {
   orderAdvice: OrderAdvice | null;
   dataSourceStatus: Record<string, DataStatus>;
   error?: string;
+  ai?: AiMetaDisplay;
 }
 
 const BADGE_STYLE: Record<string, string> = {
@@ -340,6 +342,7 @@ export default function TotalPartnerWidget({ editMode, onRemove, storeId }: Prop
               ))}
             </div>
           )}
+          <AiUsedBadge ai={data?.ai} className="mt-1.5" />
         </div>
       </div>
     </WidgetWrapper>

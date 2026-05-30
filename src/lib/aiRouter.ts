@@ -7,7 +7,86 @@ export type AiUseCase =
   | 'chat'
   | 'insight'
   | 'prediction'
-  | 'fast';
+  | 'fast'
+  | 'report';
+
+const TEXT_POOL: AiProviderId[] = ['gemini', 'claude', 'gpt'];
+const VISION_POOL: AiProviderId[] = ['claude', 'gpt', 'gemini'];
+
+/** 용도별 1순위 AI (Groq는 항상 마지막 fallback) */
+function primaryProvidersForUseCase(useCase: AiUseCase): AiProviderId[] {
+  switch (useCase) {
+    case 'ocr':
+      return ['claude', 'gpt', 'gemini'];
+    case 'report':
+      return ['claude'];
+    case 'insight':
+    case 'fast':
+      return ['gemini'];
+    case 'prediction':
+      return ['claude'];
+    case 'chat':
+      return ['gemini'];
+    default:
+      return ['gemini'];
+  }
+}
+
+/**
+ * 전체 AI 순차 fallback: [용도별 우선] + [나머지] + [Groq 마지막]
+ * vision=true면 Groq 제외 (비전 미지원)
+ */
+export function buildFullFallbackOrder(
+  primary: AiProviderId | AiProviderId[],
+  opts?: { vision?: boolean },
+): AiProviderId[] {
+  const primaries = (Array.isArray(primary) ? primary : [primary]).filter(Boolean);
+  const pool = opts?.vision ? VISION_POOL : TEXT_POOL;
+  const ordered: AiProviderId[] = [];
+
+  for (const p of primaries) {
+    if (!ordered.includes(p)) ordered.push(p);
+  }
+  for (const p of pool) {
+    if (!ordered.includes(p)) ordered.push(p);
+  }
+  if (!opts?.vision && !ordered.includes('groq')) {
+    ordered.push('groq');
+  }
+  return ordered;
+}
+
+export function providerOrderForUseCase(useCase: AiUseCase, vision = false): AiProviderId[] {
+  return buildFullFallbackOrder(primaryProvidersForUseCase(useCase), { vision })
+    .filter(p => AI_MODELS[providerIdToModelKey(p)]?.available() ?? false);
+}
+
+function providerIdToModelKey(id: AiProviderId): AiModelKey {
+  if (id === 'gpt') return 'gpt4o';
+  if (id === 'groq') return 'groq';
+  return id as AiModelKey;
+}
+
+export function chatRouteToProvider(route: ChatRouteModel): AiProviderId {
+  switch (route) {
+    case 'groq': return 'groq';
+    case 'claude': return 'claude';
+    case 'gpt4o': return 'gpt';
+    case 'gemini': return 'gemini';
+    default: return 'gemini';
+  }
+}
+
+/** 대화 auto 모드 — 라우팅 1순위 + 전체 fallback (Groq 마지막) */
+export function chatFallbackOrder(message: string): AiProviderId[] {
+  const route = routeChatModel(message);
+  return buildFullFallbackOrder(chatRouteToProvider(route))
+    .filter(p => AI_MODELS[providerIdToModelKey(p)]?.available() ?? false);
+}
+
+export function providerIdToModelKeyForExclusion(id: AiProviderId): AiModelKey {
+  return providerIdToModelKey(id);
+}
 
 export const AI_MODELS: Record<AiModelKey, { name: string; providerId: AiProviderId; available: () => boolean }> = {
   claude: {
@@ -53,18 +132,15 @@ export function selectModels(useCase: AiUseCase): AiModelKey[] {
     case 'prediction':
       keys = ['claude', 'gpt4o', 'gemini'];
       break;
+    case 'report':
+      keys = ['claude', 'gpt4o', 'gemini'];
+      break;
     default:
       keys = ['groq'];
   }
   return keys.filter(k => AI_MODELS[k].available());
 }
 
-/** aiProviderFallback order (provider id) */
-export function providerOrderForUseCase(useCase: AiUseCase): AiProviderId[] {
-  return selectModels(useCase).map(modelKeyToProvider);
-}
-
-/** AI 제외/실패 사유 분류 (UI 표시용) */
 export function classifyAiExclusion(err: unknown, modelKey?: AiModelKey): string {
   const name = modelKey ? AI_MODELS[modelKey].name : 'AI';
   const msg = err instanceof Error ? err.message : String(err ?? '');

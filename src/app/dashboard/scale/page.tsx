@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
+import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 
 /* ── 타입 ── */
 interface ScaleCode {
@@ -26,6 +27,7 @@ interface ChatMsg {
   role: 'user' | 'ai';
   content: string;
   action?: string;
+  ai?: AiMetaDisplay;
 }
 
 /* ── 카테고리 분류 ── */
@@ -266,6 +268,7 @@ export default function ScaleCodePage() {
         role: 'ai',
         content: data.message || '처리가 완료되었습니다.',
         action: data.action,
+        ai: data.ai,
       };
       setChatHistory(h => [...h, aiMsg]);
 
@@ -481,6 +484,7 @@ export default function ScaleCodePage() {
                       : 'bg-slate-800 text-slate-200 rounded-tl-sm'
                   }`}>
                     <p className="whitespace-pre-wrap">{msg.content}</p>
+                    {msg.role === 'ai' && <AiUsedBadge ai={msg.ai} className="mt-1.5" />}
                     {msg.action && msg.action !== 'chat' && (
                       <span className={`mt-1.5 inline-block text-[10px] px-1.5 py-0.5 rounded-full ${
                         msg.action === 'add' ? 'bg-green-900/50 text-green-300' :

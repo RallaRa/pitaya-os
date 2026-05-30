@@ -10,6 +10,7 @@ import {
   CalendarDays, Truck, CreditCard, FileText, ChevronDown,
   AlertTriangle, CheckCircle2,
 } from 'lucide-react';
+import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 
 /* ── 타입 ── */
 interface Supplier {
@@ -46,7 +47,7 @@ interface HistoryItem {
   snapshot: Partial<Supplier>;
 }
 
-interface ChatMsg { role: 'user' | 'assistant'; content: string }
+interface ChatMsg { role: 'user' | 'assistant'; content: string; ai?: AiMetaDisplay; }
 
 /* ── 상수 ── */
 const DOW = ['일', '월', '화', '수', '목', '금', '토'];
@@ -407,9 +408,9 @@ function AiChatPanel({
 
       if (data.confirmRequired) {
         setPending(data);
-        setMsgs(m => [...m, { role: 'assistant', content: data.message + '\n\n확인이 필요합니다.' }]);
+        setMsgs(m => [...m, { role: 'assistant', content: data.message + '\n\n확인이 필요합니다.', ai: data.ai }]);
       } else {
-        setMsgs(m => [...m, { role: 'assistant', content: data.message }]);
+        setMsgs(m => [...m, { role: 'assistant', content: data.message, ai: data.ai }]);
       }
     } catch {
       setMsgs(m => [...m, { role: 'assistant', content: '오류가 발생했습니다. 다시 시도해주세요.' }]);
@@ -458,6 +459,7 @@ function AiChatPanel({
                 : 'bg-slate-800 text-slate-200 border border-slate-700/50'
             }`}>
               {m.content}
+              {m.role === 'assistant' && <AiUsedBadge ai={m.ai} className="mt-1.5" />}
             </div>
           </div>
         ))}

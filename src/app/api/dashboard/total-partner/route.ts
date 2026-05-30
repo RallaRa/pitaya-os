@@ -6,7 +6,7 @@ import { verifyToken } from '@/lib/authVerify';
 import { fetchNaverTrendData } from '@/lib/naverTrendServer';
 import { fetchDailyReportsSince, storeHasSalesData } from '@/lib/dashboardSalesData';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
-import { providerOrderForUseCase } from '@/lib/aiRouter';
+import { aiMetaJson } from '@/lib/aiProviderMeta';
 
 interface PartnerItem { rank: number; item: string; action: string; expectedSales: string; reason: string; badge: string; }
 
@@ -494,10 +494,10 @@ ${newsText}
 }
 topItems/bottomItems badge는: HOT(+30%↑) | UP(+10~30%) | 주의(-10%↓) | 추천(최적조건)`;
 
-  let result: GeminiResult | null = null;
+  let result: GeminiResult & { ai?: unknown } | null = null;
   try {
-    const { text } = await generateTextWithFallback({ prompt, json: true, temperature: 0.3, order: providerOrderForUseCase('insight') });
-    result = JSON.parse(stripJsonMarkdown(text)) as GeminiResult;
+    const aiResult = await generateTextWithFallback({ prompt, json: true, temperature: 0.3, useCase: 'insight' });
+    result = { ...(JSON.parse(stripJsonMarkdown(aiResult.text)) as GeminiResult), ...aiMetaJson(aiResult) };
   } catch (e: unknown) {
     // Gemini 실패 시 최소 폴백
     result = {

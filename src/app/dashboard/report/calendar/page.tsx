@@ -7,8 +7,10 @@ import { db } from '@/lib/firebase/firebase';
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
 import {
   CalendarDays, ChevronLeft, ChevronRight, Loader2,
-  TrendingUp, Users, RotateCcw, X, ExternalLink,
+  TrendingUp, Users, RotateCcw, X, ExternalLink, Receipt,
 } from 'lucide-react';
+import { formatDateShortWithDow } from '@/lib/dateUtils';
+import { calcAvgTicket, calcChange, getCompareDates, getComparisonFetchBounds } from '@/lib/reportCompare';
 
 interface DayReport {
   id: string;
@@ -101,20 +103,27 @@ export default function SalesCalendarPage() {
 
     setLoading(true);
     try {
+      const monthDates = Array.from({ length: daysInMonth }, (_, i) =>
+        `${year}-${String(month).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`,
+      );
+      const cmpBounds = getComparisonFetchBounds(monthDates);
+      const fetchStart = cmpBounds && cmpBounds.start < start ? cmpBounds.start : start;
+      const fetchEnd = cmpBounds && cmpBounds.end > end ? cmpBounds.end : end;
+
       let snap;
       try {
         snap = await getDocs(query(
           collection(db, 'daily_reports'),
           where('storeId', '==', storeId),
-          where('reportDate', '>=', start),
-          where('reportDate', '<=', end),
+          where('reportDate', '>=', fetchStart),
+          where('reportDate', '<=', fetchEnd),
           orderBy('reportDate', 'asc'),
         ));
       } catch {
         snap = await getDocs(query(
           collection(db, 'daily_reports'),
-          where('reportDate', '>=', start),
-          where('reportDate', '<=', end),
+          where('reportDate', '>=', fetchStart),
+          where('reportDate', '<=', fetchEnd),
         ));
       }
 
@@ -133,7 +142,7 @@ export default function SalesCalendarPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentStore?.storeId, storesLoaded, start, end]);
+  }, [currentStore?.storeId, storesLoaded, start, end, year, month, daysInMonth]);
 
   useEffect(() => { fetchMonth(); }, [fetchMonth]);
 
@@ -144,21 +153,21 @@ export default function SalesCalendarPage() {
   }, [reports]);
 
   const stats = useMemo(() => {
-    const totalSales = reports.reduce((s, r) => s + r.totalSales, 0);
-    const netSales = reports.reduce((s, r) => s + r.netSales, 0);
-    const returnAmount = reports.reduce((s, r) => s + r.returnAmount, 0);
-    const customerCount = reports.reduce((s, r) => s + r.customerCount, 0);
+    const monthReports = reports.filter(r => r.reportDate >= start && r.reportDate <= end);
+    const monthNet = monthReports.reduce((s, r) => s + r.netSales, 0);
+    const monthCustomers = monthReports.reduce((s, r) => s + r.customerCount, 0);
     const divisor = Math.max(avgDivisor, 1);
 
     return {
-      totalSales,
-      netSales,
-      returnAmount,
-      avgSales: Math.round(netSales / divisor),
-      avgCustomers: Math.round((customerCount / divisor) * 10) / 10,
-      dataDays: reports.length,
+      totalSales: monthReports.reduce((s, r) => s + r.totalSales, 0),
+      netSales: monthNet,
+      returnAmount: monthReports.reduce((s, r) => s + r.returnAmount, 0),
+      avgSales: Math.round(monthNet / divisor),
+      avgCustomers: Math.round((monthCustomers / divisor) * 10) / 10,
+      avgTicket: monthCustomers > 0 ? Math.round(monthNet / monthCustomers) : null,
+      dataDays: monthReports.length,
     };
-  }, [reports, avgDivisor]);
+  }, [reports, avgDivisor, start, end]);
 
   const calendarCells = useMemo(() => {
     const firstDow = new Date(`${start}T00:00:00`).getDay();
@@ -235,7 +244,7 @@ export default function SalesCalendarPage() {
       </div>
 
       {/* 월간 요약 */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-5">
         {[
           { label: '총매출', value: `${stats.totalSales.toLocaleString()}원`, color: 'text-teal-400', icon: TrendingUp },
           { label: '순매출', value: `${stats.netSales.toLocaleString()}원`, color: 'text-emerald-400', icon: TrendingUp },
@@ -244,6 +253,8 @@ export default function SalesCalendarPage() {
             sub: isCurrentMonth ? `${avgDivisor}일 기준` : `${daysInMonth}일 기준` },
           { label: '평균객수', value: `${stats.avgCustomers}명`, color: 'text-violet-400', icon: Users,
             sub: isCurrentMonth ? `${avgDivisor}일 기준` : `${daysInMonth}일 기준` },
+          { label: '평균객단가', value: stats.avgTicket ? `${stats.avgTicket.toLocaleString()}원` : '-', color: 'text-amber-400', icon: Receipt,
+            sub: stats.dataDays > 0 ? `${stats.dataDays}일 합산` : undefined },
         ].map(card => (
           <div key={card.label} className="bg-slate-900 border border-slate-700 rounded-xl p-4">
             <div className="flex items-center gap-1.5 mb-1">
@@ -324,6 +335,11 @@ export default function SalesCalendarPage() {
                       <p className="text-[10px] text-slate-500 tabular-nums">
                         {report.customerCount}명
                       </p>
+                      {calcAvgTicket(report.netSales, report.customerCount) != null && (
+                        <p className="text-[9px] text-amber-400/90 tabular-nums">
+                          객{(calcAvgTicket(report.netSales, report.customerCount)! / 1000).toFixed(0)}천
+                        </p>
+                      )}
                     </div>
                   ) : isFuture ? (
                     <p className="text-[10px] text-slate-700">-</p>
@@ -367,19 +383,73 @@ export default function SalesCalendarPage() {
                   { label: '총매출', value: selected.totalSales, color: 'text-teal-400' },
                   { label: '순매출', value: selected.netSales, color: 'text-emerald-400' },
                   { label: '객수', value: selected.customerCount, color: 'text-blue-400', suffix: '명' },
+                  { label: '객단가', value: calcAvgTicket(selected.netSales, selected.customerCount), color: 'text-amber-400', suffix: '원' },
                   { label: '반품', value: selected.returnAmount, color: 'text-red-400' },
                   { label: '할인', value: selected.discountAmount, color: 'text-yellow-400' },
                 ].map(item => (
                   <div key={item.label} className="bg-slate-800/60 rounded-xl p-3">
                     <p className="text-slate-500 text-xs mb-1">{item.label}</p>
                     <p className={`font-bold ${item.color}`}>
-                      {item.suffix
-                        ? `${item.value}${item.suffix}`
-                        : `${item.value.toLocaleString()}원`}
+                      {item.value == null || item.value === 0
+                        ? (item.suffix ? '-' : '-')
+                        : item.suffix
+                          ? `${typeof item.value === 'number' ? item.value.toLocaleString() : item.value}${item.suffix}`
+                          : `${(item.value as number).toLocaleString()}원`}
                     </p>
                   </div>
                 ))}
               </div>
+
+              {/* 기간 비교 */}
+              {(() => {
+                const cmp = getCompareDates(selected.reportDate);
+                const rows = [
+                  { label: '전일', date: cmp.yesterday },
+                  { label: '전주동요일', date: cmp.lastWeekDow },
+                  { label: '전월동요일', date: cmp.lastMonthDow },
+                  { label: '전년동요일', date: cmp.lastYearMonthDow },
+                ];
+                return (
+                  <div>
+                    <p className="text-slate-400 text-xs mb-2">기간 비교 (순매출 · 객단가)</p>
+                    <div className="space-y-1.5">
+                      {rows.map(row => {
+                        const prev = byDateMap.get(row.date);
+                        const ch = prev ? calcChange(selected.netSales, prev.netSales) : null;
+                        const curTicket = calcAvgTicket(selected.netSales, selected.customerCount);
+                        const prevTicket = prev ? calcAvgTicket(prev.netSales, prev.customerCount) : null;
+                        const ticketCh = curTicket != null && prevTicket != null
+                          ? calcChange(curTicket, prevTicket)
+                          : null;
+                        return (
+                          <div key={row.label} className="flex flex-wrap items-center justify-between gap-2 text-xs bg-slate-800/40 rounded-lg px-3 py-2">
+                            <div>
+                              <span className="text-slate-300 font-medium">{row.label}</span>
+                              <span className="text-slate-600 ml-1.5">{formatDateShortWithDow(row.date)}</span>
+                            </div>
+                            <div className="text-right">
+                              {prev ? (
+                                <>
+                                  <span className="text-slate-400 tabular-nums">{prev.netSales.toLocaleString()}원</span>
+                                  {ch && <span className={`ml-1.5 font-semibold ${ch.color}`}>{ch.label}</span>}
+                                  {prevTicket != null && (
+                                    <p className="text-[10px] text-amber-400/80 mt-0.5">
+                                      객단가 {prevTicket.toLocaleString()}원
+                                      {ticketCh && <span className={`ml-1 ${ticketCh.color}`}>{ticketCh.label}</span>}
+                                    </p>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-slate-600">데이터 없음</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {selected.posBreakdown && selected.posBreakdown.length > 0 && (
                 <div>

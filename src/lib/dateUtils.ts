@@ -103,3 +103,26 @@ export function normDateYMD(raw: string): string {
   }
   return raw.slice(0, 10);
 }
+
+export const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'] as const;
+
+export function getWeekdayKo(ymd: string): string {
+  if (!ymd || ymd.length < 10) return '';
+  const d = new Date(`${ymd.slice(0, 10)}T12:00:00+09:00`);
+  if (Number.isNaN(d.getTime())) return '';
+  return DOW_KO[d.getDay()] ?? '';
+}
+
+/** MM-DD(요일) */
+export function formatDateShortWithDow(ymd: string): string {
+  if (!ymd) return '';
+  const dow = getWeekdayKo(ymd);
+  return `${ymd.slice(5)}${dow ? `(${dow})` : ''}`;
+}
+
+/** YYYY-MM-DD(요일) */
+export function formatDateWithDow(ymd: string): string {
+  if (!ymd) return '';
+  const dow = getWeekdayKo(ymd);
+  return `${ymd}${dow ? `(${dow})` : ''}`;
+}

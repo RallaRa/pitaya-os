@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
+import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 interface Item { name: string; qty: number; amount: number; pctChange?: number | null; }
-interface AnalysisData { top: Item[]; bottom: Item[]; insight: string; }
+interface AnalysisData { top: Item[]; bottom: Item[]; insight: string; ai?: AiMetaDisplay; }
 
 export default function WeeklyAnalysisWidget({
   editMode, onRemove, storeId,
@@ -99,6 +100,7 @@ export default function WeeklyAnalysisWidget({
             <div className="bg-teal-900/20 border border-teal-700/30 rounded-lg px-3 py-2">
               <p className="text-[10px] text-teal-400 font-semibold mb-0.5">💡 AI 인사이트</p>
               <p className="text-xs text-slate-300 leading-snug">{data.insight}</p>
+              <AiUsedBadge ai={data.ai} className="mt-2" />
             </div>
           )}
         </div>

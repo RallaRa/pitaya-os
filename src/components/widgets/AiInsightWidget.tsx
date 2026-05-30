@@ -8,6 +8,7 @@ import {
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
 import WidgetWrapper from './WidgetWrapper';
+import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 
 interface TrendItem {
   groupName: string;
@@ -32,6 +33,7 @@ interface ComprehensiveData {
   noData?: boolean;
   cached?: boolean;
   error?: string;
+  ai?: AiMetaDisplay;
 }
 
 const TAG_COLORS: Record<string, string> = {
@@ -270,6 +272,7 @@ export default function AiInsightWidget({
               ))}
             </div>
           )}
+          <AiUsedBadge ai={data?.ai} className="px-3 pb-2" />
         </div>
       </div>
     </WidgetWrapper>

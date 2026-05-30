@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AlertTriangle, ChevronDown, ChevronUp, RefreshCw, Target } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
+import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 interface PredictionItem {
@@ -20,6 +21,7 @@ interface PredictionData {
   activeVariables: number; modelAccuracy: number;
   noData?: boolean; cached?: boolean;
   generatedAt?: any;
+  ai?: AiMetaDisplay;
 }
 
 function boldify(text: string) {
@@ -195,6 +197,8 @@ export default function SalesPredictionWidget({
                 </div>
               </div>
             )}
+
+            <AiUsedBadge ai={data?.ai} className="mt-1" />
           </div>
         )}
       </div>

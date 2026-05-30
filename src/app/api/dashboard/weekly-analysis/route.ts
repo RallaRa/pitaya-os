@@ -4,6 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
 import { fetchWeeklyItemAggregates } from '@/lib/dashboardSalesData';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
+import { aiMetaJson } from '@/lib/aiProviderMeta';
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -60,13 +61,15 @@ export async function GET(req: Request) {
     let top: Array<{ name: string; qty: number; amount?: number; pctChange: number | null }> = [];
     let bottom: Array<{ name: string; qty: number }> = [];
     let insight = '';
+    let aiMeta: ReturnType<typeof aiMetaJson> | undefined;
 
     if (hasAnyAiProvider()) {
       try {
         const prompt = `다음은 정육점의 최근 7일 판매 데이터입니다.\n${summaryText}\n\n분석해서 반드시 아래 JSON 형식으로만 응답하세요 (마크다운 없이):\n{"top":[{"name":"품목명","qty":숫자,"amount":숫자}],"bottom":[{"name":"품목명","qty":숫자}],"insight":"한 줄 인사이트"}\ntop은 판매량 상위 3개, bottom은 판매량 하위 3개(qty>0), insight는 50자 이내 한국어.`;
 
-        const { text } = await generateTextWithFallback({ prompt, json: true });
-        const parsed = JSON.parse(stripJsonMarkdown(text)) as { top?: unknown[]; bottom?: unknown[]; insight?: string };
+        const result = await generateTextWithFallback({ prompt, json: true, useCase: 'insight' });
+        aiMeta = aiMetaJson(result);
+        const parsed = JSON.parse(stripJsonMarkdown(result.text)) as { top?: unknown[]; bottom?: unknown[]; insight?: string };
         top = (parsed.top || []).slice(0, 3).map((t: { name: string; qty: number; amount?: number }) => ({
           ...t,
           pctChange: prevItemMap[t.name]?.qty
@@ -93,7 +96,7 @@ export async function GET(req: Request) {
       insight = insight || '최근 7일 판매 데이터 기준 집계입니다.';
     }
 
-    const resultObj = { top, bottom, insight };
+    const resultObj = { top, bottom, insight, ...(aiMeta || {}) };
     await cacheRef.set({ result: resultObj, cachedAt: FieldValue.serverTimestamp() }).catch(() => {});
     return NextResponse.json({ ...resultObj, cached: false });
   } catch (e: unknown) {

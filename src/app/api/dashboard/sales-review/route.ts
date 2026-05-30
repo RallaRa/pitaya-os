@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/authVerify';
 import { generateTextWithFallback, hasAnyAiProvider } from '@/lib/aiProviderFallback';
+import { aiMetaJson } from '@/lib/aiProviderMeta';
 import { adminDb } from '@/lib/firebase/admin';
 import { getStoreCoords, fetchWeather } from '@/lib/weather';
 import { getCompareDates, formatCompareDate, topItems, aggregateTimeSlotsFromItems } from '@/lib/reportCompare';
@@ -225,10 +226,14 @@ ${meatLines || '없음'}
 
 본문만 출력.`;
 
-    const { text } = await generateTextWithFallback({ prompt });
-    const review = text.trim().slice(0, 400);
+    const result = await generateTextWithFallback({ prompt, useCase: 'report' });
+    const review = result.text.trim().slice(0, 400);
 
-    return NextResponse.json({ review, meta: { inProgress, kstHour, compareDates: dates } });
+    return NextResponse.json({
+      review,
+      ...aiMetaJson(result),
+      meta: { inProgress, kstHour, compareDates: dates },
+    });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error('[sales-review]', e);

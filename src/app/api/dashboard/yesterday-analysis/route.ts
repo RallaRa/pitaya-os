@@ -3,6 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
+import { aiMetaJson } from '@/lib/aiProviderMeta';
 
 const CACHE_TTL_MS = 60 * 1000; // 1분
 
@@ -85,13 +86,15 @@ export async function GET(req: Request) {
 
     let top:    any[] = [];
     let bottom: any[] = [];
+    let aiMeta: ReturnType<typeof aiMetaJson> | undefined;
 
     if (hasAnyAiProvider()) {
       try {
         const prompt = `다음은 정육점의 어제(${dateLabel}) 판매 데이터입니다.\n${summaryText}\n\n분석해서 반드시 아래 JSON 형식으로만 응답하세요 (마크다운 없이):\n{"top":[{"name":"품목명","qty":숫자,"amount":숫자}],"bottom":[{"name":"품목명","qty":숫자,"amount":숫자}]}\ntop은 판매량 상위 5개, bottom은 판매량 하위 5개(qty>0).`;
 
-        const { text } = await generateTextWithFallback({ prompt, json: true });
-        const parsed = JSON.parse(stripJsonMarkdown(text));
+        const result = await generateTextWithFallback({ prompt, json: true, useCase: 'insight' });
+        aiMeta = aiMetaJson(result);
+        const parsed = JSON.parse(stripJsonMarkdown(result.text));
         top    = (parsed.top    || []).slice(0, 5);
         bottom = (parsed.bottom || []).slice(0, 5);
       } catch {
@@ -103,7 +106,7 @@ export async function GET(req: Request) {
       bottom = sorted.slice(-5).reverse().map(i => ({ name: i.name, qty: i.qty, amount: i.amount }));
     }
 
-    const resultObj = { dateLabel, top, bottom };
+    const resultObj = { dateLabel, top, bottom, ...(aiMeta || {}) };
 
     try {
       await cacheRef.set({ result: resultObj, cachedAt: FieldValue.serverTimestamp() });
