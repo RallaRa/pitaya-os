@@ -209,6 +209,53 @@ export async function fetchWeeklyItemAggregates(
   return { itemMap, prevItemMap };
 }
 
+/** 최근 N일 판매 상위 품목 — daily_reports → pos_sales_detail fallback */
+export async function fetchTopSellingItems(
+  storeId: string,
+  days = 30,
+  limit = 10,
+): Promise<{ name: string; qty: number }[]> {
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  const sinceStr = `${since.getFullYear()}-${String(since.getMonth() + 1).padStart(2, '0')}-${String(since.getDate()).padStart(2, '0')}`;
+  const itemMap: Record<string, number> = {};
+
+  const drSnap = await fetchDailyReportsSince(storeId, sinceStr);
+  if (drSnap && !drSnap.empty) {
+    drSnap.docs.forEach(doc => {
+      (doc.data().items || []).forEach((item: { name?: string; qty?: number }) => {
+        const name = item.name?.trim();
+        if (!name || name.length > 50) return;
+        itemMap[name] = (itemMap[name] || 0) + Number(item.qty || 0);
+      });
+    });
+  }
+
+  if (Object.keys(itemMap).length === 0) {
+    const sinceCompact = sinceStr.replace(/-/g, '');
+    try {
+      const detailSnap = await adminDb.collection('pos_sales_detail')
+        .where('storeId', '==', storeId)
+        .where('date', '>=', sinceCompact)
+        .orderBy('date', 'desc')
+        .limit(5000)
+        .get();
+      detailSnap.docs.forEach(doc => {
+        const name = String(doc.data().goodsName || '').trim();
+        if (!name) return;
+        itemMap[name] = (itemMap[name] || 0) + Number(doc.data().saleCount || 0);
+      });
+    } catch (err) {
+      console.warn('[dashboardSalesData] pos_sales_detail top items query failed:', err);
+    }
+  }
+
+  return Object.entries(itemMap)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, limit)
+    .map(([name, qty]) => ({ name, qty }));
+}
+
 /** 매장에 POS/일마감 데이터 존재 여부 */
 export async function storeHasSalesData(storeId: string): Promise<boolean> {
   if (!storeId) return false;

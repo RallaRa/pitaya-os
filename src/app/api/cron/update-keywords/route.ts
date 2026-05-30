@@ -3,10 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { verifyToken } from '@/lib/authVerify';
-
-function formatYMD(d: Date) {
-  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-}
+import { fetchTopSellingItems } from '@/lib/dashboardSalesData';
 
 function nextMonday5am(): Date {
   const d = new Date();
@@ -44,30 +41,9 @@ export async function POST(req: Request) {
 
     for (const storeId of storeIds) {
       try {
-        // 최근 30일 판매 상위 10개 품목 추출
-        const since = new Date();
-        since.setDate(since.getDate() - 30);
-        const sinceStr = formatYMD(since);
-
-        let q: FirebaseFirestore.Query = adminDb.collection('daily_reports')
-          .where('reportDate', '>=', sinceStr)
-          .where('storeId', '==', storeId);
-
-        const snap = await q.limit(200).get();
-        const itemMap: Record<string, number> = {};
-
-        snap.docs.forEach(doc => {
-          (doc.data().items || []).forEach((item: any) => {
-            const name = item.name;
-            if (!name || name.length > 50) return;
-            itemMap[name] = (itemMap[name] || 0) + Number(item.qty || 0);
-          });
-        });
-
-        const topItems = Object.entries(itemMap)
-          .sort(([, a], [, b]) => b - a)
-          .slice(0, 10)
-          .map(([name], rank) => ({ name, rank: rank + 1 }));
+        // 최근 30일 판매 상위 10개 품목 (daily_reports → pos_sales_detail fallback)
+        const topSelling = await fetchTopSellingItems(storeId, 30, 10);
+        const topItems = topSelling.map((item, rank) => ({ name: item.name, rank: rank + 1 }));
 
         if (topItems.length === 0) {
           results.push({ storeId, status: 'skipped', reason: '판매 데이터 없음' });
