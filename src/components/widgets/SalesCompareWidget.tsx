@@ -112,18 +112,16 @@ export default function SalesCompareWidget({
       loading={loading}
       error={error}
     >
-      {data && (
+      {!storeId ? (
+        <p className="text-slate-500 text-xs text-center mt-4">매장을 선택하세요</p>
+      ) : data ? (
         <div className="h-full overflow-y-auto p-3 space-y-3">
-          {!storeId ? (
-            <p className="text-slate-500 text-xs text-center mt-4">매장을 선택하세요</p>
-          ) : (
-            <>
-              <Block block={data.week}  label="주간 비교" />
-              <Block block={data.month} label="월간 비교" />
-            </>
-          )}
+          <Block block={data.week}  label="주간 비교" />
+          <Block block={data.month} label="월간 비교" />
         </div>
-      )}
+      ) : !loading && !error ? (
+        <p className="text-slate-500 text-xs text-center mt-4">매출 데이터 없음</p>
+      ) : null}
     </WidgetWrapper>
   );
 }

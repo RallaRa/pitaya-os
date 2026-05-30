@@ -58,6 +58,14 @@
       ]
     },
     {
+      "collectionGroup": "pos_customers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "point", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "pos_daily_sales",
       "queryScope": "COLLECTION",
       "fields": [

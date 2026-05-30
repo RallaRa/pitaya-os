@@ -109,6 +109,25 @@ function isMidnightFresh(ts: any) {
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
 }
 
+async function fetchPosCustomers(storeId: string) {
+  try {
+    return await adminDb.collection('pos_customers')
+      .where('storeId', '==', storeId)
+      .orderBy('point', 'desc')
+      .limit(200)
+      .get();
+  } catch {
+    const snap = await adminDb.collection('pos_customers')
+      .where('storeId', '==', storeId)
+      .limit(200)
+      .get();
+    const sorted = [...snap.docs].sort(
+      (a, b) => (b.data().point || 0) - (a.data().point || 0),
+    );
+    return { docs: sorted, empty: sorted.length === 0, size: sorted.length };
+  }
+}
+
 async function collectFirestoreData(storeId: string) {
   const since90  = toYMD(new Date(Date.now() - 90  * 86400000));
   const since365 = toYMD(new Date(Date.now() - 365 * 86400000));
@@ -120,10 +139,9 @@ async function collectFirestoreData(storeId: string) {
       .where('storeId','==',storeId).where('date','>=',since90.replace(/-/g,'')).orderBy('date','desc').limit(2000).get(),
     adminDb.collection('pos_finish_total')
       .where('storeId','==',storeId).where('date','>=',since90.replace(/-/g,'')).orderBy('date','desc').limit(90).get(),
-    adminDb.collection('pos_customers').where('storeId','==',storeId).orderBy('point','desc').limit(200).get(),
+    fetchPosCustomers(storeId),
     adminDb.collection('weather_impact_variables').doc(storeId || 'global').get(),
   ]);
-
   // 365일 일별 매출 추이
   const dailyTotals: {date:string;totalSale:number;transCount:number}[] = [];
   if (headerSnap.status === 'fulfilled') {

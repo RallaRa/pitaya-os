@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifyToken } from '@/lib/authVerify';
+import { pickBestReportByDate } from '@/lib/reportDedup';
 
 function toYMD(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -22,21 +23,18 @@ async function fetchPeriod(storeId: string, start: string, end: string): Promise
     .limit(60)
     .get();
 
-  const byDate = new Map<string, any>();
-  for (const d of snap.docs) {
-    const dr = d.data() as any;
-    const existing = byDate.get(dr.reportDate);
-    if (!existing || (dr.source === 'pos_bridge' && existing.source !== 'pos_bridge')) {
-      byDate.set(dr.reportDate, dr);
-    }
-  }
+  const byDate = pickBestReportByDate(
+    snap.docs.map(d => ({ ...d.data(), reportDate: d.data().reportDate as string, storeId: d.data().storeId as string | undefined })),
+    storeId,
+  );
 
   let net = 0, total = 0, customers = 0;
   for (const dr of byDate.values()) {
-    const t = dr.totalSales ?? 0;
-    net       += dr.netSales ?? dr.netSale ?? (t - (dr.returnAmount ?? 0) - (dr.discountAmount ?? 0));
+    const row = dr as { totalSales?: number; netSales?: number; netSale?: number; returnAmount?: number; discountAmount?: number; customerCount?: number };
+    const t = row.totalSales ?? 0;
+    net       += row.netSales ?? row.netSale ?? (t - (row.returnAmount ?? 0) - (row.discountAmount ?? 0));
     total     += t;
-    customers += dr.customerCount ?? 0;
+    customers += row.customerCount ?? 0;
   }
   return { net, total, customers };
 }

@@ -68,9 +68,9 @@ export default function TodaySalesWidget({
       todayPos = snap.exists() ? (snap.data() as SalesDoc) : null;
       mergeToday();
     }, err => {
-      console.error('[TodaySalesWidget] today pos_daily_sales:', err);
-      setError('당일 매출 데이터를 불러오지 못했습니다');
-      setLoading(false);
+      console.warn('[TodaySalesWidget] pos_daily_sales unavailable, using daily_reports fallback:', err);
+      todayPos = null;
+      mergeToday();
     });
 
     const unsubTodayReport = onSnapshot(todayReportRef, snap => {

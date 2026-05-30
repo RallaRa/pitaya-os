@@ -99,6 +99,30 @@ export default function CustomersPage() {
     setLoading(true);
     setListError(null);
 
+    const mapDocs = (snap: { docs: Array<{ id: string; data: () => Record<string, unknown> }> }) => {
+      const list: Customer[] = snap.docs.map(d => {
+        const r = d.data();
+        return {
+          id: d.id,
+          cusCode: String(r.cusCode || ''),
+          name: r.nameEncrypted ? '● 암호화됨' : String(r.name || ''),
+          mobile: String(r.phoneMasked || ''),
+          cusGubun: String(r.cusGubun || ''),
+          cusClass: String(r.cusClass || r.grade || ''),
+          grade: String(r.grade || r.cusClass || ''),
+          point: Number(r.point || 0),
+          totalPurchase: Number(r.totalPurchase || 0),
+          visitCount: Number(r.visitCount || 0),
+          lastVisitDate: String(r.lastVisitDate || ''),
+          joinDate: String(r.joinDate || r.writeDate || ''),
+        };
+      });
+      list.sort((a, b) => b.lastVisitDate.localeCompare(a.lastVisitDate));
+      setCustomers(list);
+      setTotal(list.length);
+      setLoading(false);
+    };
+
     const q = query(
       collection(db, 'pos_customers'),
       where('storeId', '==', storeId),
@@ -106,38 +130,34 @@ export default function CustomersPage() {
       limit(500),
     );
 
+    let unsubFallback: (() => void) | undefined;
+
     const unsub = onSnapshot(
       q,
-      snap => {
-        const list: Customer[] = snap.docs.map(d => {
-          const r = d.data();
-          return {
-            id: d.id,
-            cusCode: String(r.cusCode || ''),
-            name: r.nameEncrypted ? '● 암호화됨' : String(r.name || ''),
-            mobile: String(r.phoneMasked || ''),
-            cusGubun: String(r.cusGubun || ''),
-            cusClass: String(r.cusClass || r.grade || ''),
-            grade: String(r.grade || r.cusClass || ''),
-            point: Number(r.point || 0),
-            totalPurchase: Number(r.totalPurchase || 0),
-            visitCount: Number(r.visitCount || 0),
-            lastVisitDate: String(r.lastVisitDate || ''),
-            joinDate: String(r.joinDate || r.writeDate || ''),
-          };
-        });
-        setCustomers(list);
-        setTotal(list.length);
-        setLoading(false);
-      },
+      snap => mapDocs(snap),
       err => {
-        console.error('[customers] onSnapshot error:', err);
-        setListError('고객 데이터를 불러오지 못했습니다');
-        setLoading(false);
+        console.warn('[customers] indexed query failed, fallback:', err);
+        const qFallback = query(
+          collection(db, 'pos_customers'),
+          where('storeId', '==', storeId),
+          limit(500),
+        );
+        unsubFallback = onSnapshot(
+          qFallback,
+          snap => mapDocs(snap),
+          err2 => {
+            console.error('[customers] onSnapshot error:', err2);
+            setListError('고객 데이터를 불러오지 못했습니다. POS에서 sync-customers를 실행하세요.');
+            setLoading(false);
+          },
+        );
       },
     );
 
-    return () => unsub();
+    return () => {
+      unsub();
+      unsubFallback?.();
+    };
   }, [storeId]);
 
   /* ── 통계/등급 (API) ── */
@@ -308,7 +328,8 @@ export default function CustomersPage() {
                   </td></tr>
                 ) : paginatedCustomers.length === 0 ? (
                   <tr><td colSpan={canDecrypt ? 10 : 9} className="text-center py-10 text-slate-600">
-                    고객 데이터가 없습니다
+                    고객 데이터가 없습니다.<br />
+                    <span className="text-slate-500 text-[11px]">POS PC에서 `node bridge.js sync-customers` 실행 필요</span>
                   </td></tr>
                 ) : paginatedCustomers.map(c => {
                   const dec = decrypted[c.cusCode];
