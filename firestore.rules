@@ -275,6 +275,9 @@ service cloud.firestore {
     match /kakao_oauth_state/{docId} {
       allow read, write: if false;
     }
+    match /holiday_kakao_sent/{docId} {
+      allow read, write: if false;
+    }
     match /items/{docId} {
       allow read: if request.auth != null;
       allow write: if false;

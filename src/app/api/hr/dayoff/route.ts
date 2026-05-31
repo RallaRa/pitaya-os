@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken, getActualGroupId } from '@/lib/authVerify';
+import { notifyUser } from '@/lib/notifications/notifyUser';
 
 const ADMIN_ROLES = ['master', 'admin', 'owner'];
 const SUPERUSER_EMAIL = process.env.SUPERUSER_EMAIL || process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || '';
@@ -12,16 +13,7 @@ async function isStoreAdmin(uid: string, storeId: string) {
 }
 
 async function sendNotification(targetUid: string, title: string, body: string, link: string) {
-  await adminDb.collection('notifications').add({
-    targetUid,
-    senderUid: '',
-    senderName: '',
-    type: 'hr_dayoff',
-    message: body,
-    link,
-    isRead: false,
-    createdAt: FieldValue.serverTimestamp(),
-  });
+  await notifyUser(targetUid, { title, message: body, link, type: 'hr_dayoff' });
 }
 
 async function getSuperuserUid(): Promise<string | null> {
@@ -132,6 +124,13 @@ export async function POST(req: Request) {
         '/dashboard/hr/calendar?tab=leave',
       )
     ));
+
+    await notifyUser(userId, {
+      title: '휴무 신청 접수',
+      message: `${dateStr} ${typeLabel} 신청이 접수되었습니다.`,
+      link: '/dashboard/hr/calendar?tab=leave',
+      type: 'hr_dayoff',
+    });
 
     return NextResponse.json({ id: ref.id });
   } catch (e: any) {

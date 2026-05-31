@@ -2,7 +2,15 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken, getActualGroupId } from '@/lib/authVerify';
-import { isSuperuserEmail } from '@/lib/auth/permissions';
+import { recalculateUsedLeave } from '@/lib/hr/leaveBalance';
+import { notifyUser } from '@/lib/notifications/notifyUser';
+
+const LEAVE_TYPE_LABEL: Record<string, string> = {
+  annual: '연차',
+  half_am: '반차(오전)',
+  half_pm: '반차(오후)',
+  monthly: '월차',
+};
 
 const ADMIN_ROLES = ['master', 'admin', 'owner'];
 const SUPERUSER_EMAIL = process.env.SUPERUSER_EMAIL || process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || '';
@@ -13,16 +21,7 @@ async function isStoreAdmin(uid: string, storeId: string) {
 }
 
 async function sendNotification(targetUid: string, title: string, body: string, link: string, type = 'leave_request') {
-  await adminDb.collection('notifications').add({
-    targetUid,
-    senderUid: '',
-    senderName: '',
-    type,
-    message: body,
-    link,
-    isRead: false,
-    createdAt: FieldValue.serverTimestamp(),
-  });
+  await notifyUser(targetUid, { title, message: body, link, type });
 }
 
 async function getSuperuserUid(): Promise<string | null> {
@@ -35,7 +34,6 @@ async function getSuperuserUid(): Promise<string | null> {
   } catch { return null; }
 }
 
-// 슈퍼유저 + 매장 관리자에게 승인 알림
 async function getApproverUids(storeId: string): Promise<string[]> {
   const uids = new Set<string>();
   const suUid = await getSuperuserUid();
@@ -65,7 +63,6 @@ export async function GET(req: Request) {
   const status  = searchParams.get('status');
   const month   = searchParams.get('month');
 
-  // 본인 데이터 or 관리자(storeId 기준)만 조회 가능
   if (storeId) {
     const admin = await isStoreAdmin(authUser.uid, storeId);
     if (!admin) return NextResponse.json({ error: '권한 없음' }, { status: 403 });
@@ -82,17 +79,20 @@ export async function GET(req: Request) {
     if (status)  q = q.where('status', '==', status);
 
     const snap = await q.limit(500).get();
-    let docs = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
-    docs.sort((a: any, b: any) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
+    let docs = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Record<string, unknown>[];
+    docs.sort((a, b) => ((b.createdAt as { seconds?: number })?.seconds ?? 0) - ((a.createdAt as { seconds?: number })?.seconds ?? 0));
     docs = docs.slice(0, 200);
 
     if (month) {
-      docs = docs.filter((d: any) => d.startDate?.startsWith(month) || d.endDate?.startsWith(month));
+      docs = docs.filter(d =>
+        String(d.startDate || '').startsWith(month) || String(d.endDate || '').startsWith(month),
+      );
     }
 
     return NextResponse.json({ requests: docs });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : '조회 실패';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
 
@@ -102,40 +102,70 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { userId, userName, userEmail, storeId, type, startDate, endDate, reason } = body;
+    const {
+      userId, userName, userEmail, storeId, type, startDate, endDate, reason,
+      status: directStatus,
+    } = body;
 
     if (!userId || !type || !startDate || !endDate) {
       return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
     }
-    // 본인 명의로만 신청 가능
-    if (userId !== authUser.uid) {
+
+    const admin = storeId ? await isStoreAdmin(authUser.uid, storeId) : false;
+    if (userId !== authUser.uid && !admin) {
       return NextResponse.json({ error: '권한 없음' }, { status: 403 });
     }
+
+    const isDirectApprove = admin && directStatus === 'approved';
+    const userDoc = await adminDb.collection('users').doc(authUser.uid).get();
+    const approverName = userDoc.data()?.name || userDoc.data()?.displayName || '관리자';
 
     const ref = await adminDb.collection('hr_leave_requests').add({
       userId, userName, userEmail, storeId,
       type,
       startDate, endDate,
-      reason:    reason || '',
-      status:    'pending',
+      reason: reason || '',
+      status: isDirectApprove ? 'approved' : 'pending',
       createdAt: FieldValue.serverTimestamp(),
-      approvedBy:  null,
-      approvedAt:  null,
+      approvedBy:     isDirectApprove ? authUser.uid : null,
+      approvedByName: isDirectApprove ? approverName : null,
+      approvedAt:     isDirectApprove ? FieldValue.serverTimestamp() : null,
+      updatedAt:      FieldValue.serverTimestamp(),
     });
 
+    if (isDirectApprove) {
+      const balance = await recalculateUsedLeave(storeId, userId);
+      const typeLabel = LEAVE_TYPE_LABEL[type as string] || type;
+      await notifyUser(userId, {
+        title: '연차 등록',
+        message: `${startDate}~${endDate} ${typeLabel}가 등록되었습니다.`,
+        link: '/dashboard/hr/calendar?tab=leave',
+        type: 'leave_approved',
+      });
+      return NextResponse.json({ id: ref.id, balance });
+    }
+
     const approvers = await getApproverUids(storeId);
-    const typeLabel = { annual: '연차', half_am: '반차(오전)', half_pm: '반차(오후)' }[type as string] || type;
+    const typeLabel = LEAVE_TYPE_LABEL[type as string] || type;
     await Promise.all(approvers.map(approverUid =>
       sendNotification(approverUid,
         '연차 신청',
         `${userName}님이 ${typeLabel} 신청했습니다 (${startDate}~${endDate})`,
         '/dashboard/hr/calendar?tab=leave',
-      )
+      ),
     ));
 
+    await notifyUser(userId, {
+      title: '연차 신청 접수',
+      message: `${startDate}~${endDate} ${typeLabel} 신청이 접수되었습니다.`,
+      link: '/dashboard/hr/calendar?tab=leave',
+      type: 'leave_request',
+    });
+
     return NextResponse.json({ id: ref.id });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : '등록 실패';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
 
@@ -145,40 +175,84 @@ export async function PUT(req: Request) {
 
   try {
     const body = await req.json();
-    const { id, status, approvedBy, approvedByName } = body;
+    const {
+      id,
+      status,
+      approvedBy,
+      approvedByName,
+      type,
+      startDate,
+      endDate,
+      reason,
+      userName,
+    } = body;
 
-    if (!id || !status) return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
+    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
     const ref  = adminDb.collection('hr_leave_requests').doc(id);
     const snap = await ref.get();
     if (!snap.exists) return NextResponse.json({ error: '신청 없음' }, { status: 404 });
 
-    // 해당 매장의 관리자만 승인/거절 가능
     const data = snap.data()!;
     const admin = await isStoreAdmin(authUser.uid, data.storeId);
     if (!admin) return NextResponse.json({ error: '권한 없음' }, { status: 403 });
 
-    await ref.update({
-      status,
-      approvedBy:     approvedBy || null,
-      approvedByName: approvedByName || null,
-      approvedAt:     FieldValue.serverTimestamp(),
+    const userDoc = await adminDb.collection('users').doc(authUser.uid).get();
+    const editorName = userDoc.data()?.name || userDoc.data()?.displayName || '관리자';
+
+    const isEdit = type !== undefined || startDate !== undefined ||
+      endDate !== undefined || reason !== undefined || userName !== undefined;
+
+    const updates: Record<string, unknown> = {
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: authUser.uid,
+      updatedByName: editorName,
+    };
+
+    if (isEdit) {
+      if (type !== undefined) updates.type = type;
+      if (startDate !== undefined) updates.startDate = startDate;
+      if (endDate !== undefined) updates.endDate = endDate;
+      if (reason !== undefined) updates.reason = reason;
+      if (userName !== undefined) updates.userName = userName;
+    }
+
+    if (status !== undefined) {
+      updates.status = status;
+      if (status === 'approved' || status === 'rejected') {
+        updates.approvedBy = approvedBy || authUser.uid;
+        updates.approvedByName = approvedByName || editorName;
+        updates.approvedAt = FieldValue.serverTimestamp();
+      }
+    }
+
+    await ref.update(updates);
+
+    const balance = await recalculateUsedLeave(data.storeId, data.userId);
+
+    if (status && status !== data.status) {
+      const label = status === 'approved' ? '승인' : '거절';
+      const typeLabel = LEAVE_TYPE_LABEL[data.type as string] || data.type;
+      const notifType = status === 'approved' ? 'leave_approved' : 'leave_rejected';
+      const dates = `${updates.startDate ?? data.startDate}~${updates.endDate ?? data.endDate}`;
+      await sendNotification(
+        data.userId,
+        `연차 ${label}`,
+        `${dates} ${typeLabel} 신청이 ${label}되었습니다.`,
+        '/dashboard/hr/calendar?tab=leave',
+        notifType,
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      balance,
+      overused: balance.overused,
+      warning: balance.overused ? '연차 초과 사용 상태입니다. 총/사용 일수를 점검해주세요.' : undefined,
     });
-
-    const label = status === 'approved' ? '승인' : '거절';
-    const typeLabel = { annual: '연차', half_am: '반차(오전)', half_pm: '반차(오후)' }[data.type as string] || data.type;
-    const notifType = status === 'approved' ? 'leave_approved' : 'leave_rejected';
-    await sendNotification(
-      data.userId,
-      `연차 ${label}`,
-      `${data.startDate}~${data.endDate} ${typeLabel} 신청이 ${label}되었습니다.`,
-      '/dashboard/hr/calendar?tab=leave',
-      notifType,
-    );
-
-    return NextResponse.json({ success: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : '처리 실패';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
 
@@ -197,13 +271,23 @@ export async function DELETE(req: Request) {
     if (!snap.exists) return NextResponse.json({ error: '신청 없음' }, { status: 404 });
 
     const data = snap.data()!;
-    // 파라미터 userId 대신 토큰으로 본인 확인
-    if (data.userId !== authUser.uid) return NextResponse.json({ error: '권한 없음' }, { status: 403 });
-    if (data.status !== 'pending') return NextResponse.json({ error: '대기 중인 신청만 취소 가능' }, { status: 400 });
+    const admin = await isStoreAdmin(authUser.uid, data.storeId);
+
+    if (data.userId !== authUser.uid && !admin) {
+      return NextResponse.json({ error: '권한 없음' }, { status: 403 });
+    }
+    if (!admin && data.status !== 'pending') {
+      return NextResponse.json({ error: '대기 중인 신청만 취소 가능' }, { status: 400 });
+    }
 
     await ref.delete();
-    return NextResponse.json({ success: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    const balance = admin || data.status === 'approved'
+      ? await recalculateUsedLeave(data.storeId, data.userId)
+      : null;
+
+    return NextResponse.json({ success: true, balance });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : '삭제 실패';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
