@@ -9,6 +9,8 @@ import {
   AlertCircle, CheckCircle2, Settings,
 } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import EmployeeDocumentsPanel from '@/components/hr/EmployeeDocumentsPanel';
+import type { HrEmployeeDocument } from '@/lib/hrEmployeeDocs';
 
 /* ─────────────────── 타입 ─────────────────── */
 interface Department { id: string; name: string; }
@@ -72,6 +74,7 @@ interface Employee {
   promotionHistory: PromoRow[];
   // 첨부
   attachments: AttachRow[];
+  hrDocuments: HrEmployeeDocument[];
   adminMemo: string; notes: string;
   isAdminAccount: boolean;
   linkedUid: string; linkedEmail: string;
@@ -104,7 +107,7 @@ const EMPTY_EMP: Employee = {
     employmentInsurance:{ enrolled: false, number: '' },
     industrialAccident: { enrolled: false },
   },
-  promotionHistory: [], attachments: [],
+  promotionHistory: [], attachments: [], hrDocuments: [],
   adminMemo: '', notes: '', isAdminAccount: false,
   linkedUid: '', linkedEmail: '', storeId: '',
 };
@@ -119,7 +122,7 @@ const EDU_LEVELS = ['고졸', '전문대졸', '대졸', '대학원졸', '기타'
 const BANKS = ['국민은행', '신한은행', '우리은행', '하나은행', '기업은행', '농협은행', '카카오뱅크', '토스뱅크', '케이뱅크', '새마을금고', '기타'];
 const PROMO_TYPES = ['승진', '전보', '직책변경', '기타'];
 
-const TABS = ['기본정보', '인사정보', '급여정보', '근무정보', '학력/자격', '사회보험', '발령이력', '첨부파일'];
+const TABS = ['기본정보', '서류·첨부', '인사정보', '급여정보', '근무정보', '학력/자격', '사회보험', '발령이력'];
 
 /* ─────────────────── 유틸 ─────────────────── */
 function Input({ label, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label?: string }) {
@@ -181,6 +184,8 @@ export default function EmployeesPage() {
   const [deptFilter,    setDeptFilter]    = useState('');
 
   const [selectedAccount, setSelectedAccount] = useState<StoreAccount | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [listMode, setListMode] = useState<'account' | 'employee'>('employee');
   const [form,         setForm]          = useState<Employee>({ ...EMPTY_EMP });
   const [activeTab,    setActiveTab]     = useState(0);
   const [isNew,        setIsNew]         = useState(false);
@@ -217,41 +222,50 @@ export default function EmployeesPage() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
+  const mapEmployeeToForm = (emp: Record<string, unknown>): Employee => ({
+    ...EMPTY_EMP,
+    ...(emp as Partial<Employee>),
+    ssn: '',
+    ssnMasked: (emp.ssnMasked as string) || (emp.ssnEncrypted ? '●●●●●●-●●●●●●●' : ''),
+    salary: {
+      ...EMPTY_EMP.salary,
+      ...((emp.salary as Employee['salary']) || {}),
+      accountNo: '',
+      accountNoMasked: (emp as { accountNoMasked?: string }).accountNoMasked
+        || ((emp.salary as { accountNoEncrypted?: string })?.accountNoEncrypted ? '●●●●●●●●' : ''),
+    },
+    hrDocuments: (emp.hrDocuments as HrEmployeeDocument[]) || [],
+  });
+
+  const loadEmployeeByEmpNo = async (empNo: string) => {
+    const headers = await getAuthHeaders();
+    const res = await fetch(`/api/hr/employees?storeId=${storeId}&empNo=${empNo}`, { headers });
+    const data = await res.json();
+    if (!data.employee) throw new Error('사원정보를 불러오지 못했습니다');
+    const emp = data.employee;
+    setForm(mapEmployeeToForm(emp));
+    setIsNew(false);
+    const acc = accounts.find(a => a.uid === emp.linkedUid);
+    setSelectedAccount(acc || null);
+    setEditorOpen(true);
+  };
+
   /* ── 계정 클릭 → 우측 패널 로드 ── */
   const handleAccountClick = async (acc: StoreAccount) => {
     setSelectedAccount(acc);
     setError('');
     setSuccess('');
     setActiveTab(0);
+    setEditorOpen(true);
 
     const linked = empList.find(e => e.linkedUid === acc.uid);
     if (linked) {
-      // 연결된 사원 로드
       try {
-        const headers = await getAuthHeaders();
-        const res = await fetch(`/api/hr/employees?storeId=${storeId}&empNo=${linked.empNo}`, { headers });
-        const data = await res.json();
-        if (data.employee) {
-          const emp = data.employee;
-          setForm({
-            ...EMPTY_EMP,
-            ...emp,
-            ssn: '',
-            ssnMasked: emp.ssnMasked || (emp.ssnEncrypted ? '●●●●●●-●●●●●●●' : ''),
-            salary: {
-              ...EMPTY_EMP.salary,
-              ...(emp.salary || {}),
-              accountNo: '',
-              accountNoMasked: emp.accountNoMasked || (emp.salary?.accountNoEncrypted ? '●●●●●●●●' : ''),
-            },
-          });
-          setIsNew(false);
-        }
+        await loadEmployeeByEmpNo(linked.empNo);
       } catch {
         setError('사원정보를 불러오지 못했습니다');
       }
     } else {
-      // 신규 등록 폼
       setForm({
         ...EMPTY_EMP,
         linkedUid:   acc.uid,
@@ -262,6 +276,45 @@ export default function EmployeesPage() {
       });
       setIsNew(true);
     }
+  };
+
+  const handleEmployeeClick = async (emp: EmpSummary) => {
+    setError('');
+    setSuccess('');
+    setActiveTab(0);
+    try {
+      await loadEmployeeByEmpNo(emp.empNo);
+    } catch {
+      setError('사원정보를 불러오지 못했습니다');
+    }
+  };
+
+  const handleNewEmployee = () => {
+    setSelectedAccount(null);
+    setForm({ ...EMPTY_EMP, storeId });
+    setIsNew(true);
+    setEditorOpen(true);
+    setActiveTab(0);
+    setError('');
+    setSuccess('');
+  };
+
+  const handleLinkAccountChange = (uid: string) => {
+    if (!uid) {
+      setSelectedAccount(null);
+      setForm(prev => ({ ...prev, linkedUid: '', linkedEmail: '', companyEmail: prev.companyEmail }));
+      return;
+    }
+    const acc = accounts.find(a => a.uid === uid);
+    if (!acc) return;
+    setSelectedAccount(acc);
+    setForm(prev => ({
+      ...prev,
+      linkedUid: acc.uid,
+      linkedEmail: acc.email,
+      companyEmail: prev.companyEmail || acc.email,
+      name: prev.name || acc.name || '',
+    }));
   };
 
   /* ── 필드 업데이트 헬퍼 ── */
@@ -290,6 +343,29 @@ export default function EmployeesPage() {
       const newSalary = { ...prev.salary, [field]: value };
       newSalary.totalMonthly = recalcTotal(newSalary);
       return { ...prev, salary: newSalary };
+    });
+  };
+
+  const applyExtractedPatch = (patch: Record<string, unknown>) => {
+    setForm(prev => {
+      const next = { ...prev } as Record<string, unknown>;
+      for (const [key, value] of Object.entries(patch)) {
+        if (key === 'salary' && value && typeof value === 'object') {
+          const salaryPatch = value as Partial<Employee['salary']>;
+          const merged = { ...prev.salary, ...salaryPatch };
+          merged.totalMonthly = recalcTotal(merged);
+          next.salary = merged;
+        } else if (key === 'address' && value && typeof value === 'object') {
+          next.address = { ...prev.address, ...(value as Employee['address']) };
+        } else if (key === 'workHours' && value && typeof value === 'object') {
+          next.workHours = { ...prev.workHours, ...(value as Employee['workHours']) };
+        } else if (key === 'certifications' && Array.isArray(value)) {
+          next.certifications = value;
+        } else {
+          next[key] = value;
+        }
+      }
+      return next as unknown as Employee;
     });
   };
 
@@ -332,6 +408,7 @@ export default function EmployeesPage() {
       if (!res.ok) throw new Error(data.error || '삭제 실패');
       setSelectedAccount(null);
       setForm({ ...EMPTY_EMP });
+      setEditorOpen(false);
       await loadAll();
     } catch (e: any) {
       setError(e.message);
@@ -414,19 +491,36 @@ export default function EmployeesPage() {
     return              <span className="text-[10px] bg-orange-900/40 text-orange-400 px-1.5 py-0.5 rounded-full">⚠️ 미연결</span>;
   };
 
+  const filteredEmployees = empList.filter(emp => {
+    const q = search.toLowerCase();
+    if (q && !emp.name?.toLowerCase().includes(q) && !emp.empNo?.includes(q)) return false;
+    if (statusFilter && emp.status !== statusFilter) return false;
+    if (deptFilter && emp.department !== deptFilter) return false;
+    return true;
+  });
+
   /* ── 탭 렌더 ── */
   const renderTab = () => {
     switch (activeTab) {
       case 0: return <TabBasic form={form} set={set} isMaster={isMaster} isNew={isNew} handleDecrypt={handleDecrypt} decryptLoading={decryptLoading} />;
-      case 1: return <TabHR form={form} set={set} departments={departments} />;
-      case 2: return isMaster
+      case 1: return (
+        <EmployeeDocumentsPanel
+          storeId={storeId}
+          empNo={form.empNo}
+          linkedUid={form.linkedUid}
+          documents={form.hrDocuments || []}
+          onChange={docs => set('hrDocuments', docs)}
+          onApplyExtracted={applyExtractedPatch}
+        />
+      );
+      case 2: return <TabHR form={form} set={set} departments={departments} />;
+      case 3: return isMaster
         ? <TabSalary form={form} set={set} setSalaryField={setSalaryField} isMaster={isMaster} handleDecrypt={handleDecrypt} decryptLoading={decryptLoading} />
         : <div className="flex items-center justify-center h-32 text-slate-500 text-sm"><AlertCircle className="w-5 h-5 mr-2 text-slate-600" />master/superuser만 조회 가능합니다</div>;
-      case 3: return <TabWork form={form} set={set} />;
-      case 4: return <TabEducation form={form} set={set} />;
-      case 5: return <TabInsurance form={form} set={set} />;
-      case 6: return <TabPromotion form={form} set={set} departments={departments} />;
-      case 7: return <TabAttachments form={form} set={set} />;
+      case 4: return <TabWork form={form} set={set} />;
+      case 5: return <TabEducation form={form} set={set} />;
+      case 6: return <TabInsurance form={form} set={set} />;
+      case 7: return <TabPromotion form={form} set={set} departments={departments} />;
       default: return null;
     }
   };
@@ -445,16 +539,38 @@ export default function EmployeesPage() {
       {/* ─── 좌측 패널 ─── */}
       <div className="w-72 shrink-0 flex flex-col border-r border-slate-800 bg-slate-950">
         <div className="p-3 border-b border-slate-800 shrink-0">
-          <div className="flex items-center gap-2 mb-2.5">
-            <Users className="w-4 h-4 text-teal-400" />
-            <h2 className="text-sm font-bold text-teal-400">사원정보</h2>
+          <div className="flex items-center justify-between gap-2 mb-2.5">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-teal-400" />
+              <h2 className="text-sm font-bold text-teal-400">사원등록</h2>
+            </div>
+            <button
+              onClick={handleNewEmployee}
+              className="flex items-center gap-1 px-2 py-1 text-[10px] bg-teal-600 hover:bg-teal-500 text-black rounded-lg font-semibold"
+            >
+              <UserPlus className="w-3 h-3" /> 신규
+            </button>
+          </div>
+          <div className="flex gap-1 mb-2">
+            <button
+              onClick={() => setListMode('employee')}
+              className={`flex-1 py-1 text-[10px] rounded-lg ${listMode === 'employee' ? 'bg-teal-600 text-black font-semibold' : 'bg-slate-800 text-slate-400'}`}
+            >
+              사원목록
+            </button>
+            <button
+              onClick={() => setListMode('account')}
+              className={`flex-1 py-1 text-[10px] rounded-lg ${listMode === 'account' ? 'bg-teal-600 text-black font-semibold' : 'bg-slate-800 text-slate-400'}`}
+            >
+              계정연결
+            </button>
           </div>
           <div className="relative mb-2">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="이름 / 이메일 검색"
+              placeholder={listMode === 'employee' ? '사번 / 이름 검색' : '이름 / 이메일 검색'}
               className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-teal-500"
             />
           </div>
@@ -483,6 +599,45 @@ export default function EmployeesPage() {
             <div className="flex justify-center py-10">
               <Loader2 className="w-5 h-5 text-teal-400 animate-spin" />
             </div>
+          ) : listMode === 'employee' ? (
+            filteredEmployees.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-slate-600">
+                <Users className="w-8 h-8 mb-2 opacity-30" />
+                <p className="text-xs">등록된 사원이 없습니다</p>
+              </div>
+            ) : filteredEmployees.map(emp => {
+              const isSelected = editorOpen && form.empNo === emp.empNo;
+              const linkedAcc = accounts.find(a => a.uid === emp.linkedUid);
+              return (
+                <button
+                  key={emp.docId}
+                  onClick={() => handleEmployeeClick(emp)}
+                  className={`w-full flex items-start gap-2.5 px-3 py-2.5 text-left transition-colors border-b border-slate-800/50
+                    ${isSelected ? 'bg-teal-900/20 border-l-2 border-l-teal-500' : 'hover:bg-slate-800/50'}`}
+                >
+                  <div className="w-8 h-8 rounded-full bg-slate-700 shrink-0 flex items-center justify-center text-xs font-bold text-slate-300 overflow-hidden">
+                    {emp.photoUrl
+                      ? <img src={emp.photoUrl} alt="" className="w-full h-full object-cover" />
+                      : (emp.name?.[0] || '?').toUpperCase()
+                    }
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className="text-white text-xs font-medium truncate">{emp.name}</span>
+                      <span className="text-[10px] text-slate-600">#{emp.empNo}</span>
+                    </div>
+                    <p className="text-slate-500 text-[10px] truncate">{emp.department || '부서 미지정'} · {emp.position}</p>
+                    <div className="mt-1 flex items-center gap-1 flex-wrap">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${emp.status === '재직' ? 'bg-teal-900/40 text-teal-400' : 'bg-slate-800 text-slate-500'}`}>{emp.status}</span>
+                      {linkedAcc
+                        ? <span className="text-[10px] text-teal-500/80 truncate">{linkedAcc.email}</span>
+                        : <span className="text-[10px] text-orange-400">계정 미연결</span>
+                      }
+                    </div>
+                  </div>
+                </button>
+              );
+            })
           ) : filteredAccounts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-slate-600">
               <Users className="w-8 h-8 mb-2 opacity-30" />
@@ -524,36 +679,49 @@ export default function EmployeesPage() {
 
       {/* ─── 우측 패널 ─── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {!selectedAccount ? (
+        {!editorOpen ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-600">
             <Users className="w-12 h-12 mb-3 opacity-20" />
-            <p className="text-sm">좌측에서 계정을 선택하세요</p>
-            <p className="text-xs mt-1 text-slate-700">계정 클릭 시 사원정보 등록/조회</p>
+            <p className="text-sm">좌측에서 사원을 선택하거나 신규 등록하세요</p>
+            <p className="text-xs mt-1 text-slate-700">계약서·보건증·통장 업로드 시 AI 자동 반영</p>
           </div>
         ) : (
           <>
             {/* 상단 헤더 */}
-            <div className="shrink-0 flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-slate-900/50">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold text-slate-300 overflow-hidden">
-                  {selectedAccount.photoURL
+            <div className="shrink-0 flex items-center justify-between px-5 py-3 border-b border-slate-800 bg-slate-900/50 gap-3 flex-wrap">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-sm font-bold text-slate-300 overflow-hidden shrink-0">
+                  {selectedAccount?.photoURL
                     ? <img src={selectedAccount.photoURL} alt="" className="w-full h-full object-cover" />
-                    : (selectedAccount.name?.[0] || '?').toUpperCase()
+                    : (form.name?.[0] || selectedAccount?.name?.[0] || '?').toUpperCase()
                   }
                 </div>
-                <div>
-                  <p className="text-white text-sm font-semibold">
-                    {form.name || selectedAccount.name || selectedAccount.email}
+                <div className="min-w-0">
+                  <p className="text-white text-sm font-semibold truncate">
+                    {form.name || selectedAccount?.name || '신규 사원'}
                     {form.empNo && <span className="ml-2 text-xs text-slate-500 font-normal">#{form.empNo}</span>}
                   </p>
-                  <p className="text-slate-500 text-xs">{selectedAccount.email}</p>
+                  <p className="text-slate-500 text-xs truncate">{form.linkedEmail || selectedAccount?.email || '로그인 계정 미연결'}</p>
                 </div>
                 {isNew
-                  ? <span className="text-[10px] bg-blue-900/40 text-blue-400 px-2 py-0.5 rounded-full">신규</span>
-                  : <span className="text-[10px] bg-teal-900/40 text-teal-400 px-2 py-0.5 rounded-full">수정</span>
+                  ? <span className="text-[10px] bg-blue-900/40 text-blue-400 px-2 py-0.5 rounded-full shrink-0">신규</span>
+                  : <span className="text-[10px] bg-teal-900/40 text-teal-400 px-2 py-0.5 rounded-full shrink-0">수정</span>
                 }
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5">
+                  <Link2 className="w-3.5 h-3.5 text-slate-500" />
+                  <select
+                    value={form.linkedUid || ''}
+                    onChange={e => handleLinkAccountChange(e.target.value)}
+                    className="bg-slate-800 border border-slate-600 rounded-lg px-2 py-1.5 text-xs text-white max-w-[180px]"
+                  >
+                    <option value="">계정 연결 없음</option>
+                    {accounts.map(acc => (
+                      <option key={acc.uid} value={acc.uid}>{acc.name || acc.email}</option>
+                    ))}
+                  </select>
+                </div>
                 {!isNew && isMaster && (
                   <button
                     onClick={handleDelete}
@@ -600,7 +768,7 @@ export default function EmployeesPage() {
                     }`}
                 >
                   {tab}
-                  {i === 2 && !isMaster && <span className="ml-1 text-[9px] text-slate-600">🔒</span>}
+                  {i === 3 && !isMaster && <span className="ml-1 text-[9px] text-slate-600">🔒</span>}
                 </button>
               ))}
             </div>
@@ -1114,52 +1282,6 @@ function TabPromotion({ form, set, departments }: { form: Employee; set: (p: str
               {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
             </Select>
           </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function TabAttachments({ form, set }: { form: Employee; set: (p: string, v: unknown) => void }) {
-  const addRow = () => set('attachments', [
-    ...form.attachments,
-    { name: '', url: '', description: '', uploadedAt: new Date().toISOString().slice(0, 10) },
-  ]);
-  const removeRow = (i: number) => set('attachments', form.attachments.filter((_, idx) => idx !== i));
-  const setRow = (i: number, field: keyof AttachRow, val: string) =>
-    set('attachments', form.attachments.map((a, idx) => idx === i ? { ...a, [field]: val } : a));
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <SectionTitle>첨부파일</SectionTitle>
-        <button onClick={addRow} className="flex items-center gap-1 text-xs text-teal-400 hover:text-teal-300">
-          <Plus className="w-3.5 h-3.5" /> 추가
-        </button>
-      </div>
-
-      <div className="bg-amber-900/10 border border-amber-500/20 rounded-xl px-4 py-2.5 text-xs text-amber-400">
-        Firebase Storage 업로드: 파일 URL을 직접 입력하거나, Firebase Storage에 업로드 후 URL을 붙여넣으세요.
-      </div>
-
-      {form.attachments.length === 0 ? (
-        <p className="text-slate-600 text-sm text-center py-8">첨부파일이 없습니다</p>
-      ) : form.attachments.map((att, i) => (
-        <div key={i} className="bg-slate-800/50 rounded-xl p-3 space-y-2">
-          <div className="flex items-end gap-2">
-            <Input label="파일명" value={att.name} onChange={e => setRow(i, 'name', e.target.value)} placeholder="예: 재직증명서.pdf" className="flex-1" />
-            <button onClick={() => removeRow(i)} className="p-2 text-slate-500 hover:text-red-400 mb-0.5">
-              <Minus className="w-4 h-4" />
-            </button>
-          </div>
-          <Input label="파일 URL" value={att.url} onChange={e => setRow(i, 'url', e.target.value)} placeholder="https://firebasestorage.googleapis.com/..." />
-          <div className="grid grid-cols-2 gap-2">
-            <Input label="설명" value={att.description} onChange={e => setRow(i, 'description', e.target.value)} placeholder="파일 설명" />
-            <Input label="업로드일" type="date" value={att.uploadedAt} onChange={e => setRow(i, 'uploadedAt', e.target.value)} />
-          </div>
-          {att.url && (
-            <a href={att.url} target="_blank" rel="noopener noreferrer" className="text-xs text-teal-400 hover:underline">파일 열기 →</a>
-          )}
         </div>
       ))}
     </div>

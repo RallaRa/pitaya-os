@@ -153,10 +153,10 @@ export default function SettingsPage() {
 
   const hrMenus = isMasterOrAdmin ? [
     {
-      href: '/dashboard/settings/employees',
+      href: '/dashboard/hr/employee-register',
       icon: <UserSquare className="w-5 h-5 text-cyan-400" />,
-      label: '사원정보',
-      description: '직원 인사기록카드 — 기본정보·급여·발령이력 통합 관리',
+      label: '사원등록',
+      description: '사원 인사카드·계정 연결·계약서/보건증/통장 AI 반영',
     },
     {
       href: '/dashboard/settings/departments',

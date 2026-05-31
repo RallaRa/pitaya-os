@@ -231,6 +231,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { key: 'report' as const,      href: '/dashboard/report/view',           icon: <BarChart2 className="w-4 h-4" />,      label: '일마감내역' },
     { key: 'report' as const,      href: '/dashboard/report/calendar',     icon: <CalendarDays className="w-4 h-4" />,   label: '달력매출' },
     { key: 'hrCalendar' as const,         href: '/dashboard/hr/calendar',                    icon: <CalendarDays className="w-4 h-4" />,  label: '캘린더' },
+    { key: 'members' as const,            href: '/dashboard/hr/employee-register',           icon: <Users className="w-4 h-4" />,         label: '사원등록' },
     { key: 'scaleCode' as const,          href: '/dashboard/scale',                          icon: <Scale className="w-4 h-4" />,         label: '저울 코드 관리' },
     { key: 'salesForecast' as const,         href: '/dashboard/sales-forecast',                      icon: <LineChart          className="w-4 h-4" />, label: '품목별 매출 추이' },
     { key: 'suppliers' as const,             href: '/dashboard/suppliers',                           icon: <Building2          className="w-4 h-4" />, label: '거래처 관리' },

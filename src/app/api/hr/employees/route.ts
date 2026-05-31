@@ -108,6 +108,17 @@ export async function POST(req: Request) {
   if (!body.name)     return NextResponse.json({ error: '성명은 필수입니다' }, { status: 400 });
   if (!body.hireDate) return NextResponse.json({ error: '입사일은 필수입니다' }, { status: 400 });
 
+  if (body.linkedUid) {
+    const linkedSnap = await adminDb.collection('hr_employees')
+      .where('storeId', '==', storeId)
+      .where('linkedUid', '==', body.linkedUid)
+      .limit(1)
+      .get();
+    if (!linkedSnap.empty) {
+      return NextResponse.json({ error: '이 계정은 이미 다른 사원과 연결되어 있습니다' }, { status: 409 });
+    }
+  }
+
   // empNo: use provided or auto-generate
   let empNo = (body.empNo || '').trim();
   if (!empNo) {
@@ -182,6 +193,7 @@ export async function POST(req: Request) {
     },
     promotionHistory: body.promotionHistory  || [],
     attachments:      body.attachments       || [],
+    hrDocuments:      body.hrDocuments       || [],
     adminMemo:        body.adminMemo         || '',
     notes:            body.notes             || '',
     isAdminAccount:   body.isAdminAccount    || false,
@@ -214,6 +226,18 @@ export async function PUT(req: Request) {
   if (!snap.exists) return NextResponse.json({ error: '사원을 찾을 수 없습니다' }, { status: 404 });
 
   const existing = snap.data()!;
+
+  if (body.linkedUid && body.linkedUid !== (existing.linkedUid || '')) {
+    const linkedSnap = await adminDb.collection('hr_employees')
+      .where('storeId', '==', storeId)
+      .where('linkedUid', '==', body.linkedUid)
+      .limit(5)
+      .get();
+    const conflict = linkedSnap.docs.find(d => d.id !== docId);
+    if (conflict) {
+      return NextResponse.json({ error: '이 계정은 이미 다른 사원과 연결되어 있습니다' }, { status: 409 });
+    }
+  }
 
   // Encrypt only when new plaintext provided
   const ssnEncrypted = body.ssn
@@ -276,6 +300,7 @@ export async function PUT(req: Request) {
     insurance:        body.insurance        ?? existing.insurance        ?? {},
     promotionHistory: body.promotionHistory ?? existing.promotionHistory ?? [],
     attachments:      body.attachments      ?? existing.attachments      ?? [],
+    hrDocuments:      body.hrDocuments      ?? existing.hrDocuments      ?? [],
     adminMemo:        body.adminMemo        ?? existing.adminMemo        ?? '',
     notes:            body.notes            ?? existing.notes            ?? '',
     isAdminAccount:   body.isAdminAccount   ?? existing.isAdminAccount   ?? false,
