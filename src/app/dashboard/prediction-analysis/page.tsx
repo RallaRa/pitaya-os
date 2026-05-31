@@ -12,7 +12,7 @@ import type { PredictionAnalysisSnapshot } from '@/lib/predictionAnalysis';
 import {
   addDaysYMD,
   formatDateWithDow,
-  getKSTYesterdayYMD,
+  getKSTTodayYMD,
 } from '@/lib/dateUtils';
 
 function GrowthBadge({ pct }: { pct: number | null }) {
@@ -48,9 +48,10 @@ export default function PredictionAnalysisPage() {
   const [data, setData] = useState<PredictionAnalysisSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState(getKSTYesterdayYMD);
+  const [selectedDate, setSelectedDate] = useState(getKSTTodayYMD);
 
-  const maxDate = getKSTYesterdayYMD();
+  const maxDate = getKSTTodayYMD();
+  const isToday = selectedDate === maxDate;
 
   const load = useCallback(async () => {
     if (!storeId) { setLoading(false); return; }
@@ -134,7 +135,15 @@ export default function PredictionAnalysisPage() {
           <button
             type="button"
             onClick={() => setSelectedDate(maxDate)}
-            disabled={selectedDate === maxDate}
+            disabled={isToday}
+            className="text-xs text-slate-400 hover:text-teal-400 border border-slate-700 rounded-lg px-3 py-2 disabled:opacity-40"
+          >
+            오늘
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedDate(addDaysYMD(maxDate, -1))}
+            disabled={selectedDate === addDaysYMD(maxDate, -1)}
             className="text-xs text-slate-400 hover:text-teal-400 border border-slate-700 rounded-lg px-3 py-2 disabled:opacity-40"
           >
             어제
@@ -167,18 +176,21 @@ export default function PredictionAnalysisPage() {
       {data && (
         <>
           {/* 요약 카드 */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <p className="text-[10px] text-slate-500 uppercase tracking-wide">분석 대상일</p>
-              <p className="text-lg font-bold text-white mt-1">{data.targetDate}</p>
-              <p className="text-xs text-slate-500 mt-0.5">예측 생성: {data.predictionDate}</p>
+              <p className="text-lg font-bold text-white mt-1">{formatDateWithDow(data.targetDate)}</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                예측 생성: {data.predictionDate}
+                {data.isPartialDay && <span className="text-amber-400 ml-1">· 당일 누적</span>}
+              </p>
             </div>
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <p className="text-[10px] text-slate-500 uppercase tracking-wide">실제 매출</p>
               <p className="text-lg font-bold text-teal-400 mt-1">
                 {(data.actual?.netSales || 0).toLocaleString()}원
               </p>
-              <p className="text-xs text-slate-500 mt-0.5">순매출 기준</p>
+              <p className="text-xs text-slate-500 mt-0.5">{data.isPartialDay ? '현재까지 순매출' : '순매출 기준'}</p>
             </div>
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <p className="text-[10px] text-slate-500 uppercase tracking-wide">예측 정합성</p>
@@ -187,7 +199,67 @@ export default function PredictionAnalysisPage() {
               </p>
               <p className="text-xs text-slate-500 mt-0.5 truncate">{data.insightSummary}</p>
             </div>
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+              <p className="text-[10px] text-slate-500 uppercase tracking-wide">백테스트 평균</p>
+              <p className="text-lg font-bold text-purple-400 mt-1">
+                {data.backtest?.avgAccuracy != null ? `${data.backtest.avgAccuracy}%` : '-'}
+              </p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                최근 {data.backtest?.recentScores?.length || 0}일 참조
+              </p>
+            </div>
           </div>
+
+          {data.isPartialDay && (
+            <div className="bg-blue-900/20 border border-blue-800/50 rounded-xl p-4 text-blue-200 text-sm">
+              당일 실적은 POS 동기화 시점까지 누적됩니다. 마감 후 정확도가 더 높아집니다.
+            </div>
+          )}
+
+          {data.accuracyDetail && (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+              <p className="text-xs font-semibold text-slate-300 mb-2">정확도 산출 ({data.accuracyDetail.method})</p>
+              <div className="flex flex-wrap gap-3 text-xs">
+                <span className="text-teal-400">TOP5 적중 {data.accuracyDetail.top5Hits}/{data.accuracyDetail.top5Total}</span>
+                <span className="text-slate-400">순위보너스 +{data.accuracyDetail.rankBonus}점</span>
+                {data.accuracyDetail.missed.length > 0 && (
+                  <span className="text-amber-400">과대예측: {data.accuracyDetail.missed.join(', ')}</span>
+                )}
+                {data.accuracyDetail.surprises.length > 0 && (
+                  <span className="text-red-400">누락: {data.accuracyDetail.surprises.join(', ')}</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {data.backtest?.calibrationNotes?.length > 0 && (
+            <div className="bg-purple-900/15 border border-purple-800/40 rounded-xl p-4">
+              <p className="text-xs font-semibold text-purple-300 mb-2">백테스트 보정 (다음 AI 예측에 자동 반영)</p>
+              <ul className="space-y-1">
+                {data.backtest.calibrationNotes.map((note, i) => (
+                  <li key={i} className="text-xs text-slate-400">· {note}</li>
+                ))}
+              </ul>
+              {data.backtest.recentScores.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-3">
+                  {data.backtest.recentScores.slice(0, 10).map(row => (
+                    <span
+                      key={row.date}
+                      className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                        row.score >= 70
+                          ? 'border-green-500/40 text-green-400 bg-green-900/20'
+                          : row.score >= 40
+                            ? 'border-amber-500/40 text-amber-400 bg-amber-900/20'
+                            : 'border-red-500/40 text-red-400 bg-red-900/20'
+                      }`}
+                    >
+                      {row.date.slice(5)} {row.score}%
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {data.noData && (
             <div className="bg-amber-900/20 border border-amber-800/50 rounded-xl p-4 text-amber-200 text-sm">

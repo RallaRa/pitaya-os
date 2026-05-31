@@ -3,7 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getStoreCoords, getWeatherCondition, WEATHER_ICONS } from '@/lib/weather';
 import { verifyToken } from '@/lib/authVerify';
-import { getPredictionAnalysisInsights } from '@/lib/predictionAnalysis';
+import { getPredictionAnalysisInsights, getPredictionCalibration, applyCalibrationToPredictions } from '@/lib/predictionAnalysis';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
 
@@ -237,6 +237,14 @@ reasonDetail은 반드시 100자 이내, "전주 동요일 대비 +12%", "최근
       }));
       supporterComment = '**통계 기반** 예측입니다. AI 분석 API 키를 확인하세요.';
     }
+  }
+
+  // 백테스트 보정 — 과소/과대예측 패턴 반영
+  if (storeId && topItems.length > 0) {
+    try {
+      const calibration = await getPredictionCalibration(storeId);
+      topItems = applyCalibrationToPredictions(topItems, calibration);
+    } catch { /* skip */ }
   }
 
   const resultObj = {
