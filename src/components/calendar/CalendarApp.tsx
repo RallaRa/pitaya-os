@@ -1746,7 +1746,15 @@ export default function CalendarApp() {
       const evData  = await evRes.json();
       const hrData  = await hrRes.json();
 
-      const evList: CalEvent[] = [...(evData.events || [])];
+      if (!evRes.ok) {
+        console.error('calendar events load failed:', evData.error);
+      }
+
+      const evList: CalEvent[] = (evData.events || []).map((e: any) => ({
+        ...e,
+        source: e.source || 'pitaya',
+        type: e.type || 'event',
+      }));
 
       // 공휴일
       Object.entries(HOLIDAYS).filter(([date]) => date >= from && date <= to).forEach(([date, name]) => {
@@ -1845,16 +1853,47 @@ export default function CalendarApp() {
   const saveEvent = useCallback(async (ev: Partial<CalEvent>) => {
     try {
       const method = ev.id ? 'PUT' : 'POST';
+      const payload = {
+        title: ev.title,
+        startDate: ev.startDate,
+        startTime: ev.startTime,
+        endDate: ev.endDate,
+        endTime: ev.endTime,
+        allDay: ev.allDay,
+        calendarId: ev.calendarId,
+        color: ev.color,
+        location: ev.location,
+        meetingUrl: ev.meetingUrl,
+        description: ev.description,
+        attendees: ev.attendees,
+        repeat: ev.repeat,
+        reminders: ev.reminders,
+        visibility: ev.visibility,
+        busyStatus: ev.busyStatus,
+        storeId,
+        createdBy: uid,
+        ...(ev.id ? { id: ev.id } : {}),
+      };
       const res = await fetch('/api/calendar/events', {
         method,
         headers: await getAuthJsonHeaders(),
-        body: JSON.stringify({ ...ev, storeId, createdBy: uid }),
+        body: JSON.stringify(payload),
       });
       const d = await res.json();
-      if (d.error) throw new Error(d.error);
+      if (!res.ok || d.error) throw new Error(d.error || '저장 실패');
       showToast(ev.id ? '이벤트가 수정되었습니다' : '이벤트가 생성되었습니다');
       setShowEventModal(false);
       setEditingEvent(null);
+      if (!ev.id && d.id) {
+        setEvents(prev => [...prev, {
+          ...ev,
+          id: d.id,
+          source: 'pitaya',
+          type: 'event',
+          storeId,
+          createdBy: uid,
+        } as CalEvent]);
+      }
       loadEvents();
     } catch (e: any) {
       showToast(e.message || '저장 실패', false);

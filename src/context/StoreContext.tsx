@@ -13,6 +13,9 @@ interface Store {
   phone?: string;
   businessNumber?: string;
   ownerName?: string;
+  attendanceLat?: number;
+  attendanceLng?: number;
+  attendanceRadiusM?: number;
 }
 
 interface StoreContextType {

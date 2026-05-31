@@ -39,7 +39,11 @@ export default function EventModal({ event, calendars, onSave, onDelete, onClose
 
   useEffect(() => {
     const base = event
-      ? { ...DEFAULT_FORM, ...event }
+      ? {
+          ...DEFAULT_FORM,
+          ...event,
+          busyStatus: event.busyStatus || (event.status === 'busy' || event.status === 'free' ? event.status : 'busy'),
+        }
       : {
           ...DEFAULT_FORM,
           startDate: defaultDate || '',

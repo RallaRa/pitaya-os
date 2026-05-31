@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { fetchWeather, getStoreCoords } from '@/lib/weather';
+import { sendKakaoNotifyToStore } from '@/lib/kakao/sendNotify';
 
 // ── 타입 ──────────────────────────────────────────────────────────
 interface CustomerSale {
@@ -422,11 +423,21 @@ export async function POST(req: Request) {
 
   // 5. daily_reports 동시 저장 (실패해도 응답은 성공)
   let dailyReportSaved = false;
+  let syncedTotalSales = 0;
   try {
     await syncToDailyReports({ storeId, date, headerDoc, details, finish, timeSlots, syncedAt });
     dailyReportSaved = true;
+    syncedTotalSales = headerDoc.totalSale ?? finish?.totalSale ?? 0;
   } catch (err) {
     console.error('[pos/sync] daily_reports 저장 실패:', err);
+  }
+
+  if (dailyReportSaved) {
+    sendKakaoNotifyToStore(storeId, {
+      title: '🥩 POS 매출 동기화',
+      message: `${date} 매출 ${Number(syncedTotalSales).toLocaleString()}원`,
+      link: `${process.env.NEXT_PUBLIC_APP_URL || 'https://pitaya-osv1.vercel.app'}/dashboard/report/view`,
+    }).catch(() => {});
   }
 
   return NextResponse.json({

@@ -268,6 +268,13 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if false;
     }
+    match /hr_attendance/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /kakao_oauth_state/{docId} {
+      allow read, write: if false;
+    }
     match /items/{docId} {
       allow read: if request.auth != null;
       allow write: if false;

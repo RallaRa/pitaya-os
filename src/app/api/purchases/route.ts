@@ -12,6 +12,7 @@ import {
   type FallbackResult,
 } from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
+import { sendKakaoNotifySafe, sendKakaoNotifyToStore } from '@/lib/kakao/sendNotify';
 
 const SYSTEM_INSTRUCTION = `당신은 매입/구매 문서 전문 분석 AI입니다.
 거래명세서, 세금계산서, 매입전표, 영수증 이미지 또는 데이터를 분석하여 정확한 JSON을 반환합니다.
@@ -166,6 +167,19 @@ export async function POST(req: Request) {
         imageUrls: imageUrls.length > 0 ? imageUrls : [],
         createdAt: FieldValue.serverTimestamp(),
       });
+
+      sendKakaoNotifyToStore(storeId, {
+        title: '📦 매입 등록',
+        message: `${extractedData.supplierName || '거래처'} ${Number(extractedData.totalAmount || 0).toLocaleString()}원`,
+        link: `${process.env.NEXT_PUBLIC_APP_URL || 'https://pitaya-osv1.vercel.app'}/dashboard/report/purchases/ledger`,
+      }).catch(() => {});
+      sendKakaoNotifySafe({
+        userId: uid,
+        title: '📦 매입 등록',
+        message: `${extractedData.supplierName || '거래처'} ${Number(extractedData.totalAmount || 0).toLocaleString()}원`,
+        link: `${process.env.NEXT_PUBLIC_APP_URL || 'https://pitaya-osv1.vercel.app'}/dashboard/report/purchases/ledger`,
+      });
+
       return NextResponse.json({ success: true, id: docRef.id, imageUrls });
     }
 

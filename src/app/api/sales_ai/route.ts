@@ -10,6 +10,7 @@ import {
   stripJsonMarkdown,
 } from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
+import { sendKakaoNotifySafe, sendKakaoNotifyToStore } from '@/lib/kakao/sendNotify';
 
 function formatYMD(date: Date): string {
   const y = date.getFullYear();
@@ -155,6 +156,19 @@ export async function POST(req: Request) {
           lastModifiedBy: editorInfo,
           editHistory: FieldValue.arrayUnion(historyEntry),
         });
+        sendKakaoNotifyToStore(storeId || '', {
+          title: '✅ 일마감 수정',
+          message: `${reportDate} 매출 ${Number(extractedData.totalSales || prev.totalSales || 0).toLocaleString()}원`,
+          link: `${process.env.NEXT_PUBLIC_APP_URL || 'https://pitaya-osv1.vercel.app'}/dashboard/report/view`,
+        }).catch(() => {});
+        if (uid) {
+          sendKakaoNotifySafe({
+            userId: uid,
+            title: '✅ 일마감 수정',
+            message: `${reportDate} 매출 ${Number(extractedData.totalSales || prev.totalSales || 0).toLocaleString()}원`,
+            link: `${process.env.NEXT_PUBLIC_APP_URL || 'https://pitaya-osv1.vercel.app'}/dashboard/report/view`,
+          });
+        }
         return NextResponse.json({ success: true, id: docRef.id, updated: true });
       }
 
@@ -170,6 +184,20 @@ export async function POST(req: Request) {
         lastModifiedBy: editorInfo,
         editHistory: [],
       });
+
+      sendKakaoNotifyToStore(storeId || '', {
+        title: '✅ 일마감 완료',
+        message: `오늘 매출 ${Number(extractedData.totalSales || 0).toLocaleString()}원`,
+        link: `${process.env.NEXT_PUBLIC_APP_URL || 'https://pitaya-osv1.vercel.app'}/dashboard/report/view`,
+      }).catch(() => {});
+      if (uid) {
+        sendKakaoNotifySafe({
+          userId: uid,
+          title: '✅ 일마감 완료',
+          message: `오늘 매출 ${Number(extractedData.totalSales || 0).toLocaleString()}원`,
+          link: `${process.env.NEXT_PUBLIC_APP_URL || 'https://pitaya-osv1.vercel.app'}/dashboard/report/view`,
+        });
+      }
 
       return NextResponse.json({ success: true, id: docRef.id, updated: false });
     }
