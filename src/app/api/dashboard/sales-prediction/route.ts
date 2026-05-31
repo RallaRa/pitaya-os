@@ -3,6 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getStoreCoords, getWeatherCondition, WEATHER_ICONS } from '@/lib/weather';
 import { verifyToken } from '@/lib/authVerify';
+import { fetchDailyReportsSince, fetchStoreItemSales } from '@/lib/dashboardSalesData';
 import { getPredictionAnalysisInsights, getPredictionCalibration, applyCalibrationToPredictions } from '@/lib/predictionAnalysis';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
@@ -56,7 +57,7 @@ export async function GET(req: Request) {
       if (cached.exists) {
         const d = cached.data()!;
         const age = Date.now() - (d.generatedAt?.toMillis?.() || 0);
-        if (age < 6 * 60 * 60 * 1000) { // 6시간
+        if (age < 6 * 60 * 60 * 1000 && !d.noData) { // 6시간, 빈 캐시는 재조회
           return NextResponse.json({ ...d, cached: true });
         }
       }
@@ -77,19 +78,18 @@ export async function GET(req: Request) {
   const yyyymm = today.replace(/-/g,'').slice(0,6);
 
   // 병렬 데이터 수집
-  const [salesSnap, purchasesSnap, weatherRes, holidaysRes, weatherVarsSnap] = await Promise.allSettled([
-    adminDb.collection('daily_reports')
-      .where('storeId', '==', storeId)
-      .orderBy('reportDate', 'desc').limit(90).get(),
+  const [salesSnap, purchasesSnap, weatherRes, holidaysRes, weatherVarsSnap, fallbackItems] = await Promise.allSettled([
+    fetchDailyReportsSince(storeId, toYMD(new Date(Date.now() - 90 * 86400000))),
     adminDb.collection('purchases')
       .where('storeId', '==', storeId)
       .orderBy('purchaseDate', 'desc').limit(30).get(),
     fetchWeatherForecast(coords),
     apiKey ? fetchHolidays(apiKey, yyyymm) : Promise.resolve([]),
     adminDb.collection('weather_impact_variables').doc(storeId || 'global').get(),
+    fetchStoreItemSales(storeId, 90, 20),
   ]);
 
-  const sales = salesSnap.status === 'fulfilled' ? salesSnap.value.docs : [];
+  const sales = salesSnap.status === 'fulfilled' && salesSnap.value ? salesSnap.value.docs : [];
   const purchases = purchasesSnap.status === 'fulfilled' ? purchasesSnap.value.docs : [];
   const weather = weatherRes.status === 'fulfilled' ? weatherRes.value : null;
   const holidays = holidaysRes.status === 'fulfilled' ? holidaysRes.value : [];
@@ -121,6 +121,13 @@ export async function GET(req: Request) {
       itemMap[name].days++;
     });
   });
+  if (Object.keys(itemMap).length === 0 && fallbackItems.status === 'fulfilled') {
+    fallbackItems.value.forEach(({ name, qty, amount }) => {
+      if (!itemMap[name]) itemMap[name] = { qty: 0, amount: 0, days: 1 };
+      itemMap[name].qty += qty;
+      itemMap[name].amount += amount;
+    });
+  }
   const sortedItems = Object.entries(itemMap)
     .sort((a,b) => b[1].qty - a[1].qty)
     .slice(0, 20);

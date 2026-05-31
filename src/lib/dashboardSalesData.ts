@@ -57,17 +57,116 @@ async function fetchPosSalesDetailSince(
       .get();
   } catch (err) {
     console.warn('[dashboardSalesData] pos_sales_detail range query failed, using storeId-only fallback:', err);
+    return fetchPosCollectionByStoreFallback('pos_sales_detail', storeId, sinceCompact, limit);
+  }
+}
+
+async function fetchPosCollectionByStoreFallback(
+  collection: string,
+  storeId: string,
+  sinceCompact: string,
+  limit: number,
+): Promise<QuerySnapshot | null> {
+  try {
+    const snap = await adminDb.collection(collection)
+      .where('storeId', '==', storeId)
+      .limit(Math.max(limit, 500))
+      .get();
+    const docs = snap.docs
+      .filter(d => String(d.data().date || '') >= sinceCompact)
+      .sort((a, b) => String(b.data().date || '').localeCompare(String(a.data().date || '')))
+      .slice(0, limit);
+    return asQuerySnapshot(docs);
+  } catch (fallbackErr) {
+    console.warn(`[dashboardSalesData] ${collection} storeId-only fallback failed:`, fallbackErr);
+    return null;
+  }
+}
+
+/** pos_sales_detail 최근 N건 — orderBy 실패 시 메모리 정렬 */
+export async function fetchPosSalesDetailRecent(
+  storeId: string,
+  limit = 500,
+): Promise<QuerySnapshot | null> {
+  try {
+    return await adminDb.collection('pos_sales_detail')
+      .where('storeId', '==', storeId)
+      .orderBy('date', 'desc')
+      .limit(limit)
+      .get();
+  } catch (err) {
+    console.warn('[dashboardSalesData] pos_sales_detail recent query failed, using fallback:', err);
     try {
       const snap = await adminDb.collection('pos_sales_detail')
         .where('storeId', '==', storeId)
-        .limit(limit)
+        .limit(limit * 3)
         .get();
-      const docs = snap.docs.filter(d => String(d.data().date || '') >= sinceCompact);
+      const docs = [...snap.docs]
+        .sort((a, b) => String(b.data().date || '').localeCompare(String(a.data().date || '')))
+        .slice(0, limit);
       return asQuerySnapshot(docs);
     } catch (fallbackErr) {
-      console.warn('[dashboardSalesData] pos_sales_detail fallback failed:', fallbackErr);
+      console.warn('[dashboardSalesData] pos_sales_detail recent fallback failed:', fallbackErr);
       return null;
     }
+  }
+}
+
+export async function fetchPosSalesHeaderSince(
+  storeId: string,
+  sinceCompact: string,
+  limit = 365,
+): Promise<QuerySnapshot | null> {
+  try {
+    return await adminDb.collection('pos_sales_header')
+      .where('storeId', '==', storeId)
+      .where('date', '>=', sinceCompact)
+      .orderBy('date', 'desc')
+      .limit(limit)
+      .get();
+  } catch (err) {
+    console.warn('[dashboardSalesData] pos_sales_header range query failed, using fallback:', err);
+    return fetchPosCollectionByStoreFallback('pos_sales_header', storeId, sinceCompact, limit);
+  }
+}
+
+export async function fetchPosFinishTotalSince(
+  storeId: string,
+  sinceCompact: string,
+  limit = 90,
+): Promise<QuerySnapshot | null> {
+  try {
+    return await adminDb.collection('pos_finish_total')
+      .where('storeId', '==', storeId)
+      .where('date', '>=', sinceCompact)
+      .orderBy('date', 'desc')
+      .limit(limit)
+      .get();
+  } catch (err) {
+    console.warn('[dashboardSalesData] pos_finish_total range query failed, using fallback:', err);
+    return fetchPosCollectionByStoreFallback('pos_finish_total', storeId, sinceCompact, limit);
+  }
+}
+
+async function fetchPosDailySalesByStoreFallback(
+  storeId: string,
+  startYmd: string,
+  endYmd: string,
+  limit = 400,
+): Promise<QuerySnapshot | null> {
+  try {
+    const snap = await adminDb.collection('pos_daily_sales')
+      .where('storeId', '==', storeId)
+      .limit(limit)
+      .get();
+    const docs = snap.docs.filter(d => {
+      const date = String(d.data().date || '');
+      return date >= startYmd && date <= endYmd;
+    });
+    return asQuerySnapshot(docs);
+  } catch (err) {
+    console.warn('[dashboardSalesData] pos_daily_sales storeId-only fallback failed:', err);
+    return null;
   }
 }
 
@@ -127,8 +226,8 @@ export async function fetchPosDailySalesInRange(
       .limit(120)
       .get();
   } catch (err) {
-    console.warn('[dashboardSalesData] pos_daily_sales range query failed:', err);
-    return null;
+    console.warn('[dashboardSalesData] pos_daily_sales range query failed, using fallback:', err);
+    return fetchPosDailySalesByStoreFallback(storeId, startYmd, endYmd);
   }
 }
 
@@ -294,6 +393,55 @@ export async function fetchTopSellingItems(
     .sort(([, a], [, b]) => b - a)
     .slice(0, limit)
     .map(([name, qty]) => ({ name, qty }));
+}
+
+/** 매장 품목 판매 집계 — daily_reports → pos_sales_detail fallback */
+export async function fetchStoreItemSales(
+  storeId: string,
+  days = 30,
+  limit = 20,
+): Promise<Array<{ name: string; qty: number; amount: number }>> {
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+  const sinceStr = `${since.getFullYear()}-${String(since.getMonth() + 1).padStart(2, '0')}-${String(since.getDate()).padStart(2, '0')}`;
+  const itemMap: Record<string, { qty: number; amount: number }> = {};
+
+  const addItem = (name: string, qty: number, amount: number) => {
+    const n = name.trim();
+    if (!n || n.length > 50) return;
+    if (!itemMap[n]) itemMap[n] = { qty: 0, amount: 0 };
+    itemMap[n].qty += qty;
+    itemMap[n].amount += amount;
+  };
+
+  const drSnap = await fetchDailyReportsSince(storeId, sinceStr);
+  if (drSnap && !drSnap.empty) {
+    const reports = drSnap.docs.map(d => ({
+      ...d.data(),
+      reportDate: d.data().reportDate as string,
+      storeId: d.data().storeId as string,
+      items: d.data().items as Array<{ name?: string; barcode?: string; qty?: number; netSales?: number; amount?: number }> | undefined,
+    }));
+    for (const d of pickBestReportByDate(reports, storeId).values()) {
+      (d.items || []).forEach(item => {
+        addItem(item.name || item.barcode || '', Number(item.qty || 0), Number(item.netSales || item.amount || 0));
+      });
+    }
+  }
+
+  if (Object.keys(itemMap).length === 0) {
+    const sinceCompact = sinceStr.replace(/-/g, '');
+    const detailSnap = await fetchPosSalesDetailSince(storeId, sinceCompact, 5000);
+    detailSnap?.docs.forEach(doc => {
+      const r = doc.data();
+      addItem(String(r.goodsName || ''), Number(r.saleCount || 0), Number(r.totalPrice || 0));
+    });
+  }
+
+  return Object.entries(itemMap)
+    .map(([name, v]) => ({ name, qty: v.qty, amount: v.amount }))
+    .sort((a, b) => b.qty - a.qty)
+    .slice(0, limit);
 }
 
 /** 날짜별 품목 판매량 추이 — daily_reports → pos_sales_detail fallback */

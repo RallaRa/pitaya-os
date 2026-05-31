@@ -5,7 +5,8 @@ import { verifyToken } from '@/lib/authVerify';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
 import { getKSTTodayYMD, getKSTYesterdayYMD } from '@/lib/dateUtils';
-import { getDisplayTotalSale, posDailySalesDocId } from '@/lib/posDailySales';
+import { fetchStoreItemSales } from '@/lib/dashboardSalesData';
+import { getDisplayTotalSale } from '@/lib/posDailySales';
 import { loadSystemContext } from '@/lib/aiStoreContext';
 import { fetchNaverTrendData } from '@/lib/naverTrendServer';
 import {
@@ -36,8 +37,10 @@ export async function GET(req: Request) {
       const cacheDoc = await cacheRef.get();
       if (cacheDoc.exists) {
         const d = cacheDoc.data()!;
-        if (Date.now() < midnightMs()) {
-          return NextResponse.json({ ...d.result, cached: true });
+        const result = d.result || {};
+        const isEmptyCache = result.noData || (!result.opinion && !result.summary?.includes('데이터'));
+        if (Date.now() < midnightMs() && !isEmptyCache) {
+          return NextResponse.json({ ...result, cached: true });
         }
       }
     } catch { /* ignore */ }
@@ -54,36 +57,15 @@ export async function GET(req: Request) {
   const regionSido = storeData.regionSido || '서울';
   const regionSigungu = storeData.regionSigungu || '';
 
-  const [storeContext, trendResult, commercial, news, itemSnap] = await Promise.all([
+  const [storeContext, trendResult, commercial, news, topItems] = await Promise.all([
     storeId ? loadSystemContext(storeId).catch(() => null) : Promise.resolve(null),
     fetchNaverTrendData(storeId),
     fetchCommercialArea(regionSido, regionSigungu),
     fetchNaverNewsHeadlines(6),
-    storeId
-      ? adminDb.collection('pos_sales_detail')
-        .where('storeId', '==', storeId)
-        .orderBy('date', 'desc')
-        .limit(500)
-        .get()
-        .catch(() => null)
-      : Promise.resolve(null),
+    storeId ? fetchStoreItemSales(storeId, 30, 10) : Promise.resolve([]),
   ]);
 
   const footTraffic = estimateFootTraffic(regionSido, regionSigungu);
-
-  const itemMap: Record<string, { qty: number; amount: number }> = {};
-  itemSnap?.docs.forEach(d => {
-    const r = d.data();
-    const name = r.goodsName || '';
-    if (!name) return;
-    if (!itemMap[name]) itemMap[name] = { qty: 0, amount: 0 };
-    itemMap[name].qty += Number(r.saleCount || 0);
-    itemMap[name].amount += Number(r.totalPrice || 0);
-  });
-  const topItems = Object.entries(itemMap)
-    .map(([name, v]) => ({ name, ...v }))
-    .sort((a, b) => b.qty - a.qty)
-    .slice(0, 10);
 
   const todaySale = getDisplayTotalSale(storeContext?.todaySales ?? null);
   const yesterdaySale = getDisplayTotalSale(storeContext?.yesterdaySales ?? null);

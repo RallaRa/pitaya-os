@@ -4,7 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { getStoreCoords, getWeatherCondition } from '@/lib/weather';
 import { verifyToken } from '@/lib/authVerify';
 import { fetchNaverTrendData } from '@/lib/naverTrendServer';
-import { fetchDailyReportsSince, storeHasSalesData } from '@/lib/dashboardSalesData';
+import { fetchDailyReportsSince, storeHasSalesData, fetchPosSalesHeaderSince, fetchPosSalesDetailSince, fetchPosFinishTotalSince, fetchPosDailySalesInRange } from '@/lib/dashboardSalesData';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
 
@@ -131,39 +131,34 @@ async function fetchPosCustomers(storeId: string) {
 async function collectFirestoreData(storeId: string) {
   const since90  = toYMD(new Date(Date.now() - 90  * 86400000));
   const since365 = toYMD(new Date(Date.now() - 365 * 86400000));
+  const since90Compact = since90.replace(/-/g, '');
+  const since365Compact = since365.replace(/-/g, '');
 
-  const [headerSnap, detailSnap, finishSnap, custSnap, varSnap] = await Promise.allSettled([
-    adminDb.collection('pos_sales_header')
-      .where('storeId','==',storeId).where('date','>=',since365.replace(/-/g,'')).orderBy('date','desc').limit(365).get(),
-    adminDb.collection('pos_sales_detail')
-      .where('storeId','==',storeId).where('date','>=',since90.replace(/-/g,'')).orderBy('date','desc').limit(2000).get(),
-    adminDb.collection('pos_finish_total')
-      .where('storeId','==',storeId).where('date','>=',since90.replace(/-/g,'')).orderBy('date','desc').limit(90).get(),
+  const [headerSnap, detailSnap, finishSnap, custSnap, varSnap] = await Promise.all([
+    fetchPosSalesHeaderSince(storeId, since365Compact, 365),
+    fetchPosSalesDetailSince(storeId, since90Compact, 2000),
+    fetchPosFinishTotalSince(storeId, since90Compact, 90),
     fetchPosCustomers(storeId),
     adminDb.collection('weather_impact_variables').doc(storeId || 'global').get(),
   ]);
   // 365일 일별 매출 추이
   const dailyTotals: {date:string;totalSale:number;transCount:number}[] = [];
-  if (headerSnap.status === 'fulfilled') {
-    headerSnap.value.docs.forEach(d => {
-      const r = d.data();
-      dailyTotals.push({ date: r.date, totalSale: r.totalSale||0, transCount: r.transCount||0 });
-    });
-  }
+  headerSnap?.docs.forEach(d => {
+    const r = d.data();
+    dailyTotals.push({ date: r.date, totalSale: r.totalSale||0, transCount: r.transCount||0 });
+  });
 
   // 90일 품목별 집계
   const itemMap: Record<string, {qty:number;amount:number;days:Set<string>}> = {};
-  if (detailSnap.status === 'fulfilled') {
-    detailSnap.value.docs.forEach(d => {
-      const r = d.data();
-      const name = r.goodsName || '';
-      if (!name) return;
-      if (!itemMap[name]) itemMap[name] = { qty:0, amount:0, days: new Set() };
-      itemMap[name].qty += Number(r.saleCount||0);
-      itemMap[name].amount += Number(r.totalPrice||0);
-      itemMap[name].days.add(r.date||'');
-    });
-  }
+  detailSnap?.docs.forEach(d => {
+    const r = d.data();
+    const name = r.goodsName || '';
+    if (!name) return;
+    if (!itemMap[name]) itemMap[name] = { qty:0, amount:0, days: new Set() };
+    itemMap[name].qty += Number(r.saleCount||0);
+    itemMap[name].amount += Number(r.totalPrice||0);
+    itemMap[name].days.add(r.date||'');
+  });
   let topItems90 = Object.entries(itemMap)
     .map(([name,v]) => ({ name, qty: v.qty, amount: v.amount, days: v.days.size }))
     .sort((a,b) => b.qty - a.qty).slice(0, 30);
@@ -203,36 +198,28 @@ async function collectFirestoreData(storeId: string) {
 
   // 90일 일마감 통계
   const closures: {date:string;netSale:number;totalSale:number}[] = [];
-  if (finishSnap.status === 'fulfilled') {
-    finishSnap.value.docs.forEach(d => {
-      const r = d.data();
-      closures.push({ date: r.date, netSale: r.netSale||0, totalSale: r.totalSale||0 });
-    });
-  }
+  finishSnap?.docs.forEach(d => {
+    const r = d.data();
+    closures.push({ date: r.date, netSale: r.netSale||0, totalSale: r.totalSale||0 });
+  });
 
   if (closures.length === 0) {
-    try {
-      const posSnap = await adminDb.collection('pos_daily_sales')
-        .where('storeId', '==', storeId)
-        .where('date', '>=', since90)
-        .limit(90)
-        .get();
-      posSnap.docs.forEach(d => {
-        const r = d.data();
-        closures.push({
-          date: String(r.date || '').replace(/-/g, ''),
-          netSale: Number(r.netSales || r.netSale || 0),
-          totalSale: Number(r.totalSales || r.totalSale || 0),
-        });
+    const posSnap = await fetchPosDailySalesInRange(storeId, since90, toYMD(new Date()));
+    posSnap?.docs.forEach(d => {
+      const r = d.data();
+      closures.push({
+        date: String(r.date || '').replace(/-/g, ''),
+        netSale: Number(r.netSales || r.netSale || 0),
+        totalSale: Number(r.totalSales || r.totalSale || 0),
       });
-      closures.sort((a, b) => b.date.localeCompare(a.date));
-    } catch { /* index 없으면 skip */ }
+    });
+    closures.sort((a, b) => b.date.localeCompare(a.date));
   }
 
   // 고객 분포
   let custStats = { total:0, gradeA:0, gradeB:0, gradeC:0, avgPoint:0 };
-  if (custSnap.status === 'fulfilled') {
-    const docs = custSnap.value.docs;
+  if (custSnap && 'docs' in custSnap) {
+    const docs = custSnap.docs;
     custStats.total = docs.length;
     let pts = 0;
     docs.forEach(d => {
@@ -248,8 +235,8 @@ async function collectFirestoreData(storeId: string) {
 
   // 날씨 변수
   let activeVarCount = 0;
-  if (varSnap.status === 'fulfilled' && varSnap.value.exists) {
-    activeVarCount = (varSnap.value.data()?.variables||[]).filter((v:any) => v.active).length;
+  if (varSnap.exists) {
+    activeVarCount = (varSnap.data()?.variables||[]).filter((v:any) => v.active).length;
   }
 
   return { dailyTotals, topItems90, closures, custStats, activeVarCount };

@@ -122,9 +122,9 @@ export default function CustomerMessagePanel({
       <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl shadow-xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
           <div>
-            <h2 className="text-sm font-semibold text-slate-100">DHN 알림톡 발송</h2>
+            <h2 className="text-sm font-semibold text-slate-100">SOLAPI 알림톡 발송</h2>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              현재 필터 {filteredTotal.toLocaleString()}명 · 대형네트웍스 API
+              현재 필터 {filteredTotal.toLocaleString()}명 · solapi.com API
             </p>
           </div>
           <button type="button" onClick={onClose} className="p-1.5 text-slate-500 hover:text-slate-300">
@@ -137,18 +137,18 @@ export default function CustomerMessagePanel({
             <div className="flex gap-2 p-3 bg-amber-950/40 border border-amber-800/50 rounded-lg text-xs text-amber-200">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
               <div>
-                DHN API 미설정. `.env`에 `DHN_SENDER_PROFILE_KEY`, `DHN_SENDER_PHONE`, `DHN_TEMPLATE_CODE`를 추가하세요.
+                SOLAPI 미설정. `.env`에 `SOLAPI_API_KEY`, `SOLAPI_API_SECRET`, `SOLAPI_PF_ID`, `SOLAPI_SENDER_PHONE`, `SOLAPI_TEMPLATE_ID`를 추가하세요.
               </div>
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-3">
             <label className="block col-span-2">
-              <span className="text-[11px] text-slate-500">템플릿 코드 (tmp_number)</span>
+              <span className="text-[11px] text-slate-500">템플릿 ID (SOLAPI)</span>
               <input
                 value={templateCode}
                 onChange={e => setTemplateCode(e.target.value)}
-                placeholder="env DHN_TEMPLATE_CODE 또는 직접 입력"
+                placeholder="env SOLAPI_TEMPLATE_ID 또는 직접 입력 (KA...)"
                 className="mt-1 w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 outline-none focus:border-teal-500"
               />
             </label>
@@ -192,7 +192,7 @@ export default function CustomerMessagePanel({
               onChange={e => setSmsFallback(e.target.checked)}
               className="rounded border-slate-600"
             />
-            알림톡 실패 시 SMS/LMS 대체 발송 (kakao_2nd)
+            알림톡 실패 시 SMS 대체 발송 (disableSms: false)
           </label>
 
           {preview && (

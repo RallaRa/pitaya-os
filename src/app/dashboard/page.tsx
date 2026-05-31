@@ -22,109 +22,42 @@ import TotalPartnerWidget     from '@/components/widgets/TotalPartnerWidget';
 import TodaySalesWidget       from '@/components/widgets/TodaySalesWidget';
 import SalesCompareWidget     from '@/components/widgets/SalesCompareWidget';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import {
+  WIDGET_META,
+  DEFAULT_ACTIVE,
+  PRIORITY_WIDGET_ID,
+  DASHBOARD_LAYOUT_VERSION,
+  sortWidgetsForDisplay,
+  makeDefaultLayout,
+  resolveDashboardLayout,
+  mergeLayoutChange,
+  type WidgetMeta,
+} from '@/lib/dashboardLayout';
 import { isSuperuserEmail } from '@/lib/auth/permissions';
 import { useLicense } from '@/hooks/useLicense';
 import { db } from '@/lib/firebase/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
+import { verticalCompactor } from 'react-grid-layout';
 
-/* ── 타입 ── */
 type GridLayout = readonly LayoutItem[];
 type ResponsiveLayouts = Partial<Record<string, GridLayout>>;
 
-/* ── 위젯 메타 ── */
-interface WidgetMeta {
-  id: string;
-  title: string;
-  defaultItem: LayoutItem;
-  permKey: string;
-}
-
-const WIDGET_META: WidgetMeta[] = [
-  {
-    id: 'sales_prediction',
-    title: 'AI 매출 예측',
-    defaultItem: { i: 'sales_prediction', x: 0, y: 0, w: 12, h: 7, minW: 6, minH: 5, maxW: 12, maxH: 14 },
-    permKey: 'sales_prediction',
-  },
-  {
-    id: 'weather',
-    title: '오늘 날씨',
-    defaultItem: { i: 'weather', x: 0, y: 7, w: 6, h: 3, minW: 5, minH: 2, maxW: 12, maxH: 5 },
-    permKey: 'weather',
-  },
-  {
-    id: 'quick_menu',
-    title: '빠른 메뉴',
-    defaultItem: { i: 'quick_menu', x: 6, y: 7, w: 3, h: 3, minW: 2, minH: 2, maxW: 6, maxH: 6 },
-    permKey: 'quick_menu',
-  },
-  {
-    id: 'weekly_analysis',
-    title: 'AI 주간 분석',
-    defaultItem: { i: 'weekly_analysis', x: 0, y: 10, w: 3, h: 4, minW: 3, minH: 3, maxW: 12, maxH: 6 },
-    permKey: 'weekly_analysis',
-  },
-  {
-    id: 'yesterday_analysis',
-    title: '전일 판매 분석',
-    defaultItem: { i: 'yesterday_analysis', x: 3, y: 10, w: 3, h: 4, minW: 3, minH: 3, maxW: 12, maxH: 6 },
-    permKey: 'yesterday_analysis',
-  },
-  {
-    id: 'news',
-    title: '정육 최신 뉴스',
-    defaultItem: { i: 'news', x: 6, y: 10, w: 6, h: 4, minW: 3, minH: 2, maxW: 12, maxH: 6 },
-    permKey: 'news',
-  },
-  {
-    id: 'ai_insight',
-    title: 'AI 종합 운영의견',
-    defaultItem: { i: 'ai_insight', x: 0, y: 14, w: 12, h: 6, minW: 8, minH: 5, maxW: 12, maxH: 10 },
-    permKey: 'ai_insight',
-  },
-  {
-    id: 'total_partner',
-    title: 'AI 토탈 운영파트너',
-    defaultItem: { i: 'total_partner', x: 0, y: 20, w: 12, h: 6, minW: 8, minH: 5, maxW: 12, maxH: 10 },
-    permKey: 'total_partner',
-  },
-  {
-    id: 'today_sales',
-    title: '당일 매출 현황',
-    defaultItem: { i: 'today_sales', x: 9, y: 7, w: 3, h: 3, minW: 3, minH: 3, maxW: 6, maxH: 8 },
-    permKey: 'today_sales',
-  },
-  {
-    id: 'sales_compare',
-    title: '매출 비교',
-    defaultItem: { i: 'sales_compare', x: 0, y: 4, w: 6, h: 3, minW: 3, minH: 3, maxW: 8, maxH: 8 },
-    permKey: 'sales_compare',
-  },
-];
-
-const DEFAULT_ACTIVE = ['sales_prediction', 'today_sales', 'sales_compare', 'weather', 'quick_menu', 'weekly_analysis', 'yesterday_analysis', 'news', 'ai_insight', 'total_partner'];
-
-const PRIORITY_WIDGET_ID = 'sales_prediction';
-
-/** 모바일·신규 레이아웃: AI 예측을 목록 맨 위로 */
-function sortWidgetsForDisplay(ids: string[]): string[] {
-  const rest = ids.filter(id => id !== PRIORITY_WIDGET_ID);
-  return ids.includes(PRIORITY_WIDGET_ID) ? [PRIORITY_WIDGET_ID, ...rest] : ids;
-}
-
-function makeDefaultLayout(ids: string[]): GridLayout {
-  return WIDGET_META.filter(m => ids.includes(m.id)).map(m => ({ ...m.defaultItem }));
-}
-
-function mergeLayoutWithActiveWidgets(widgets: string[], layout: LayoutItem[]): LayoutItem[] {
-  const merged = [...layout];
-  for (const id of widgets) {
-    if (!merged.find(l => l.i === id)) {
-      const meta = WIDGET_META.find(m => m.id === id);
-      if (meta) merged.push({ ...meta.defaultItem, y: Infinity });
-    }
+function ensureRequiredWidgets(widgets: string[]): string[] {
+  let next = [...widgets];
+  for (const id of ['total_partner', 'ai_insight'] as const) {
+    if (!next.includes(id)) next = [...next, id];
   }
-  return merged.filter(l => widgets.includes(l.i));
+  return next;
+}
+
+function applyResolvedLayout(
+  widgets: string[],
+  savedLayout: LayoutItem[] | null | undefined,
+  layoutVersion?: number,
+) {
+  const normalizedWidgets = ensureRequiredWidgets(widgets);
+  const { layout, repaired } = resolveDashboardLayout(normalizedWidgets, savedLayout, layoutVersion);
+  return { widgets: normalizedWidgets, layout, repaired };
 }
 
 /* ── 위젯 추가 모달 ── */
@@ -230,22 +163,33 @@ export default function DashboardPage() {
       .then(r => r.json())
       .then(d => {
         if (d.layout && d.activeWidgets) {
-          let widgets: string[] = d.activeWidgets;
-          let layout: LayoutItem[] = mergeLayoutWithActiveWidgets(widgets, d.layout as LayoutItem[]);
-          if (!widgets.includes('total_partner')) {
-            widgets = [...widgets, 'total_partner'];
-          }
-          if (!widgets.includes('ai_insight')) {
-            widgets = [...widgets, 'ai_insight'];
-          }
-          layout = mergeLayoutWithActiveWidgets(widgets, layout);
+          const { widgets, layout, repaired } = applyResolvedLayout(
+            d.activeWidgets,
+            d.layout as LayoutItem[],
+            d.layoutVersion,
+          );
           setLayouts({ lg: layout as GridLayout });
           setActiveWidgets(widgets);
+          if (repaired && isSuperuserEmail(user?.email)) {
+            getAuthJsonHeaders().then(headers =>
+              fetch('/api/dashboard/layout', {
+                method: 'PUT',
+                headers,
+                body: JSON.stringify({
+                  uid,
+                  layout,
+                  activeWidgets: widgets,
+                  storeId: storeId || undefined,
+                  layoutVersion: DASHBOARD_LAYOUT_VERSION,
+                }),
+              }),
+            ).catch(() => {});
+          }
         }
         setLayoutLoaded(true);
       })
       .catch(() => setLayoutLoaded(true));
-  }, [uid, storeId]);
+  }, [uid, storeId, user?.email]);
 
   /* 마스터 레이아웃 실시간 동기화 (슈퍼유저 변경 시 모든 유저 반영) */
   useEffect(() => {
@@ -256,11 +200,11 @@ export default function DashboardPage() {
         if (!snap.exists()) return;
         const data = snap.data();
         if (data?.layout && data?.activeWidgets) {
-          let widgets: string[] = data.activeWidgets;
-          let layout: LayoutItem[] = mergeLayoutWithActiveWidgets(widgets, data.layout);
-          if (!widgets.includes('total_partner')) widgets = [...widgets, 'total_partner'];
-          if (!widgets.includes('ai_insight')) widgets = [...widgets, 'ai_insight'];
-          layout = mergeLayoutWithActiveWidgets(widgets, layout);
+          const { widgets, layout } = applyResolvedLayout(
+            data.activeWidgets,
+            data.layout as LayoutItem[],
+            data.layoutVersion,
+          );
           setLayouts({ lg: layout as GridLayout });
           setActiveWidgets(widgets);
         }
@@ -279,8 +223,14 @@ export default function DashboardPage() {
         fetch('/api/dashboard/layout', {
           method: 'PUT',
           headers,
-          body: JSON.stringify({ uid, layout: [...layout], activeWidgets: widgets, storeId: storeId || undefined }),
-        })
+          body: JSON.stringify({
+            uid,
+            layout: [...layout],
+            activeWidgets: widgets,
+            storeId: storeId || undefined,
+            layoutVersion: DASHBOARD_LAYOUT_VERSION,
+          }),
+        }),
       ).catch(() => {});
     }, 1000);
   }, [uid, layoutLoaded, storeId]);
@@ -302,12 +252,7 @@ export default function DashboardPage() {
 
   /* onLayoutChange 핸들러 */
   const onLayoutChange = useCallback((newLayout: GridLayout) => {
-    // 새 레이아웃과 기존 메타 병합 (minW/minH 등 유지)
-    const merged: LayoutItem[] = visibleActive.map(id => {
-      const meta    = WIDGET_META.find(m => m.id === id)!;
-      const updated = [...newLayout].find(l => l.i === id);
-      return updated ? { ...meta.defaultItem, ...updated } : { ...meta.defaultItem };
-    });
+    const merged = mergeLayoutChange(visibleActive, [...newLayout]);
     const next = { ...layouts, lg: merged as GridLayout };
     setLayouts(next);
     persistLayout(merged as GridLayout, activeWidgets);
@@ -318,9 +263,8 @@ export default function DashboardPage() {
     if (activeWidgets.includes(id)) return;
     const meta = WIDGET_META.find(m => m.id === id);
     if (!meta) return;
-    const newItem: LayoutItem = { ...meta.defaultItem, y: Infinity };
-    const newActive           = [...activeWidgets, id];
-    const newLayout           = [...(layouts.lg || []).filter((l: LayoutItem) => l.i !== id), newItem];
+    const newActive = [...activeWidgets, id];
+    const { layout: newLayout } = resolveDashboardLayout(newActive, [...(layouts.lg || []), { ...meta.defaultItem }]);
     setLayouts({ lg: newLayout as GridLayout });
     setActiveWidgets(newActive);
     persistLayout(newLayout as GridLayout, newActive);
@@ -477,6 +421,7 @@ export default function DashboardPage() {
             cols={{ lg: 12, md: 10, sm: 6 }}
             rowHeight={80}
             margin={[12, 12]}
+            compactor={verticalCompactor}
             dragConfig={{ enabled: editMode && isSuperuser, handle: '.widget-drag-handle' }}
             resizeConfig={{ enabled: editMode && isSuperuser }}
             onLayoutChange={onLayoutChange}
@@ -484,7 +429,7 @@ export default function DashboardPage() {
           >
             {visibleActive.map(id => {
               const meta = WIDGET_META.find(m => m.id === id);
-              const item = currentLayout.find(l => l.i === id) || (meta ? { ...meta.defaultItem, y: Infinity } : null);
+              const item = currentLayout.find(l => l.i === id) || (meta ? { ...meta.defaultItem } : null);
               if (!item) return null;
               return (
                 <div key={id} className="relative">

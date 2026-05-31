@@ -23,6 +23,7 @@ export async function GET(req: Request) {
         return NextResponse.json({
           layout: masterDoc.data()?.layout || null,
           activeWidgets: masterDoc.data()?.activeWidgets || null,
+          layoutVersion: masterDoc.data()?.layoutVersion ?? null,
           isMaster: true,
         });
       }
@@ -34,6 +35,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       layout: doc.data()?.layout || null,
       activeWidgets: doc.data()?.activeWidgets || null,
+      layoutVersion: doc.data()?.layoutVersion ?? null,
       isMaster: false,
     });
   } catch {
@@ -46,17 +48,22 @@ export async function PUT(req: Request) {
   if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const { uid, layout, activeWidgets, storeId } = await req.json();
+    const { uid, layout, activeWidgets, storeId, layoutVersion } = await req.json();
     if (!uid) return NextResponse.json({ error: 'uid required' }, { status: 400 });
 
     const isSuperuser = authUser.email === SUPERUSER_EMAIL;
+    const payload = {
+      layout,
+      activeWidgets,
+      layoutVersion: layoutVersion ?? 2,
+      updatedAt: FieldValue.serverTimestamp(),
+    };
 
     // 슈퍼유저 + storeId → 마스터 레이아웃 저장
     if (isSuperuser && storeId) {
       await adminDb.collection('dashboard_layouts').doc(`${storeId}_master`).set({
-        layout, activeWidgets,
+        ...payload,
         updatedBy: uid,
-        updatedAt: FieldValue.serverTimestamp(),
         storeId,
       });
       return NextResponse.json({ success: true, saved: 'master' });
@@ -64,7 +71,7 @@ export async function PUT(req: Request) {
 
     // 일반 유저 → 개인 레이아웃 저장
     await adminDb.collection('dashboard_layouts').doc(uid).set({
-      layout, activeWidgets, updatedAt: FieldValue.serverTimestamp(),
+      ...payload,
     });
 
     return NextResponse.json({ success: true, saved: 'personal' });

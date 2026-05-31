@@ -1,5 +1,6 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { getKSTTodayYMD, getKSTYesterdayYMD } from '@/lib/dateUtils';
+import { dailyReportDocId } from '@/lib/reportCompare';
 import {
   getDisplayTotalSale,
   posDailySalesDocId,
@@ -36,29 +37,73 @@ export interface AiStoreContext {
   employees: AiEmployeeRow[];
 }
 
+async function loadSalesDoc(storeId: string, dateYmd: string): Promise<SalesDocData | null> {
+  const posSnap = await adminDb.collection('pos_daily_sales')
+    .doc(posDailySalesDocId(storeId, dateYmd))
+    .get();
+  if (posSnap.exists) return posSnap.data() as SalesDocData;
+
+  const reportSnap = await adminDb.collection('daily_reports')
+    .doc(dailyReportDocId(storeId, dateYmd))
+    .get();
+  if (reportSnap.exists) return reportSnap.data() as SalesDocData;
+
+  return null;
+}
+
+async function fetchTopCustomers(storeId: string) {
+  try {
+    return await adminDb.collection('pos_customers')
+      .where('storeId', '==', storeId)
+      .orderBy('point', 'desc')
+      .limit(100)
+      .get();
+  } catch {
+    const snap = await adminDb.collection('pos_customers')
+      .where('storeId', '==', storeId)
+      .limit(200)
+      .get();
+    const docs = [...snap.docs]
+      .sort((a, b) => Number(b.data().point || 0) - Number(a.data().point || 0))
+      .slice(0, 100);
+    return { docs, empty: docs.length === 0, size: docs.length };
+  }
+}
+
+async function fetchRecentPurchases(storeId: string) {
+  try {
+    return await adminDb.collection('purchases')
+      .where('storeId', '==', storeId)
+      .orderBy('purchaseDate', 'desc')
+      .limit(10)
+      .get();
+  } catch {
+    const snap = await adminDb.collection('purchases')
+      .where('storeId', '==', storeId)
+      .limit(50)
+      .get();
+    const docs = [...snap.docs]
+      .sort((a, b) => String(b.data().purchaseDate || '').localeCompare(String(a.data().purchaseDate || '')))
+      .slice(0, 10);
+    return { docs, empty: docs.length === 0, size: docs.length };
+  }
+}
+
 export async function loadSystemContext(storeId: string): Promise<AiStoreContext> {
   const today = getKSTTodayYMD();
   const yesterday = getKSTYesterdayYMD();
 
   const [
-    todaySnap,
-    yesterdaySnap,
+    todaySales,
+    yesterdaySales,
     customersSnap,
     purchasesSnap,
     employeesSnap,
   ] = await Promise.all([
-    adminDb.collection('pos_daily_sales').doc(posDailySalesDocId(storeId, today)).get(),
-    adminDb.collection('pos_daily_sales').doc(posDailySalesDocId(storeId, yesterday)).get(),
-    adminDb.collection('pos_customers')
-      .where('storeId', '==', storeId)
-      .orderBy('point', 'desc')
-      .limit(100)
-      .get(),
-    adminDb.collection('purchases')
-      .where('storeId', '==', storeId)
-      .orderBy('purchaseDate', 'desc')
-      .limit(10)
-      .get(),
+    loadSalesDoc(storeId, today),
+    loadSalesDoc(storeId, yesterday),
+    fetchTopCustomers(storeId),
+    fetchRecentPurchases(storeId),
     adminDb.collection('pos_employees')
       .where('storeId', '==', storeId)
       .limit(50)
@@ -68,8 +113,8 @@ export async function loadSystemContext(storeId: string): Promise<AiStoreContext
   return {
     today,
     yesterday,
-    todaySales: todaySnap.exists ? (todaySnap.data() as SalesDocData) : null,
-    yesterdaySales: yesterdaySnap.exists ? (yesterdaySnap.data() as SalesDocData) : null,
+    todaySales,
+    yesterdaySales,
     topCustomers: customersSnap.docs.map(d => d.data() as AiCustomerRow),
     recentPurchases: purchasesSnap.docs.map(d => d.data() as AiPurchaseRow),
     employees: employeesSnap.docs.map(d => {

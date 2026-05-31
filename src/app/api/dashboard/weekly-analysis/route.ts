@@ -35,8 +35,12 @@ export async function GET(req: Request) {
       const d = cacheDoc.data()!;
       const age = Date.now() - (d.cachedAt?.toMillis?.() || 0);
       if (age < CACHE_TTL_MS) {
-        return NextResponse.json({ ...d.result, cached: true });
-      }
+          const result = d.result || {};
+          const isEmpty = !!result.emptyReason && !(result.top?.length);
+          if (!isEmpty) {
+            return NextResponse.json({ ...result, cached: true });
+          }
+        }
     }
   } catch { /* ignore */ }
 

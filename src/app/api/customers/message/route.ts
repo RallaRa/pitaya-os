@@ -2,13 +2,13 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifyToken } from '@/lib/authVerify';
 import { canDecryptCustomerPII } from '@/lib/customerDecryptAuth';
-import { isDhnConfigured } from '@/lib/dhn/config';
-import { sendCustomerMessages, type CustomerMessageVariables } from '@/lib/dhn/sendToCustomers';
+import { isMessagingConfigured, sendCustomerMessages, type CustomerMessageVariables } from '@/lib/messaging/sendToCustomers';
 import type { CustomerQueryParams } from '@/lib/customerQuery';
 
 interface MessageRequestBody extends Omit<CustomerQueryParams, 'storeId'> {
   storeId?: string;
   templateCode?: string;
+  templateId?: string;
   smsFallback?: boolean;
   variables?: CustomerMessageVariables;
   campaignKey?: string;
@@ -71,7 +71,8 @@ export async function GET(req: Request) {
     });
 
     return NextResponse.json({
-      configured: isDhnConfigured(),
+      configured: isMessagingConfigured(),
+      provider: process.env.MESSAGE_PROVIDER?.trim() || 'solapi',
       logs,
       total,
       page,
@@ -83,7 +84,7 @@ export async function GET(req: Request) {
   }
 }
 
-// POST /api/customers/message — 필터 조건 고객에게 DHN 알림톡 발송
+// POST /api/customers/message — 필터 조건 고객에게 SOLAPI/DHN 알림톡 발송
 export async function POST(req: Request) {
   const user = await verifyToken(req);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -92,7 +93,7 @@ export async function POST(req: Request) {
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
 
-  const { storeId, templateCode, smsFallback, variables, campaignKey, dryRun, ...filters } = body;
+  const { storeId, templateCode, templateId, smsFallback, variables, campaignKey, dryRun, ...filters } = body;
   if (!storeId) return NextResponse.json({ error: 'storeId required' }, { status: 400 });
 
   const auth = await canDecryptCustomerPII(user.uid, user.email, storeId);
@@ -105,6 +106,7 @@ export async function POST(req: Request) {
       storeId,
       filters,
       templateCode,
+      templateId,
       smsFallback,
       variables,
       campaignKey,

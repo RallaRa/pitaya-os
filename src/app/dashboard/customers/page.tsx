@@ -25,6 +25,8 @@ import {
   saveCustomerPiiSession,
   type DecryptedCustomer,
 } from '@/lib/customerPiiSession';
+import { canDecryptCustomerPIIClient } from '@/lib/customerDecryptAuth.client';
+import { isSuperuserEmail, isSuperuser } from '@/lib/auth/permissions';
 import dynamic from 'next/dynamic';
 
 const CustomerRequestPanel = dynamic(
@@ -127,6 +129,8 @@ export default function CustomersPage() {
   const [logsPage,       setLogsPage]       = useState(1);
   const [logsTotal,      setLogsTotal]      = useState(0);
   const [groupId,      setGroupId]      = useState('');
+  const [userRole,     setUserRole]     = useState('');
+  const [canDecrypt,   setCanDecrypt]   = useState(false);
   const [sortBy,       setSortBy]       = useState<SortField>('lastVisitDate');
   const [sortOrder,    setSortOrder]    = useState<'asc' | 'desc'>('desc');
   const [joinFrom,     setJoinFrom]     = useState('');
@@ -145,7 +149,6 @@ export default function CustomersPage() {
   const LIMIT = 50;
   const COL_COUNT = 14;
   const LOGS_LIMIT = 30;
-  const canDecrypt = groupId === 'master' || groupId === 'admin';
 
   const clearPii = useCallback(() => {
     setPiiUnlocked(false);
@@ -184,15 +187,80 @@ export default function CustomersPage() {
     });
   }, [user?.uid, storeId, piiUnlocked, decryptedMap, decryptedRows]);
 
-  /* ── 권한 조회 ── */
+  /* ── 복호화 권한 (서버 확인 + 클라이언트 fallback) ── */
   useEffect(() => {
-    if (!user?.uid) return;
-    getAuthHeaders()
-      .then(h => fetch(`/api/permissions?type=myAccess${storeId ? `&storeId=${storeId}` : ''}`, { headers: h }))
-      .then(r => r.json())
-      .then(d => { if (d.groupId) setGroupId(d.groupId); })
-      .catch(() => {});
-  }, [user?.uid, storeId]);
+    if (!user?.uid) {
+      setCanDecrypt(false);
+      return;
+    }
+
+    if (isSuperuserEmail(user.email)) {
+      setCanDecrypt(true);
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const headers = await getAuthHeaders();
+        const params = new URLSearchParams();
+        if (storeId) params.set('storeId', storeId);
+
+        const [authRes, userRes, permRes] = await Promise.all([
+          fetch(`/api/customers/decrypt-auth?${params}`, { headers }),
+          fetch(`/api/users?uid=${encodeURIComponent(user.uid)}`, { headers }),
+          fetch(`/api/permissions?type=myAccess${storeId ? `&storeId=${encodeURIComponent(storeId)}` : ''}`, { headers }),
+        ]);
+
+        if (cancelled) return;
+
+        let role = currentStore?.role || '';
+        let gid = '';
+        let isSuperuserFromApi = false;
+
+        if (userRes.ok) {
+          const u = await userRes.json();
+          role = u.user?.role || u.user?.groupId || role;
+          setUserRole(role);
+        }
+
+        if (permRes.ok) {
+          const p = await permRes.json();
+          isSuperuserFromApi = !!p.isSuperuser;
+          gid = p.groupId || p.role || role;
+          setGroupId(gid);
+        } else if (role) {
+          gid = role;
+          setGroupId(role);
+        }
+
+        if (authRes.ok) {
+          const d = await authRes.json();
+          if (d.groupId) setGroupId(d.groupId);
+          setCanDecrypt(!!d.allowed);
+          return;
+        }
+
+        const allowed =
+          isSuperuserEmail(user.email)
+          || isSuperuser(user.email, role)
+          || isSuperuserFromApi
+          || canDecryptCustomerPIIClient(gid, user.email, currentStore?.role, isSuperuserFromApi);
+
+        setCanDecrypt(allowed);
+      } catch {
+        if (!cancelled) {
+          setCanDecrypt(
+            isSuperuserEmail(user.email)
+            || isSuperuser(user.email, currentStore?.role)
+            || canDecryptCustomerPIIClient(groupId, user.email, currentStore?.role),
+          );
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [user?.uid, user?.email, storeId, currentStore?.role]);
 
   const buildQueryParams = useCallback((opts?: { page?: number; exportAll?: boolean }) => {
     const params = new URLSearchParams({
@@ -1090,7 +1158,7 @@ export default function CustomersPage() {
       {tab === '조회 이력' && (
         <div className="space-y-3">
           {!canDecrypt ? (
-            <p className="text-center py-16 text-slate-500 text-sm">개인정보 조회 이력은 관리자(master/admin)만 열람할 수 있습니다.</p>
+            <p className="text-center py-16 text-slate-500 text-sm">개인정보 조회 이력은 관리자(점장·관리자·슈퍼유저)만 열람할 수 있습니다.</p>
           ) : logsLoading ? (
             <div className="flex justify-center py-16">
               <Loader2 className="w-6 h-6 animate-spin text-teal-400" />

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { adminDb } from '@/lib/firebase/admin';
 import { verifyToken } from '@/lib/authVerify';
 import { getKSTTodayYMD, addDaysYMD } from '@/lib/dateUtils';
+import { fetchStoreItemSales } from '@/lib/dashboardSalesData';
 
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
@@ -14,43 +14,19 @@ export async function GET(req: Request) {
   const authHdr = req.headers.get('Authorization') || '';
   const hdrs    = { Authorization: authHdr };
 
-  const sinceStr = addDaysYMD(getKSTTodayYMD(), -30);
-
   // 3개 외부 API + Firestore 매출 병렬 fetch
-  const [priceRes, auctionRes, trendRes, salesData] = await Promise.allSettled([
+  const [priceRes, auctionRes, trendRes, salesItems] = await Promise.allSettled([
     fetch(`${base}/api/external/meat-price`, { headers: hdrs, signal: AbortSignal.timeout(12000) }).then(r => r.json()),
     fetch(`${base}/api/external/meat-auction`, { headers: hdrs, signal: AbortSignal.timeout(12000) }).then(r => r.json()),
     fetch(`${base}/api/external/naver-trend${storeId ? `?storeId=${storeId}` : ''}`, { headers: hdrs, signal: AbortSignal.timeout(12000) }).then(r => r.json()),
-    (async () => {
-      let q: FirebaseFirestore.Query = adminDb.collection('daily_reports')
-        .where('reportDate', '>=', sinceStr);
-      if (storeId) q = q.where('storeId', '==', storeId);
-
-      const snap = await q.limit(200).get();
-      const itemMap: Record<string, { qty: number; amount: number }> = {};
-
-      snap.docs.forEach(doc => {
-        const items: any[] = doc.data().items || [];
-        items.forEach((item: any) => {
-          const name = item.name || '(알 수 없음)';
-          if (!itemMap[name]) itemMap[name] = { qty: 0, amount: 0 };
-          itemMap[name].qty    += Number(item.qty    || 0);
-          itemMap[name].amount += Number(item.netSales || item.amount || 0);
-        });
-      });
-
-      return Object.entries(itemMap)
-        .map(([name, v]) => ({ name, ...v }))
-        .sort((a, b) => b.qty - a.qty)
-        .slice(0, 20);
-    })(),
+    storeId ? fetchStoreItemSales(storeId, 30, 20) : Promise.resolve([]),
   ]);
 
   return NextResponse.json({
     meatPrices:  priceRes.status   === 'fulfilled' ? priceRes.value   : null,
     meatAuction: auctionRes.status === 'fulfilled' ? auctionRes.value : null,
     naverTrends: trendRes.status   === 'fulfilled' ? trendRes.value   : null,
-    salesItems:  salesData.status  === 'fulfilled' ? salesData.value  : null,
+    salesItems:  salesItems.status  === 'fulfilled' ? salesItems.value  : null,
     fetchedAt:   new Date().toISOString(),
   });
 }
