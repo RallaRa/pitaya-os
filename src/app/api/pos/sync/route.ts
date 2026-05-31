@@ -3,6 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { fetchWeather, getStoreCoords } from '@/lib/weather';
 import { sendKakaoNotifyToStore } from '@/lib/kakao/sendNotify';
+import { runSalesHourlyAlertsForStore } from '@/lib/salesHourlyAlertRunner';
 
 // ── 타입 ──────────────────────────────────────────────────────────
 interface CustomerSale {
@@ -438,6 +439,10 @@ export async function POST(req: Request) {
       message: `${date} 매출 ${Number(syncedTotalSales).toLocaleString()}원`,
       link: `${process.env.NEXT_PUBLIC_APP_URL || 'https://pitaya-osv1.vercel.app'}/dashboard/report/view`,
     }).catch(() => {});
+
+    runSalesHourlyAlertsForStore(storeId).catch(err => {
+      console.error('[pos/sync] sales hourly alert failed:', err);
+    });
   }
 
   return NextResponse.json({
