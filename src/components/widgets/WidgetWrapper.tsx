@@ -12,11 +12,13 @@ interface Props {
   error?: string | null;
   children: React.ReactNode;
   className?: string;
+  /** false면 고정 높이 대신 내용만큼 늘어남 (모바일 AI 예측 등) */
+  autoHeight?: boolean;
 }
 
 export default function WidgetWrapper({
   title, editMode, onRemove, onRefresh, updatedAt,
-  loading, error, children, className = '',
+  loading, error, children, className = '', autoHeight = false,
 }: Props) {
   const timeLabel = updatedAt
     ? `${updatedAt.getFullYear()}.${String(updatedAt.getMonth() + 1).padStart(2, '0')}.${String(updatedAt.getDate()).padStart(2, '0')} ${updatedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`
@@ -24,7 +26,9 @@ export default function WidgetWrapper({
 
   return (
     <div
-      className={`flex flex-col h-full bg-slate-900 rounded-2xl border overflow-hidden transition-colors ${
+      className={`flex flex-col bg-slate-900 rounded-2xl border transition-colors ${
+        autoHeight ? 'h-auto min-h-0' : 'h-full overflow-hidden'
+      } ${
         editMode ? 'border-dashed border-slate-600' : 'border-slate-800/60'
       } ${className}`}
     >
@@ -52,7 +56,7 @@ export default function WidgetWrapper({
       </div>
 
       {/* 본문 */}
-      <div className="flex-1 overflow-hidden relative">
+      <div className={`relative ${autoHeight ? 'flex-none' : 'flex-1 overflow-hidden'}`}>
         {loading ? (
           <div className="p-3 space-y-2 h-full">
             {[...Array(4)].map((_, i) => (

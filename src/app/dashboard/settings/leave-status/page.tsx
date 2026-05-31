@@ -106,9 +106,12 @@ export default function LeaveStatusPage() {
         <ArrowLeft className="w-4 h-4" /> 설정으로
       </Link>
 
-      <h1 className="text-2xl font-bold text-teal-400 flex items-center gap-2 mb-6">
+      <h1 className="text-2xl font-bold text-teal-400 flex items-center gap-2 mb-2">
         <CalendarDays className="w-6 h-6" /> 연차현황
       </h1>
+      <Link href="/dashboard/settings/annual-leave" className="text-sm text-slate-400 hover:text-teal-400 mb-6 inline-block">
+        → 연차 생성/갱신
+      </Link>
 
       {loading ? (
         <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 text-teal-400 animate-spin" /></div>
@@ -138,7 +141,9 @@ export default function LeaveStatusPage() {
                       <td className="px-4 py-2 text-slate-500">{emp.department || '-'}</td>
                       <td className="px-4 py-2 text-right tabular-nums">{total}일</td>
                       <td className="px-4 py-2 text-right tabular-nums text-orange-400">{used}일</td>
-                      <td className="px-4 py-2 text-right tabular-nums text-teal-400">{remain}일</td>
+                      <td className={`px-4 py-2 text-right tabular-nums ${remain < 0 ? 'text-red-400 font-semibold' : 'text-teal-400'}`}>
+                        {remain}일{remain < 0 ? ' (초과)' : ''}
+                      </td>
                       <td className="px-4 py-2">
                         <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
                           <div className="h-full bg-teal-500 rounded-full" style={{ width: `${pct}%` }} />

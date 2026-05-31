@@ -12,6 +12,7 @@ import {
   ensembleOcr,
 } from '@/lib/ensembleOcr';
 import { applyAliasesToInvoices, loadStoreAliases } from '@/lib/applyItemAliases';
+import { normalizePurchaseItem, OCR_CATEGORY_RULES } from '@/lib/purchaseCategories';
 import {
   formatAiTag,
   formatEnsembleReplyBlock,
@@ -55,15 +56,16 @@ const SYSTEM_INSTRUCTION = `당신은 한국 정육점·식자재 매입 문서(
     "items": [
       {
         "name": "품명",
+        "category": "한돈|한우|수입육|계육및기타|박스|용기|봉투|케이스|스티커|기타원부자재",
         "qty": 수량(숫자),
-        "unit": "kg|개|박스 등",
+        "unit": "kg|개|박스|세트|롤 등",
         "unitPrice": 단가(숫자),
         "supplyAmount": 공급가액(숫자),
         "taxAmount": 세액(숫자),
-        "traceNo": "이력번호 (없으면 빈 문자열)",
-        "origin": "원산지",
-        "cut": "부위",
-        "grade": "등급"
+        "traceNo": "이력번호 (고기류만, 없으면 빈 문자열)",
+        "origin": "원산지 (고기류만)",
+        "cut": "부위 (고기류만)",
+        "grade": "등급 (고기류만)"
       }
     ],
     "supplyAmount": 공급가액합계,
@@ -79,10 +81,12 @@ const SYSTEM_INSTRUCTION = `당신은 한국 정육점·식자재 매입 문서(
 - supplierName을 못 읽으면 "미확인" + items 또는 totalAmount라도 채운다.
 - 금액 콤마 제거 (1,250,000 → 1250000).
 - 여러 장/여러 업체 → 각각 별도 객체.
-- 정육: 이력번호·원산지·부위·등급 있으면 추출.`;
+${OCR_CATEGORY_RULES}`;
 
 function normalizeInvoice(raw: Record<string, unknown>) {
-  const items = Array.isArray(raw.items) ? raw.items : [];
+  const items = (Array.isArray(raw.items) ? raw.items : []).map(it =>
+    normalizePurchaseItem(it as Record<string, unknown>),
+  );
   const supplierName = String(raw.supplierName || '').trim() || (items.length ? '미확인' : '');
   const { _conflicts, ...rest } = raw;
   return {

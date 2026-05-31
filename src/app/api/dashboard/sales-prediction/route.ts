@@ -6,6 +6,7 @@ import { verifyToken } from '@/lib/authVerify';
 import { getPredictionAnalysisInsights, getPredictionCalibration, applyCalibrationToPredictions } from '@/lib/predictionAnalysis';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
+import { buildSalesPredictionEmptyReason } from '@/lib/dashboardEmptyReason';
 
 function toYMD(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -131,12 +132,18 @@ export async function GET(req: Request) {
   const isPayDay = (() => { const d = new Date().getDate(); return d >= 22 && d <= 28; })();
 
   if (sortedItems.length === 0) {
+    const emptyReason = buildSalesPredictionEmptyReason({
+      storeId,
+      salesReportDays: sales.length,
+      hasAi: hasAnyAiProvider(),
+    });
     const fallback = {
       predictionDate,
-      supporterComment: '아직 충분한 판매 데이터가 없습니다. **일마감 데이터를 꾸준히 입력**하면 정확도가 향상됩니다.',
+      supporterComment: '',
       topItems: [], bottomItems: [], keyFactors: [],
       dataSourceStatus, activeVariables: activeVars.length,
-      modelAccuracy: 0, noData: true, generatedAt: FieldValue.serverTimestamp(),
+      modelAccuracy: 0, noData: true, emptyReason,
+      generatedAt: FieldValue.serverTimestamp(),
     };
     await cacheRef.set(fallback).catch(()=>{});
     return NextResponse.json({ ...fallback, cached: false });
@@ -163,7 +170,7 @@ export async function GET(req: Request) {
     ? await getPredictionAnalysisInsights(storeId).catch(() => '')
     : '';
 
-  const prompt = `정육점 AI 매출 예측 분석을 수행하세요.
+  const prompt = `정육점 AI 매출 예측 분석을 수행하세요. 경영진 보고용으로 **분석적·수치 중심**으로 작성하세요.
 
 [컨텍스트]
 ${contextInfo}
@@ -174,7 +181,7 @@ ${summaryLines}
 
 다음 JSON 형식으로만 응답하세요 (마크다운 없이):
 {
-  "supporterComment": "오늘 매출 예측 종합 의견 **300자 이내**. 날씨·요일·공휴일·급여일·최근90일 판매추이·전주동요일 대비 등 **객관적 근거와 수치**를 포함해 왜 이런 판매 패턴이 예상되는지 설명. **볼드**로 핵심 품목/요인 강조",
+  "supporterComment": "오늘 매출·품목 예측 **종합 분석 (500자 이내, 반드시 준수)**. 구조: ①오늘 매출·수요 전망(한 문장) ②핵심 변수(요일/날씨/공휴일/급여일) 각각 수치·근거 ③TOP 품목군 방향(전주·90일 대비 %) ④리스크·주의 품목 ⑤오늘 실행 1가지. 감정·추상 표현 금지. **볼드**로 핵심 수치·품목만 강조",
   "keyFactors": ["주요변수1","주요변수2","주요변수3"],
   "topItems": [
     {
@@ -215,7 +222,7 @@ reasonDetail은 반드시 100자 이내, "전주 동요일 대비 +12%", "최근
         ...it,
         reasonDetail: String(it.reasonDetail || '').slice(0, 100),
       }));
-      supporterComment = String(parsed.supporterComment || '').slice(0, 300);
+      supporterComment = String(parsed.supporterComment || '').slice(0, 500);
       keyFactors  = parsed.keyFactors   || [];
     } catch {
       // fallback: 통계 기반

@@ -7,8 +7,15 @@ import {
   FileText, FileSpreadsheet,
 } from 'lucide-react';
 
+import {
+  ALL_ITEM_CATEGORIES,
+  isMeatCategory,
+  PURCHASE_UNITS,
+} from '@/lib/purchaseCategories';
+
 export interface PurchaseItem {
   name: string;
+  category: string;
   qty: number;
   unit: string;
   unitPrice: number;
@@ -73,10 +80,10 @@ const OPTIONAL_COL_LABELS: Record<OptionalCol, string> = {
 const OPTIONAL_COLS: OptionalCol[] = ['traceNo', 'origin', 'cut', 'grade'];
 
 const PAYMENT_METHODS = ['', '현금', '카드', '외상', '이체'];
-const UNITS = ['kg', 'g', '개', '박스', '묶음', '마리', '팩'];
+const UNITS = PURCHASE_UNITS;
 
 const DEFAULT_ITEM: PurchaseItem = {
-  name: '', qty: 0, unit: 'kg', unitPrice: 0,
+  name: '', category: '', qty: 0, unit: 'kg', unitPrice: 0,
   supplyAmount: 0, taxAmount: 0,
   traceNo: '', origin: '', cut: '', grade: '',
 };
@@ -473,7 +480,8 @@ export default function PurchaseSheet({
                   <thead>
                     <tr className="border-b border-slate-700/60 bg-slate-800/30">
                       <th className="text-left text-slate-500 px-1.5 py-1 font-medium w-6">#</th>
-                      <th className="text-left text-slate-400 px-1 py-1 font-medium w-[22%]">품명</th>
+                      <th className="text-left text-slate-400 px-1 py-1 font-medium w-16">구분</th>
+                      <th className="text-left text-slate-400 px-1 py-1 font-medium w-[20%]">품명</th>
                       <th className="text-right text-slate-400 px-1 py-1 font-medium w-12">수량</th>
                       <th className="text-left text-slate-400 px-1 py-1 font-medium w-10">단위</th>
                       <th className="text-right text-slate-400 px-1 py-1 font-medium w-16">단가</th>
@@ -501,6 +509,25 @@ export default function PurchaseSheet({
                         className="border-b border-slate-800/50 hover:bg-slate-800/20 group"
                       >
                         <td className="px-1.5 py-0.5 text-slate-600 tabular-nums">{idx + 1}</td>
+
+                        {/* 구분 */}
+                        <td className="px-0.5 py-0">
+                          <select
+                            value={item.category}
+                            onChange={e => updateItem(group.id, idx, 'category', e.target.value)}
+                            className={`w-full bg-transparent px-0.5 py-0.5 text-[9px] focus:outline-none focus:bg-slate-800 rounded appearance-none cursor-pointer ${
+                              isMeatCategory(item.category) ? 'text-slate-300' : 'text-amber-300/90'
+                            }`}
+                          >
+                            <option value="">구분</option>
+                            {ALL_ITEM_CATEGORIES.map(c => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                            {item.category && !ALL_ITEM_CATEGORIES.includes(item.category as typeof ALL_ITEM_CATEGORIES[number]) && (
+                              <option value={item.category}>{item.category}</option>
+                            )}
+                          </select>
+                        </td>
 
                         {/* 품명 */}
                         <td className="px-0.5 py-0">
@@ -575,7 +602,8 @@ export default function PurchaseSheet({
                             <input
                               value={item.traceNo}
                               onChange={e => updateItem(group.id, idx, 'traceNo', e.target.value)}
-                              className="w-full bg-transparent px-1 py-0.5 text-slate-400 focus:outline-none focus:bg-slate-800 rounded font-mono text-[9px]"
+                              disabled={!isMeatCategory(item.category)}
+                              className="w-full bg-transparent px-1 py-0.5 text-slate-400 focus:outline-none focus:bg-slate-800 rounded font-mono text-[9px] disabled:opacity-30"
                             />
                           </td>
                         )}
@@ -585,7 +613,8 @@ export default function PurchaseSheet({
                             <input
                               value={item.origin}
                               onChange={e => updateItem(group.id, idx, 'origin', e.target.value)}
-                              className="w-full bg-transparent px-1 py-0.5 text-[10px] text-slate-300 focus:outline-none focus:bg-slate-800 rounded"
+                              disabled={!isMeatCategory(item.category)}
+                              className="w-full bg-transparent px-1 py-0.5 text-[10px] text-slate-300 focus:outline-none focus:bg-slate-800 rounded disabled:opacity-30"
                             />
                           </td>
                         )}
@@ -595,7 +624,8 @@ export default function PurchaseSheet({
                             <input
                               value={item.cut}
                               onChange={e => updateItem(group.id, idx, 'cut', e.target.value)}
-                              className="w-full bg-transparent px-1 py-0.5 text-[10px] text-slate-300 focus:outline-none focus:bg-slate-800 rounded"
+                              disabled={!isMeatCategory(item.category)}
+                              className="w-full bg-transparent px-1 py-0.5 text-[10px] text-slate-300 focus:outline-none focus:bg-slate-800 rounded disabled:opacity-30"
                             />
                           </td>
                         )}
@@ -605,7 +635,8 @@ export default function PurchaseSheet({
                             <input
                               value={item.grade}
                               onChange={e => updateItem(group.id, idx, 'grade', e.target.value)}
-                              className="w-full bg-transparent px-1 py-0.5 text-[10px] text-slate-300 focus:outline-none focus:bg-slate-800 rounded"
+                              disabled={!isMeatCategory(item.category)}
+                              className="w-full bg-transparent px-1 py-0.5 text-[10px] text-slate-300 focus:outline-none focus:bg-slate-800 rounded disabled:opacity-30"
                             />
                           </td>
                         )}
@@ -625,7 +656,7 @@ export default function PurchaseSheet({
                   {/* 합계 */}
                   <tfoot>
                     <tr className="border-t border-slate-700/60 bg-slate-800/20">
-                      <td colSpan={5} className="px-1.5 py-1 text-right text-slate-500 text-[9px]">소계</td>
+                      <td colSpan={6} className="px-1.5 py-1 text-right text-slate-500 text-[9px]">소계</td>
                       <td className="px-1 py-1 text-right text-slate-200 font-semibold tabular-nums text-[10px]">
                         {fmt(inv.supplyAmount)}
                       </td>
@@ -636,7 +667,7 @@ export default function PurchaseSheet({
                       <td />
                     </tr>
                     <tr className="bg-slate-800/10">
-                      <td colSpan={5} className="px-1.5 py-1 text-right text-teal-400 text-[9px] font-medium">합계</td>
+                      <td colSpan={6} className="px-1.5 py-1 text-right text-teal-400 text-[9px] font-medium">합계</td>
                       <td colSpan={2} className="px-1 py-1 text-right text-teal-400 font-bold text-[11px] tabular-nums">
                         {fmt(inv.totalAmount)}원
                       </td>

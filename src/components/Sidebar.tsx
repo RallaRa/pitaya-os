@@ -4,10 +4,10 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Settings, MessageCircle, ShoppingCart, Sparkles,
+  Settings, MessageCircle, ShoppingCart, ShoppingBag, Sparkles,
   BarChart2, ClipboardCheck, X,
   Circle, CalendarDays, Tag, Scale, LineChart, Building2, SlidersHorizontal, Users, Crown, History, ChevronRight, ChevronDown,
-  FileText, TrendingUp, Truck, BookOpen, Hash, Code, LayoutGrid, PenLine, Clock,
+  FileText, TrendingUp, Truck, BookOpen, Hash, Code, LayoutGrid, PenLine, Clock, Tv,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -20,6 +20,21 @@ import UserProfileModal from '@/components/UserProfileModal';
 import { db } from '@/lib/firebase/firebase';
 import { collection, query, where, onSnapshot, doc } from 'firebase/firestore';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import { getKSTTodayYMD, addDaysYMD, getWeekdayKo } from '@/lib/dateUtils';
+import {
+  getDisplayNetSales,
+  getDisplayTotalSale,
+  posDailySalesDocId,
+  type SalesDocData,
+} from '@/lib/posDailySales';
+import {
+  buildTodayTomorrowGroups,
+  dateInRange,
+  dayoffLabel,
+  leaveLabel,
+  mergeAbsenceEntries,
+  type DayAbsenceGroup,
+} from '@/lib/hr/absenceSchedule';
 
 type MenuAccess = {
   ai: boolean; sales: boolean; purchase: boolean; report: boolean;
@@ -87,6 +102,9 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   interface SalesSummary { todayNet: number; todaySource: string; weekNet: number; }
   const [sales,        setSales]        = useState<SalesSummary | null>(null);
   const [salesLoading, setSalesLoading] = useState(false);
+  const [todayKey,     setTodayKey]     = useState(() => getKSTTodayYMD());
+  const [absences,     setAbsences]     = useState<DayAbsenceGroup[]>([]);
+  const [absenceLoading, setAbsenceLoading] = useState(false);
 
   /* 메뉴 권한 초기 로드 + groupId 취득 */
   useEffect(() => {
@@ -153,55 +171,227 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     });
   }, [user?.uid]);
 
-  /* 매출 현황 실시간 — report 권한 있을 때만 */
+  /* KST 자정 넘어가면 오늘 날짜 갱신 */
+  useEffect(() => {
+    const tick = () => {
+      const t = getKSTTodayYMD();
+      setTodayKey(prev => (prev !== t ? t : prev));
+    };
+    tick();
+    const id = setInterval(tick, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  /* 매출 현황 실시간 — pos_daily_sales + daily_reports, KST 기준 */
   useEffect(() => {
     const storeId = currentStore?.storeId;
     if (!storeId || !menuAccess.report) { setSales(null); return; }
 
-    const today = new Date().toISOString().split('T')[0];
-    const d = new Date();
+    const today = todayKey;
+    const d = new Date(`${today}T12:00:00+09:00`);
     const diff = d.getDay() === 0 ? -6 : 1 - d.getDay();
-    const weekStart = new Date(d);
-    weekStart.setDate(d.getDate() + diff);
-    const weekStartStr = weekStart.toISOString().split('T')[0];
+    const weekStartStr = addDaysYMD(today, diff);
 
     setSalesLoading(true);
 
-    const scoreDoc = (doc: any) => {
-      if (doc.source === 'pos_bridge' && (doc.totalSales ?? 0) > 0) return Infinity;
-      if (doc.source === 'pos_bridge') return -1;
-      return doc.totalSales ?? 0;
+    let todayPos: SalesDocData | null = null;
+    let todayReportBest: SalesDocData | null = null;
+    const weekPosByDate = new Map<string, SalesDocData>();
+    const weekReportByDate = new Map<string, SalesDocData & { source?: string; totalSales?: number }>();
+
+    const scoreDoc = (docData: { source?: string; totalSales?: number }) => {
+      if (docData.source === 'pos_bridge' && (docData.totalSales ?? 0) > 0) return Infinity;
+      if (docData.source === 'pos_bridge') return -1;
+      return docData.totalSales ?? 0;
     };
 
-    const q = query(
-      collection(db, 'daily_reports'),
-      where('storeId', '==', storeId),
-      where('reportDate', '>=', weekStartStr),
-      where('reportDate', '<=', today),
-    );
+    const pickBestReport = (docs: (SalesDocData & { source?: string; totalSales?: number })[]) => {
+      if (!docs.length) return null;
+      return docs.reduce((best, cur) => (scoreDoc(cur) > scoreDoc(best) ? cur : best));
+    };
 
-    const unsub = onSnapshot(q, snap => {
-      const byDate = new Map<string, any>();
-      snap.docs.forEach(d => {
-        const data = { id: d.id, ...d.data() as any };
-        if (data.storeId !== storeId) return;
-        const existing = byDate.get(data.reportDate);
-        if (!existing || scoreDoc(data) > scoreDoc(existing)) byDate.set(data.reportDate, data);
+    const displayAmount = (docData: SalesDocData | null | undefined) => {
+      if (!docData) return 0;
+      const net = getDisplayNetSales(docData);
+      if (net > 0) return net;
+      return getDisplayTotalSale(docData);
+    };
+
+    const recompute = () => {
+      const todayDoc = todayPos ?? todayReportBest;
+      const amount = displayAmount(todayDoc);
+      const source = todayPos
+        ? 'pos_bridge'
+        : ((todayReportBest as { source?: string } | null)?.source ?? 'manual');
+
+      const weekDates = new Set([...weekPosByDate.keys(), ...weekReportByDate.keys()]);
+      let weekNet = 0;
+      weekDates.forEach(date => {
+        const docData = weekPosByDate.get(date) ?? weekReportByDate.get(date) ?? null;
+        weekNet += displayAmount(docData);
       });
 
-      let weekNet = 0, todayNet = 0, todaySource = 'manual';
-      byDate.forEach((doc, date) => {
-        const net = doc.netSales ?? doc.netSale ?? 0;
-        weekNet += net;
-        if (date === today) { todayNet = net; todaySource = doc.source ?? 'manual'; }
-      });
-
-      setSales({ todayNet, todaySource, weekNet });
+      setSales({ todayNet: amount, todaySource: source, weekNet });
       setSalesLoading(false);
-    }, () => setSalesLoading(false));
+    };
 
-    return () => unsub();
-  }, [currentStore?.storeId, menuAccess.report]);
+    const unsubs: (() => void)[] = [];
+
+    unsubs.push(onSnapshot(
+      doc(db, 'pos_daily_sales', posDailySalesDocId(storeId, today)),
+      snap => {
+        todayPos = snap.exists() ? (snap.data() as SalesDocData) : null;
+        recompute();
+      },
+      () => setSalesLoading(false),
+    ));
+
+    unsubs.push(onSnapshot(
+      query(
+        collection(db, 'daily_reports'),
+        where('storeId', '==', storeId),
+        where('reportDate', '==', today),
+      ),
+      snap => {
+        const docs = snap.docs.map(d => d.data() as SalesDocData & { source?: string; totalSales?: number });
+        todayReportBest = pickBestReport(docs);
+        recompute();
+      },
+      () => setSalesLoading(false),
+    ));
+
+    unsubs.push(onSnapshot(
+      query(
+        collection(db, 'pos_daily_sales'),
+        where('storeId', '==', storeId),
+        where('date', '>=', weekStartStr),
+        where('date', '<=', today),
+      ),
+      snap => {
+        weekPosByDate.clear();
+        snap.docs.forEach(d => {
+          const data = d.data() as SalesDocData & { date?: string };
+          if (data.date) weekPosByDate.set(data.date, data);
+        });
+        recompute();
+      },
+      () => setSalesLoading(false),
+    ));
+
+    unsubs.push(onSnapshot(
+      query(
+        collection(db, 'daily_reports'),
+        where('storeId', '==', storeId),
+        where('reportDate', '>=', weekStartStr),
+        where('reportDate', '<=', today),
+      ),
+      snap => {
+        weekReportByDate.clear();
+        snap.docs.forEach(d => {
+          const data = d.data() as SalesDocData & { source?: string; totalSales?: number; reportDate?: string };
+          if (!data.reportDate) return;
+          const existing = weekReportByDate.get(data.reportDate);
+          if (!existing || scoreDoc(data) > scoreDoc(existing)) {
+            weekReportByDate.set(data.reportDate, data);
+          }
+        });
+        recompute();
+      },
+      () => setSalesLoading(false),
+    ));
+
+    return () => unsubs.forEach(u => u());
+  }, [currentStore?.storeId, menuAccess.report, todayKey]);
+
+  /* 휴무·연차 — 오늘/내일 (승인된 신청만) */
+  useEffect(() => {
+    const storeId = currentStore?.storeId;
+    const showAbsence = menuAccess.report || menuAccess.hrCalendar;
+    if (!storeId || !showAbsence) {
+      setAbsences([]);
+      return;
+    }
+
+    const today = todayKey;
+    const tomorrow = addDaysYMD(today, 1);
+    setAbsenceLoading(true);
+
+    let leaveDocs: { userName?: string; type?: string; startDate?: string; endDate?: string; status?: string }[] = [];
+    let dayoffDocs: { userName?: string; type?: string; dates?: string[]; status?: string }[] = [];
+    let employees: { name?: string; status?: string; daysOff?: string[] }[] = [];
+
+    const appendRegularOff = (raw: { name: string; tag: string }[], date: string) => {
+      const dow = getWeekdayKo(date);
+      if (!dow) return;
+      employees.forEach(emp => {
+        if (emp.status === '퇴사' || !emp.name) return;
+        if ((emp.daysOff || []).includes(dow)) {
+          raw.push({ name: emp.name, tag: '정기휴무' });
+        }
+      });
+    };
+
+    const recompute = () => {
+      const rawToday: { name: string; tag: string }[] = [];
+      const rawTomorrow: { name: string; tag: string }[] = [];
+
+      leaveDocs.forEach(l => {
+        if (l.status !== 'approved' || !l.userName || !l.startDate || !l.endDate) return;
+        const tag = leaveLabel(l.type || 'annual');
+        if (dateInRange(l.startDate, l.endDate, today)) {
+          rawToday.push({ name: l.userName, tag });
+        }
+        if (dateInRange(l.startDate, l.endDate, tomorrow)) {
+          rawTomorrow.push({ name: l.userName, tag });
+        }
+      });
+
+      dayoffDocs.forEach(d => {
+        if (d.status !== 'approved' || !d.userName || !d.dates?.length) return;
+        const tag = dayoffLabel(d.type || 'regular');
+        if (d.dates.includes(today)) rawToday.push({ name: d.userName, tag });
+        if (d.dates.includes(tomorrow)) rawTomorrow.push({ name: d.userName, tag });
+      });
+
+      appendRegularOff(rawToday, today);
+      appendRegularOff(rawTomorrow, tomorrow);
+
+      setAbsences(buildTodayTomorrowGroups(
+        mergeAbsenceEntries(rawToday),
+        mergeAbsenceEntries(rawTomorrow),
+      ));
+      setAbsenceLoading(false);
+    };
+
+    const unsubs = [
+      onSnapshot(
+        query(collection(db, 'hr_leave_requests'), where('storeId', '==', storeId)),
+        snap => {
+          leaveDocs = snap.docs.map(d => d.data());
+          recompute();
+        },
+        () => setAbsenceLoading(false),
+      ),
+      onSnapshot(
+        query(collection(db, 'hr_dayoff_requests'), where('storeId', '==', storeId)),
+        snap => {
+          dayoffDocs = snap.docs.map(d => d.data());
+          recompute();
+        },
+        () => setAbsenceLoading(false),
+      ),
+      onSnapshot(
+        query(collection(db, 'hr_employees'), where('storeId', '==', storeId)),
+        snap => {
+          employees = snap.docs.map(d => d.data());
+          recompute();
+        },
+        () => setAbsenceLoading(false),
+      ),
+    ];
+
+    return () => unsubs.forEach(u => u());
+  }, [currentStore?.storeId, menuAccess.report, menuAccess.hrCalendar, todayKey]);
 
   /* 페이지 이동 시 모바일 닫기 */
   useEffect(() => {
@@ -241,6 +431,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { key: 'predictionHistory' as const,     href: '/dashboard/prediction-analysis',                    icon: <TrendingUp         className="w-4 h-4" />, label: '예측분석' },
     { key: 'items' as const,                 href: '/dashboard/items',                                icon: <Tag                className="w-4 h-4" />, label: '품목관리' },
     { key: 'store' as const,                 href: '/dashboard/coupons',                              icon: <Tag                className="w-4 h-4" />, label: '쿠폰 관리' },
+    { key: 'store' as const,                 href: '/dashboard/public-orders',                        icon: <ShoppingBag        className="w-4 h-4" />, label: '공개 주문' },
+    { key: 'store' as const,                 href: '/dashboard/signage',                              icon: <Tv                 className="w-4 h-4" />, label: '사이니지' },
   ];
 
   const isSuperuser = isSuperuserEmail(user?.email);
@@ -462,6 +654,40 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                     <span className="text-[10px] text-slate-400 font-semibold tabular-nums">{sales.weekNet.toLocaleString()}원</span>
                   </div>
                 )}
+              </Link>
+            )}
+          </div>
+        )}
+
+        {/* 휴무·연차 (오늘/내일) */}
+        {!accessLoading && (menuAccess.report || menuAccess.hrCalendar) && currentStore?.storeId && (
+          <div>
+            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-3 mb-2">휴무 · 연차</p>
+            {absenceLoading ? (
+              <div className="h-20 mx-1 bg-slate-800/60 rounded-xl animate-pulse" />
+            ) : (
+              <Link
+                href="/dashboard/hr/calendar?tab=leave"
+                onClick={onClose}
+                className="block mx-1 bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 rounded-xl px-3 py-2.5 transition-colors space-y-2.5"
+              >
+                {absences.map(group => (
+                  <div key={group.date}>
+                    <p className="text-[10px] text-slate-500 mb-1">{group.dayLabel}</p>
+                    {group.entries.length === 0 ? (
+                      <p className="text-[11px] text-slate-600 pl-0.5">없음</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {group.entries.map(entry => (
+                          <li key={`${group.date}-${entry.name}`} className="flex items-center justify-between gap-2 text-[11px]">
+                            <span className="text-slate-200 truncate">{entry.name}</span>
+                            <span className="text-slate-500 shrink-0">{entry.tags.join(' · ')}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
               </Link>
             )}
           </div>

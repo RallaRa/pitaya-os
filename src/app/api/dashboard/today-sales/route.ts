@@ -9,6 +9,7 @@ import {
   type SalesDocData,
 } from '@/lib/posDailySales';
 import { dailyReportDocId } from '@/lib/reportCompare';
+import { buildTodaySalesEmptyReason } from '@/lib/dashboardEmptyReason';
 
 async function loadSalesDoc(storeId: string, dateStr: string): Promise<SalesDocData | null> {
   const posSnap = await adminDb.collection('pos_daily_sales')
@@ -59,6 +60,13 @@ export async function GET(req: Request) {
     const yesterdayTotal = getDisplayTotalSale(yesterdayDoc);
     const yesterdayNet = getDisplayNetSales(yesterdayDoc);
 
+    const emptyReason = buildTodaySalesEmptyReason({
+      hasTodayDoc: !!todayDoc,
+      hasYesterdayDoc: !!yesterdayDoc,
+      todayTotal: totalSales,
+      isClosed: todayDoc?.isClosed ?? false,
+    });
+
     return NextResponse.json({
       todayStr,
       yesterdayStr,
@@ -71,6 +79,7 @@ export async function GET(req: Request) {
       isClosed: todayDoc?.isClosed ?? false,
       syncedAt: (todayDoc as { syncedAt?: string } | null)?.syncedAt ?? null,
       noData: !todayDoc && !yesterdayDoc,
+      emptyReason,
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);

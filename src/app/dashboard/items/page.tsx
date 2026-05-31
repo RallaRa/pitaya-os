@@ -10,6 +10,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { ITEM_CATEGORIES_WITH_ALL, ALL_ITEM_CATEGORIES } from '@/lib/purchaseCategories';
 import {
   LineChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
 } from 'recharts';
@@ -40,7 +41,7 @@ interface Item {
 }
 
 /* ── Constants ── */
-const CATEGORIES = ['전체', '한돈', '한우', '수입육', '계육및기타'];
+const CATEGORIES = ITEM_CATEGORIES_WITH_ALL;
 const STORAGES   = ['전체', '냉장', '냉동'];
 
 function calcPrices(buyPrice: number, targetMargin: number, appliedCost: number, lossRate: number) {
@@ -324,7 +325,7 @@ function AddItemModal({ storeId, onClose, onSaved }: { storeId: string; onClose:
         <div className="p-5 space-y-3 max-h-[70vh] overflow-y-auto">
           <div className="grid grid-cols-3 gap-2">
             {([
-              ['구분', 'category', ['한돈','한우','수입육','계육및기타']],
+              ['구분', 'category', [...ALL_ITEM_CATEGORIES]],
               ['보관', 'storage', ['냉장','냉동']],
               ['원산지', 'origin', ['국내산','미국산','호주산','캐나다산','스페인산','칠레산','수입산']],
             ] as [string, string, string[]][]).map(([label, key, opts]) => (
@@ -776,7 +777,7 @@ export default function ItemsPage() {
       ) : (
       <>
       {/* 탭 */}
-      <div className="shrink-0 flex items-center gap-1 px-6 pt-3 border-b border-slate-800/40">
+      <div className="shrink-0 flex items-center gap-1 px-6 pt-3 border-b border-slate-800/40 overflow-x-auto">
         {CATEGORIES.map(cat => (
           <button
             key={cat}

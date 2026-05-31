@@ -399,9 +399,13 @@ export async function GET(req: Request) {
   };
 
   if (!hasData) {
+    const missingSrc = Object.entries(dataStatus)
+      .filter(([, v]) => v.status === 'error' || v.status === 'empty')
+      .map(([k]) => k);
     const fallback = {
       generatedAt: new Date().toISOString(),
       noData: true,
+      emptyReason: `POS·일마감 매출 이력이 없습니다. pos_sales_detail / pos_daily_sales / daily_reports 중 하나 이상 필요합니다. 미수집: ${missingSrc.slice(0, 5).join(', ') || '전체'}`,
       today:     { period:`오늘 ${today}(${DOW_KO[todayDow]})`, opinion:'**일마감 데이터를 꾸준히 입력**하면 AI가 정확한 운영 의견을 제공합니다. POS 브릿지 또는 수동 입력으로 데이터를 쌓아주세요.', topItems:[], bottomItems:[], keyAlert:'데이터 부족', confidence:0 },
       tomorrow:  { period:`내일 ${tomorrowStr}(${DOW_KO[tomorrowDate.getDay()]})`, opinion:'데이터 축적 후 분석 가능합니다.', topItems:[], bottomItems:[], keyAlert:'', confidence:0 },
       thisWeek:  { period:`이번주 ${weekRange}`, opinion:'데이터 축적 후 분석 가능합니다.', topItems:[], bottomItems:[], keyAlert:'', weekHighlight:'', confidence:0 },

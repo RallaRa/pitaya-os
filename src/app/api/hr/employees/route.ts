@@ -87,8 +87,13 @@ export async function GET(req: Request) {
       status:    data.status,
       hireDate:  data.hireDate,
       linkedUid: data.linkedUid || '',
+      linkedEmail: data.linkedEmail || '',
       isAdminAccount: data.isAdminAccount || false,
       photoUrl:  data.photoUrl || '',
+      totalAnnualLeave: data.totalAnnualLeave ?? 0,
+      usedAnnualLeave: data.usedAnnualLeave ?? 0,
+      lastLeaveYear: data.lastLeaveYear ?? null,
+      leaveYearStart: data.leaveYearStart || '',
     };
   });
 

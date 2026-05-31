@@ -5,6 +5,7 @@ import { verifyToken } from '@/lib/authVerify';
 import { fetchWeeklyItemAggregates } from '@/lib/dashboardSalesData';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
+import { buildWeeklyEmptyReason } from '@/lib/dashboardEmptyReason';
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -19,7 +20,11 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const storeId = searchParams.get('storeId') || '';
   if (!storeId) {
-    return NextResponse.json({ top: [], bottom: [], insight: '매장을 선택해주세요.', cached: false });
+    return NextResponse.json({
+      top: [], bottom: [], insight: '',
+      emptyReason: buildWeeklyEmptyReason({ storeId: '', itemCount: 0 }),
+      cached: false,
+    });
   }
 
   const cacheId = `weekly_${storeId}`;
@@ -49,7 +54,8 @@ export async function GET(req: Request) {
       return NextResponse.json({
         top: [],
         bottom: [],
-        insight: '최근 7일 판매 데이터가 없습니다. POS 브릿지 동기화를 확인해주세요.',
+        insight: '',
+        emptyReason: buildWeeklyEmptyReason({ storeId, itemCount: 0 }),
         cached: false,
       });
     }

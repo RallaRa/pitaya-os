@@ -8,6 +8,7 @@ import {
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
 import WidgetWrapper from './WidgetWrapper';
+import WidgetEmptyReason from './WidgetEmptyReason';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 
 interface TrendItem {
@@ -31,6 +32,7 @@ interface ComprehensiveData {
   sales?: { today: number; yesterday: number; change: number | null };
   dataSourceStatus?: Record<string, { status: string; detail?: string }>;
   noData?: boolean;
+  emptyReason?: string;
   cached?: boolean;
   error?: string;
   ai?: AiMetaDisplay;
@@ -120,12 +122,11 @@ export default function AiInsightWidget({
     >
       <div className="flex flex-col h-full overflow-hidden">
         {data?.noData ? (
-          <div className="flex-1 flex items-center justify-center p-6 text-center">
-            <div className="space-y-2">
-              <MapPin className="w-8 h-8 text-slate-600 mx-auto" />
-              <p className="text-xs text-slate-400">{data.summary || '데이터 부족'}</p>
-              <p className="text-[10px] text-slate-600">POS 연동 · 키워드 설정 · 일마감 입력 후 분석됩니다</p>
-            </div>
+          <div className="p-3">
+            <WidgetEmptyReason
+              reason={data.emptyReason || data.summary || '분석할 데이터가 없습니다.'}
+              hints={['POS 브릿지 동기화', '네이버 키워드·AI API 키 설정', '일마감 입력']}
+            />
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto p-3 space-y-3">

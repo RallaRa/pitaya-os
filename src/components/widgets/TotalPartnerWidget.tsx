@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { AlertTriangle, RefreshCw, Package, TrendingUp, TrendingDown, ChevronDown, ChevronUp, Truck } from 'lucide-react';
+import { AlertTriangle, RefreshCw, TrendingUp, TrendingDown, ChevronDown, ChevronUp, Truck } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
+import WidgetEmptyReason from './WidgetEmptyReason';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
@@ -29,7 +30,7 @@ interface DataStatus {
 }
 
 interface PartnerData {
-  generatedAt: string; cached: boolean; noData?: boolean;
+  generatedAt: string; cached: boolean; noData?: boolean; emptyReason?: string;
   today: PeriodData | null; tomorrow: PeriodData | null;
   thisWeek: PeriodData | null; thisMonth: PeriodData | null;
   orderAdvice: OrderAdvice | null;
@@ -245,12 +246,11 @@ export default function TotalPartnerWidget({ editMode, onRemove, storeId }: Prop
 
         {/* noData 상태 */}
         {data?.noData ? (
-          <div className="flex-1 flex items-center justify-center p-6 text-center">
-            <div className="space-y-2">
-              <Package className="w-8 h-8 text-slate-600 mx-auto" />
-              <p className="text-xs text-slate-400 font-medium">데이터 부족</p>
-              <p className="text-[10px] text-slate-600">일마감을 꾸준히 입력하면<br/>AI가 정확한 의견을 제공합니다</p>
-            </div>
+          <div className="p-3">
+            <WidgetEmptyReason
+              reason={data.emptyReason || 'POS·일마감 매출 이력이 없어 AI 운영 분석을 생성할 수 없습니다.'}
+              hints={['POS 브릿지 동기화', '일마감 입력', 'AI API 키 설정']}
+            />
           </div>
         ) : (
           <>

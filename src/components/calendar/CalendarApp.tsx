@@ -26,6 +26,21 @@ import {
   SubTask,
 } from './CalendarTypes';
 import DateRangePicker from './DateRangePicker';
+import LeavePanel from './LeavePanel';
+
+/** calendar_events 컬렉션으로 저장·수정 가능한 개인 일정인지 */
+function isEditablePersonalEvent(ev: Partial<CalEvent> | CalEvent): boolean {
+  if (!ev.id) return true;
+  if (ev.type && ev.type !== 'event') return false;
+  if (ev.source && ev.source !== 'pitaya') return false;
+  if (ev.calendarId === 'hr' || ev.calendarId === 'holiday') return false;
+  const id = ev.id;
+  if (
+    id.startsWith('holiday_') || id.startsWith('leave_') || id.startsWith('dayoff_') ||
+    id.startsWith('google_') || id.startsWith('naver_') || id.startsWith('todo_')
+  ) return false;
+  return true;
+}
 
 /* ═══════════════════════ MINI CALENDAR ═══════════════════════ */
 function MiniCalendar({
@@ -130,6 +145,7 @@ function EventPopover({
 }) {
   const color = getEventColor(ev, calendars);
   const cal   = calendars.find(c => c.id === ev.calendarId);
+  const editable = isEditablePersonalEvent(ev);
 
   return (
     <>
@@ -145,8 +161,12 @@ function EventPopover({
           <div className="flex items-start justify-between gap-2">
             <h3 className="text-slate-100 font-semibold text-sm leading-snug">{ev.title}</h3>
             <div className="flex items-center gap-1 shrink-0">
-              <button onClick={onEdit}  className="p-1 text-slate-500 hover:text-teal-400 rounded"><SquarePen className="w-3.5 h-3.5" /></button>
-              <button onClick={onDelete} className="p-1 text-slate-500 hover:text-red-400 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+              {editable && (
+                <>
+                  <button onClick={onEdit}  className="p-1 text-slate-500 hover:text-teal-400 rounded"><SquarePen className="w-3.5 h-3.5" /></button>
+                  <button onClick={onDelete} className="p-1 text-slate-500 hover:text-red-400 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
+                </>
+              )}
               <button onClick={onClose} className="p-1 text-slate-500 hover:text-white rounded"><X className="w-3.5 h-3.5" /></button>
             </div>
           </div>
@@ -606,10 +626,11 @@ function ListView({
 
 /* ═══════════════════════ TODO PANEL ═══════════════════════ */
 function TodoPanel({
-  todos, storeId, uid, onTodosChange,
+  todos, storeId, uid, onTodosChange, showToast,
 }: {
   todos: TodoItem[]; storeId: string; uid: string;
   onTodosChange: () => void;
+  showToast: (msg: string, ok?: boolean) => void;
 }) {
   const [input, setInput]             = useState('');
   const [selectedTodo, setSelected]   = useState<TodoItem | null>(null);
@@ -623,9 +644,10 @@ function TodoPanel({
 
   const addTodo = async () => {
     if (!input.trim()) return;
+    if (!storeId) { showToast('매장을 선택해주세요', false); return; }
     setSubmitting(true);
     try {
-      await fetch('/api/calendar/todos', {
+      const res = await fetch('/api/calendar/todos', {
         method: 'POST',
         headers: await getAuthJsonHeaders(),
         body: JSON.stringify({
@@ -634,38 +656,60 @@ function TodoPanel({
           order: Date.now(),
         }),
       });
+      const d = await res.json();
+      if (!res.ok || d.error) throw new Error(d.error || '저장 실패');
       setInput('');
       onTodosChange();
+    } catch (e: any) {
+      showToast(e.message || '저장 실패', false);
     } finally {
       setSubmitting(false);
     }
   };
 
   const toggleComplete = async (todo: TodoItem) => {
-    await fetch('/api/calendar/todos', {
-      method: 'PUT',
-      headers: await getAuthJsonHeaders(),
-      body: JSON.stringify({ id: todo.id, completed: !todo.completed }),
-    });
-    if (selectedTodo?.id === todo.id) setSelected(prev => prev ? { ...prev, completed: !prev.completed } : null);
-    onTodosChange();
+    try {
+      const res = await fetch('/api/calendar/todos', {
+        method: 'PUT',
+        headers: await getAuthJsonHeaders(),
+        body: JSON.stringify({ id: todo.id, completed: !todo.completed }),
+      });
+      const d = await res.json();
+      if (!res.ok || d.error) throw new Error(d.error || '저장 실패');
+      if (selectedTodo?.id === todo.id) setSelected(prev => prev ? { ...prev, completed: !prev.completed } : null);
+      onTodosChange();
+    } catch (e: any) {
+      showToast(e.message || '저장 실패', false);
+    }
   };
 
   const updateTodo = async (updates: Partial<TodoItem>) => {
     if (!selectedTodo) return;
-    await fetch('/api/calendar/todos', {
-      method: 'PUT',
-      headers: await getAuthJsonHeaders(),
-      body: JSON.stringify({ id: selectedTodo.id, ...updates }),
-    });
-    setSelected(prev => prev ? { ...prev, ...updates } : null);
-    onTodosChange();
+    try {
+      const res = await fetch('/api/calendar/todos', {
+        method: 'PUT',
+        headers: await getAuthJsonHeaders(),
+        body: JSON.stringify({ id: selectedTodo.id, ...updates }),
+      });
+      const d = await res.json();
+      if (!res.ok || d.error) throw new Error(d.error || '저장 실패');
+      setSelected(prev => prev ? { ...prev, ...updates } : null);
+      onTodosChange();
+    } catch (e: any) {
+      showToast(e.message || '저장 실패', false);
+    }
   };
 
   const deleteTodo = async (id: string) => {
-    await fetch(`/api/calendar/todos?id=${id}`, { method: 'DELETE', headers: await getAuthHeaders() });
-    if (selectedTodo?.id === id) setSelected(null);
-    onTodosChange();
+    try {
+      const res = await fetch(`/api/calendar/todos?id=${id}`, { method: 'DELETE', headers: await getAuthHeaders() });
+      const d = await res.json();
+      if (!res.ok || d.error) throw new Error(d.error || '삭제 실패');
+      if (selectedTodo?.id === id) setSelected(null);
+      onTodosChange();
+    } catch (e: any) {
+      showToast(e.message || '삭제 실패', false);
+    }
   };
 
   const addSubTask = async () => {
@@ -1305,362 +1349,15 @@ function AiBulkLeaveModal({
   );
 }
 
-/* ═══════════════════════ LEAVE PANEL ═══════════════════════ */
-const LEAVE_TYPE_LABELS: Record<string, string> = {
-  annual: '연차', half_am: '반차(오전)', half_pm: '반차(오후)',
-};
-const DAYOFF_TYPE_LABELS: Record<string, string> = {
-  regular: '정기휴무', substitute: '대체휴무', unpaid: '무급휴무',
-};
-const STATUS_STYLE: Record<string, { label: string; cls: string }> = {
-  pending:  { label: '대기중', cls: 'bg-yellow-900/40 text-yellow-300 border border-yellow-700/40' },
-  approved: { label: '승인됨', cls: 'bg-green-900/40 text-green-300 border border-green-700/40' },
-  rejected: { label: '거절됨', cls: 'bg-red-900/40 text-red-300 border border-red-700/40' },
-};
-
-function LeavePanel({
-  uid, storeId, user, isAdmin, isSuperuser, leaves, dayoffs, onReload, showToast,
-}: {
-  uid: string; storeId: string; user: any; isAdmin: boolean; isSuperuser: boolean;
-  leaves: any[]; dayoffs: any[];
-  onReload: () => void; showToast: (msg: string, ok?: boolean) => void;
-}) {
-  const [modal,           setModal]           = useState<'leave' | 'dayoff' | 'aiBulk' | null>(null);
-  const [leaveForm,       setLeaveForm]       = useState({ type: 'annual', startDate: '', endDate: '', reason: '' });
-  const [dayoffForm,      setDayoffForm]      = useState({ type: 'regular', dates: [] as string[], reason: '' });
-  const [dayoffDateInput, setDayoffDateInput] = useState('');
-  const [submitting,      setSubmitting]      = useState(false);
-
-  const myLeaves  = leaves.filter(l => isAdmin || l.userId === uid);
-  const myDayoffs = dayoffs.filter(d => isAdmin || d.userId === uid);
-
-  const submitLeave = async () => {
-    if (!leaveForm.startDate || !leaveForm.endDate) { showToast('날짜를 선택해주세요', false); return; }
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/hr/leave', {
-        method: 'POST',
-        headers: await getAuthJsonHeaders(),
-        body: JSON.stringify({
-          userId: uid, userName: user?.displayName || user?.email || uid,
-          userEmail: user?.email || '', storeId,
-          type: leaveForm.type, startDate: leaveForm.startDate,
-          endDate: leaveForm.endDate, reason: leaveForm.reason,
-        }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      showToast('연차 신청이 완료되었습니다');
-      setModal(null);
-      setLeaveForm({ type: 'annual', startDate: '', endDate: '', reason: '' });
-      onReload();
-    } catch (e: any) {
-      showToast(e.message || '신청 실패', false);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const submitDayoff = async () => {
-    if (!dayoffForm.dates.length) { showToast('날짜를 선택해주세요', false); return; }
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/hr/dayoff', {
-        method: 'POST',
-        headers: await getAuthJsonHeaders(),
-        body: JSON.stringify({
-          userId: uid, userName: user?.displayName || user?.email || uid,
-          userEmail: user?.email || '', storeId,
-          type: dayoffForm.type, dates: dayoffForm.dates, reason: dayoffForm.reason,
-        }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      showToast('휴무 신청이 완료되었습니다');
-      setModal(null);
-      setDayoffForm({ type: 'regular', dates: [], reason: '' });
-      onReload();
-    } catch (e: any) {
-      showToast(e.message || '신청 실패', false);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const approve = async (type: 'leave' | 'dayoff', id: string, status: 'approved' | 'rejected') => {
-    try {
-      const url = type === 'leave' ? '/api/hr/leave' : '/api/hr/dayoff';
-      const res = await fetch(url, {
-        method: 'PUT',
-        headers: await getAuthJsonHeaders(),
-        body: JSON.stringify({ id, status, approvedBy: uid, approvedByName: user?.displayName }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      showToast(status === 'approved' ? '승인되었습니다' : '거절되었습니다');
-      onReload();
-    } catch (e: any) {
-      showToast(e.message || '처리 실패', false);
-    }
-  };
-
-  const cancel = async (type: 'leave' | 'dayoff', id: string) => {
-    try {
-      const url = type === 'leave' ? `/api/hr/leave?id=${id}` : `/api/hr/dayoff?id=${id}`;
-      const headers = await getAuthHeaders();
-      const res = await fetch(url, { method: 'DELETE', headers });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      showToast('취소되었습니다');
-      onReload();
-    } catch (e: any) {
-      showToast(e.message || '취소 실패', false);
-    }
-  };
-
-  return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-6 h-full">
-      {/* 슈퍼유저 AI 일괄 등록 버튼 */}
-      {isSuperuser && (
-        <div className="flex justify-end">
-          <button
-            onClick={() => setModal('aiBulk')}
-            className="flex items-center gap-2 px-4 py-2 bg-violet-600/20 border border-violet-500/40 text-violet-300 rounded-xl text-xs hover:bg-violet-600/30 transition-colors"
-          >
-            <Bot className="w-3.5 h-3.5" /> AI 일괄 등록
-          </button>
-        </div>
-      )}
-
-      {/* 연차 */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-slate-300 font-semibold text-sm">연차 신청 내역</h3>
-          <button
-            onClick={() => { setLeaveForm({ type: 'annual', startDate: '', endDate: '', reason: '' }); setModal('leave'); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600/20 border border-green-500/30 text-green-300 rounded-lg text-xs hover:bg-green-600/30"
-          >
-            <Plus className="w-3.5 h-3.5" /> 연차 신청
-          </button>
-        </div>
-        {myLeaves.length === 0 ? (
-          <div className="text-slate-600 text-sm text-center py-6 bg-slate-800/30 rounded-xl">신청 내역이 없습니다</div>
-        ) : (
-          <div className="space-y-2">
-            {myLeaves.map(l => (
-              <div key={l.id} className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    {isAdmin && <p className="text-slate-400 text-xs mb-0.5">{l.userName}</p>}
-                    <p className="text-slate-200 text-sm font-medium">{LEAVE_TYPE_LABELS[l.type] || l.type}</p>
-                    <p className="text-slate-500 text-xs">{l.startDate} ~ {l.endDate}</p>
-                    {l.reason && <p className="text-slate-600 text-xs mt-1 truncate">{l.reason}</p>}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full border ${STATUS_STYLE[l.status]?.cls || 'bg-slate-700 text-slate-400 border-slate-600'}`}>
-                      {STATUS_STYLE[l.status]?.label || l.status}
-                    </span>
-                    {isAdmin && l.status === 'pending' && (
-                      <div className="flex gap-1">
-                        <button onClick={() => approve('leave', l.id, 'approved')}
-                          className="w-6 h-6 rounded-full bg-green-700 hover:bg-green-600 flex items-center justify-center">
-                          <Check className="w-3.5 h-3.5 text-white" />
-                        </button>
-                        <button onClick={() => approve('leave', l.id, 'rejected')}
-                          className="w-6 h-6 rounded-full bg-red-800 hover:bg-red-700 flex items-center justify-center">
-                          <X className="w-3.5 h-3.5 text-white" />
-                        </button>
-                      </div>
-                    )}
-                    {l.userId === uid && l.status === 'pending' && (
-                      <button onClick={() => cancel('leave', l.id)} className="text-xs text-slate-500 hover:text-red-400">취소</button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* 휴무 */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-slate-300 font-semibold text-sm">휴무 신청 내역</h3>
-          <button
-            onClick={() => { setDayoffForm({ type: 'regular', dates: [], reason: '' }); setModal('dayoff'); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600/20 border border-blue-500/30 text-blue-300 rounded-lg text-xs hover:bg-blue-600/30"
-          >
-            <Plus className="w-3.5 h-3.5" /> 휴무 신청
-          </button>
-        </div>
-        {myDayoffs.length === 0 ? (
-          <div className="text-slate-600 text-sm text-center py-6 bg-slate-800/30 rounded-xl">신청 내역이 없습니다</div>
-        ) : (
-          <div className="space-y-2">
-            {myDayoffs.map(d => (
-              <div key={d.id} className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    {isAdmin && <p className="text-slate-400 text-xs mb-0.5">{d.userName}</p>}
-                    <p className="text-slate-200 text-sm font-medium">{DAYOFF_TYPE_LABELS[d.type] || d.type}</p>
-                    <p className="text-slate-500 text-xs truncate">{(d.dates || []).join(', ')}</p>
-                    {d.reason && <p className="text-slate-600 text-xs mt-1 truncate">{d.reason}</p>}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full border ${STATUS_STYLE[d.status]?.cls || 'bg-slate-700 text-slate-400 border-slate-600'}`}>
-                      {STATUS_STYLE[d.status]?.label || d.status}
-                    </span>
-                    {isAdmin && d.status === 'pending' && (
-                      <div className="flex gap-1">
-                        <button onClick={() => approve('dayoff', d.id, 'approved')}
-                          className="w-6 h-6 rounded-full bg-green-700 hover:bg-green-600 flex items-center justify-center">
-                          <Check className="w-3.5 h-3.5 text-white" />
-                        </button>
-                        <button onClick={() => approve('dayoff', d.id, 'rejected')}
-                          className="w-6 h-6 rounded-full bg-red-800 hover:bg-red-700 flex items-center justify-center">
-                          <X className="w-3.5 h-3.5 text-white" />
-                        </button>
-                      </div>
-                    )}
-                    {d.userId === uid && d.status === 'pending' && (
-                      <button onClick={() => cancel('dayoff', d.id)} className="text-xs text-slate-500 hover:text-red-400">취소</button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* 연차 신청 모달 */}
-      {modal === 'leave' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setModal(null)} />
-          <div className="relative bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-5 border-b border-slate-800">
-              <h3 className="text-slate-100 font-bold">연차 신청</h3>
-              <button onClick={() => setModal(null)} className="text-slate-500 hover:text-white p-1"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">연차 유형</label>
-                <select value={leaveForm.type} onChange={e => setLeaveForm(f => ({ ...f, type: e.target.value }))}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
-                  <option value="annual">연차</option>
-                  <option value="half_am">반차 (오전)</option>
-                  <option value="half_pm">반차 (오후)</option>
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">시작일</label>
-                  <input type="date" value={leaveForm.startDate}
-                    onChange={e => setLeaveForm(f => ({ ...f, startDate: e.target.value }))}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200" />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">종료일</label>
-                  <input type="date" value={leaveForm.endDate}
-                    onChange={e => setLeaveForm(f => ({ ...f, endDate: e.target.value }))}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">사유 (선택)</label>
-                <textarea value={leaveForm.reason} onChange={e => setLeaveForm(f => ({ ...f, reason: e.target.value }))}
-                  rows={3} placeholder="사유를 입력해주세요"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 resize-none" />
-              </div>
-            </div>
-            <div className="p-5 border-t border-slate-800 flex gap-2 justify-end">
-              <button onClick={() => setModal(null)} className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200">취소</button>
-              <button onClick={submitLeave} disabled={submitting}
-                className="px-4 py-2 text-sm bg-green-600 hover:bg-green-500 text-white rounded-lg disabled:opacity-50">
-                {submitting ? '신청중...' : '신청하기'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* AI 일괄 등록 모달 */}
-      {modal === 'aiBulk' && (
-        <AiBulkLeaveModal
-          storeId={storeId} uid={uid} user={user}
-          onClose={() => setModal(null)}
-          onSuccess={onReload}
-          showToast={showToast}
-        />
-      )}
-
-      {/* 휴무 신청 모달 */}
-      {modal === 'dayoff' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setModal(null)} />
-          <div className="relative bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between p-5 border-b border-slate-800">
-              <h3 className="text-slate-100 font-bold">휴무 신청</h3>
-              <button onClick={() => setModal(null)} className="text-slate-500 hover:text-white p-1"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">휴무 유형</label>
-                <select value={dayoffForm.type} onChange={e => setDayoffForm(f => ({ ...f, type: e.target.value }))}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200">
-                  <option value="regular">정기휴무</option>
-                  <option value="substitute">대체휴무</option>
-                  <option value="unpaid">무급휴무</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-2">날짜 선택 (드래그로 범위 선택)</label>
-                <DateRangePicker
-                  selected={dayoffForm.dates}
-                  onChange={dates => setDayoffForm(f => ({ ...f, dates: [...dates].sort() }))}
-                  className="bg-slate-800/50 border border-slate-700 rounded-xl p-3"
-                />
-                {dayoffForm.dates.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {dayoffForm.dates.map(d => (
-                      <span key={d} className="flex items-center gap-1 px-2 py-0.5 bg-blue-900/40 text-blue-300 text-xs rounded-full border border-blue-700/40">
-                        {d}
-                        <button onClick={() => setDayoffForm(f => ({ ...f, dates: f.dates.filter(x => x !== d) }))}
-                          className="hover:text-red-400"><X className="w-3 h-3" /></button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">사유 (선택)</label>
-                <textarea value={dayoffForm.reason} onChange={e => setDayoffForm(f => ({ ...f, reason: e.target.value }))}
-                  rows={3} placeholder="사유를 입력해주세요"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 resize-none" />
-              </div>
-            </div>
-            <div className="p-5 border-t border-slate-800 flex gap-2 justify-end">
-              <button onClick={() => setModal(null)} className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200">취소</button>
-              <button onClick={submitDayoff} disabled={submitting}
-                className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg disabled:opacity-50">
-                {submitting ? '신청중...' : '신청하기'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ═══════════════════════ MAIN APP ═══════════════════════ */
 export default function CalendarApp() {
   const { user }         = useAuth();
-  const { currentStore } = useStore();
+  const { currentStore, storesLoaded } = useStore();
 
   const uid     = user?.uid     || '';
   const storeId = currentStore?.storeId || '';
+  const storeReady = storesLoaded && !!storeId;
   const todayStr = toDateStr(new Date());
 
   // ── 뷰 상태 ──
@@ -1708,26 +1405,26 @@ export default function CalendarApp() {
   }, []);
 
   useEffect(() => {
-    if (!uid) return;
+    if (!uid || !storeReady) return;
     getAuthHeaders()
-      .then(headers => fetch(`/api/permissions?type=myAccess&uid=${uid}${storeId ? `&storeId=${storeId}` : ''}`, { headers }))
+      .then(headers => fetch(`/api/permissions?type=myAccess&uid=${uid}&storeId=${storeId}`, { headers }))
       .then(r => r.json())
       .then(d => { setIsAdmin(['master', 'admin', 'owner'].includes(d.groupId || d.role || '')); })
       .catch(() => {});
-  }, [uid, storeId]);
+  }, [uid, storeId, storeReady]);
 
   /* ── 데이터 로드 ── */
   const loadCalendars = useCallback(async () => {
-    if (!uid) return;
+    if (!uid || !storeReady) return;
     try {
       const res = await fetch(`/api/calendar/calendars?storeId=${storeId}&uid=${uid}`, { headers: await getAuthHeaders() });
       const d   = await res.json();
       setCalendars(d.calendars || []);
     } catch {}
-  }, [uid, storeId]);
+  }, [uid, storeId, storeReady]);
 
   const loadEvents = useCallback(async () => {
-    if (!uid) return;
+    if (!uid || !storeReady) return;
     setLoading(true);
     try {
       const from = toDateStr(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1));
@@ -1806,19 +1503,19 @@ export default function CalendarApp() {
     } finally {
       setLoading(false);
     }
-  }, [uid, storeId, cursor]);
+  }, [uid, storeId, storeReady, cursor]);
 
   const loadTodos = useCallback(async () => {
-    if (!uid) return;
+    if (!uid || !storeReady) return;
     try {
       const res = await fetch(`/api/calendar/todos?storeId=${storeId}&uid=${uid}`, { headers: await getAuthHeaders() });
       const d   = await res.json();
       setTodos(d.todos || []);
     } catch {}
-  }, [uid, storeId]);
+  }, [uid, storeId, storeReady]);
 
   const loadLeaves = useCallback(async () => {
-    if (!uid) return;
+    if (!uid || !storeReady) return;
     try {
       const headers = await getAuthHeaders();
       const [lRes, dRes] = await Promise.all([
@@ -1833,12 +1530,18 @@ export default function CalendarApp() {
       setLeaves(lData.requests || []);
       setDayoffs(dData.requests || []);
     } catch {}
-  }, [uid, storeId, isAdmin]);
+  }, [uid, storeId, storeReady, isAdmin]);
 
-  useEffect(() => { loadCalendars(); }, [loadCalendars]);
-  useEffect(() => { loadEvents(); },   [loadEvents]);
-  useEffect(() => { loadTodos(); },    [loadTodos]);
-  useEffect(() => { loadLeaves(); },   [loadLeaves]);
+  useEffect(() => {
+    if (!storeReady) {
+      setLoading(!storesLoaded);
+      return;
+    }
+    loadCalendars();
+  }, [loadCalendars, storeReady, storesLoaded]);
+  useEffect(() => { if (storeReady) loadEvents(); },   [loadEvents, storeReady]);
+  useEffect(() => { if (storeReady) loadTodos(); },    [loadTodos, storeReady]);
+  useEffect(() => { if (storeReady) loadLeaves(); },   [loadLeaves, storeReady]);
 
   /* ── 필터된 이벤트 (숨겨진 캘린더 제거) ── */
   const filteredEvents = useMemo(() => {
@@ -1851,6 +1554,14 @@ export default function CalendarApp() {
 
   /* ── 이벤트 저장 ── */
   const saveEvent = useCallback(async (ev: Partial<CalEvent>) => {
+    if (!storeId) {
+      showToast('매장을 선택해주세요', false);
+      return;
+    }
+    if (ev.id && !isEditablePersonalEvent(ev as CalEvent)) {
+      showToast('이 일정은 여기서 수정할 수 없습니다', false);
+      return;
+    }
     try {
       const method = ev.id ? 'PUT' : 'POST';
       const payload = {
@@ -1902,29 +1613,36 @@ export default function CalendarApp() {
 
   /* ── 이벤트 삭제 ── */
   const deleteEvent = useCallback(async (id: string) => {
+    const ev = events.find(e => e.id === id);
+    if (ev && !isEditablePersonalEvent(ev)) {
+      showToast('이 일정은 여기서 삭제할 수 없습니다', false);
+      return;
+    }
     if (!confirm('이벤트를 삭제하시겠습니까?')) return;
     try {
-      await fetch(`/api/calendar/events?id=${id}`, { method: 'DELETE', headers: await getAuthHeaders() });
+      const res = await fetch(`/api/calendar/events?id=${id}`, { method: 'DELETE', headers: await getAuthHeaders() });
+      const d = await res.json();
+      if (!res.ok || d.error) throw new Error(d.error || '삭제 실패');
       showToast('삭제되었습니다');
       setPopoverEv(null);
       setShowEventModal(false);
       loadEvents();
-    } catch {
-      showToast('삭제 실패', false);
+    } catch (e: any) {
+      showToast(e.message || '삭제 실패', false);
     }
-  }, [loadEvents, showToast]);
+  }, [events, loadEvents, showToast]);
 
   /* ── 이벤트 드래그로 날짜 이동 ── */
   const onCellDrop = useCallback(async (eventId: string, date: string, time?: string) => {
     const ev = filteredEvents.find(e => e.id === eventId);
-    if (!ev || ev.type === 'holiday' || ev.source !== 'pitaya') return;
+    if (!ev || !isEditablePersonalEvent(ev)) return;
     const duration = ev.endDate && ev.startDate
       ? new Date(ev.endDate).getTime() - new Date(ev.startDate).getTime()
       : 0;
     const newEnd = new Date(new Date(date).getTime() + duration);
 
     try {
-      await fetch('/api/calendar/events', {
+      const res = await fetch('/api/calendar/events', {
         method: 'PUT',
         headers: await getAuthJsonHeaders(),
         body: JSON.stringify({
@@ -1932,9 +1650,22 @@ export default function CalendarApp() {
           ...(time ? { startTime: time } : {}),
         }),
       });
+      const d = await res.json();
+      if (!res.ok || d.error) throw new Error(d.error || '저장 실패');
       loadEvents();
-    } catch {}
-  }, [filteredEvents, loadEvents]);
+    } catch (e: any) {
+      showToast(e.message || '저장 실패', false);
+    }
+  }, [filteredEvents, loadEvents, showToast]);
+
+  const openNewEventModal = useCallback(() => {
+    if (!storeId) {
+      showToast('매장을 선택해주세요', false);
+      return;
+    }
+    setEditingEvent(null);
+    setShowEventModal(true);
+  }, [storeId, showToast]);
 
   /* ── 캘린더 가시성 토글 ── */
   const toggleCalendar = useCallback(async (cal: CalendarList) => {
@@ -1950,6 +1681,10 @@ export default function CalendarApp() {
 
   /* ── 캘린더 추가 ── */
   const addCalendar = useCallback(async () => {
+    if (!storeId) {
+      showToast('매장을 선택해주세요', false);
+      return;
+    }
     const name = prompt('새 캘린더 이름을 입력하세요:');
     if (!name?.trim()) return;
     try {
@@ -1959,8 +1694,10 @@ export default function CalendarApp() {
         body: JSON.stringify({ storeId, uid, name: name.trim(), color: '#4299e1' }),
       });
       loadCalendars();
-    } catch {}
-  }, [storeId, uid, loadCalendars]);
+    } catch {
+      showToast('캘린더 추가 실패', false);
+    }
+  }, [storeId, uid, loadCalendars, showToast]);
 
   /* ── 내비게이션 ── */
   const navigate = useCallback((dir: 1 | -1) => {
@@ -1990,8 +1727,7 @@ export default function CalendarApp() {
         case 'ArrowLeft':   navigate(-1); break;
         case 'ArrowRight':  navigate(1); break;
         case 'c': case 'C':
-          setEditingEvent(null);
-          setShowEventModal(true);
+          openNewEventModal();
           break;
         case '/':
           e.preventDefault();
@@ -2006,7 +1742,7 @@ export default function CalendarApp() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [navigate]);
+  }, [navigate, openNewEventModal]);
 
   /* ── 헤더 타이틀 ── */
   const headerTitle = useMemo(() => {
@@ -2037,6 +1773,7 @@ export default function CalendarApp() {
   /* ── 날짜 클릭 → 빠른 생성 or 일간 이동 ── */
   const onDateClick = useCallback((ds: string) => {
     if (view === 'month') {
+      if (!storeId) { showToast('매장을 선택해주세요', false); return; }
       setQuickDate(ds);
       setEditingEvent({ startDate: ds, endDate: ds, allDay: true });
       setShowEventModal(true);
@@ -2045,14 +1782,15 @@ export default function CalendarApp() {
       setCursor(new Date(y, m - 1, d));
       setView('day');
     }
-  }, [view]);
+  }, [view, storeId, showToast]);
 
   /* ── 시간 클릭 → 이벤트 생성 ── */
   const onTimeClick = useCallback((ds: string, time: string) => {
+    if (!storeId) { showToast('매장을 선택해주세요', false); return; }
     const endH = String(Math.min(23, parseInt(time.split(':')[0]) + 1)).padStart(2, '0');
     setEditingEvent({ startDate: ds, endDate: ds, startTime: time, endTime: `${endH}:00`, allDay: false });
     setShowEventModal(true);
-  }, []);
+  }, [storeId, showToast]);
 
   /* ── 이벤트 클릭 ── */
   const onEventClick = useCallback((ev: CalEvent, pos: { x: number; y: number }) => {
@@ -2069,7 +1807,7 @@ export default function CalendarApp() {
           {/* 새 이벤트 버튼 */}
           <div className="p-3">
             <button
-              onClick={() => { setEditingEvent(null); setShowEventModal(true); }}
+              onClick={openNewEventModal}
               className="w-full flex items-center gap-2 px-4 py-2.5 bg-teal-600 hover:bg-teal-500 text-white rounded-2xl text-sm font-medium shadow-lg transition-colors"
             >
               <Plus className="w-4 h-4" /> 새 이벤트
@@ -2315,6 +2053,7 @@ export default function CalendarApp() {
             <TodoPanel
               todos={todos} storeId={storeId} uid={uid}
               onTodosChange={loadTodos}
+              showToast={showToast}
             />
           </div>
         )}
@@ -2327,6 +2066,7 @@ export default function CalendarApp() {
               isAdmin={isAdmin} isSuperuser={isSuperuser}
               leaves={leaves} dayoffs={dayoffs}
               onReload={loadLeaves} showToast={showToast}
+              AiBulkLeaveModal={AiBulkLeaveModal}
             />
           </div>
         )}
@@ -2339,7 +2079,7 @@ export default function CalendarApp() {
           calendars={calendars.filter(c => !c.isSystem)}
           defaultDate={quickDate || toDateStr(cursor)}
           onSave={saveEvent}
-          onDelete={editingEvent?.id ? deleteEvent : undefined}
+          onDelete={editingEvent?.id && isEditablePersonalEvent(editingEvent as CalEvent) ? deleteEvent : undefined}
           onClose={() => { setShowEventModal(false); setEditingEvent(null); setQuickDate(''); }}
         />
       )}
@@ -2350,7 +2090,15 @@ export default function CalendarApp() {
           ev={popoverEv}
           calendars={calendars}
           position={popoverPos}
-          onEdit={() => { setEditingEvent(popoverEv); setPopoverEv(null); setShowEventModal(true); }}
+          onEdit={() => {
+            if (!isEditablePersonalEvent(popoverEv)) {
+              showToast('이 일정은 여기서 수정할 수 없습니다', false);
+              return;
+            }
+            setEditingEvent(popoverEv);
+            setPopoverEv(null);
+            setShowEventModal(true);
+          }}
           onDelete={() => deleteEvent(popoverEv.id)}
           onClose={() => setPopoverEv(null)}
         />

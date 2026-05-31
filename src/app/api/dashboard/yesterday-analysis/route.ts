@@ -4,6 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
+import { buildYesterdayEmptyReason } from '@/lib/dashboardEmptyReason';
 
 const CACHE_TTL_MS = 60 * 1000; // 1분
 
@@ -77,7 +78,10 @@ export async function GET(req: Request) {
     const sorted = Object.values(itemMap).filter(i => i.qty > 0).sort((a, b) => b.qty - a.qty);
 
     if (sorted.length === 0) {
-      return NextResponse.json({ dateLabel, top: [], bottom: [], cached: false, noData: true });
+      return NextResponse.json({
+        dateLabel, top: [], bottom: [], cached: false, noData: true,
+        emptyReason: buildYesterdayEmptyReason(),
+      });
     }
 
     const summaryText = sorted.slice(0, 30).map(i =>

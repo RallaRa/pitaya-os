@@ -3,6 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { verifyToken } from '@/lib/authVerify';
 import { FieldValue } from 'firebase-admin/firestore';
 import { generateTextWithFallback, stripJsonMarkdown } from '@/lib/aiProviderFallback';
+import { ALL_ITEM_CATEGORIES } from '@/lib/purchaseCategories';
 
 async function checkAlias(alias: string, supplierId: string | null, storeId: string) {
   const key = `${storeId}_${alias}`;
@@ -53,8 +54,10 @@ async function findSimilarViaGemini(itemName: string, supplierName: string, stor
 }
 
 async function suggestFromName(itemName: string) {
-  const prompt = `정육점 품목명 "${itemName}"에서 정보를 추출해 JSON으로만 반환해.
-{"category":"한우|한돈|수입우|수입돈|계육|기타","cut":"부위명","storage":"냉장|냉동","unit":"kg|개|박스"}`;
+  const cats = ALL_ITEM_CATEGORIES.join('|');
+  const prompt = `정육점·식자재 매입 품목명 "${itemName}"에서 정보를 추출해 JSON으로만 반환해.
+{"category":"${cats}","cut":"부위명(고기만)","storage":"냉장|냉동|상온","unit":"kg|개|박스|세트|롤"}
+원부자재(박스·용기·봉투·케이스·스티커 등)는 cut을 빈 문자열로.`;
   try {
     const { text } = await generateTextWithFallback({ prompt, json: true, useCase: 'fast' });
     const cleaned = stripJsonMarkdown(text);

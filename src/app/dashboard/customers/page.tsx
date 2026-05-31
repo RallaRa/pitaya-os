@@ -11,7 +11,7 @@ import {
   Users, TrendingUp, UserPlus, ShoppingBag, RefreshCw,
   Search, ChevronLeft, ChevronRight, Lock, Unlock, Loader2,
   BarChart2, PieChart as PieIcon, List, Download, ArrowUp, ArrowDown, ArrowUpDown,
-  History, Eye, EyeOff, ClipboardList,
+  History, Eye, EyeOff, ClipboardList, Send,
 } from 'lucide-react';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import * as XLSX from 'xlsx';
@@ -29,6 +29,11 @@ import dynamic from 'next/dynamic';
 
 const CustomerRequestPanel = dynamic(
   () => import('@/components/customers/CustomerRequestPanel'),
+  { ssr: false },
+);
+
+const CustomerMessagePanel = dynamic(
+  () => import('@/components/customers/CustomerMessagePanel'),
   { ssr: false },
 );
 
@@ -135,6 +140,7 @@ export default function CustomersPage() {
   const [exporting,    setExporting]    = useState(false);
   const [cycleFilter,  setCycleFilter]  = useState<VisitCycleStatus | ''>('');
   const [requestPanel, setRequestPanel] = useState<{ cusCode: string; label: string } | null>(null);
+  const [messagePanelOpen, setMessagePanelOpen] = useState(false);
 
   const LIMIT = 50;
   const COL_COUNT = 14;
@@ -679,6 +685,15 @@ export default function CustomersPage() {
                   )}
                   <button
                     type="button"
+                    onClick={() => setMessagePanelOpen(true)}
+                    disabled={loading || total === 0}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-teal-700/40 hover:bg-teal-600/50 border border-teal-600/40 text-teal-300 rounded-lg text-xs font-medium disabled:opacity-50"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    알림톡 발송
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setTab('조회 이력')}
                     className="flex items-center gap-1.5 px-3 py-2 bg-slate-800/60 hover:bg-slate-700 border border-slate-700 text-slate-400 rounded-lg text-xs"
                   >
@@ -1155,6 +1170,15 @@ export default function CustomersPage() {
           cusCode={requestPanel.cusCode}
           customerLabel={requestPanel.label}
           onClose={() => setRequestPanel(null)}
+        />
+      )}
+
+      {messagePanelOpen && storeId && (
+        <CustomerMessagePanel
+          storeId={storeId}
+          filterBody={buildFilterBody()}
+          filteredTotal={total}
+          onClose={() => setMessagePanelOpen(false)}
         />
       )}
     </div>

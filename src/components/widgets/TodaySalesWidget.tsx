@@ -5,7 +5,8 @@ import WidgetWrapper from './WidgetWrapper';
 import { getKSTTodayYMD } from '@/lib/dateUtils';
 import { getDisplayTotalSale, getDisplayNetSales, type SalesDocData } from '@/lib/posDailySales';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
-import { TrendingUp, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
+import WidgetEmptyReason from './WidgetEmptyReason';
 
 export default function TodaySalesWidget({
   editMode, onRemove, storeId,
@@ -14,6 +15,7 @@ export default function TodaySalesWidget({
 }) {
   const [todayDoc,     setTodayDoc]     = useState<SalesDocData | null>(null);
   const [yesterdayDoc, setYesterdayDoc] = useState<SalesDocData | null>(null);
+  const [emptyReason,  setEmptyReason]  = useState<string | null>(null);
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState<string | null>(null);
   const [updatedAt,    setUpdatedAt]    = useState<Date | null>(null);
@@ -34,6 +36,7 @@ export default function TodaySalesWidget({
       if (!res.ok) throw new Error(data.error || '조회 실패');
       setTodayDoc(data.today ?? null);
       setYesterdayDoc(data.yesterday ?? null);
+      setEmptyReason(data.emptyReason ?? null);
       setUpdatedAt(new Date());
       setError(null);
     } catch (e: unknown) {
@@ -69,12 +72,12 @@ export default function TodaySalesWidget({
       error={error}
     >
       {!storeId ? (
-        <div className="flex flex-col items-center justify-center h-full gap-2">
-          <TrendingUp className="w-8 h-8 text-slate-700" />
-          <p className="text-slate-500 text-xs text-center">매장을 선택하세요</p>
+        <div className="p-3">
+          <WidgetEmptyReason reason="매장이 선택되지 않았습니다. 상단에서 매장을 선택해 주세요." />
         </div>
       ) : (
-        <div className="h-full p-3 flex flex-col gap-2 justify-center">
+        <div className="h-full p-3 flex flex-col gap-2 justify-center overflow-y-auto">
+          {emptyReason && <WidgetEmptyReason reason={emptyReason} className="mb-1" />}
           <div className="flex items-center justify-between">
             <span className="text-slate-400 text-[10px]">{todayStr}</span>
             <div className="flex items-center gap-1.5">

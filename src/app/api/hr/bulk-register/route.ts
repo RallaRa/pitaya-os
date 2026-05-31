@@ -3,6 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
 import { isSuperuserEmail } from '@/lib/auth/permissions';
+import { recalculateUsedLeave } from '@/lib/hr/leaveBalance';
 
 interface LeaveRecord {
   type: 'leave';
@@ -45,6 +46,7 @@ export async function POST(req: Request) {
   }
 
   const results: { success: boolean; id?: string; error?: string; index: number }[] = [];
+  const recalcTargets = new Set<string>();
 
   for (let i = 0; i < records.length; i++) {
     const record = records[i];
@@ -65,6 +67,7 @@ export async function POST(req: Request) {
           approvedByName: userData?.displayName || '슈퍼유저',
           approvedAt:     FieldValue.serverTimestamp(),
         });
+        recalcTargets.add(`${record.storeId}::${record.userId}`);
         results.push({ success: true, id: ref.id, index: i });
       } else {
         const ref = await adminDb.collection('hr_dayoff_requests').add({
@@ -86,6 +89,11 @@ export async function POST(req: Request) {
     } catch (e: any) {
       results.push({ success: false, error: e.message, index: i });
     }
+  }
+
+  for (const key of recalcTargets) {
+    const [storeId, userId] = key.split('::');
+    await recalculateUsedLeave(storeId, userId);
   }
 
   const failed = results.filter(r => !r.success);

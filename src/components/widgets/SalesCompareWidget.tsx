@@ -2,12 +2,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import WidgetWrapper from './WidgetWrapper';
+import WidgetEmptyReason from './WidgetEmptyReason';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 interface PeriodStat { label: string; net: number; total: number; customers: number; }
 interface CompareBlock { current: PeriodStat; previous: PeriodStat; pct: number | null; }
-interface SalesCompareData { week: CompareBlock; month: CompareBlock; }
+interface SalesCompareData { week: CompareBlock; month: CompareBlock; emptyReason?: string | null; }
 
 export default function SalesCompareWidget({
   editMode, onRemove, storeId,
@@ -113,9 +114,12 @@ export default function SalesCompareWidget({
       error={error}
     >
       {!storeId ? (
-        <p className="text-slate-500 text-xs text-center mt-4">매장을 선택하세요</p>
+        <div className="p-3">
+          <WidgetEmptyReason reason="매장이 선택되지 않았습니다." />
+        </div>
       ) : data ? (
         <div className="h-full overflow-y-auto p-3 space-y-3">
+          {data.emptyReason && <WidgetEmptyReason reason={data.emptyReason} />}
           <Block block={data.week}  label="주간 비교" />
           <Block block={data.month} label="월간 비교" />
         </div>

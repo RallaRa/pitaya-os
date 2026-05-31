@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/authVerify';
 import { addDaysYMD, getKSTTodayYMD } from '@/lib/dateUtils';
 import { fetchPeriodTotals } from '@/lib/dashboardSalesData';
+import { buildSalesCompareEmptyReason } from '@/lib/dashboardEmptyReason';
 
 function formatRangeLabel(name: string, start: string, end: string): string {
   return `${name} (${start.slice(5)}~${end.slice(5)})`;
@@ -43,6 +44,12 @@ export async function GET(req: Request) {
     const pct = (cur: number, prev: number) =>
       prev > 0 ? Math.round(((cur - prev) / prev) * 100) : null;
 
+    const emptyReason = buildSalesCompareEmptyReason({
+      weekCurrentNet: thisWeek.net,
+      weekPrevNet: lastWeek.net,
+      monthCurrentNet: thisMonth.net,
+    });
+
     return NextResponse.json({
       week: {
         current: thisWeek,
@@ -54,6 +61,7 @@ export async function GET(req: Request) {
         previous: lastMonth,
         pct: pct(thisMonth.net, lastMonth.net),
       },
+      emptyReason,
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);

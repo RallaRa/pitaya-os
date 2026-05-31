@@ -6,6 +6,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import { RefreshCw, TrendingUp, BarChart2, AlertTriangle, Target } from 'lucide-react';
+import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 const LINE_COLORS = ['#14b8a6','#f97316','#a78bfa','#fb7185','#34d399','#60a5fa','#fbbf24','#e879f9'];
 
@@ -35,14 +36,21 @@ export default function SalesForecastPage() {
   const [activeLines, setActiveLines]   = useState<string[]>([]);
 
   const load = useCallback(async () => {
+    if (!storeId) {
+      setLoading(false);
+      setData(null);
+      setError('매장을 선택해 주세요.');
+      return;
+    }
     setLoading(true); setError(null);
     try {
-      const params = new URLSearchParams({ days: String(days) });
-      if (storeId) params.set('storeId', storeId);
+      const params = new URLSearchParams({ days: String(days), storeId });
       if (selectedItem) params.set('item', selectedItem);
-      const res = await fetch(`/api/dashboard/sales-forecast?${params}`);
+      const res = await fetch(`/api/dashboard/sales-forecast?${params}`, {
+        headers: await getAuthHeaders(),
+      });
       const d = await res.json();
-      if (d.error) throw new Error(d.error);
+      if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
       setData(d);
       // 기본 상위 5개 라인 활성화
       const top5 = (d.items || []).slice(0, 5);
@@ -141,10 +149,10 @@ export default function SalesForecastPage() {
             ) : error ? (
               <div className="flex-1 flex items-center justify-center text-red-400 text-sm">{error}</div>
             ) : !data?.chartData?.length ? (
-              <div className="flex-1 flex flex-col items-center justify-center gap-2 text-slate-600">
+              <div className="flex-1 flex flex-col items-center justify-center gap-2 text-slate-600 px-4 text-center">
                 <BarChart2 className="w-10 h-10 opacity-30" />
-                <p className="text-sm">일마감 데이터를 꾸준히 입력하면</p>
-                <p className="text-sm">추이 차트가 표시됩니다 📊</p>
+                <p className="text-sm">{data?.emptyReason || '일마감·POS 동기화 데이터가 없습니다.'}</p>
+                <p className="text-xs text-slate-700">POS 브릿지 동기화 또는 일마감 품목 입력 후 다시 확인해 주세요.</p>
               </div>
             ) : (
               <>

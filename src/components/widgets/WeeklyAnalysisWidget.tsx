@@ -3,11 +3,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
+import WidgetEmptyReason from './WidgetEmptyReason';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 interface Item { name: string; qty: number; amount: number; pctChange?: number | null; }
-interface AnalysisData { top: Item[]; bottom: Item[]; insight: string; ai?: AiMetaDisplay; }
+interface AnalysisData { top: Item[]; bottom: Item[]; insight: string; emptyReason?: string; ai?: AiMetaDisplay; }
 
 export default function WeeklyAnalysisWidget({
   editMode, onRemove, storeId,
@@ -62,7 +63,7 @@ export default function WeeklyAnalysisWidget({
           <div>
             <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-1.5">🏆 주간 TOP 3</p>
             <div className="space-y-1">
-              {data.top.length === 0 ? (
+              {data.top.length === 0 && !data.emptyReason ? (
                 <p className="text-slate-600 text-xs">데이터 없음</p>
               ) : data.top.map((item, i) => (
                 <div key={i} className="flex items-center gap-2 bg-slate-800/50 rounded-lg px-2.5 py-1.5">

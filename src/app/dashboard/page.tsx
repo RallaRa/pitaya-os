@@ -41,68 +41,76 @@ interface WidgetMeta {
 
 const WIDGET_META: WidgetMeta[] = [
   {
+    id: 'sales_prediction',
+    title: 'AI 매출 예측',
+    defaultItem: { i: 'sales_prediction', x: 0, y: 0, w: 12, h: 7, minW: 6, minH: 5, maxW: 12, maxH: 14 },
+    permKey: 'sales_prediction',
+  },
+  {
     id: 'weather',
     title: '오늘 날씨',
-    defaultItem: { i: 'weather', x: 0, y: 0, w: 6, h: 3, minW: 5, minH: 2, maxW: 12, maxH: 5 },
+    defaultItem: { i: 'weather', x: 0, y: 7, w: 6, h: 3, minW: 5, minH: 2, maxW: 12, maxH: 5 },
     permKey: 'weather',
   },
   {
     id: 'quick_menu',
     title: '빠른 메뉴',
-    defaultItem: { i: 'quick_menu', x: 3, y: 0, w: 3, h: 3, minW: 2, minH: 2, maxW: 6, maxH: 6 },
+    defaultItem: { i: 'quick_menu', x: 6, y: 7, w: 3, h: 3, minW: 2, minH: 2, maxW: 6, maxH: 6 },
     permKey: 'quick_menu',
   },
   {
     id: 'weekly_analysis',
     title: 'AI 주간 분석',
-    defaultItem: { i: 'weekly_analysis', x: 6, y: 0, w: 3, h: 4, minW: 3, minH: 3, maxW: 12, maxH: 6 },
+    defaultItem: { i: 'weekly_analysis', x: 0, y: 10, w: 3, h: 4, minW: 3, minH: 3, maxW: 12, maxH: 6 },
     permKey: 'weekly_analysis',
   },
   {
     id: 'yesterday_analysis',
     title: '전일 판매 분석',
-    defaultItem: { i: 'yesterday_analysis', x: 9, y: 0, w: 3, h: 4, minW: 3, minH: 3, maxW: 12, maxH: 6 },
+    defaultItem: { i: 'yesterday_analysis', x: 3, y: 10, w: 3, h: 4, minW: 3, minH: 3, maxW: 12, maxH: 6 },
     permKey: 'yesterday_analysis',
   },
   {
     id: 'news',
     title: '정육 최신 뉴스',
-    defaultItem: { i: 'news', x: 0, y: 3, w: 6, h: 4, minW: 3, minH: 2, maxW: 12, maxH: 6 },
+    defaultItem: { i: 'news', x: 6, y: 10, w: 6, h: 4, minW: 3, minH: 2, maxW: 12, maxH: 6 },
     permKey: 'news',
   },
   {
     id: 'ai_insight',
     title: 'AI 종합 운영의견',
-    defaultItem: { i: 'ai_insight', x: 0, y: 7, w: 12, h: 6, minW: 8, minH: 5, maxW: 12, maxH: 10 },
+    defaultItem: { i: 'ai_insight', x: 0, y: 14, w: 12, h: 6, minW: 8, minH: 5, maxW: 12, maxH: 10 },
     permKey: 'ai_insight',
-  },
-  {
-    id: 'sales_prediction',
-    title: 'AI 매출 예측',
-    defaultItem: { i: 'sales_prediction', x: 0, y: 4, w: 12, h: 4, minW: 8, minH: 3, maxW: 12, maxH: 6 },
-    permKey: 'sales_prediction',
   },
   {
     id: 'total_partner',
     title: 'AI 토탈 운영파트너',
-    defaultItem: { i: 'total_partner', x: 0, y: 8, w: 12, h: 6, minW: 8, minH: 5, maxW: 12, maxH: 10 },
+    defaultItem: { i: 'total_partner', x: 0, y: 20, w: 12, h: 6, minW: 8, minH: 5, maxW: 12, maxH: 10 },
     permKey: 'total_partner',
   },
   {
     id: 'today_sales',
     title: '당일 매출 현황',
-    defaultItem: { i: 'today_sales', x: 0, y: 0, w: 4, h: 5, minW: 3, minH: 4, maxW: 6, maxH: 8 },
+    defaultItem: { i: 'today_sales', x: 9, y: 7, w: 3, h: 3, minW: 3, minH: 3, maxW: 6, maxH: 8 },
     permKey: 'today_sales',
   },
   {
     id: 'sales_compare',
     title: '매출 비교',
-    defaultItem: { i: 'sales_compare', x: 4, y: 0, w: 4, h: 5, minW: 3, minH: 4, maxW: 8, maxH: 8 },
+    defaultItem: { i: 'sales_compare', x: 0, y: 4, w: 6, h: 3, minW: 3, minH: 3, maxW: 8, maxH: 8 },
     permKey: 'sales_compare',
   },
 ];
 
-const DEFAULT_ACTIVE = ['weather', 'quick_menu', 'weekly_analysis', 'yesterday_analysis', 'news', 'sales_prediction', 'ai_insight', 'total_partner', 'today_sales', 'sales_compare'];
+const DEFAULT_ACTIVE = ['sales_prediction', 'today_sales', 'sales_compare', 'weather', 'quick_menu', 'weekly_analysis', 'yesterday_analysis', 'news', 'ai_insight', 'total_partner'];
+
+const PRIORITY_WIDGET_ID = 'sales_prediction';
+
+/** 모바일·신규 레이아웃: AI 예측을 목록 맨 위로 */
+function sortWidgetsForDisplay(ids: string[]): string[] {
+  const rest = ids.filter(id => id !== PRIORITY_WIDGET_ID);
+  return ids.includes(PRIORITY_WIDGET_ID) ? [PRIORITY_WIDGET_ID, ...rest] : ids;
+}
 
 function makeDefaultLayout(ids: string[]): GridLayout {
   return WIDGET_META.filter(m => ids.includes(m.id)).map(m => ({ ...m.defaultItem }));
@@ -285,7 +293,9 @@ export default function DashboardPage() {
     return perms[roleKey] !== false;
   }).map(m => m.id);
 
-  const visibleActive = activeWidgets.filter(id => allowedIds.includes(id));
+  const visibleActive = sortWidgetsForDisplay(
+    activeWidgets.filter(id => allowedIds.includes(id)),
+  );
 
   /* 현재 레이아웃 아이템들 (표시 중인 위젯만) */
   const currentLayout = (layouts.lg || []).filter((item: LayoutItem) => visibleActive.includes(item.i));
@@ -377,7 +387,12 @@ export default function DashboardPage() {
           <span className="text-slate-600 text-[10px]">모바일 뷰</span>
         </div>
         {visibleActive.map(id => (
-          <div key={id} className="h-64">{renderWidget(id)}</div>
+          <div
+            key={id}
+            className={id === PRIORITY_WIDGET_ID ? 'min-h-0 h-auto' : 'h-64 shrink-0'}
+          >
+            {renderWidget(id)}
+          </div>
         ))}
       </div>
     );

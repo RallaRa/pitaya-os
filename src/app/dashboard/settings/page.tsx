@@ -98,6 +98,13 @@ export default function SettingsPage() {
 
   const adminOnlyMenus = [
     {
+      href: '/dashboard/settings/annual-leave',
+      icon: <CalendarDays className="w-5 h-5 text-emerald-400" />,
+      label: '연차 생성',
+      description: '입사일·만근 기준 연차 자동 계산 및 부여',
+      show: ['master', 'superuser', 'admin', 'owner'].includes(currentStore?.role || ''),
+    },
+    {
       href: '/dashboard/settings/leave-status',
       icon: <CalendarDays className="w-5 h-5 text-amber-400" />,
       label: '연차현황',

@@ -125,6 +125,9 @@ export async function GET(req: Request) {
   const hasAnyData = Object.values(dataSourceStatus).some(s => s.status === 'ok' || s.status === 'estimate');
 
   if (!hasAnyData) {
+    const missing = Object.entries(dataSourceStatus)
+      .filter(([, s]) => s.status === 'empty')
+      .map(([k]) => k);
     return NextResponse.json({
       summary: '분석할 데이터가 없습니다. POS 연동·일마감·키워드 설정 후 다시 확인해주세요.',
       opinion: '',
@@ -133,6 +136,7 @@ export async function GET(req: Request) {
       news: [],
       dataSourceStatus,
       noData: true,
+      emptyReason: `연동된 데이터 소스가 없습니다. 미수집: ${missing.join(', ') || '전체'}. POS 브릿지·일마감·네이버 키워드를 확인하세요.`,
       cached: false,
     });
   }
@@ -146,6 +150,7 @@ export async function GET(req: Request) {
       news,
       dataSourceStatus,
       noData: true,
+      emptyReason: 'AI API 키(Gemini/OpenAI 등)가 설정되지 않아 종합 의견을 생성할 수 없습니다. .env.local을 확인하세요.',
       cached: false,
     });
   }

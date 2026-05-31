@@ -442,11 +442,16 @@ export default function EmployeesPage() {
   /* ── 연차 자동 계산 (입사일 기준) ── */
   useEffect(() => {
     if (!form.hireDate) return;
-    const months = Math.floor((new Date().getTime() - new Date(form.hireDate).getTime()) / (1000 * 60 * 60 * 24 * 30));
-    const years  = Math.floor(months / 12);
-    const leave  = years === 0 ? Math.min(months, 11) : Math.min(15 + (years - 1), 25);
-    setForm(prev => ({ ...prev, totalAnnualLeave: leave }));
-  }, [form.hireDate]);
+    import('@/lib/hr/annualLeave').then(({ calculateAnnualLeaveEntitlement }) => {
+      const calc = calculateAnnualLeaveEntitlement(
+        form.hireDate,
+        new Date().toISOString().slice(0, 10),
+        new Set(),
+        { daysOff: form.daysOff },
+      );
+      setForm(prev => ({ ...prev, totalAnnualLeave: calc.total }));
+    });
+  }, [form.hireDate, form.daysOff]);
 
   /* ── 위생교육 만료일 자동계산 ── */
   useEffect(() => {

@@ -10,6 +10,7 @@ import {
 
 interface PurchaseItem {
   name: string;
+  category?: string;
   qty: number;
   unit: string;
   unitPrice: number;
@@ -227,6 +228,7 @@ export default function PurchaseViewPage() {
                         <table className="w-full text-xs">
                           <thead>
                             <tr className="border-b border-slate-700">
+                              <th className="text-left text-slate-400 pb-2 pr-3 font-medium w-14">구분</th>
                               <th className="text-left text-slate-400 pb-2 pr-3 font-medium">품명</th>
                               <th className="text-right text-slate-400 pb-2 pr-3 font-medium">수량</th>
                               <th className="text-right text-slate-400 pb-2 pr-3 font-medium">단가</th>
@@ -236,6 +238,7 @@ export default function PurchaseViewPage() {
                           <tbody>
                             {record.items.map((item, i) => (
                               <tr key={i} className="border-b border-slate-800">
+                                <td className="py-1.5 pr-3 text-slate-400">{item.category || '-'}</td>
                                 <td className="py-1.5 pr-3 text-slate-200">{item.name}</td>
                                 <td className="py-1.5 pr-3 text-right text-slate-300">{item.qty}{item.unit}</td>
                                 <td className="py-1.5 pr-3 text-right text-slate-300">{fmt(item.unitPrice)}원</td>

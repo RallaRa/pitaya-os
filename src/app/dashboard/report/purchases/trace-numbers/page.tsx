@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Search, RefreshCw, CheckCircle, AlertCircle, Hash } from 'lucide-react';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { useStore } from '@/context/StoreContext';
+import { isMeatCategory } from '@/lib/purchaseCategories';
 import { db } from '@/lib/firebase/firebase';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 
@@ -52,6 +53,8 @@ export default function TraceNumbersPage() {
       const extracted: TraceRecord[] = [];
       (d.records || []).forEach((r: any) => {
         (r.items || []).forEach((it: any, i: number) => {
+          const category = it.category || '';
+          if (category && !isMeatCategory(category)) return;
           extracted.push({
             id: `${r.id}_${i}`, date: r.purchaseDate || '',
             category: it.category || '', name: it.name || '',
