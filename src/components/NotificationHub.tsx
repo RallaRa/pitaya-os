@@ -26,6 +26,7 @@ const TYPE_ICON: Record<string, string> = {
   leave_rejected:  '❌',
   holiday_alert:   '📅',
   hr_dayoff:       '🏖️',
+  sales_hourly_drop: '📉',
   member_request:  '👤',
   member_approved: '✅',
   member_rejected: '❌',
