@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import WidgetWrapper from './WidgetWrapper';
+import WidgetEmptyReason from './WidgetEmptyReason';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 interface Item { name: string; qty: number; amount: number; }
-interface YesterdayData { dateLabel: string; top: Item[]; bottom: Item[]; noData?: boolean; ai?: AiMetaDisplay; }
+interface YesterdayData { dateLabel: string; top: Item[]; bottom: Item[]; noData?: boolean; emptyReason?: string; ai?: AiMetaDisplay; }
 
 export default function YesterdayWidget({
   editMode, onRemove, storeId,
@@ -70,10 +71,10 @@ export default function YesterdayWidget({
           )}
 
           {data.noData ? (
-            <div className="flex flex-col items-center justify-center h-24 gap-2">
-              <p className="text-slate-500 text-xs text-center">전일 판매 데이터가 없습니다</p>
-              <p className="text-slate-600 text-[10px] text-center">POS 연동 또는 일마감 입력 후<br/>자동으로 분석됩니다</p>
-            </div>
+            <WidgetEmptyReason
+              reason={data.emptyReason || '전일 판매 데이터가 없습니다.'}
+              hints={['daily_reports에 items 배열 필요', 'POS 브릿지·일마감 입력 확인']}
+            />
           ) : (
             <>
               {/* TOP 5 */}
