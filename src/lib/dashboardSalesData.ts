@@ -43,7 +43,7 @@ async function fetchDailyReportsByStoreFallback(
   }
 }
 
-async function fetchPosSalesDetailSince(
+export async function fetchPosSalesDetailSince(
   storeId: string,
   sinceCompact: string,
   limit = 10000,
