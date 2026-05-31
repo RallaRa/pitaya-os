@@ -1,12 +1,18 @@
-export const STORE_IMAGE_TYPES = [
+export const STORE_PHOTO_TYPES = [
   { id: 'logo', label: '매장 로고', icon: '🏪' },
   { id: 'storefront', label: '매장 외관', icon: '🏬' },
   { id: 'interior', label: '매장 내부', icon: '🏠' },
+] as const;
+
+/** @deprecated 서류 카테고리는 StoreDocuments(DOC_TYPES)에서 관리 */
+const LEGACY_DOC_IMAGE_TYPES = [
   { id: 'businessLicense', label: '사업자등록증', icon: '📄' },
   { id: 'hygieneLicense', label: '위생허가증', icon: '🧹' },
   { id: 'meatLicense', label: '축산물판매업허가증', icon: '🥩' },
   { id: 'etc', label: '기타', icon: '📎' },
 ] as const;
+
+export const STORE_IMAGE_TYPES = [...STORE_PHOTO_TYPES, ...LEGACY_DOC_IMAGE_TYPES] as const;
 
 export type StoreImageCategory = (typeof STORE_IMAGE_TYPES)[number]['id'];
 

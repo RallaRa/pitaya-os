@@ -5,9 +5,15 @@ import {
   FileText, Shield, Globe, CreditCard, Building2, Plus,
   Upload, Trash2, Sparkles, AlertTriangle, CheckCircle,
   Clock, X, Loader2, ExternalLink, ChevronDown, ChevronUp,
-  RefreshCw, Download,
+  RefreshCw, Download, ImageIcon,
 } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import {
+  STORE_PHOTO_TYPES,
+  StoreImageMeta,
+  formatFileSize,
+  compressStoreImage,
+} from '@/lib/storeImages';
 
 // ─────────────────────────────────────────
 // 문서 유형 정의
@@ -48,6 +54,15 @@ const DOC_TYPES = [
     desc: '거래 통장 사본',
   },
   {
+    id: 'meat_license',
+    label: '축산물판매업허가증',
+    icon: FileText,
+    color: 'orange',
+    hasExpiry: true,
+    renewalMonths: 12,
+    desc: '축산물 위생관리법 허가증',
+  },
+  {
     id: 'other',
     label: '기타 서류',
     icon: FileText,
@@ -84,6 +99,7 @@ interface ApplyData {
 interface Props {
   storeId: string;
   onApplyStoreInfo?: (data: ApplyData) => void;
+  canManage?: boolean;
 }
 
 // ─────────────────────────────────────────
@@ -108,6 +124,7 @@ const COLOR_MAP: Record<DocTypeId, string> = {
   sanitation_permit: 'green',
   online_sales_permit: 'purple',
   business_account: 'teal',
+  meat_license: 'orange',
   other: 'slate',
 };
 
@@ -116,7 +133,9 @@ const ICON_BG: Record<string, string> = {
   green: 'bg-green-900/30 text-green-400',
   purple: 'bg-purple-900/30 text-purple-400',
   teal: 'bg-teal-900/30 text-teal-400',
+  orange: 'bg-orange-900/30 text-orange-400',
   slate: 'bg-slate-700 text-slate-400',
+  photo: 'bg-teal-900/30 text-teal-400',
 };
 
 const BORDER_COLOR: Record<string, string> = {
@@ -124,7 +143,9 @@ const BORDER_COLOR: Record<string, string> = {
   green: 'border-green-500/40',
   purple: 'border-purple-500/40',
   teal: 'border-teal-500/40',
+  orange: 'border-orange-500/40',
   slate: 'border-slate-600',
+  photo: 'border-teal-500/40',
 };
 
 // ─────────────────────────────────────────
@@ -627,6 +648,7 @@ function DocTypeSection({
   onDelete,
   onAnalyze,
   onApplyStoreInfo,
+  canManage = true,
 }: {
   typeConfig: (typeof DOC_TYPES)[number];
   documents: StoreDocument[];
@@ -635,6 +657,7 @@ function DocTypeSection({
   onDelete: (docId: string) => void;
   onAnalyze: (docId: string) => void;
   onApplyStoreInfo?: (data: ApplyData) => void;
+  canManage?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
@@ -712,13 +735,15 @@ function DocTypeSection({
           {!latestDoc && (
             <span className="text-xs text-slate-500 bg-slate-800 px-2 py-0.5 rounded-full">미등록</span>
           )}
-          <button
-            onClick={onUpload}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 text-xs rounded-lg transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            {latestDoc ? '추가' : '업로드'}
-          </button>
+          {canManage && (
+            <button
+              onClick={onUpload}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 text-xs rounded-lg transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              {latestDoc ? '추가' : '업로드'}
+            </button>
+          )}
           {documents.length > 0 && (
             <button onClick={() => setExpanded(v => !v)} className="text-slate-500 hover:text-white transition-colors">
               {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -797,13 +822,15 @@ function DocTypeSection({
                     }
                   </button>
                   {/* 삭제 */}
-                  <button
-                    onClick={() => onDelete(doc.docId)}
-                    className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors"
-                    title="삭제"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {canManage && (
+                    <button
+                      onClick={() => onDelete(doc.docId)}
+                      className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors"
+                      title="삭제"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -823,10 +850,124 @@ function DocTypeSection({
 }
 
 // ─────────────────────────────────────────
+// 매장 사진 섹션
+// ─────────────────────────────────────────
+function ImageTypeSection({
+  typeConfig,
+  images,
+  canManage,
+  uploading,
+  onUpload,
+  onDelete,
+  onPreview,
+}: {
+  typeConfig: (typeof STORE_PHOTO_TYPES)[number];
+  images: StoreImageMeta[];
+  canManage: boolean;
+  uploading: boolean;
+  onUpload: (files: FileList | null) => void;
+  onDelete: (image: StoreImageMeta) => void;
+  onPreview: (url: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const { label, icon } = typeConfig;
+  const count = images.length;
+
+  return (
+    <div className={`bg-slate-900 border ${count > 0 ? BORDER_COLOR.photo : 'border-slate-700'} rounded-xl overflow-hidden`}>
+      <div className="flex items-center justify-between p-4">
+        <div className="flex items-center gap-3">
+          <div className={`p-2.5 rounded-xl ${ICON_BG.photo}`}>
+            <span className="text-lg leading-none">{icon}</span>
+          </div>
+          <div>
+            <p className="text-white font-semibold text-sm">{label}</p>
+            <p className="text-slate-500 text-xs">
+              {count > 0 ? `${count}개 등록됨` : '매장 사진을 등록하세요'}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {count > 0 ? (
+            <span className="flex items-center gap-1 text-xs text-green-400 bg-green-900/30 border border-green-500/30 px-2 py-0.5 rounded-full">
+              <CheckCircle className="w-3 h-3" /> 등록됨
+            </span>
+          ) : (
+            <span className="text-xs text-slate-500 bg-slate-800 px-2 py-0.5 rounded-full">미등록</span>
+          )}
+          {canManage && (
+            <label className={`flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 text-xs rounded-lg transition-colors cursor-pointer ${uploading ? 'opacity-60 pointer-events-none' : ''}`}>
+              {uploading ? (
+                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 업로드 중...</>
+              ) : (
+                <><Plus className="w-3.5 h-3.5" />{count > 0 ? '추가' : '업로드'}</>
+              )}
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                className="hidden"
+                disabled={uploading}
+                onChange={e => {
+                  onUpload(e.target.files);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+          )}
+          {count > 0 && (
+            <button onClick={() => setExpanded(v => !v)} className="text-slate-500 hover:text-white transition-colors">
+              {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {expanded && count > 0 && (
+        <div className="border-t border-slate-800 p-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {images.map(img => (
+              <div
+                key={img.storagePath}
+                className="relative group border border-slate-700 rounded-lg overflow-hidden bg-slate-800"
+              >
+                <img
+                  src={img.fileUrl}
+                  alt={img.fileName}
+                  className="w-full h-32 object-cover cursor-pointer"
+                  onClick={() => onPreview(img.fileUrl)}
+                />
+                <div className="p-2">
+                  <p className="text-xs text-slate-400 truncate">{img.fileName}</p>
+                  <p className="text-xs text-slate-600">{formatFileSize(img.fileSize)}</p>
+                </div>
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={() => onDelete(img)}
+                    className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                    aria-label="삭제"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
 // 메인 컴포넌트
 // ─────────────────────────────────────────
-export default function StoreDocuments({ storeId, onApplyStoreInfo }: Props) {
+export default function StoreDocuments({ storeId, onApplyStoreInfo, canManage = true }: Props) {
   const [documents, setDocuments] = useState<StoreDocument[]>([]);
+  const [storeImages, setStoreImages] = useState<Record<string, StoreImageMeta[]>>({});
+  const [uploadingImages, setUploadingImages] = useState<Record<string, boolean>>({});
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploadModal, setUploadModal] = useState<{ typeId: string; typeLabel: string } | null>(null);
   const [alerts, setAlerts] = useState<{ docId: string; label: string; days: number }[]>([]);
@@ -836,13 +977,86 @@ export default function StoreDocuments({ storeId, onApplyStoreInfo }: Props) {
     setLoading(true);
     try {
       const headers = await getAuthHeaders();
-      const res = await fetch(`/api/store/documents?storeId=${storeId}`, { headers });
-      const data = await res.json();
-      if (res.ok) setDocuments(data.documents || []);
+      const jsonHeaders = await getAuthJsonHeaders();
+      const [docRes, imgRes] = await Promise.all([
+        fetch(`/api/store/documents?storeId=${storeId}`, { headers }),
+        fetch(`/api/store/images?storeId=${storeId}`, { headers: jsonHeaders }),
+      ]);
+      const docData = await docRes.json();
+      const imgData = await imgRes.json();
+      if (docRes.ok) setDocuments(docData.documents || []);
+      if (imgRes.ok) setStoreImages(imgData.images || {});
     } finally {
       setLoading(false);
     }
   }, [storeId]);
+
+  const handleImageUpload = async (files: FileList | null, category: string) => {
+    if (!files || files.length === 0 || !canManage) return;
+    setUploadingImages(prev => ({ ...prev, [category]: true }));
+
+    try {
+      const prepared = await Promise.all(
+        Array.from(files).map(async f => {
+          const uploadFile = await compressStoreImage(f);
+          const fileContent = await readFileAsDataURL(uploadFile);
+          return {
+            fileName: uploadFile.name,
+            fileContent,
+            mimeType: uploadFile.type || f.type,
+            fileSize: uploadFile.size,
+          };
+        })
+      );
+
+      const headers = await getAuthJsonHeaders();
+      const res = await fetch('/api/store/images', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ storeId, category, files: prepared }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      const uploaded: StoreImageMeta[] = data.uploaded || [];
+      setStoreImages(prev => ({
+        ...prev,
+        [category]: [...(prev[category] || []), ...uploaded],
+      }));
+    } catch (e: any) {
+      alert(`업로드 실패: ${e.message}`);
+    } finally {
+      setUploadingImages(prev => ({ ...prev, [category]: false }));
+    }
+  };
+
+  const handleImageDelete = async (image: StoreImageMeta, category: string) => {
+    if (!canManage) return;
+    if (!confirm(`"${image.fileName}"을(를) 삭제하시겠습니까?`)) return;
+
+    try {
+      const headers = await getAuthJsonHeaders();
+      const res = await fetch('/api/store/images', {
+        method: 'DELETE',
+        headers,
+        body: JSON.stringify({ storeId, category, storagePath: image.storagePath }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      setStoreImages(prev => ({
+        ...prev,
+        [category]: (prev[category] || []).filter(i => i.storagePath !== image.storagePath),
+      }));
+    } catch (e: any) {
+      alert(`삭제 실패: ${e.message}`);
+    }
+  };
+
+  const photoCount = STORE_PHOTO_TYPES.reduce(
+    (sum, t) => sum + (storeImages[t.id]?.length || 0),
+    0
+  );
 
   useEffect(() => { load(); }, [load]);
 
@@ -931,7 +1145,9 @@ export default function StoreDocuments({ storeId, onApplyStoreInfo }: Props) {
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <p className="text-slate-400 text-sm">
-          {loading ? '불러오는 중...' : `${documents.length}개 서류 등록됨`}
+          {loading
+            ? '불러오는 중...'
+            : `${photoCount}개 사진 · ${documents.length}개 서류`}
         </p>
         <button
           onClick={load}
@@ -943,14 +1159,39 @@ export default function StoreDocuments({ storeId, onApplyStoreInfo }: Props) {
         </button>
       </div>
 
-      {/* 문서 유형별 카드 */}
+      {/* 매장 사진 */}
       <div className="space-y-3">
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+          <ImageIcon className="w-3.5 h-3.5" />
+          매장 사진
+        </p>
+        {STORE_PHOTO_TYPES.map(typeConfig => (
+          <ImageTypeSection
+            key={typeConfig.id}
+            typeConfig={typeConfig}
+            images={storeImages[typeConfig.id] || []}
+            canManage={canManage}
+            uploading={!!uploadingImages[typeConfig.id]}
+            onUpload={files => handleImageUpload(files, typeConfig.id)}
+            onDelete={img => handleImageDelete(img, typeConfig.id)}
+            onPreview={setImagePreview}
+          />
+        ))}
+      </div>
+
+      {/* 서류·허가증 */}
+      <div className="space-y-3">
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+          <FileText className="w-3.5 h-3.5" />
+          서류 · 허가증
+        </p>
         {DOC_TYPES.map(typeConfig => (
           <DocTypeSection
             key={typeConfig.id}
             typeConfig={typeConfig}
             documents={docsForType(typeConfig.id)}
             storeId={storeId}
+            canManage={canManage}
             onUpload={() => setUploadModal({ typeId: typeConfig.id, typeLabel: typeConfig.label })}
             onDelete={handleDelete}
             onAnalyze={handleAnalyze}
@@ -958,6 +1199,29 @@ export default function StoreDocuments({ storeId, onApplyStoreInfo }: Props) {
           />
         ))}
       </div>
+
+      {/* 이미지 미리보기 */}
+      {imagePreview && (
+        <div
+          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+          onClick={() => setImagePreview(null)}
+        >
+          <div className="relative max-w-4xl w-full" onClick={e => e.stopPropagation()}>
+            <img
+              src={imagePreview}
+              className="w-full max-h-[85vh] object-contain rounded-lg"
+              alt="미리보기"
+            />
+            <button
+              type="button"
+              onClick={() => setImagePreview(null)}
+              className="absolute top-2 right-2 bg-white/20 text-white rounded-full p-2 hover:bg-white/40"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 업로드 모달 */}
       {uploadModal && (
