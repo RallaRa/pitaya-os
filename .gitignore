@@ -59,3 +59,4 @@ pos_bridge/.env
 pos_bridge/bridge.log
 pos_bridge/__pycache__/
 scraper/node_modules/
+scraper/node_modules/
