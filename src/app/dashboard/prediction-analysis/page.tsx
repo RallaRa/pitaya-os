@@ -6,9 +6,14 @@ import { useStore } from '@/context/StoreContext';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import {
   TrendingUp, TrendingDown, Target, RefreshCw, AlertCircle,
-  CheckCircle, XCircle, History, ChevronRight,
+  CheckCircle, XCircle, History, ChevronRight, ChevronLeft, Calendar,
 } from 'lucide-react';
 import type { PredictionAnalysisSnapshot } from '@/lib/predictionAnalysis';
+import {
+  addDaysYMD,
+  formatDateWithDow,
+  getKSTYesterdayYMD,
+} from '@/lib/dateUtils';
 
 function GrowthBadge({ pct }: { pct: number | null }) {
   if (pct === null) return <span className="text-slate-500 text-xs">-</span>;
@@ -43,6 +48,9 @@ export default function PredictionAnalysisPage() {
   const [data, setData] = useState<PredictionAnalysisSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState(getKSTYesterdayYMD);
+
+  const maxDate = getKSTYesterdayYMD();
 
   const load = useCallback(async () => {
     if (!storeId) { setLoading(false); return; }
@@ -50,7 +58,8 @@ export default function PredictionAnalysisPage() {
     setError(null);
     try {
       const headers = await getAuthHeaders();
-      const res = await fetch(`/api/dashboard/prediction-analysis?storeId=${encodeURIComponent(storeId)}`, { headers });
+      const params = new URLSearchParams({ storeId, date: selectedDate });
+      const res = await fetch(`/api/dashboard/prediction-analysis?${params}`, { headers });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || '조회 실패');
       setData(json);
@@ -59,9 +68,17 @@ export default function PredictionAnalysisPage() {
     } finally {
       setLoading(false);
     }
-  }, [storeId]);
+  }, [storeId, selectedDate]);
 
   useEffect(() => { load(); }, [load]);
+
+  const shiftDate = (delta: number) => {
+    setSelectedDate(prev => {
+      const next = addDaysYMD(prev, delta);
+      if (next > maxDate) return maxDate;
+      return next;
+    });
+  };
 
   if (!storeId) {
     return (
@@ -78,10 +95,50 @@ export default function PredictionAnalysisPage() {
             예측분석
           </h1>
           <p className="text-slate-400 text-sm mt-1">
-            전일 기준 품목 성장률 · 예측 vs 실제 비교 · 대시보드 AI 반영 근거
+            {formatDateWithDow(selectedDate)} 기준 · 품목 성장률 · 예측 vs 실제 · AI 반영 근거
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 bg-slate-900 border border-slate-700 rounded-lg p-1">
+            <button
+              type="button"
+              onClick={() => shiftDate(-1)}
+              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-md transition-colors"
+              title="이전 날"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <div className="flex items-center gap-2 px-2">
+              <Calendar className="w-3.5 h-3.5 text-teal-400 shrink-0" />
+              <input
+                type="date"
+                value={selectedDate}
+                max={maxDate}
+                onChange={e => {
+                  const v = e.target.value;
+                  if (v && v <= maxDate) setSelectedDate(v);
+                }}
+                className="bg-transparent text-sm text-white focus:outline-none [color-scheme:dark]"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => shiftDate(1)}
+              disabled={selectedDate >= maxDate}
+              className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-md transition-colors disabled:opacity-30 disabled:pointer-events-none"
+              title="다음 날"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedDate(maxDate)}
+            disabled={selectedDate === maxDate}
+            className="text-xs text-slate-400 hover:text-teal-400 border border-slate-700 rounded-lg px-3 py-2 disabled:opacity-40"
+          >
+            어제
+          </button>
           <Link
             href="/dashboard/prediction-history"
             className="flex items-center gap-1 text-xs text-slate-400 hover:text-teal-400 border border-slate-700 rounded-lg px-3 py-2"
