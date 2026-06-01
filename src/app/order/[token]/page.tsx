@@ -1,10 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useParams } from 'next/navigation';
 import {
-  ShoppingBag, Minus, Plus, Loader2, CheckCircle2, AlertCircle, History,
+  ShoppingBag, Minus, Plus, Loader2, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import type { PublicOrderLine } from '@/lib/publicOrders';
 
@@ -25,7 +24,6 @@ function fmtPrice(n: number) {
 
 export default function PublicOrderPage() {
   const params = useParams();
-  const router = useRouter();
   const token = String(params.token || '');
 
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -98,7 +96,6 @@ export default function PublicOrderPage() {
         `${ORDERER_STORAGE_PREFIX}${token}`,
         JSON.stringify({ name: ordererName, phone: ordererPhone }),
       );
-      localStorage.setItem(`pitaya_orderer_key_${token}`, data.ordererKey);
       setSubmitOk(true);
       setQtyMap({});
       await load();
@@ -149,13 +146,6 @@ export default function PublicOrderPage() {
               <p className="text-[10px] text-amber-400 mt-1">마감: {session.orderDeadline}</p>
             )}
           </div>
-          <Link
-            href={`/order/${token}/history`}
-            className="flex items-center gap-1 text-xs text-slate-400 hover:text-teal-300 shrink-0 px-2 py-1.5 rounded-lg border border-slate-700"
-          >
-            <History className="w-3.5 h-3.5" />
-            내 주문
-          </Link>
         </div>
         {!isOpen && (
           <p className="mt-2 text-xs text-amber-300 bg-amber-950/50 border border-amber-700/40 rounded-lg px-3 py-2">
@@ -272,12 +262,13 @@ export default function PublicOrderPage() {
             <div className="text-center py-2">
               <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
               <p className="text-sm text-emerald-300 font-medium">주문이 접수되었습니다</p>
+              <p className="mt-2 text-xs text-slate-400">매장에서 확인 후 연락드립니다</p>
               <button
                 type="button"
-                onClick={() => router.push(`/order/${token}/history`)}
+                onClick={() => setSubmitOk(false)}
                 className="mt-3 text-xs text-teal-400 underline"
               >
-                내 주문 내역 보기
+                추가 주문하기
               </button>
             </div>
           ) : (

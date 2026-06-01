@@ -15,23 +15,26 @@ export async function GET(req: Request) {
   try {
     const snap = await adminDb.collection('public_order_sessions')
       .where('storeId', '==', storeId)
-      .orderBy('createdAt', 'desc')
-      .limit(50)
       .get();
 
-    const sessions = snap.docs.map(d => {
-      const data = d.data();
-      return {
-        id: d.id,
-        title: data.title,
-        description: data.description || '',
-        status: data.status,
-        publicToken: data.publicToken,
-        orderDeadline: data.orderDeadline || null,
-        createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? null,
-        updatedAt: data.updatedAt?.toDate?.()?.toISOString?.() ?? null,
-      };
-    });
+    const sessions = snap.docs
+      .map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          title: data.title,
+          description: data.description || '',
+          status: data.status,
+          publicToken: data.publicToken,
+          orderDeadline: data.orderDeadline || null,
+          createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? null,
+          updatedAt: data.updatedAt?.toDate?.()?.toISOString?.() ?? null,
+          _sortMs: data.createdAt?.toMillis?.() ?? 0,
+        };
+      })
+      .sort((a, b) => b._sortMs - a._sortMs)
+      .slice(0, 50)
+      .map(({ _sortMs: _, ...rest }) => rest);
 
     return NextResponse.json({ sessions });
   } catch (e: unknown) {

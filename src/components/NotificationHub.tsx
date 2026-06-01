@@ -27,6 +27,8 @@ const TYPE_ICON: Record<string, string> = {
   holiday_alert:   '📅',
   hr_dayoff:       '🏖️',
   sales_hourly_drop: '📉',
+  public_order:      '🛒',
+  order_alert:       '📦',
   member_request:  '👤',
   member_approved: '✅',
   member_rejected: '❌',

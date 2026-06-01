@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { makeOrdererKey, maskPhone } from '@/lib/publicOrders';
+import { notifyPublicOrderReceived } from '@/lib/publicOrderNotify';
 
 interface SubmitBody {
   ordererName?: string;
@@ -111,6 +112,14 @@ export async function POST(
         totalAmount,
         createdAt: FieldValue.serverTimestamp(),
       });
+    });
+
+    void notifyPublicOrderReceived({
+      storeId: session.storeId,
+      sessionId,
+      sessionTitle: String(session.title || '공개 주문'),
+      ordererName,
+      totalAmount,
     });
 
     return NextResponse.json({

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Plus, Copy, ExternalLink, Loader2, Trash2, Save, Upload,
   Play, Pause, Link2,
@@ -33,6 +34,8 @@ const EMPTY_LINE = {
 export default function PublicOrdersAdminPage() {
   const { currentStore } = useStore();
   const storeId = currentStore?.storeId || '';
+  const searchParams = useSearchParams();
+  const sessionFromUrl = searchParams.get('session');
 
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -87,8 +90,21 @@ export default function PublicOrdersAdminPage() {
   }, [storeId]);
 
   useEffect(() => { loadSessions(); }, [loadSessions]);
+
+  useEffect(() => {
+    if (sessionFromUrl) setSelectedId(sessionFromUrl);
+  }, [sessionFromUrl]);
+
   useEffect(() => {
     if (selectedId) loadDetail(selectedId);
+  }, [selectedId, loadDetail]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const timer = setInterval(() => {
+      loadDetail(selectedId);
+    }, 30000);
+    return () => clearInterval(timer);
   }, [selectedId, loadDetail]);
 
   const createSession = async () => {
@@ -248,7 +264,9 @@ export default function PublicOrdersAdminPage() {
       {/* 회차 목록 */}
       <aside className="w-full lg:w-72 border-r border-slate-800 bg-slate-900/30 p-4 shrink-0">
         <h1 className="text-lg font-bold text-white mb-1">공개 주문 관리</h1>
-        <p className="text-xs text-slate-500 mb-4">손님용 링크 — 로그인 없이 주문만 가능</p>
+        <p className="text-xs text-slate-500 mb-4">
+          손님은 링크로 주문만 가능 · 주문 내역은 매장(이 화면)에서만 확인
+        </p>
 
         <div className="flex gap-2 mb-4">
           <input
@@ -493,7 +511,8 @@ export default function PublicOrdersAdminPage() {
             </section>
 
             <section>
-              <h2 className="font-semibold text-white mb-2">주문 접수 내역 ({entries.length})</h2>
+              <h2 className="font-semibold text-white mb-1">주문 접수 내역 ({entries.length})</h2>
+              <p className="text-[10px] text-slate-500 mb-2">새 주문 시 알림 · 30초마다 자동 갱신</p>
               <div className="space-y-2 max-h-64 overflow-y-auto">
                 {entries.map(e => (
                   <div key={e.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-sm">

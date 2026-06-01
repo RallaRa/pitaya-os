@@ -34,22 +34,25 @@ export async function GET(
 
     const entriesSnap = await adminDb.collection('public_order_entries')
       .where('sessionId', '==', sessionId)
-      .orderBy('createdAt', 'desc')
-      .limit(100)
       .get();
 
-    const entries = entriesSnap.docs.map(d => {
-      const e = d.data();
-      return {
-        id: d.id,
-        ordererName: e.ordererName,
-        ordererPhoneMasked: e.ordererPhoneMasked,
-        lines: e.lines,
-        note: e.note,
-        totalAmount: e.totalAmount,
-        createdAt: e.createdAt?.toDate?.()?.toISOString?.() ?? null,
-      };
-    });
+    const entries = entriesSnap.docs
+      .map(d => {
+        const e = d.data();
+        return {
+          id: d.id,
+          ordererName: e.ordererName,
+          ordererPhoneMasked: e.ordererPhoneMasked,
+          lines: e.lines,
+          note: e.note,
+          totalAmount: e.totalAmount,
+          createdAt: e.createdAt?.toDate?.()?.toISOString?.() ?? null,
+          _sortMs: e.createdAt?.toMillis?.() ?? 0,
+        };
+      })
+      .sort((a, b) => b._sortMs - a._sortMs)
+      .slice(0, 100)
+      .map(({ _sortMs: _, ...rest }) => rest);
 
     return NextResponse.json({
       session: {
