@@ -85,6 +85,14 @@ export default function SignageDisplay({ slug }: Props) {
       unsubPlaylist = onSnapshot(doc(db, 'signage_playlist', sid), () => {
         loadContents(sid, screen.contentIds as string[] | undefined);
       });
+
+      const screenRef = screenSnap.docs[0].ref;
+      onSnapshot(screenRef, (screenDoc) => {
+        if (screenDoc.exists()) {
+          const data = screenDoc.data();
+          loadContents(sid, data.contentIds as string[] | undefined);
+        }
+      });
     })();
 
     return () => {
