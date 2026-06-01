@@ -24,7 +24,7 @@ function primaryProvidersForUseCase(useCase: AiUseCase): AiProviderId[] {
     case 'fast':
       return ['gemini'];
     case 'prediction':
-      return ['claude'];
+      return ['claude', 'gpt', 'gemini'];
     case 'chat':
       return ['gemini'];
     default:

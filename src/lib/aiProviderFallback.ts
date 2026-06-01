@@ -412,6 +412,109 @@ export async function generateTextWithFallback(opts: TextGenerateOptions): Promi
   return runWithFallback(resolveTextOrder(opts), invokeTextProvider, opts, 'text');
 }
 
+export class AiAllProvidersFailedError extends Error {
+  readonly exclusions: string[];
+
+  constructor(exclusions: string[], detail?: string) {
+    const body = exclusions.length
+      ? exclusions.map((e, i) => `${i + 1}. ${e}`).join('\n')
+      : (detail || '알 수 없는 오류');
+    super(
+      exclusions.length
+        ? `연동된 AI ${exclusions.length}개를 순차 시도했으나 모두 실패했습니다.\n\n${body}`
+        : (detail || '사용 가능한 AI가 없습니다'),
+    );
+    this.name = 'AiAllProvidersFailedError';
+    this.exclusions = exclusions;
+  }
+}
+
+export type JsonFallbackResult<T> = FallbackResult & { data: T };
+
+/**
+ * 텍스트 생성 → JSON 파싱 → validate 통과 시에만 성공.
+ * 한 AI가 API/파싱/검증에 실패하면 다음 연동 AI로 1회씩 순차 시도.
+ */
+export async function generateJsonWithFallback<T>(
+  opts: TextGenerateOptions & { validate: (parsed: unknown) => parsed is T },
+): Promise<JsonFallbackResult<T>> {
+  const order = resolveTextOrder(opts).filter(hasProviderKey);
+  if (order.length === 0) {
+    throw new AiAllProvidersFailedError(
+      [],
+      '사용 가능한 AI API 키가 없습니다. GEMINI / ANTHROPIC / OPENAI / GROQ 중 하나 이상을 환경변수에 설정하세요.',
+    );
+  }
+
+  const exclusions: string[] = [];
+  let lastError: unknown;
+
+  for (let i = 0; i < order.length; i++) {
+    const provider = order[i];
+    try {
+      const result = await invokeTextProvider(provider, opts);
+      trackResult(result);
+
+      let parsed: unknown;
+      try {
+        const stripped = stripJsonMarkdown(result.text);
+        if (!stripped) throw new Error('AI 응답이 비어 있습니다');
+        parsed = JSON.parse(stripped);
+      } catch (parseErr) {
+        throw new Error(`JSON 파싱 실패 — ${formatError(parseErr)}`);
+      }
+
+      if (!opts.validate(parsed)) {
+        throw new Error('필수 필드(품목 예측·종합 분석)가 비어 있거나 JSON 형식이 올바르지 않습니다');
+      }
+
+      if (i > 0) {
+        console.warn(`[ai-json-fallback] ${order[0]} 등 실패 → ${provider} 성공 (${result.model})`);
+      }
+
+      return {
+        ...result,
+        data: parsed,
+        exclusions: exclusions.length ? exclusions : undefined,
+      };
+    } catch (err) {
+      lastError = err;
+      exclusions.push(classifyAiExclusion(err, providerIdToModelKeyForExclusion(provider)));
+
+      if (isOverloadError(err)) {
+        for (let retry = 0; retry < 2; retry++) {
+          await new Promise(r => setTimeout(r, 2000));
+          try {
+            const result = await invokeTextProvider(provider, opts);
+            trackResult(result);
+            const stripped = stripJsonMarkdown(result.text);
+            const parsed = JSON.parse(stripped);
+            if (!opts.validate(parsed)) {
+              throw new Error('필수 필드 검증 실패');
+            }
+            return {
+              ...result,
+              data: parsed,
+              exclusions: exclusions.length ? exclusions : undefined,
+            };
+          } catch (retryErr) {
+            lastError = retryErr;
+          }
+        }
+      }
+
+      if (i < order.length - 1) {
+        console.warn(
+          `[ai-json-fallback] ${provider} 실패 (${formatError(err).slice(0, 80)}) → ${order[i + 1]} 시도`,
+        );
+        continue;
+      }
+    }
+  }
+
+  throw new AiAllProvidersFailedError(exclusions, formatError(lastError));
+}
+
 /** Vision: Claude → GPT → Gemini 순차 (Groq 제외) */
 export async function generateVisionWithFallback(opts: VisionGenerateOptions): Promise<FallbackResult> {
   if (!opts.images.length) throw new Error('Vision 요청에 이미지가 없습니다.');

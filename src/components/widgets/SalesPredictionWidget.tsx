@@ -22,6 +22,8 @@ interface PredictionData {
   activeVariables: number; modelAccuracy: number;
   noData?: boolean; cached?: boolean;
   emptyReason?: string;
+  aiFailureReason?: string | null;
+  aiUsedStatisticalFallback?: boolean;
   generatedAt?: unknown;
   ai?: AiMetaDisplay;
 }
@@ -87,10 +89,11 @@ export default function SalesPredictionWidget({
       if (forceRefresh) params.set('refresh', '1');
       const res = await fetch(`/api/dashboard/sales-prediction?${params}`, { headers: await getAuthHeaders() });
       const d = await res.json();
+      if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
       if (d.error) throw new Error(d.error);
       setData(d); setUpdatedAt(new Date());
-    } catch {
-      setError('예측 데이터를 불러오지 못했습니다');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '예측 데이터를 불러오지 못했습니다');
     } finally {
       setLoading(false);
     }
@@ -116,6 +119,7 @@ export default function SalesPredictionWidget({
   }[dDayType] : null;
 
   const showEmptyReason = data?.noData || (!data?.supporterComment && !(data?.topItems?.length));
+  const showAiFailure = !!(data?.aiFailureReason && !data?.noData);
 
   return (
     <WidgetWrapper
@@ -148,6 +152,18 @@ export default function SalesPredictionWidget({
           <WidgetEmptyReason
             reason={data.emptyReason}
             hints={['POS 브릿지 실행 여부 확인', '일마감에 품목(items) 저장 여부 확인', 'AI 키는 .env.local 확인']}
+            className="mx-2 mb-2"
+          />
+        )}
+
+        {showAiFailure && (
+          <WidgetEmptyReason
+            reason={data!.aiFailureReason!}
+            hints={[
+              '대시보드 새로고침으로 AI를 다시 순차 시도',
+              'Vercel 환경변수: GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, GROQ_API_KEY',
+              data?.aiUsedStatisticalFallback ? '품목 수치는 판매 이력 통계로 표시 중' : '',
+            ].filter(Boolean)}
             className="mx-2 mb-2"
           />
         )}

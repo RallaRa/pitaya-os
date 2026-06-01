@@ -5,7 +5,11 @@ import { getStoreCoords, getWeatherCondition, WEATHER_ICONS } from '@/lib/weathe
 import { verifyToken } from '@/lib/authVerify';
 import { fetchDailyReportsSince, fetchStoreItemSales } from '@/lib/dashboardSalesData';
 import { getPredictionAnalysisInsights, getPredictionCalibration, applyCalibrationToPredictions } from '@/lib/predictionAnalysis';
-import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
+import {
+  AiAllProvidersFailedError,
+  generateJsonWithFallback,
+  hasAnyAiProvider,
+} from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
 import { buildSalesPredictionEmptyReason } from '@/lib/dashboardEmptyReason';
 
@@ -57,7 +61,9 @@ export async function GET(req: Request) {
       if (cached.exists) {
         const d = cached.data()!;
         const age = Date.now() - (d.generatedAt?.toMillis?.() || 0);
-        if (age < 6 * 60 * 60 * 1000 && !d.noData) { // 6시간, 빈 캐시는 재조회
+        const hasContent = (d.topItems?.length > 0 || d.bottomItems?.length > 0)
+          && String(d.supporterComment || '').trim().length > 0;
+        if (age < 6 * 60 * 60 * 1000 && !d.noData && hasContent) {
           return NextResponse.json({ ...d, cached: true });
         }
       }
@@ -210,46 +216,98 @@ bottomItems: 오늘 판매 감소 예상 TOP5
 badges는 조건에 따라: 🔥HOT(+30%↑), ⬆️UP(+10~30%), 📉DOWN(-20%↓), 💡추천(confidence90+)
 reasonDetail은 반드시 100자 이내, "전주 동요일 대비 +12%", "최근7일 일평균 3.2kg" 같은 구체 수치 포함`;
 
+  interface PredictionAiJson {
+    supporterComment?: string;
+    keyFactors?: string[];
+    topItems?: unknown[];
+    bottomItems?: unknown[];
+  }
+
+  function isValidPredictionJson(parsed: unknown): parsed is PredictionAiJson {
+    if (!parsed || typeof parsed !== 'object') return false;
+    const p = parsed as PredictionAiJson;
+    const comment = String(p.supporterComment || '').trim();
+    const tops = Array.isArray(p.topItems) ? p.topItems : [];
+    const bottoms = Array.isArray(p.bottomItems) ? p.bottomItems : [];
+    return comment.length >= 20 && (tops.length > 0 || bottoms.length > 0);
+  }
+
+  const buildStatisticalFallback = () => {
+    const tops = sortedItems.slice(0, 5).map(([name, d], i) => ({
+      rank: i + 1,
+      item: name,
+      expectedSales: Math.round(d.qty / Math.max(d.days, 1)),
+      displayRecommend: '기본 진열 유지',
+      changeVsLastWeek: 0,
+      confidence: 60,
+      badges: [] as string[],
+      reasons: ['판매 이력 기반'],
+      reasonDetail: `90일 일평균 ${Math.round(d.qty / Math.max(d.days, 1))}kg, 판매일 ${d.days}일`,
+    }));
+    const bottoms = sortedItems.slice(-5).reverse().map(([name, d], i) => ({
+      rank: i + 1,
+      item: name,
+      expectedSales: Math.round(d.qty / Math.max(d.days, 1)),
+      displayRecommend: '재고 최소화',
+      changeVsLastWeek: -10,
+      confidence: 55,
+      badges: ['📉DOWN'],
+      reasons: ['하위 판매 이력'],
+      reasonDetail: `90일 일평균 ${Math.round(d.qty / Math.max(d.days, 1))}kg, 하위권 품목`,
+    }));
+    return { tops, bottoms };
+  };
+
   let aiInfo: ReturnType<typeof aiMetaJson> | undefined;
   let topItems: any[] = [];
   let bottomItems: any[] = [];
   let supporterComment = '';
   let keyFactors: string[] = [];
+  let aiFailureReason: string | undefined;
+  let aiUsedStatisticalFallback = false;
 
-  if (hasAnyAiProvider()) {
+  if (!hasAnyAiProvider()) {
+    aiFailureReason =
+      'AI API 키가 설정되지 않았습니다. GEMINI / ANTHROPIC / OPENAI / GROQ 중 하나 이상을 Vercel 환경변수에 등록하세요.';
+    const stat = buildStatisticalFallback();
+    topItems = stat.tops;
+    bottomItems = stat.bottoms;
+    supporterComment = `**통계 기반** 예측입니다. (AI 미연동)\n\n${aiFailureReason}`;
+    aiUsedStatisticalFallback = true;
+  } else {
     try {
-      const aiResult = await generateTextWithFallback({ prompt, json: true, useCase: 'prediction' });
-      const parsed = JSON.parse(stripJsonMarkdown(aiResult.text));
+      const aiResult = await generateJsonWithFallback({
+        prompt,
+        json: true,
+        useCase: 'prediction',
+        validate: isValidPredictionJson,
+      });
+      const parsed = aiResult.data;
       aiInfo = aiMetaJson(aiResult);
-      topItems    = (parsed.topItems    || []).slice(0,5).map((it: any) => ({
+      topItems = (parsed.topItems || []).slice(0, 5).map((it: any) => ({
         ...it,
         reasonDetail: String(it.reasonDetail || '').slice(0, 100),
       }));
-      bottomItems = (parsed.bottomItems || []).slice(0,5).map((it: any) => ({
+      bottomItems = (parsed.bottomItems || []).slice(0, 5).map((it: any) => ({
         ...it,
         reasonDetail: String(it.reasonDetail || '').slice(0, 100),
       }));
       supporterComment = String(parsed.supporterComment || '').slice(0, 500);
-      keyFactors  = parsed.keyFactors   || [];
-    } catch {
-      // fallback: 통계 기반
-      topItems = sortedItems.slice(0,5).map(([name,d],i) => ({
-        rank: i+1, item: name,
-        expectedSales: Math.round(d.qty / Math.max(d.days,1)),
-        displayRecommend: '기본 진열 유지',
-        changeVsLastWeek: 0, confidence: 60,
-        badges: [], reasons: ['판매 이력 기반'],
-        reasonDetail: `90일 일평균 ${Math.round(d.qty / Math.max(d.days,1))}kg, 판매일 ${d.days}일`,
-      }));
-      bottomItems = sortedItems.slice(-5).reverse().map(([name,d],i) => ({
-        rank: i+1, item: name,
-        expectedSales: Math.round(d.qty / Math.max(d.days,1)),
-        displayRecommend: '재고 최소화',
-        changeVsLastWeek: -10, confidence: 55,
-        badges: ['📉DOWN'], reasons: ['하위 판매 이력'],
-        reasonDetail: `90일 일평균 ${Math.round(d.qty / Math.max(d.days,1))}kg, 하위권 품목`,
-      }));
-      supporterComment = '**통계 기반** 예측입니다. AI 분석 API 키를 확인하세요.';
+      keyFactors = parsed.keyFactors || [];
+    } catch (e: unknown) {
+      const stat = buildStatisticalFallback();
+      topItems = stat.tops;
+      bottomItems = stat.bottoms;
+      aiUsedStatisticalFallback = true;
+
+      if (e instanceof AiAllProvidersFailedError) {
+        aiFailureReason = e.message;
+      } else {
+        aiFailureReason = e instanceof Error ? e.message : String(e);
+      }
+
+      supporterComment =
+        `**AI 분석 실패** — 아래 품목은 판매 이력 기반 통계 예측입니다.\n\n${aiFailureReason || '알 수 없는 오류'}`;
     }
   }
 
@@ -267,6 +325,8 @@ reasonDetail은 반드시 100자 이내, "전주 동요일 대비 +12%", "최근
     activeVariables: activeVars.length,
     modelAccuracy: Math.min(95, Math.max(40, sales.length * 0.8 + activeVars.length * 2)),
     noData: false,
+    aiFailureReason: aiFailureReason || null,
+    aiUsedStatisticalFallback,
     generatedAt: FieldValue.serverTimestamp(),
     ...(aiInfo || {}),
   };
