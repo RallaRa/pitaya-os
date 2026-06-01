@@ -1,17 +1,9 @@
 import { NextResponse } from 'next/server';
-import { getKakaoRedirectUri, getKakaoRestApiKey } from '@/lib/kakao/config';
+import { KAKAO_APP_BASE_URL } from '@/lib/kakao/config';
 
+/** 카카오 단독 로그인 비활성 — Google 가입 후 설정에서 연동 */
 export async function GET() {
-  const clientId = getKakaoRestApiKey();
-  if (!clientId) {
-    return NextResponse.json({ error: 'KAKAO_REST_API_KEY 미설정' }, { status: 500 });
-  }
-
-  const kakaoAuthUrl = new URL('https://kauth.kakao.com/oauth/authorize');
-  kakaoAuthUrl.searchParams.set('client_id', clientId);
-  kakaoAuthUrl.searchParams.set('redirect_uri', getKakaoRedirectUri());
-  kakaoAuthUrl.searchParams.set('response_type', 'code');
-  kakaoAuthUrl.searchParams.set('scope', 'profile_nickname profile_image account_email talk_message');
-
-  return NextResponse.redirect(kakaoAuthUrl.toString());
+  const url = new URL('/login', KAKAO_APP_BASE_URL);
+  url.searchParams.set('kakao_error', 'login_disabled');
+  return NextResponse.redirect(url.toString());
 }

@@ -1,81 +1,110 @@
 /** 매장 멤버 role ↔ permission groupId ↔ 표시명 (전 화면 공통) */
 
-export type StoreRole = 'superuser' | 'owner' | 'admin' | 'user';
-export type PermissionGroupId = 'superuser' | 'master' | 'admin' | 'user';
+import {
+  DEFAULT_SYSTEM_GROUP_NAMES,
+  normalizePermissionGroupId,
+  SYSTEM_GROUP_IDS,
+  type SystemGroupId,
+} from '@/lib/menuAccessKeys';
+
+export type StoreRole = 'superuser' | 'admin' | 'staff';
+export type PermissionGroupId = SystemGroupId | string;
 
 export interface RoleDefinition {
   role: StoreRole;
-  groupId: PermissionGroupId;
+  groupId: SystemGroupId;
   label: string;
   level: number;
 }
 
 export const ROLE_DEFINITIONS: RoleDefinition[] = [
-  { role: 'superuser', groupId: 'superuser', label: '슈퍼유저', level: 4 },
-  { role: 'owner',     groupId: 'master',    label: '관리자',   level: 3 },
-  { role: 'admin',     groupId: 'admin',     label: '점장',     level: 2 },
-  { role: 'user',      groupId: 'user',      label: '직원',     level: 1 },
+  { role: 'superuser', groupId: 'superuser', label: DEFAULT_SYSTEM_GROUP_NAMES.superuser, level: 3 },
+  { role: 'admin',     groupId: 'admin',     label: DEFAULT_SYSTEM_GROUP_NAMES.admin,     level: 2 },
+  { role: 'staff',     groupId: 'staff',     label: DEFAULT_SYSTEM_GROUP_NAMES.staff,     level: 1 },
 ];
 
 const LEGACY_ROLE_ALIASES: Record<string, StoreRole> = {
-  staff: 'user',
-  master: 'owner',
+  staff: 'staff',
+  user: 'staff',
+  master: 'superuser',
+  owner: 'superuser',
   superuser: 'superuser',
+  admin: 'admin',
 };
 
-const LEGACY_GROUP_ALIASES: Record<string, PermissionGroupId> = {
-  staff: 'user',
-  owner: 'master',
+const LEGACY_GROUP_ALIASES: Record<string, SystemGroupId> = {
+  staff: 'staff',
+  user: 'staff',
+  master: 'superuser',
+  owner: 'superuser',
+  superuser: 'superuser',
+  admin: 'admin',
 };
 
 export function normalizeRole(role?: string | null): StoreRole {
-  if (!role) return 'user';
+  if (!role) return 'staff';
   const r = role.toLowerCase();
   if (LEGACY_ROLE_ALIASES[r]) return LEGACY_ROLE_ALIASES[r];
   if (ROLE_DEFINITIONS.some(d => d.role === r)) return r as StoreRole;
-  return 'user';
+  return 'staff';
 }
 
-export function normalizeGroupId(groupId?: string | null): PermissionGroupId {
-  if (!groupId) return 'user';
-  const g = groupId.toLowerCase();
-  if (LEGACY_GROUP_ALIASES[g]) return LEGACY_GROUP_ALIASES[g];
-  if (ROLE_DEFINITIONS.some(d => d.groupId === g)) return g as PermissionGroupId;
-  return 'user';
+export function normalizeGroupId(groupId?: string | null): string {
+  const normalized = normalizePermissionGroupId(groupId);
+  if ((SYSTEM_GROUP_IDS as readonly string[]).includes(normalized)) {
+    return normalized;
+  }
+  if (LEGACY_GROUP_ALIASES[groupId?.toLowerCase() || '']) {
+    return LEGACY_GROUP_ALIASES[groupId!.toLowerCase()];
+  }
+  return normalized;
 }
 
-export function roleToGroupId(role?: string | null): PermissionGroupId {
+export function roleToGroupId(role?: string | null): string {
   const normalized = normalizeRole(role);
-  return ROLE_DEFINITIONS.find(d => d.role === normalized)?.groupId ?? 'user';
+  return ROLE_DEFINITIONS.find(d => d.role === normalized)?.groupId ?? 'staff';
 }
 
 export function groupIdToRole(groupId?: string | null): StoreRole {
   const normalized = normalizeGroupId(groupId);
-  return ROLE_DEFINITIONS.find(d => d.groupId === normalized)?.role ?? 'user';
+  const core = ROLE_DEFINITIONS.find(d => d.groupId === normalized);
+  if (core) return core.role;
+  return 'staff';
 }
 
 export function getRoleLabel(roleOrGroup?: string | null): string {
-  if (!roleOrGroup) return '직원';
+  if (!roleOrGroup) return DEFAULT_SYSTEM_GROUP_NAMES.staff;
+  const gid = normalizeGroupId(roleOrGroup);
+  const byGroup = ROLE_DEFINITIONS.find(d => d.groupId === gid);
+  if (byGroup) return byGroup.label;
   const byRole = ROLE_DEFINITIONS.find(d => d.role === roleOrGroup);
   if (byRole) return byRole.label;
-  const byGroup = ROLE_DEFINITIONS.find(d => d.groupId === roleOrGroup);
-  if (byGroup) return byGroup.label;
-  if (roleOrGroup === 'staff') return '직원';
   return roleOrGroup;
 }
 
 export function getAssignableRoles(includeSuperuser = false): RoleDefinition[] {
-  const roles = ROLE_DEFINITIONS.filter(d => d.role !== 'owner' || includeSuperuser);
-  if (!includeSuperuser) return roles.filter(d => d.role !== 'superuser');
-  return roles;
+  if (includeSuperuser) return [...ROLE_DEFINITIONS];
+  return ROLE_DEFINITIONS.filter(d => d.role !== 'superuser');
 }
 
-/** owner는 슈퍼유저만 지정 가능 */
 export function getChangeableRoles(isSuperuser = false): StoreRole[] {
-  if (isSuperuser) return ['superuser', 'owner', 'admin', 'user'];
-  return ['admin', 'user'];
+  if (isSuperuser) return ['superuser', 'admin', 'staff'];
+  return ['admin', 'staff'];
 }
 
-export function getAssignableGroupIds(includeSuperuser = false): PermissionGroupId[] {
+export function getAssignableGroupIds(includeSuperuser = false): string[] {
   return getAssignableRoles(includeSuperuser).map(d => d.groupId);
+}
+
+export function isCoreSystemGroup(groupId?: string | null): boolean {
+  return (SYSTEM_GROUP_IDS as readonly string[]).includes(normalizeGroupId(groupId));
+}
+
+export function isAdminLevelGroup(groupId?: string | null): boolean {
+  const g = normalizeGroupId(groupId);
+  return g === 'superuser' || g === 'admin';
+}
+
+export function isSuperuserLevelGroup(groupId?: string | null): boolean {
+  return normalizeGroupId(groupId) === 'superuser';
 }

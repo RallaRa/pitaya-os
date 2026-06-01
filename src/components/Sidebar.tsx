@@ -36,32 +36,14 @@ import {
   type DayAbsenceGroup,
 } from '@/lib/hr/absenceSchedule';
 
-type MenuAccess = {
-  ai: boolean; sales: boolean; purchase: boolean; report: boolean;
-  messenger: boolean; members: boolean; store: boolean;
-  permissionGroup: boolean; memberGroup: boolean; hygiene: boolean;
-  hrCalendar: boolean; scaleCode: boolean;
-  salesForecast: boolean; suppliers: boolean; predictionVariables: boolean;
-  customers: boolean; predictionHistory: boolean; items: boolean;
-};
+import {
+  createAllFalseMenuAccess,
+  createAllTrueMenuAccess,
+  type MenuAccess,
+} from '@/lib/menuAccessKeys';
 
-const ALL_FALSE: MenuAccess = {
-  ai: false, sales: false, purchase: false, report: false,
-  messenger: false, members: false, store: false,
-  permissionGroup: false, memberGroup: false, hygiene: false,
-  hrCalendar: false, scaleCode: false,
-  salesForecast: false, suppliers: false, predictionVariables: false,
-  customers: false, predictionHistory: false, items: false,
-};
-
-const ALL_TRUE: MenuAccess = {
-  ai: true, sales: true, purchase: true, report: true,
-  messenger: true, members: true, store: true,
-  permissionGroup: true, memberGroup: true, hygiene: true,
-  hrCalendar: true, scaleCode: true,
-  salesForecast: true, suppliers: true, predictionVariables: true,
-  customers: true, predictionHistory: true, items: true,
-};
+const ALL_FALSE = createAllFalseMenuAccess();
+const ALL_TRUE = createAllTrueMenuAccess();
 
 interface AiModel {
   id: string;
@@ -470,7 +452,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
             ))
           ) : (
             <>
-              {hasModule('dashboard') && (
+              {hasModule('dashboard') && (effectiveAccess.dashboard || isSuperuser) && (
                 <Link
                   href="/dashboard"
                   onClick={onClose}
@@ -575,6 +557,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               {/* 구분선 */}
               <div className="my-2 border-t border-slate-800" />
 
+              {(effectiveAccess.keywords || isSuperuser) && (
               <Link
                 href="/dashboard/settings/keywords"
                 onClick={onClose}
@@ -587,7 +570,9 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                 <Tag className="w-4 h-4 shrink-0" />
                 키워드 관리
               </Link>
+              )}
 
+              {(effectiveAccess.settings || isSuperuser) && (
               <Link
                 href="/dashboard/settings"
                 onClick={onClose}
@@ -600,6 +585,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                 <Settings className="w-4 h-4 shrink-0" />
                 설정
               </Link>
+              )}
 
               <div className="hidden md:block">
                 <NotificationHub label="알림" />

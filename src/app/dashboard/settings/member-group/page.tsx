@@ -25,9 +25,8 @@ interface StoreUser {
 const GROUP_COLORS: Record<string, string> = {
   '':         'bg-orange-500',
   superuser:  'bg-purple-500',
-  master:     'bg-yellow-500',
   admin:      'bg-blue-500',
-  user:       'bg-indigo-400',
+  staff:      'bg-indigo-400',
 };
 
 function groupDot(groupId: string) {
@@ -150,7 +149,7 @@ export default function MemberGroupPage() {
   // ── 정렬: 대기 → 그룹순 → 이름순 ──
   const groupOrder = (gid: string) => {
     if (!gid) return 0;
-    const idx = ['superuser', 'master', 'admin', 'user'].indexOf(gid);
+    const idx = ['superuser', 'admin', 'staff'].indexOf(gid);
     return idx === -1 ? 10 : idx + 1;
   };
 

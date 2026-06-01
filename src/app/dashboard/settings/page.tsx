@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2, Tag, Package, CalendarDays } from 'lucide-react';
+import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2, Tag, Package, CalendarDays, UserCircle } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import { isSuperuser } from '@/lib/auth/permissions';
+import { isAdminLevelGroup, normalizeRole } from '@/lib/roleMapping';
 
 type MenuAccess = {
   ai: boolean; sales: boolean; purchase: boolean; report: boolean;
@@ -65,6 +66,15 @@ export default function SettingsPage() {
       .finally(() => setAccessLoaded(true));
   }, [user?.uid, currentStore?.storeId, storesLoaded]);
 
+  const personalMenus = [
+    {
+      href: '/dashboard/settings/account',
+      icon: <UserCircle className="w-5 h-5 text-[#FEE500]" />,
+      label: '내 계정',
+      description: 'Google 로그인 정보 · 카카오 알림 연동',
+    },
+  ];
+
   const allMenus = [
     {
       key: 'members' as const,
@@ -96,41 +106,42 @@ export default function SettingsPage() {
     },
   ];
 
+  const storeRole = normalizeRole(currentStore?.role || '');
   const adminOnlyMenus = [
     {
       href: '/dashboard/settings/annual-leave',
       icon: <CalendarDays className="w-5 h-5 text-emerald-400" />,
       label: '연차 생성',
       description: '입사일·만근 기준 연차 자동 계산 및 부여',
-      show: ['master', 'superuser', 'admin', 'owner'].includes(currentStore?.role || ''),
+      show: isAdminLevelGroup(storeRole),
     },
     {
       href: '/dashboard/settings/leave-status',
       icon: <CalendarDays className="w-5 h-5 text-amber-400" />,
       label: '연차현황',
       description: '전체 사원 연차 현황 및 일괄 등록',
-      show: ['master', 'superuser', 'admin', 'owner'].includes(currentStore?.role || ''),
+      show: isAdminLevelGroup(storeRole),
     },
     {
       href: '/dashboard/settings/modules',
       icon: <Package className="w-5 h-5 text-violet-400" />,
       label: '모듈 관리',
       description: '대시보드·매입·HR 등 기능 모듈 ON/OFF',
-      show: ['master', 'superuser', 'admin', 'owner'].includes(currentStore?.role || ''),
+      show: isAdminLevelGroup(storeRole),
     },
     {
       href: '/dashboard/settings/widgets',
       icon: <LayoutGrid className="w-5 h-5 text-teal-400" />,
       label: '대시보드 위젯 권한',
       description: '역할별 위젯 표시 여부 설정',
-      show: ['master', 'superuser', 'admin', 'owner'].includes(currentStore?.role || ''),
+      show: isAdminLevelGroup(storeRole),
     },
     {
       href: '/dashboard/settings/prediction-variables',
       icon: <SlidersHorizontal className="w-5 h-5 text-orange-400" />,
       label: 'AI 예측 변수 설정',
       description: '날씨·요일·이벤트가 매출에 미치는 영향 변수 관리',
-      show: ['master', 'superuser', 'admin', 'owner'].includes(currentStore?.role || ''),
+      show: isAdminLevelGroup(storeRole),
     },
   ].filter(m => m.show);
 
@@ -155,8 +166,8 @@ export default function SettingsPage() {
     ? allMenus.filter(m => menuAccess[m.key])
     : [];
 
-  const isMasterOrAdmin = ['master', 'superuser', 'admin'].includes(currentStore?.role || '');
-  const isMasterOrSuperuser = ['master', 'superuser'].includes(currentStore?.role || '');
+  const isMasterOrAdmin = isAdminLevelGroup(storeRole);
+  const isMasterOrSuperuser = storeRole === 'superuser';
 
   const hrMenus = isMasterOrAdmin ? [
     {
@@ -301,7 +312,7 @@ export default function SettingsPage() {
           {visibleMenus.length === 0 && adminOnlyMenus.length === 0 && superuserMenus.length === 0 ? (
             <p className="text-slate-500 text-sm text-center py-8">접근 가능한 설정 항목이 없습니다.</p>
           ) : (
-            [...superuserMenus, ...visibleMenus, ...hrMenus, ...adminOnlyMenus].map((menu) => (
+            [...personalMenus, ...superuserMenus, ...visibleMenus, ...hrMenus, ...adminOnlyMenus].map((menu) => (
               <Link
                 key={menu.href}
                 href={menu.href}

@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, LogOut, Pencil, Check, Building2, ShieldCheck, Mail } from 'lucide-react';
+import { X, LogOut, Pencil, Check, Building2, ShieldCheck, Mail, MessageCircle } from 'lucide-react';
+import Link from 'next/link';
+import KakaoLinkButton from '@/components/KakaoLinkButton';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
@@ -186,9 +188,34 @@ export default function UserProfileModal({ onClose }: Props) {
             )}
           </div>
 
+          {/* 카카오 알림 연동 */}
+          <div className="bg-slate-800/40 rounded-lg px-3 py-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="w-3.5 h-3.5 text-[#FEE500] shrink-0" />
+              <span className="text-slate-300 text-xs font-medium">카카오 알림</span>
+              <Link
+                href="/dashboard/settings/account"
+                className="ml-auto text-[10px] text-teal-400 hover:text-teal-300"
+              >
+                자세히
+              </Link>
+            </div>
+            <KakaoLinkButton
+              compact
+              linked={Boolean(userData?.kakaoLinked)}
+              kakaoNickname={userData?.kakaoNickname}
+              onUnlinked={() => {
+                getAuthHeaders()
+                  .then(h => fetch(`/api/users?uid=${user!.uid}`, { headers: h }))
+                  .then(r => r.json())
+                  .then(d => { if (d.user) setUserData(d.user); });
+              }}
+            />
+          </div>
+
           {/* 구글 계정 안내 */}
           <div className="bg-slate-800/40 rounded-lg px-3 py-2 text-[10px] text-slate-500">
-            Google 계정으로 로그인 중입니다. 이메일 및 비밀번호는 Google에서 관리됩니다.
+            Google 계정으로 로그인 중입니다. 카카오는 알림 연동용입니다.
           </div>
 
           {/* 로그아웃 */}

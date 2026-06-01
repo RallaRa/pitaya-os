@@ -5,77 +5,129 @@ import { DEFAULT_PERMISSIONS, ALL_MENUS, Role } from '@/lib/permissions';
 import { verifyToken, getActualGroupId, isAdminGroup, isMasterGroup, canManageStore, isActiveStoreMember } from '@/lib/authVerify';
 import { isPlatformSuperuser } from '@/lib/superuserCheck';
 import { storeHasPosBridge } from '@/lib/posBridgeStatus';
+import {
+  createAllFalseMenuAccess,
+  DEFAULT_SYSTEM_GROUP_MENUS,
+  DEFAULT_SYSTEM_GROUP_NAMES,
+  mergeMenuAccess,
+  MENU_ACCESS_KEYS,
+  SYSTEM_GROUP_IDS,
+  type MenuAccess,
+  type SystemGroupId,
+  LEGACY_GROUP_ID_MAP,
+} from '@/lib/menuAccessKeys';
 
-type MenuAccess = {
-  ai: boolean; sales: boolean; purchase: boolean; report: boolean;
-  messenger: boolean; members: boolean; store: boolean;
-  permissionGroup: boolean; memberGroup: boolean; hygiene: boolean;
-  hrCalendar: boolean; scaleCode: boolean;
-  salesForecast: boolean; suppliers: boolean; predictionVariables: boolean;
-  customers: boolean; predictionHistory: boolean; items: boolean;
-};
+const ALL_FALSE = createAllFalseMenuAccess();
+const STAFF_ACCESS = DEFAULT_SYSTEM_GROUP_MENUS.staff;
 
-const ALL_FALSE: MenuAccess = {
-  ai: false, sales: false, purchase: false, report: false,
-  messenger: false, members: false, store: false,
-  permissionGroup: false, memberGroup: false, hygiene: false,
-  hrCalendar: false, scaleCode: false,
-  salesForecast: false, suppliers: false, predictionVariables: false,
-  customers: false, predictionHistory: false, items: false,
-};
+const SYSTEM_GROUPS = SYSTEM_GROUP_IDS.map((groupId) => ({
+  groupId,
+  storeId: 'global',
+  groupName: DEFAULT_SYSTEM_GROUP_NAMES[groupId],
+  menuAccess: DEFAULT_SYSTEM_GROUP_MENUS[groupId],
+  isSystem: true,
+}));
 
-const STAFF_ACCESS: MenuAccess = {
-  ai: true, sales: true, purchase: false, report: false,
-  messenger: true, members: false, store: false,
-  permissionGroup: false, memberGroup: false, hygiene: true,
-  hrCalendar: true, scaleCode: false,
-  salesForecast: false, suppliers: false, predictionVariables: false,
-  customers: false, predictionHistory: false, items: false,
-};
+const OBSOLETE_SYSTEM_GROUP_IDS = ['master', 'user', 'staff', 'guest', 'owner'];
 
-const SYSTEM_GROUPS = [
-  {
-    groupId: 'superuser',
-    storeId: 'global',
-    groupName: '슈퍼유저',
-    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: true, memberGroup: true, hygiene: true, hrCalendar: true, scaleCode: true, salesForecast: true, suppliers: true, predictionVariables: true, customers: true, predictionHistory: true, items: true },
-    isSystem: true,
-  },
-  {
-    groupId: 'master',
-    storeId: 'global',
-    groupName: '관리자',
-    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: true, memberGroup: true, hygiene: true, hrCalendar: true, scaleCode: true, salesForecast: true, suppliers: true, predictionVariables: true, customers: true, predictionHistory: true, items: true },
-    isSystem: true,
-  },
-  {
-    groupId: 'admin',
-    storeId: 'global',
-    groupName: '점장',
-    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: true, store: true, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: true, salesForecast: true, suppliers: true, predictionVariables: false, customers: true, predictionHistory: true, items: true },
-    isSystem: true,
-  },
-  {
-    groupId: 'user',
-    storeId: 'global',
-    groupName: '직원',
-    menuAccess: { ai: true, sales: true, purchase: true, report: true, messenger: true, members: false, store: false, permissionGroup: false, memberGroup: false, hygiene: true, hrCalendar: true, scaleCode: false, salesForecast: true, suppliers: false, predictionVariables: false, customers: false, predictionHistory: false, items: true },
-    isSystem: true,
-  },
-];
+async function migrateUnifiedGroups() {
+  const metaRef = adminDb.collection('system_meta').doc('permissions');
+  const metaSnap = await metaRef.get();
+  if (metaSnap.data()?.unifiedGroupsV2) return;
 
-// 구 시스템 그룹 ID (마이그레이션용)
-const OBSOLETE_SYSTEM_GROUP_IDS = ['staff', 'guest'];
+  const batch = adminDb.batch();
+  let writes = 0;
 
-// 이름이 구 기본값이면 새 이름으로 교체
-const OLD_GROUP_NAMES: Record<string, string> = {
-  master: 'Master',
-  admin: '관리자',
-  user: '사용자',
-  superuser: 'Superuser',
-};
+  const mapSnap = await adminDb.collection('user_store_map').get();
+  for (const doc of mapSnap.docs) {
+    const gid = doc.data().groupId as string | undefined;
+    const role = doc.data().role as string | undefined;
+    const mapped = gid ? (LEGACY_GROUP_ID_MAP[gid] ?? gid) : undefined;
+    const roleMapped = role ? (LEGACY_GROUP_ID_MAP[role] ?? roleToGroupIdLegacy(role)) : undefined;
+    const nextGroup = mapped || roleMapped;
+    const nextRole = groupIdToRoleLegacy(nextGroup || 'staff');
+    const patch: Record<string, unknown> = {};
+    if (gid && mapped && mapped !== gid) patch.groupId = mapped;
+    if (role && normalizeRoleLegacy(role) !== role) patch.role = nextRole;
+    if (Object.keys(patch).length) {
+      batch.update(doc.ref, { ...patch, updatedAt: FieldValue.serverTimestamp() });
+      writes += 1;
+    }
+  }
+
+  const usersSnap = await adminDb.collection('users').get();
+  for (const doc of usersSnap.docs) {
+    const gid = doc.data().groupId as string | undefined;
+    const role = doc.data().role as string | undefined;
+    const mapped = gid ? (LEGACY_GROUP_ID_MAP[gid] ?? gid) : undefined;
+    const patch: Record<string, unknown> = {};
+    if (gid && mapped && mapped !== gid) patch.groupId = mapped;
+    if (role) {
+      const nr = normalizeRoleLegacy(role);
+      if (nr !== role) patch.role = nr;
+    }
+    if (Object.keys(patch).length) {
+      batch.update(doc.ref, { ...patch, updatedAt: FieldValue.serverTimestamp() });
+      writes += 1;
+    }
+  }
+
+  for (const oldId of OBSOLETE_SYSTEM_GROUP_IDS) {
+    if ((SYSTEM_GROUP_IDS as readonly string[]).includes(oldId)) continue;
+    const ref = adminDb.collection('permission_groups').doc(oldId);
+    const snap = await ref.get();
+    if (!snap.exists) continue;
+    const data = snap.data()!;
+    const targetId = LEGACY_GROUP_ID_MAP[oldId] as SystemGroupId | undefined;
+    if (targetId && data.isSystem) {
+      const targetRef = adminDb.collection('permission_groups').doc(targetId);
+      const targetSnap = await targetRef.get();
+      const mergedAccess = mergeMenuAccess(
+        targetSnap.exists ? targetSnap.data()?.menuAccess : DEFAULT_SYSTEM_GROUP_MENUS[targetId],
+        data.menuAccess,
+      );
+      batch.set(targetRef, {
+        groupId: targetId,
+        storeId: 'global',
+        groupName: targetSnap.exists ? targetSnap.data()?.groupName : DEFAULT_SYSTEM_GROUP_NAMES[targetId],
+        menuAccess: mergedAccess,
+        isSystem: true,
+        updatedAt: FieldValue.serverTimestamp(),
+        ...(targetSnap.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
+      }, { merge: true });
+      batch.delete(ref);
+      writes += 2;
+    } else if (data.isSystem) {
+      batch.delete(ref);
+      writes += 1;
+    }
+  }
+
+  if (writes > 0) await batch.commit();
+  await metaRef.set({ unifiedGroupsV2: true, migratedAt: FieldValue.serverTimestamp() }, { merge: true });
+}
+
+function normalizeRoleLegacy(role: string): string {
+  const map: Record<string, string> = {
+    owner: 'superuser', master: 'superuser', user: 'staff', staff: 'staff',
+  };
+  return map[role] || role;
+}
+
+function roleToGroupIdLegacy(role: string): string {
+  return LEGACY_GROUP_ID_MAP[normalizeRoleLegacy(role)] || 'staff';
+}
+
+function groupIdToRoleLegacy(groupId: string): string {
+  const g = LEGACY_GROUP_ID_MAP[groupId] || groupId;
+  if (g === 'superuser') return 'superuser';
+  if (g === 'admin') return 'admin';
+  return 'staff';
+}
 
 async function ensureSystemGroups() {
+  await migrateUnifiedGroups();
+
   const batch = adminDb.batch();
   let hasChanges = false;
 
@@ -83,34 +135,32 @@ async function ensureSystemGroups() {
     const ref = adminDb.collection('permission_groups').doc(group.groupId);
     const doc = await ref.get();
     if (!doc.exists) {
-      batch.set(ref, { ...group, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
+      batch.set(ref, {
+        ...group,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
       hasChanges = true;
     } else {
       const existingData = doc.data()!;
       const existingAccess = existingData?.menuAccess || {};
-      const patch: Record<string, any> = {};
-      // 새로 추가된 키가 없으면 시스템 기본값으로 패치
-      const missingKeys = Object.keys(group.menuAccess).filter(k => !(k in existingAccess));
-      missingKeys.forEach(k => { patch[`menuAccess.${k}`] = (group.menuAccess as any)[k]; });
-      // 구 기본 이름이면 새 이름으로 업데이트
-      if (existingData.groupName === OLD_GROUP_NAMES[group.groupId] || existingData.groupName === '마스터') {
+      const patch: Record<string, unknown> = {};
+      for (const k of MENU_ACCESS_KEYS) {
+        if (!(k in existingAccess)) {
+          patch[`menuAccess.${k}`] = group.menuAccess[k];
+        }
+      }
+      if (!existingData.groupName) {
         patch.groupName = group.groupName;
+      }
+      if (existingData.isSystem !== true) {
+        patch.isSystem = true;
       }
       if (Object.keys(patch).length > 0) {
         patch.updatedAt = FieldValue.serverTimestamp();
         batch.update(ref, patch);
         hasChanges = true;
       }
-    }
-  }
-
-  // 구 시스템 그룹 삭제 (staff, guest)
-  for (const oldId of OBSOLETE_SYSTEM_GROUP_IDS) {
-    const ref = adminDb.collection('permission_groups').doc(oldId);
-    const doc = await ref.get();
-    if (doc.exists && doc.data()?.isSystem) {
-      batch.delete(ref);
-      hasChanges = true;
     }
   }
 
@@ -134,9 +184,7 @@ export async function GET(req: Request) {
     const type = searchParams.get('type');
     const storeId = searchParams.get('storeId');
 
-    // ── 내 권한 조회 ──
     if (type === 'myAccess') {
-      // 토큰에서 uid 추출 (쿼리 파라미터 uid는 무시)
       const verified = await verifyToken(req);
       if (!verified) {
         return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 });
@@ -150,7 +198,7 @@ export async function GET(req: Request) {
       if (await isPlatformSuperuser(uid, userData?.email)) {
         const suDoc = await adminDb.collection('permission_groups').doc('superuser').get();
         const suStored = suDoc.exists ? suDoc.data()?.menuAccess : {};
-        const suAccess = { ...SYSTEM_GROUPS[0].menuAccess, ...suStored };
+        const suAccess = mergeMenuAccess(suStored, DEFAULT_SYSTEM_GROUP_MENUS.superuser);
         const storeContext = await getStoreAccessContext(uid, storeId);
         return NextResponse.json({
           groupId: 'superuser',
@@ -163,7 +211,6 @@ export async function GET(req: Request) {
 
       let groupId: string | null = null;
 
-      // 2. 매장별 groupId (user_store_map)
       if (storeId) {
         const mapSnap = await adminDb.collection('user_store_map')
           .where('uid', '==', uid)
@@ -171,47 +218,43 @@ export async function GET(req: Request) {
           .get();
         if (!mapSnap.empty) {
           const storeGroupId = mapSnap.docs[0].data().groupId;
-          // 명시적으로 설정된 경우 (''도 포함) 그대로 사용
           if (storeGroupId !== undefined && storeGroupId !== null) {
             groupId = storeGroupId;
           }
         }
       }
 
-      // 3. 글로벌 groupId fallback
       if (groupId === null) {
-        groupId = userData?.groupId || 'user';
+        groupId = userData?.groupId || 'staff';
       }
 
-      // 4. 대기 상태 → 모든 메뉴 false
+      groupId = LEGACY_GROUP_ID_MAP[groupId] || groupId;
+
       if (groupId === '') {
         const storeContext = await getStoreAccessContext(uid, storeId);
         return NextResponse.json({ groupId: '', role: '', menuAccess: ALL_FALSE, ...storeContext });
       }
 
       const storeContext = await getStoreAccessContext(uid, storeId);
-
-      // 5. 그룹의 menuAccess 조회
       const groupDoc = await adminDb.collection('permission_groups').doc(groupId).get();
       if (groupDoc.exists) {
         const stored = groupDoc.data()?.menuAccess || {};
         return NextResponse.json({
           groupId,
           role: groupId,
-          menuAccess: { ...ALL_FALSE, ...stored },
+          menuAccess: mergeMenuAccess(stored),
           ...storeContext,
         });
       }
 
       return NextResponse.json({
-        groupId: 'user',
-        role: 'user',
-        menuAccess: { ...ALL_FALSE, ...STAFF_ACCESS },
+        groupId: 'staff',
+        role: 'staff',
+        menuAccess: mergeMenuAccess(STAFF_ACCESS),
         ...storeContext,
       });
     }
 
-    // ── 권한 그룹 목록 조회 ──
     if (type === 'groups' && storeId) {
       await ensureSystemGroups();
 
@@ -222,16 +265,24 @@ export async function GET(req: Request) {
           : Promise.resolve({ docs: [] as FirebaseFirestore.QueryDocumentSnapshot[] }),
       ]);
 
-      const toSorted = (snap: { docs: FirebaseFirestore.QueryDocumentSnapshot[] }) =>
-        snap.docs
+      const sortGroups = (snap: { docs: FirebaseFirestore.QueryDocumentSnapshot[] }) => {
+        const order = ['superuser', 'admin', 'staff'];
+        return snap.docs
           .map(d => ({ groupId: d.id, ...d.data() }))
-          .sort((a: any, b: any) => (a.createdAt?.seconds ?? 0) - (b.createdAt?.seconds ?? 0));
+          .sort((a: { groupId: string; createdAt?: { seconds?: number } }, b: { groupId: string; createdAt?: { seconds?: number } }) => {
+            const ai = order.indexOf(a.groupId);
+            const bi = order.indexOf(b.groupId);
+            if (ai !== -1 || bi !== -1) {
+              return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+            }
+            return (a.createdAt?.seconds ?? 0) - (b.createdAt?.seconds ?? 0);
+          });
+      };
 
-      return NextResponse.json({ groups: [...toSorted(globalSnap), ...toSorted(storeSnap)] });
+      return NextResponse.json({ groups: [...sortGroups(globalSnap), ...sortGroups(storeSnap)] });
     }
 
-    // ── 기존: 역할별 권한 조회 (permission 페이지용) ──
-    const roles: Role[] = ['superuser', 'admin', 'user', 'staff'];
+    const roles: Role[] = ['superuser', 'admin', 'staff'];
     const result: Record<string, Record<string, boolean>> = {};
     for (const role of roles) {
       const snap = await adminDb.collection('role_permissions').doc(role).get();
@@ -245,14 +296,14 @@ export async function GET(req: Request) {
       }
     }
     return NextResponse.json({ permissions: result });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'permissions failed';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
 
 export async function POST(req: Request) {
   try {
-    // 토큰 검증
     const verified = await verifyToken(req);
     if (!verified) {
       return NextResponse.json({ error: '인증이 필요합니다.' }, { status: 401 });
@@ -261,7 +312,6 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { type } = body;
 
-    // ── 그룹 생성 ──
     if (type === 'createGroup') {
       const { storeId, groupName, menuAccess } = body;
       if (!storeId || !groupName) {
@@ -275,7 +325,7 @@ export async function POST(req: Request) {
         groupId: ref.id,
         storeId,
         groupName: groupName.trim(),
-        menuAccess: { ...ALL_FALSE, ...menuAccess },
+        menuAccess: mergeMenuAccess(menuAccess),
         isSystem: false,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -283,14 +333,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, groupId: ref.id });
     }
 
-    // ── 역할별 권한 저장 (permission 페이지용) ──
     const { permissions } = body;
-    // 서버에서 실제 role 조회 — requestorRole 클라이언트 전송 불가
     const actualGroupId = await getActualGroupId(verified.uid);
     if (!isMasterGroup(actualGroupId)) {
-      return NextResponse.json({ error: '권한 없음. master만 역할 권한을 변경할 수 있습니다.' }, { status: 403 });
+      return NextResponse.json({ error: '권한 없음. 슈퍼유저만 역할 권한을 변경할 수 있습니다.' }, { status: 403 });
     }
-    const roles: Role[] = ['admin', 'user', 'staff'];
+    const roles: Role[] = ['admin', 'staff'];
     for (const role of roles) {
       if (permissions[role]) {
         await adminDb.collection('role_permissions').doc(role).set({
@@ -299,8 +347,9 @@ export async function POST(req: Request) {
       }
     }
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'permissions failed';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
 
@@ -322,14 +371,15 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: '권한 없음. 관리자 이상만 그룹을 수정할 수 있습니다.' }, { status: 403 });
     }
 
-    const update: Record<string, any> = { updatedAt: FieldValue.serverTimestamp() };
-    if (groupName !== undefined) update.groupName = groupName;
-    if (menuAccess !== undefined) update.menuAccess = menuAccess;
+    const update: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
+    if (groupName !== undefined) update.groupName = String(groupName).trim();
+    if (menuAccess !== undefined) update.menuAccess = mergeMenuAccess(menuAccess);
 
-    await adminDb.collection('permission_groups').doc(groupId).update(update);
+    await adminDb.collection('permission_groups').doc(groupId).set(update, { merge: true });
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'permissions failed';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
 
@@ -355,13 +405,14 @@ export async function DELETE(req: Request) {
 
     const docRef = await adminDb.collection('permission_groups').doc(groupId).get();
     if (!docRef.exists) return NextResponse.json({ error: '그룹 없음' }, { status: 404 });
-    if (docRef.data()?.isSystem) {
+    if (docRef.data()?.isSystem || (SYSTEM_GROUP_IDS as readonly string[]).includes(groupId)) {
       return NextResponse.json({ error: '시스템 그룹은 삭제할 수 없습니다.' }, { status: 403 });
     }
 
     await docRef.ref.delete();
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'permissions failed';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

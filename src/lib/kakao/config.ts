@@ -15,10 +15,9 @@ export function getKakaoJsKey() {
   return process.env.NEXT_PUBLIC_KAKAO_JS_KEY || '';
 }
 
+/** 나에게 보내기: talk_message 필수. account_email은 알림에 불필요 */
 export const KAKAO_AUTH_SCOPES = [
   'profile_nickname',
-  'profile_image',
-  'account_email',
   'talk_message',
 ].join(',');
 

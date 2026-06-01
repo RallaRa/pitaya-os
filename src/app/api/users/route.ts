@@ -4,6 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { isSuperuserEmail } from '@/lib/auth/permissions';
 import { isPlatformSuperuser } from '@/lib/superuserCheck';
 import { verifyToken } from '@/lib/authVerify';
+import { sanitizeUserForClient } from '@/lib/kakao/linkAccount';
 import {
   normalizeGroupId,
   normalizeRole,
@@ -27,12 +28,12 @@ export async function GET(req: Request) {
       }
       const data = userDoc.data()!;
       return NextResponse.json({
-        user: {
+        user: sanitizeUserForClient({
           uid,
           ...data,
           role: normalizeRole(data.role),
           groupId: normalizeGroupId(data.groupId),
-        },
+        }),
       });
     }
 
@@ -57,12 +58,12 @@ export async function GET(req: Request) {
           ? normalizeGroupId(storeGroupId)
           : roleToGroupId(role || userData?.role);
         if (userData) {
-          return {
+          return sanitizeUserForClient({
             ...userData,
             uid: memberUid,
             role: normalizeRole(role || userData.role),
             groupId: effectiveGroupId,
-          };
+          });
         }
         return {
           uid: memberUid,
@@ -95,7 +96,7 @@ export async function POST(req: Request) {
 
     const isSU = isSuperuserEmail(email) || existingData?.role === 'superuser';
     const finalRole = isSU ? 'superuser' : normalizeRole(role || existingData?.role || 'user');
-    const finalGroupId = isSU ? 'superuser' : normalizeGroupId(existingData?.groupId || 'user');
+    const finalGroupId = isSU ? 'superuser' : normalizeGroupId(existingData?.groupId || 'staff');
 
     await adminDb.collection('users').doc(uid).set({
       uid,
@@ -142,7 +143,7 @@ export async function PUT(req: Request) {
       if (mapSnap.empty) {
         return NextResponse.json({ error: '해당 매장 멤버를 찾을 수 없습니다.' }, { status: 404 });
       }
-      const roleFromGroup = groupId === '' ? 'user' : groupIdToRole(groupId);
+      const roleFromGroup = groupId === '' ? 'staff' : groupIdToRole(groupId);
       await mapSnap.docs[0].ref.update({
         groupId,
         role: roleFromGroup,
@@ -159,7 +160,7 @@ export async function PUT(req: Request) {
     } else {
       await adminDb.collection('users').doc(uid).update({
         groupId,
-        role: groupId === '' ? 'user' : groupIdToRole(groupId),
+        role: groupId === '' ? 'staff' : groupIdToRole(groupId),
         updatedAt: FieldValue.serverTimestamp(),
       });
     }

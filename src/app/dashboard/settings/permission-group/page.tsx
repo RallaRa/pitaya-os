@@ -8,14 +8,12 @@ import {
   Users, ChevronDown, ChevronUp, Eye, Settings,
 } from 'lucide-react';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
-import { db } from '@/lib/firebase/firebase';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
-
-type MenuKey =
-  | 'ai' | 'sales' | 'purchase' | 'report' | 'messenger'
-  | 'members' | 'store' | 'permissionGroup' | 'memberGroup';
-
-type MenuAccess = Record<MenuKey, boolean>;
+import {
+  MENU_ACCESS_DEFINITIONS,
+  createAllFalseMenuAccess,
+  type MenuAccess,
+  type MenuAccessKey,
+} from '@/lib/menuAccessKeys';
 
 interface PermissionGroup {
   groupId: string;
@@ -33,34 +31,19 @@ interface StoreUser {
   photoURL?: string;
 }
 
-const MENU_COLS: [MenuKey, string][] = [
-  ['ai',              'AI'],
-  ['sales',           '매출'],
-  ['purchase',        '매입'],
-  ['report',          '보고서'],
-  ['messenger',       '메신저'],
-  ['members',         '멤버'],
-  ['store',           '매장'],
-  ['permissionGroup', '권한'],
-  ['memberGroup',     '멤버그룹'],
-];
+const MENU_COLS = MENU_ACCESS_DEFINITIONS.map(d => [d.key, d.label] as [MenuAccessKey, string]);
+const MENU_PREVIEW = MENU_ACCESS_DEFINITIONS.map(d => ({
+  key: d.key,
+  label: d.previewLabel,
+  icon: d.icon,
+}));
 
-const MENU_PREVIEW: { key: MenuKey; label: string; icon: string }[] = [
-  { key: 'ai',              label: 'AI 대화모드',    icon: '✨' },
-  { key: 'sales',           label: 'AI 매출관리',    icon: '✍️' },
-  { key: 'purchase',        label: 'AI 매입관리',    icon: '🛒' },
-  { key: 'report',          label: '전체 보고서',    icon: '📊' },
-  { key: 'messenger',       label: '메신저',         icon: '💬' },
-  { key: 'members',         label: '멤버 관리',      icon: '👥' },
-  { key: 'store',           label: '매장 정보',      icon: '🏪' },
-  { key: 'permissionGroup', label: '권한 그룹 관리', icon: '🛡️' },
-  { key: 'memberGroup',     label: '멤버-그룹 연결', icon: '🔑' },
-];
+const ALL_FALSE = createAllFalseMenuAccess();
 
-const ALL_FALSE: MenuAccess = {
-  ai: false, sales: false, purchase: false, report: false,
-  messenger: false, members: false, store: false,
-  permissionGroup: false, memberGroup: false,
+const GROUP_BADGE: Record<string, string> = {
+  superuser: 'bg-purple-900/40 text-purple-300 border border-purple-700/40',
+  admin: 'bg-blue-900/40 text-blue-400 border border-blue-700/40',
+  staff: 'bg-slate-700 text-slate-300',
 };
 
 export default function PermissionGroupPage() {
@@ -140,25 +123,7 @@ export default function PermissionGroupPage() {
     }
   }, [currentStore?.storeId]);
 
-  useEffect(() => { fetchUsers(); }, [fetchUsers]);
-
-  // Firestore onSnapshot — 권한 그룹 실시간 반영
-  useEffect(() => {
-    if (!currentStore?.storeId) { setIsLoadingGroups(false); return; }
-    setIsLoadingGroups(true);
-    const q = query(
-      collection(db, 'permission_groups'),
-      where('storeId', '==', currentStore.storeId),
-    );
-    const unsub = onSnapshot(q, snap => {
-      const next = snap.docs.map(d => ({ groupId: d.id, ...d.data() } as PermissionGroup));
-      setGroups(next);
-      setIsLoadingGroups(false);
-    }, () => {
-      fetchGroups();
-    });
-    return () => unsub();
-  }, [currentStore?.storeId, fetchGroups]);
+  useEffect(() => { fetchGroups(); fetchUsers(); }, [fetchGroups, fetchUsers]);
 
   const selectedGroupId = selectedGroup?.groupId;
   useEffect(() => {
@@ -168,7 +133,7 @@ export default function PermissionGroupPage() {
   }, [groups, selectedGroupId]);
 
   // ── 권한 토글 (localChanges — 저장 전 로컬만) ──
-  const handleToggle = (groupId: string, key: MenuKey) => {
+  const handleToggle = (groupId: string, key: MenuAccessKey) => {
     const group = groups.find(g => g.groupId === groupId);
     const base = draftAccess[groupId] ?? group?.menuAccess ?? ALL_FALSE;
     setDraftAccess(prev => ({
@@ -182,7 +147,7 @@ export default function PermissionGroupPage() {
     if (!group) return false;
     const draft = draftAccess[groupId];
     if (!draft) return false;
-    return MENU_COLS.some(([key]) => draft[key] !== group.menuAccess[key]);
+    return MENU_COLS.some(([key]) => draft[key] !== (group.menuAccess?.[key] ?? false));
   };
 
   const unsavedCount = groups.filter(g => hasGroupChanges(g.groupId)).length;
@@ -227,7 +192,7 @@ export default function PermissionGroupPage() {
       // 미리보기는 유지
     } else {
       setExpandedId(group.groupId);
-      setDraftAccess(prev => ({ ...prev, [group.groupId]: { ...group.menuAccess } }));
+      setDraftAccess(prev => ({ ...prev, [group.groupId]: { ...ALL_FALSE, ...group.menuAccess } }));
       setPreviewGroupId(group.groupId);  // 미리보기 업데이트
       setMobileTab('main');              // 모바일: 편집 행 보여주기
     }
@@ -444,8 +409,8 @@ export default function PermissionGroupPage() {
           {/* ── 권한 그룹 테이블 ── */}
           <div className="flex-shrink-0 border-b border-slate-800">
             <div className="px-6 pt-4 pb-2">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-                권한 그룹
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                권한 그룹 (기본 3개: 슈퍼유저 · 점장 · 직원 — 삭제 불가, 이름 수정 가능)
                 <span className="text-slate-600 normal-case ml-1">
                   (클릭: 권한 편집 + 미리보기  /  더블클릭: 멤버 배정)
                 </span>
@@ -531,7 +496,7 @@ export default function PermissionGroupPage() {
                             {/* 메뉴 접근 아이콘 */}
                             {MENU_COLS.map(([key]) => (
                               <td key={key} className="text-center py-2.5 px-1.5">
-                                <span className={`inline-block w-2.5 h-2.5 rounded-full ${group.menuAccess[key] ? 'bg-teal-400' : 'bg-slate-700'}`} />
+                                <span className={`inline-block w-2.5 h-2.5 rounded-full ${(group.menuAccess?.[key]) ? 'bg-teal-400' : 'bg-slate-700'}`} />
                               </td>
                             ))}
 
@@ -543,26 +508,24 @@ export default function PermissionGroupPage() {
                             {/* 액션 */}
                             <td className="text-right py-2.5 pl-2" onClick={e => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-0.5">
+                                <button
+                                  onClick={() => { setEditingId(group.groupId); setEditingName(group.groupName); }}
+                                  className="p-1 text-slate-500 hover:text-slate-300 transition-colors rounded"
+                                  title="이름 수정"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
                                 {!group.isSystem && (
-                                  <>
-                                    <button
-                                      onClick={() => { setEditingId(group.groupId); setEditingName(group.groupName); }}
-                                      className="p-1 text-slate-500 hover:text-slate-300 transition-colors rounded"
-                                      title="이름 수정"
-                                    >
-                                      <Pencil className="w-3 h-3" />
-                                    </button>
-                                    <button
-                                      onClick={() => handleDelete(group)}
-                                      disabled={deletingId === group.groupId}
-                                      className="p-1 text-slate-500 hover:text-red-400 transition-colors rounded"
-                                      title="삭제"
-                                    >
-                                      {deletingId === group.groupId
-                                        ? <Loader2 className="w-3 h-3 animate-spin" />
-                                        : <Trash2 className="w-3 h-3" />}
-                                    </button>
-                                  </>
+                                  <button
+                                    onClick={() => handleDelete(group)}
+                                    disabled={deletingId === group.groupId}
+                                    className="p-1 text-slate-500 hover:text-red-400 transition-colors rounded"
+                                    title="삭제"
+                                  >
+                                    {deletingId === group.groupId
+                                      ? <Loader2 className="w-3 h-3 animate-spin" />
+                                      : <Trash2 className="w-3 h-3" />}
+                                  </button>
                                 )}
                                 {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-500" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />}
                               </div>
@@ -576,9 +539,9 @@ export default function PermissionGroupPage() {
                                 <div className="flex items-center gap-4 flex-wrap">
                                   <span className="text-xs text-slate-400 font-medium w-20 flex-shrink-0">권한 편집</span>
                                   {MENU_COLS.map(([key, label]) => (
-                                    <label key={key} className="flex items-center gap-1.5 cursor-pointer">
+                                    <label key={key} className="flex items-center gap-1.5 cursor-pointer min-w-[88px]">
                                       <div
-                                        className={`relative w-8 h-4 rounded-full transition-colors ${draft[key] ? 'bg-teal-600' : 'bg-slate-700'}`}
+                                        className={`relative w-8 h-4 rounded-full transition-colors flex-shrink-0 ${draft[key] ? 'bg-teal-600' : 'bg-slate-700'}`}
                                         onClick={() => handleToggle(group.groupId, key)}
                                       >
                                         <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${draft[key] ? 'translate-x-4' : 'translate-x-0.5'}`} />
@@ -645,12 +608,11 @@ export default function PermissionGroupPage() {
                           <span className="text-slate-400 text-xs">{u.email}</span>
                         </td>
                         <td className="py-2.5">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium
-                            ${!u.groupId           ? 'bg-orange-900/40 text-orange-400 border border-orange-700/40'
-                              : u.groupId === 'master' ? 'bg-yellow-900/40 text-yellow-400 border border-yellow-700/40'
-                              : u.groupId === 'admin'  ? 'bg-blue-900/40 text-blue-400 border border-blue-700/40'
-                              : u.groupId === 'staff'  ? 'bg-slate-700 text-slate-300'
-                              : 'bg-teal-900/40 text-teal-400 border border-teal-700/40'}`}
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                            !u.groupId
+                              ? 'bg-orange-900/40 text-orange-400 border border-orange-700/40'
+                              : GROUP_BADGE[u.groupId] || 'bg-teal-900/40 text-teal-400 border border-teal-700/40'
+                          }`}
                           >
                             {groupName(u.groupId)}
                           </span>
@@ -701,11 +663,6 @@ export default function PermissionGroupPage() {
                       <span className="text-xs font-medium">{m.label}</span>
                     </div>
                   ))}
-                  {/* 설정은 항상 표시 */}
-                  <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-slate-800/60 text-slate-200">
-                    <span className="text-base leading-none">⚙️</span>
-                    <span className="text-xs font-medium">설정</span>
-                  </div>
                   {MENU_PREVIEW.every(m => !previewAccess[m.key]) && (
                     <p className="text-slate-600 text-[10px] text-center py-1">접근 가능한 메뉴 없음</p>
                   )}

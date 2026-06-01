@@ -163,8 +163,8 @@ export async function POST(req: Request) {
       await adminDb.collection('user_store_map').add({
         uid,
         storeId,
-        role: 'owner',
-        groupId: 'master',
+        role: 'superuser',
+        groupId: 'superuser',
         status: isSU ? 'active' : 'pending',
         linkedAt: isSU ? FieldValue.serverTimestamp() : null,
         appliedAt: isSU ? null : FieldValue.serverTimestamp(),
@@ -210,8 +210,8 @@ export async function POST(req: Request) {
       await adminDb.collection('user_store_map').add({
         uid,
         storeId,
-        role: 'user',
-        groupId: 'user',
+        role: 'staff',
+        groupId: 'staff',
         status: 'pending',
         appliedAt: FieldValue.serverTimestamp(),
         linkedAt: null,
@@ -244,8 +244,8 @@ export async function POST(req: Request) {
       if (!existSnap.empty) {
         await existSnap.docs[0].ref.update({
           status: 'active',
-          role: 'user',
-          groupId: 'user',
+          role: 'staff',
+          groupId: 'staff',
           linkedAt: FieldValue.serverTimestamp(),
           unlinkedAt: null,
         });
@@ -253,8 +253,8 @@ export async function POST(req: Request) {
         await adminDb.collection('user_store_map').add({
           uid,
           storeId,
-          role: 'user',
-          groupId: 'user',
+          role: 'staff',
+          groupId: 'staff',
           status: 'active',
           linkedAt: FieldValue.serverTimestamp(),
           unlinkedAt: null,
@@ -285,7 +285,7 @@ export async function POST(req: Request) {
       }
 
       const mapData = snap.docs[0].data();
-      const role = normalizeRole(mapData.role || 'user');
+      const role = normalizeRole(mapData.role || 'staff');
       const groupId = normalizeGroupId(mapData.groupId || roleToGroupId(role));
 
       await snap.docs[0].ref.update({
@@ -344,13 +344,15 @@ export async function POST(req: Request) {
 
       const mapSnap = await adminDb.collection('user_store_map')
         .where('storeId', '==', storeId)
-        .where('role', '==', 'owner')
         .where('status', '==', 'pending')
         .get();
       for (const mapDoc of mapSnap.docs) {
+        const role = normalizeRole(mapDoc.data().role);
+        if (role !== 'superuser') continue;
         await mapDoc.ref.update({
           status: 'active',
-          groupId: 'master',
+          role: 'superuser',
+          groupId: 'superuser',
           linkedAt: FieldValue.serverTimestamp(),
         });
       }
@@ -485,7 +487,7 @@ export async function PUT(req: Request) {
         return NextResponse.json({ error: '권한 없음' }, { status: 403 });
       }
       const role = normalizeRole(mapSnap.docs[0].data().role);
-      if (!['owner', 'admin', 'superuser'].includes(role)) {
+      if (!['superuser', 'admin'].includes(normalizeRole(role))) {
         return NextResponse.json({ error: '권한 없음' }, { status: 403 });
       }
     }

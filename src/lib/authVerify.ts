@@ -44,11 +44,12 @@ export async function getActualGroupId(uid: string, storeId?: string | null, ema
     }
   }
 
-  return normalizeGroupId(userData?.groupId || 'user');
+  return normalizeGroupId(userData?.groupId || 'staff');
 }
 
 export function isAdminGroup(groupId: string): boolean {
-  return ['superuser', 'master', 'admin', 'owner'].includes(groupId);
+  const g = normalizeGroupId(groupId);
+  return g === 'superuser' || g === 'admin';
 }
 
 export async function canManageStore(
@@ -62,7 +63,7 @@ export async function canManageStore(
 }
 
 export function isMasterGroup(groupId: string): boolean {
-  return groupId === 'master' || groupId === 'superuser';
+  return normalizeGroupId(groupId) === 'superuser';
 }
 
 export async function isActiveStoreMember(

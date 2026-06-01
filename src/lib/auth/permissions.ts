@@ -3,6 +3,8 @@ const SUPERUSER_EMAIL =
   process.env.NEXT_PUBLIC_SUPERUSER_EMAIL ||
   'hipona00@gmail.com';
 
+import { normalizeGroupId } from '@/lib/roleMapping';
+
 export function isSuperuserEmail(email?: string | null): boolean {
   if (!email || !SUPERUSER_EMAIL) return false;
   return email.toLowerCase() === SUPERUSER_EMAIL.toLowerCase();
@@ -18,11 +20,12 @@ export function isSuperuser(
 }
 
 export function isSuperOrMaster(groupId: string, email?: string | null): boolean {
-  return isSuperuser(email, groupId) || groupId === 'master';
+  return isSuperuser(email, groupId) || normalizeGroupId(groupId) === 'superuser';
 }
 
 export function isAdminOrAbove(groupId: string, email?: string | null): boolean {
-  return isSuperuser(email, groupId) || ['master', 'admin'].includes(groupId);
+  const g = normalizeGroupId(groupId);
+  return isSuperuser(email, groupId) || g === 'superuser' || g === 'admin';
 }
 
 export function hasPermission(

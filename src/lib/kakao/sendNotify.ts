@@ -1,4 +1,5 @@
 import { adminDb } from '@/lib/firebase/admin';
+import { normalizeGroupId, normalizeRole } from '@/lib/roleMapping';
 import { getValidKakaoToken } from './tokenManager';
 import { KAKAO_APP_BASE_URL } from './config';
 
@@ -56,7 +57,9 @@ export async function sendKakaoNotify({
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.result_code !== 0) {
-    return { success: false, error: data.msg || '카카오 알림 발송 실패' };
+    const errMsg = data.msg || data.message || `HTTP ${res.status}`;
+    console.error('[kakao notify] send failed', { userId, status: res.status, data });
+    return { success: false, error: errMsg };
   }
   return { success: true };
 }
@@ -77,8 +80,8 @@ export async function findKakaoNotifyUserForStore(storeId: string): Promise<stri
 
   for (const doc of mapSnap.docs) {
     const { uid, role, groupId } = doc.data();
-    const isManager = ['owner', 'master', 'admin'].includes(role || '') ||
-      ['owner', 'master', 'admin'].includes(groupId || '');
+    const isManager = ['superuser', 'admin'].includes(normalizeRole(role || '')) ||
+      ['superuser', 'admin'].includes(normalizeGroupId(groupId || ''));
     if (!isManager) continue;
 
     const userDoc = await adminDb.collection('users').doc(uid).get();
