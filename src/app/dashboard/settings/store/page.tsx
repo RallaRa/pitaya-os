@@ -83,6 +83,13 @@ export default function StoreSettingsPage() {
     })();
   }, [currentStore?.storeId, searchParams]);
 
+  useEffect(() => {
+    if (!currentStore?.storeId || driveConnected !== false || !canManageImages) return;
+    // 설정이 이미 되어 있으면 OAuth 한 번만 자동 시도
+    connectDrive();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStore?.storeId, driveConnected, canManageImages]);
+
   const connectDrive = async () => {
     if (!currentStore?.storeId) return;
     try {
