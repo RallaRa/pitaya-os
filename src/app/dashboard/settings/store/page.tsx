@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { ArrowLeft, ImageIcon } from 'lucide-react';
 import StoreDocuments from '@/components/store/StoreDocuments';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { connectGoogleDriveWithPopup } from '@/lib/googleDriveClientConnect';
 import { isSuperuserEmail } from '@/lib/auth/permissions';
 
 const SIDO_LIST = ['서울','부산','대구','인천','광주','대전','울산','세종',
@@ -24,6 +25,7 @@ export default function StoreSettingsPage() {
   const searchParams = useSearchParams();
 
   const [driveConnected, setDriveConnected] = useState<boolean | null>(null);
+  const [driveConnecting, setDriveConnecting] = useState(false);
 
   const [form, setForm] = useState({
     storeName: '',
@@ -61,8 +63,10 @@ export default function StoreSettingsPage() {
     const driveParam = searchParams.get('drive');
     if (driveParam === 'connected') {
       setSaveMsg('✅ Google Drive가 연결되었습니다.');
+    } else if (driveParam === 'connect') {
+      setSaveMsg('매장 설정에서 「Drive 연결」 버튼을 눌러 주세요. (팝업 방식 — redirect URI 등록 불필요)');
     } else if (driveParam === 'error' || driveParam === 'no_token') {
-      setError('Google Drive 연결에 실패했습니다. 다시 시도해 주세요.');
+      setError('Google Drive 연결에 실패했습니다. 「Drive 연결」 버튼으로 다시 시도해 주세요.');
     }
   }, [searchParams]);
 
@@ -83,15 +87,10 @@ export default function StoreSettingsPage() {
     })();
   }, [currentStore?.storeId, searchParams]);
 
-  useEffect(() => {
-    if (!currentStore?.storeId || driveConnected !== false || !canManageImages) return;
-    // 설정이 이미 되어 있으면 OAuth 한 번만 자동 시도
-    connectDrive();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentStore?.storeId, driveConnected, canManageImages]);
-
   const connectDrive = async () => {
-    if (!currentStore?.storeId) return;
+    if (!currentStore?.storeId || driveConnecting) return;
+    setDriveConnecting(true);
+    setError('');
     try {
       const headers = await getAuthJsonHeaders();
       const res = await fetch(
@@ -99,10 +98,37 @@ export default function StoreSettingsPage() {
         { headers },
       );
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Drive 연결 URL을 가져오지 못했습니다');
-      if (data.url) window.location.href = data.url;
+      if (!res.ok) throw new Error(data.error || 'Drive 연결 설정을 가져오지 못했습니다');
+
+      if (data.mode === 'popup' && data.clientId) {
+        await connectGoogleDriveWithPopup(
+          currentStore.storeId,
+          data.clientId,
+          async (code) => {
+            const exRes = await fetch('/api/auth/google-drive/exchange', {
+              method: 'POST',
+              headers: await getAuthJsonHeaders(),
+              body: JSON.stringify({ code, storeId: currentStore.storeId }),
+            });
+            const exData = await exRes.json();
+            if (!exRes.ok) throw new Error(exData.error || 'Drive 토큰 저장 실패');
+          },
+        );
+        setDriveConnected(true);
+        setSaveMsg('✅ Google Drive가 연결되었습니다.');
+        return;
+      }
+
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+
+      throw new Error('Drive 연결 방식을 확인할 수 없습니다');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Drive 연결 실패');
+    } finally {
+      setDriveConnecting(false);
     }
   };
 
@@ -233,9 +259,10 @@ export default function StoreSettingsPage() {
             <button
               type="button"
               onClick={connectDrive}
-              className="shrink-0 bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+              disabled={driveConnecting}
+              className="shrink-0 bg-teal-600 hover:bg-teal-500 disabled:opacity-60 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
             >
-              {driveConnected ? '다시 연결' : 'Drive 연결'}
+              {driveConnecting ? '연결 중…' : driveConnected ? '다시 연결' : 'Drive 연결'}
             </button>
           )}
         </div>
