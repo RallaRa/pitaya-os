@@ -1,6 +1,7 @@
 import { google, drive_v3 } from 'googleapis';
 import { GoogleAuth } from 'google-auth-library';
 import { Readable } from 'stream';
+import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from './firebase/admin';
 
 const PROD_URL = 'https://pitaya-osv1.vercel.app';
@@ -35,36 +36,90 @@ export function drivePhotoProxyUrl(fileId: string, storeId: string): string {
   return `${base}/api/drive/view?id=${encodeURIComponent(fileId)}&store=${encodeURIComponent(storeId)}`;
 }
 
+async function getServiceAccountDriveClient(): Promise<drive_v3.Drive | null> {
+  const keyStr = process.env.GOOGLE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+  if (!keyStr) return null;
+  const key = JSON.parse(keyStr);
+  const auth = new GoogleAuth({
+    credentials: key,
+    scopes: [DRIVE_FILE_SCOPE, DRIVE_FULL_SCOPE],
+  });
+  const client = await auth.getClient();
+  return google.drive({ version: 'v3', auth: client as any });
+}
+
+async function getOAuthDriveClient(refreshToken: string): Promise<drive_v3.Drive> {
+  if (!process.env.GOOGLE_CLIENT_SECRET?.trim()) {
+    throw new Error('GOOGLE_CLIENT_SECRET가 설정되지 않았습니다');
+  }
+  const oauth2 = getDriveOAuth2Client();
+  oauth2.setCredentials({ refresh_token: refreshToken });
+  return google.drive({ version: 'v3', auth: oauth2 });
+}
+
+async function verifyDriveClient(drive: drive_v3.Drive): Promise<string | undefined> {
+  const about = await drive.about.get({ fields: 'user/emailAddress' });
+  return about.data.user?.emailAddress || undefined;
+}
+
+export async function ensureDriveConnection(storeId: string): Promise<boolean> {
+  const ref = adminDb.collection('store_settings').doc(storeId);
+  const doc = await ref.get();
+  const existingToken = doc.data()?.googleDriveRefreshToken as string | undefined;
+  const envToken = process.env.GOOGLE_DRIVE_REFRESH_TOKEN?.trim();
+
+  const tokenToUse = existingToken || envToken;
+  if (!tokenToUse || !process.env.GOOGLE_CLIENT_SECRET?.trim()) {
+    return false;
+  }
+
+  try {
+    const drive = await getOAuthDriveClient(tokenToUse);
+    const email = await verifyDriveClient(drive);
+    if (!existingToken || (envToken && existingToken !== envToken)) {
+      await ref.set({
+        googleDriveRefreshToken: tokenToUse,
+        googleDriveEmail: email || null,
+        googleDriveConnectedAt: FieldValue.serverTimestamp(),
+        googleDriveLinkSource: existingToken ? 'store' : 'env',
+      }, { merge: true });
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function resolveDriveClient(storeId: string): Promise<drive_v3.Drive> {
+  await ensureDriveConnection(storeId);
+
   const doc = await adminDb.collection('store_settings').doc(storeId).get();
   const storeToken = doc.data()?.googleDriveRefreshToken as string | undefined;
-  if (storeToken && process.env.GOOGLE_CLIENT_SECRET) {
-    const oauth2 = getDriveOAuth2Client();
-    oauth2.setCredentials({ refresh_token: storeToken });
-    return google.drive({ version: 'v3', auth: oauth2 });
+  if (storeToken) {
+    return getOAuthDriveClient(storeToken);
   }
 
-  const envRefresh = process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
-  if (envRefresh && process.env.GOOGLE_CLIENT_SECRET) {
-    const oauth2 = getDriveOAuth2Client();
-    oauth2.setCredentials({ refresh_token: envRefresh });
-    return google.drive({ version: 'v3', auth: oauth2 });
+  const envRefresh = process.env.GOOGLE_DRIVE_REFRESH_TOKEN?.trim();
+  if (envRefresh) {
+    return getOAuthDriveClient(envRefresh);
   }
 
-  const keyStr = process.env.GOOGLE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
-  if (keyStr) {
-    const key = JSON.parse(keyStr);
-    const auth = new GoogleAuth({
-      credentials: key,
-      scopes: [DRIVE_FILE_SCOPE, DRIVE_FULL_SCOPE],
-    });
-    const client = await auth.getClient();
-    return google.drive({ version: 'v3', auth: client as any });
-  }
+  const saDrive = await getServiceAccountDriveClient();
+  if (saDrive) return saDrive;
 
   throw new Error(
     'Google Drive가 연결되지 않았습니다. 매장 설정에서 Drive를 연결하거나 GOOGLE_DRIVE_REFRESH_TOKEN을 설정해 주세요.',
   );
+}
+
+export async function testDriveConnection(storeId: string): Promise<boolean> {
+  try {
+    const drive = await resolveDriveClient(storeId);
+    await verifyDriveClient(drive);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function getOrCreateFolder(
@@ -199,10 +254,8 @@ export async function streamDriveFile(
 
 export async function isDriveConnected(storeId: string): Promise<boolean> {
   try {
-    if (process.env.GOOGLE_DRIVE_REFRESH_TOKEN && process.env.GOOGLE_CLIENT_SECRET) return true;
-    if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY || process.env.FIREBASE_SERVICE_ACCOUNT_KEY) return true;
-    const doc = await adminDb.collection('store_settings').doc(storeId).get();
-    return !!doc.data()?.googleDriveRefreshToken;
+    if (await ensureDriveConnection(storeId)) return true;
+    return await testDriveConnection(storeId);
   } catch {
     return false;
   }

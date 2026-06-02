@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
+import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase/admin';
-import { getDriveOAuth2Client } from '@/lib/googleDrive';
+import { getDriveOAuth2Client, testDriveConnection } from '@/lib/googleDrive';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -19,10 +20,23 @@ export async function GET(req: Request) {
       return NextResponse.redirect(`${base}/dashboard/settings/store?drive=no_token`);
     }
 
-    await adminDb.collection('store_settings').doc(storeId).set(
-      { googleDriveRefreshToken: tokens.refresh_token },
-      { merge: true },
-    );
+    oauth2.setCredentials({ refresh_token: tokens.refresh_token });
+    let email: string | null = null;
+    try {
+      const { google } = await import('googleapis');
+      const drive = google.drive({ version: 'v3', auth: oauth2 });
+      const about = await drive.about.get({ fields: 'user/emailAddress' });
+      email = about.data.user?.emailAddress || null;
+    } catch { /* ignore */ }
+
+    await adminDb.collection('store_settings').doc(storeId).set({
+      googleDriveRefreshToken: tokens.refresh_token,
+      googleDriveEmail: email,
+      googleDriveConnectedAt: FieldValue.serverTimestamp(),
+      googleDriveLinkSource: 'oauth',
+    }, { merge: true });
+
+    await testDriveConnection(storeId);
 
     return NextResponse.redirect(`${base}/dashboard/settings/store?drive=connected`);
   } catch {

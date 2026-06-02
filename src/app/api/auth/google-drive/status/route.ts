@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/authVerify';
-import { isDriveConnected } from '@/lib/googleDrive';
+import { ensureDriveConnection, isDriveConnected } from '@/lib/googleDrive';
 
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
@@ -9,6 +9,7 @@ export async function GET(req: Request) {
   const storeId = new URL(req.url).searchParams.get('storeId')?.trim();
   if (!storeId) return NextResponse.json({ error: 'storeId required' }, { status: 400 });
 
+  await ensureDriveConnection(storeId);
   const connected = await isDriveConnected(storeId);
   return NextResponse.json({ connected });
 }
