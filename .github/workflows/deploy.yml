@@ -4,24 +4,92 @@ on:
   push:
     branches:
       - main
+  schedule:
+    - cron: '0 2 * * *'
+    - cron: '0 5 * * *'
+    - cron: '30 11 * * *'
+    - cron: '5 15 * * *'
+    - cron: '5 1 * * *'
+    - cron: '5 6 * * *'
+    - cron: '5 9 * * *'
+  workflow_dispatch:
+    inputs:
+      cron_job:
+        description: 'hygiene-morning | hygiene-midday | hygiene-closing | ai-0 | ai-10 | ai-15 | ai-18'
+        required: false
+        type: choice
+        options:
+          - hygiene-morning
+          - hygiene-midday
+          - hygiene-closing
+          - ai-0
+          - ai-10
+          - ai-15
+          - ai-18
 
 jobs:
   deploy:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Deploy to Vercel
-        run: npx vercel deploy --prod --token="${{ secrets.VERCEL_TOKEN }}" --yes
+      - run: npm ci
+      - run: npx vercel deploy --prod --token="${{ secrets.VERCEL_TOKEN }}" --yes
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+  scheduled-cron:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.cron_job != '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Resolve job
+        id: plan
+        env:
+          GH_EVENT: ${{ github.event_name }}
+          GH_SCHEDULE: ${{ github.event.schedule }}
+          MANUAL_JOB: ${{ github.event.inputs.cron_job }}
+        run: |
+          set -euo pipefail
+          if [ "$GH_EVENT" = "workflow_dispatch" ]; then
+            job="$MANUAL_JOB"
+          else
+            case "$GH_SCHEDULE" in
+              "0 2 * * *")  job="hygiene-morning" ;;
+              "0 5 * * *")  job="hygiene-midday" ;;
+              "30 11 * * *") job="hygiene-closing" ;;
+              "5 15 * * *") job="ai-0" ;;
+              "5 1 * * *")  job="ai-10" ;;
+              "5 6 * * *")  job="ai-15" ;;
+              "5 9 * * *")  job="ai-18" ;;
+              *) echo "Unknown schedule: $GH_SCHEDULE"; exit 1 ;;
+            esac
+          fi
+          echo "job=$job" >> "$GITHUB_OUTPUT"
+      - name: Call Pitaya cron API
+        env:
+          CRON_SECRET: ${{ secrets.HYGIENE_CRON_SECRET }}
+          APP_URL: ${{ secrets.PITAYA_APP_URL }}
+          JOB: ${{ steps.plan.outputs.job }}
+        run: |
+          set -euo pipefail
+          test -n "${CRON_SECRET:-}" || (echo "HYGIENE_CRON_SECRET missing"; exit 1)
+          BASE="${APP_URL:-https://pitaya-osv1.vercel.app}"
+          BASE="${BASE%/}"
+          case "$JOB" in
+            hygiene-morning) Q="/api/cron/hygiene-alert?kind=morning" ;;
+            hygiene-midday)  Q="/api/cron/hygiene-alert?kind=midday" ;;
+            hygiene-closing) Q="/api/cron/hygiene-alert?kind=closing" ;;
+            ai-0)  Q="/api/cron/prediction-ai-slot?slot=0" ;;
+            ai-10) Q="/api/cron/prediction-ai-slot?slot=10" ;;
+            ai-15) Q="/api/cron/prediction-ai-slot?slot=15" ;;
+            ai-18) Q="/api/cron/prediction-ai-slot?slot=18" ;;
+            *) echo "Unknown job"; exit 1 ;;
+          esac
+          HTTP=$(curl -sS -o /tmp/out.json -w '%{http_code}' -X POST -H "x-cron-secret: ${CRON_SECRET}" "${BASE}${Q}")
+          echo "HTTP $HTTP"; cat /tmp/out.json; test "$HTTP" -ge 200 && test "$HTTP" -lt 300
