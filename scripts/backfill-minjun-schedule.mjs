@@ -1,5 +1,5 @@
 /**
- * 최민준 — 입사 2025-08-08, 월·화 정기휴무 + 근무일 만근 출근 기록 백필
+ * 최민준 — 입사 2025-08-05, 월·화 정기휴무 + 근무일 만근 출근 기록 백필
  * Usage: node scripts/backfill-minjun-schedule.mjs
  */
 import dotenv from 'dotenv';
@@ -17,7 +17,7 @@ const STORE_ID = process.env.POS_STORE_ID || 'STR-1779194754785';
 const UID = 'd62RTQL3zeMcb35C6tdXx59TTeo2';
 const NAME = '최민준';
 const EMAIL = 'minjun1432@gmail.com';
-const HIRE_DATE = '2025-08-08';
+const HIRE_DATE = '2025-08-05';
 const END_DATE = '2026-05-31';
 const DAYS_OFF = ['월', '화'];
 const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];

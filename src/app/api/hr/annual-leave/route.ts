@@ -7,6 +7,7 @@ import {
   formatYmd,
 } from '@/lib/hr/annualLeave';
 import { logLeaveGrant } from '@/lib/hr/leaveBalance';
+import { computeLeaveRemain, leaveRemainFields } from '@/lib/hr/leaveRemainDisplay';
 
 const ADMIN_ROLES = ['master', 'admin', 'owner'];
 
@@ -84,6 +85,7 @@ async function buildEmployeeLeavePreview(
 
   const total = Number(emp.totalAnnualLeave ?? 0);
   const used = Number(emp.usedAnnualLeave ?? 0);
+  const remain = Number(emp.remainAnnualLeave ?? computeLeaveRemain(total, used));
 
   return {
     empNo: emp.empNo,
@@ -94,7 +96,7 @@ async function buildEmployeeLeavePreview(
     linkedUid: emp.linkedUid || '',
     totalAnnualLeave: total,
     usedAnnualLeave: used,
-    remainAnnualLeave: total - used,
+    remainAnnualLeave: remain,
     calculatedTotal: calc.total,
     rule: calc.rule,
     completedYears: calc.completedYears,
@@ -207,19 +209,20 @@ export async function POST(req: Request) {
       const isNewLeaveYear = previousLeaveYear !== null &&
         previousLeaveYear !== calc.leaveYearNumber;
 
+      const usedAfter = resetUsedOnNewYear && isNewLeaveYear
+        ? 0
+        : Number(emp.usedAnnualLeave ?? 0);
+      let usedReset = resetUsedOnNewYear && isNewLeaveYear;
+
       const updates: Record<string, unknown> = {
         totalAnnualLeave: calc.total,
+        usedAnnualLeave: usedAfter,
+        ...leaveRemainFields(calc.total, usedAfter),
         lastLeaveYear: calc.leaveYearNumber,
         lastLeaveGeneratedAt: new Date().toISOString(),
         leaveYearStart: calc.leaveYearStart,
         updatedAt: new Date().toISOString(),
       };
-
-      let usedReset = false;
-      if (resetUsedOnNewYear && isNewLeaveYear) {
-        updates.usedAnnualLeave = 0;
-        usedReset = true;
-      }
 
       await doc.ref.update(updates);
 

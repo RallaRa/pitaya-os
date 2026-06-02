@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { encrypt } from '@/lib/encryption';
+import { buildPhonePiiFields } from '@/lib/phonePii';
 
 interface LegacyCustomer {
   Cus_Code:   string;
@@ -20,6 +21,8 @@ interface InfoCustomer {
   cusClass?:      string;
   mobile?:        string;
   tel?:           string;
+  cusHp?:         string;
+  phoneFull?:     string;
   birthday?:      string;
   joinDate?:      string;
   lastVisitDate?: string;
@@ -39,8 +42,30 @@ function isInfoCustomer(c: LegacyCustomer | InfoCustomer): c is InfoCustomer {
   return 'cusCode' in c && !!c.cusCode;
 }
 
+/** 원본 숫자만 phoneEncrypted 저장. 마스킹 값은 phoneEncrypted 덮어쓰지 않음 */
+function applyPhoneFields(
+  doc: Record<string, unknown>,
+  ...candidates: (string | undefined | null)[]
+): 'full' | 'masked_only' | 'empty' {
+  const fields = buildPhonePiiFields(...candidates);
+
+  doc.phoneSource = fields.phoneSource;
+  doc.phonePiiIncomplete = fields.phoneSource !== 'full';
+
+  if (fields.phoneSource === 'full') {
+    doc.phoneEncrypted = encrypt(fields.phoneDigits);
+    doc.phoneMasked = fields.phoneMasked;
+    doc.phoneDigitsLen = fields.phoneDigits.length;
+    return 'full';
+  }
+  if (fields.phoneSource === 'masked_only') {
+    doc.phoneMasked = fields.phoneMasked;
+    return 'masked_only';
+  }
+  return 'empty';
+}
+
 // POST /api/pos/sync-customers
-// Body: { storeId, customers, syncedAt }
 export async function POST(req: Request) {
   const authHeader = req.headers.get('authorization');
   const apiKey = authHeader?.replace('Bearer ', '') || req.headers.get('x-api-key');
@@ -67,6 +92,9 @@ export async function POST(req: Request) {
   const BATCH_SIZE = 450;
   let saved = 0;
   let failed = 0;
+  let phoneFull = 0;
+  let phoneMaskedOnly = 0;
+  let phoneEmpty = 0;
 
   for (let i = 0; i < customers.length; i += BATCH_SIZE) {
     const chunk = customers.slice(i, i + BATCH_SIZE);
@@ -79,14 +107,12 @@ export async function POST(req: Request) {
           if (!code) { failed++; continue; }
 
           const docRef = adminDb.collection('pos_customers').doc(`${storeId}_${code}`);
-          batch.set(docRef, {
+          const doc: Record<string, unknown> = {
             cusCode:        code,
             storeId,
             nameEncrypted:  encrypt(String(c.name || '')),
-            phoneEncrypted: encrypt(String(c.mobile || c.tel || '')),
             birthEncrypted: encrypt(String(c.birthday || '')),
             emailEncrypted: c.email ? encrypt(String(c.email)) : '',
-            phoneMasked:    String(c.mobile || c.tel || ''),
             grade:          String(c.cusClass || ''),
             cusGubun:       String(c.cusGubun || ''),
             point:          Number(c.point || 0),
@@ -103,20 +129,31 @@ export async function POST(req: Request) {
             isActive:       String(c.isActive || '1'),
             syncedAt,
             updatedAt: FieldValue.serverTimestamp(),
-          }, { merge: true });
+          };
+
+          const phoneStatus = applyPhoneFields(
+            doc,
+            c.phoneFull,
+            c.cusHp,
+            c.tel,
+            c.mobile,
+          );
+          if (phoneStatus === 'full') phoneFull++;
+          else if (phoneStatus === 'masked_only') phoneMaskedOnly++;
+          else phoneEmpty++;
+
+          batch.set(docRef, doc, { merge: true });
           saved++;
         } else {
           const code = String(c.Cus_Code || '').trim();
           if (!code) { failed++; continue; }
 
           const docRef = adminDb.collection('pos_customers').doc(`${storeId}_${code}`);
-          batch.set(docRef, {
+          const doc: Record<string, unknown> = {
             cusCode:        code,
             storeId,
             nameEncrypted:  encrypt(String(c.Cus_Name  || '')),
-            phoneEncrypted: encrypt(String(c.Cus_HP    || '')),
             birthEncrypted: encrypt(String(c.Cus_Birth || '')),
-            phoneMasked:    String(c.Cus_HP || ''),
             grade:          String(c.Cus_Grade || ''),
             point:          Number(c.Cus_Point || 0),
             writeDate:      String(c.Write_Date || ''),
@@ -126,7 +163,14 @@ export async function POST(req: Request) {
             totalPurchase:  0,
             syncedAt,
             updatedAt: FieldValue.serverTimestamp(),
-          }, { merge: true });
+          };
+
+          const phoneStatus = applyPhoneFields(doc, c.Cus_HP);
+          if (phoneStatus === 'full') phoneFull++;
+          else if (phoneStatus === 'masked_only') phoneMaskedOnly++;
+          else phoneEmpty++;
+
+          batch.set(docRef, doc, { merge: true });
           saved++;
         }
       } catch { failed++; }
@@ -135,5 +179,11 @@ export async function POST(req: Request) {
     await batch.commit();
   }
 
-  return NextResponse.json({ success: true, saved, failed, synced: saved });
+  return NextResponse.json({
+    success: true,
+    saved,
+    failed,
+    synced: saved,
+    phoneStats: { full: phoneFull, maskedOnly: phoneMaskedOnly, empty: phoneEmpty },
+  });
 }

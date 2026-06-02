@@ -1,5 +1,7 @@
 'use client';
 
+import { computeLeaveRemain, formatLeaveRemainLabel, leaveRemainClass } from '@/lib/hr/leaveRemainDisplay';
+
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Loader2, CalendarDays } from 'lucide-react';
@@ -14,6 +16,7 @@ interface Employee {
   department?: string;
   totalAnnualLeave?: number;
   usedAnnualLeave?: number;
+  remainAnnualLeave?: number;
   linkedUid?: string;
   linkedEmail?: string;
 }
@@ -133,20 +136,20 @@ export default function LeaveStatusPage() {
                 {employees.map(emp => {
                   const total = emp.totalAnnualLeave ?? 0;
                   const used = emp.usedAnnualLeave ?? 0;
-                  const remain = total - used;
-                  const pct = total > 0 ? Math.round((used / total) * 100) : 0;
+                  const remain = emp.remainAnnualLeave ?? computeLeaveRemain(total, used);
+                  const pct = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
                   return (
                     <tr key={emp.empNo} className="border-b border-slate-800/60">
                       <td className="px-4 py-2 text-slate-200">{emp.name}</td>
                       <td className="px-4 py-2 text-slate-500">{emp.department || '-'}</td>
                       <td className="px-4 py-2 text-right tabular-nums">{total}일</td>
                       <td className="px-4 py-2 text-right tabular-nums text-orange-400">{used}일</td>
-                      <td className={`px-4 py-2 text-right tabular-nums ${remain < 0 ? 'text-red-400 font-semibold' : 'text-teal-400'}`}>
-                        {remain}일{remain < 0 ? ' (초과)' : ''}
+                      <td className={`px-4 py-2 text-right tabular-nums ${leaveRemainClass(remain)}`}>
+                        {formatLeaveRemainLabel(remain)}
                       </td>
                       <td className="px-4 py-2">
                         <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                          <div className="h-full bg-teal-500 rounded-full" style={{ width: `${pct}%` }} />
+                          <div className={`h-full rounded-full ${remain < 0 ? 'bg-red-500' : 'bg-teal-500'}`} style={{ width: `${pct}%` }} />
                         </div>
                       </td>
                     </tr>
@@ -181,7 +184,7 @@ export default function LeaveStatusPage() {
                     />
                     <span className="text-sm text-slate-200">{emp.name}</span>
                     <span className="text-xs text-slate-500 ml-auto">
-                      잔여 {(emp.totalAnnualLeave ?? 0) - (emp.usedAnnualLeave ?? 0)}일
+                      잔여 {formatLeaveRemainLabel(emp.remainAnnualLeave ?? computeLeaveRemain(emp.totalAnnualLeave ?? 0, emp.usedAnnualLeave ?? 0))}
                     </span>
                   </label>
                 ))}

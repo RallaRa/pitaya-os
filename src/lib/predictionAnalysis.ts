@@ -1,4 +1,5 @@
 import { adminDb } from '@/lib/firebase/admin';
+import { FieldValue } from 'firebase-admin/firestore';
 import { addDaysYMD, getKSTTodayYMD, getKSTYesterdayYMD } from '@/lib/dateUtils';
 import { fetchDailyReportsSince, fetchTopSellingItems } from '@/lib/dashboardSalesData';
 import { getDisplayNetSales, posDailySalesDocId } from '@/lib/posDailySales';
@@ -51,6 +52,9 @@ export interface AccuracyDetail {
 
 export interface PredictionAnalysisSnapshot {
   targetDate: string;
+  /** 집계·비교 마감일 (전일 23:59) */
+  dataThroughYmd?: string;
+  dataBasisLabel?: string;
   predictionDate: string;
   isPartialDay: boolean;
   noData: boolean;
@@ -80,25 +84,13 @@ export interface PredictionAnalysisSnapshot {
   insightSummary: string;
 }
 
-/* ── 품목명 정규화·유사 매칭 ── */
-export function normalizeItemName(name: string): string {
-  return String(name || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '')
-    .replace(/[^\w가-힣]/g, '');
-}
+import { itemNamesMatch, normalizeItemName } from '@/lib/itemNameMatch';
 
-export function itemNamesMatch(a: string, b: string): boolean {
-  const na = normalizeItemName(a);
-  const nb = normalizeItemName(b);
-  if (!na || !nb) return false;
-  if (na === nb) return true;
-  if (na.length >= 2 && nb.length >= 2 && (na.includes(nb) || nb.includes(na))) return true;
-  const minLen = Math.min(na.length, nb.length);
-  if (minLen >= 4 && na.slice(0, 4) === nb.slice(0, 4)) return true;
-  return false;
-}
+export { normalizeItemName, itemNamesMatch } from '@/lib/itemNameMatch';
+
+/** 예측분석(사이드바) ↔ 대시보드 AI 예측 공통 — TOP-K 적중 기준 */
+export const PREDICTION_ACCURACY_K = 10;
+export const BACKTEST_LOOKBACK_DAYS = 21;
 
 function findMatchIndex(name: string, list: string[]): number {
   const idx = list.findIndex(n => itemNamesMatch(name, n));
@@ -114,7 +106,7 @@ function resolveName(name: string, list: string[]): string {
 export function evaluatePrediction(
   predictedNames: string[],
   actualNames: string[],
-  k = 5,
+  k = PREDICTION_ACCURACY_K,
 ): AccuracyDetail {
   const pred = predictedNames.slice(0, k).filter(Boolean);
   const actual = actualNames.filter(Boolean);
@@ -149,7 +141,7 @@ export function evaluatePrediction(
     top5Total: Math.min(pred.length, k),
     rankBonus: Math.round(bonusCap),
     score,
-    method: 'TOP5적중(70%) + 순위근접(30%)',
+    method: `TOP${k}적중(70%) + 순위근접(30%)`,
     matched,
     missed,
     surprises,
@@ -312,8 +304,8 @@ async function loadActualForDate(storeId: string, dateYmd: string) {
   const itemMap = await aggregateItemsBetween(storeId, dateYmd, dateYmd);
   const topItems = Object.entries(itemMap)
     .map(([name, v]) => ({ name, qty: v.qty, amount: v.amount }))
-    .sort((a, b) => b.qty - a.qty)
-    .slice(0, 10);
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, PREDICTION_ACCURACY_K);
 
   if (topItems.length === 0) {
     const fallback = await fetchTopSellingItems(storeId, 1, 10);
@@ -431,7 +423,7 @@ export async function runBacktest(
 
     const predNames = pred.topItems.map(p => String(p.item || '')).filter(Boolean);
     const actualNames = actual.topItems.map(a => a.name);
-    const evalResult = evaluatePrediction(predNames, actualNames);
+    const evalResult = evaluatePrediction(predNames, actualNames, PREDICTION_ACCURACY_K);
 
     recentScores.push({
       date: dateYmd,
@@ -494,9 +486,18 @@ export async function runBacktest(
 }
 
 /** 백테스트 기반 예측 보정 — AI 결과 후처리 */
-export function applyCalibrationToPredictions<T extends { item: string; confidence?: number; rank?: number }>(
+export function applyCalibrationToPredictions<
+  T extends {
+    item: string;
+    confidence?: number;
+    rank?: number;
+    expectedSales?: number;
+    dailyAvgSales?: number;
+  },
+>(
   topItems: T[],
   calibration: PredictionCalibration,
+  statDailyByName?: Map<string, number>,
 ): T[] {
   if (!calibration.avgAccuracy && calibration.recentScores.length === 0) return topItems;
 
@@ -511,44 +512,252 @@ export function applyCalibrationToPredictions<T extends { item: string; confiden
   const toAdd = calibration.frequentlyMissed
     .filter(name => !existing.has(normalizeItemName(name)))
     .slice(0, 2)
-    .map((item, i) => ({
-      item,
-      rank: boosted.length + i + 1,
-      confidence: 72,
-      expectedSales: 0,
-      changeVsLastWeek: 10,
-      reasonDetail: `백테스트: 최근 ${calibration.lookbackDays}일간 실적 TOP 빈번, 예측 누락 보정`,
-      badges: ['💡보정'],
-      reasons: ['백테스트 과소예측 보정'],
-    } as unknown as T));
+    .map((item, i) => {
+      let daily = 0;
+      if (statDailyByName) {
+        for (const [k, v] of statDailyByName) {
+          if (itemNamesMatch(k, item)) {
+            daily = v;
+            break;
+          }
+        }
+      }
+      if (daily <= 0) return null;
+      return {
+        item,
+        rank: boosted.length + i + 1,
+        confidence: 72,
+        expectedSales: daily,
+        dailyAvgSales: daily,
+        changeVsLastWeek: 10,
+        reasonDetail: `예측분석: 최근 ${calibration.lookbackDays}일 실적 TOP 누락 빈번. 일평균 ${daily.toLocaleString()}원`,
+        badges: ['💡보정'],
+        reasons: ['예측분석 과소예측 보정'],
+      } as unknown as T;
+    })
+    .filter((x): x is T => x != null);
 
-  return [...boosted, ...toAdd].slice(0, 7);
+  return [...boosted, ...toAdd].slice(0, 10);
 }
 
 export async function getPredictionCalibration(storeId: string): Promise<PredictionCalibration> {
-  return runBacktest(storeId, getKSTYesterdayYMD(), 14);
+  return runBacktest(storeId, getKSTYesterdayYMD(), BACKTEST_LOOKBACK_DAYS);
+}
+
+export interface PredictionFeedbackBundle {
+  calibration: PredictionCalibration;
+  insightsText: string;
+  modelAccuracy: number | null;
+  itemGrowth: ItemGrowthRow[];
+}
+
+function buildInsightsTextFromBundle(
+  targetDate: string,
+  calibration: PredictionCalibration,
+  itemGrowth: ItemGrowthRow[],
+  accuracyDetail: AccuracyDetail | null,
+): string {
+  const lines: string[] = [
+    `[예측분석 ${targetDate}] 사이드바 백테스트·실적 비교 반영`,
+  ];
+  if (accuracyDetail) {
+    lines.push(
+      `전일 TOP${PREDICTION_ACCURACY_K}: 적중 ${accuracyDetail.top5Hits}/${accuracyDetail.top5Total}, ` +
+      `과대예측 ${accuracyDetail.missed.join('/') || '없음'}, ` +
+      `누락 ${accuracyDetail.surprises.join('/') || '없음'}`,
+    );
+  }
+  if (calibration.avgAccuracy != null) {
+    lines.push(`백테스트 ${calibration.recentScores.length}일 평균 적중률 ${calibration.avgAccuracy}%`);
+  }
+  calibration.calibrationNotes.forEach(note => lines.push(`· ${note}`));
+  if (calibration.frequentlyMissed.length) {
+    lines.push(`→ 과소예측 보정: ${calibration.frequentlyMissed.join(', ')} — 오늘 TOP에 우선 반영`);
+  }
+  if (calibration.frequentlyOverpredicted.length) {
+    lines.push(`→ 과대예측: ${calibration.frequentlyOverpredicted.join(', ')} — TOP에서 순위 하향`);
+  }
+  if (calibration.reliableItems.length) {
+    lines.push(`→ 안정 적중: ${calibration.reliableItems.join(', ')} — 신뢰도 상향`);
+  }
+  const growthLine = itemGrowth.slice(0, 8)
+    .map(g => `${g.name}:${g.growthPct != null ? `${g.growthPct}%` : '-'}`)
+    .join(', ');
+  if (growthLine) lines.push(`품목 성장률(7일): ${growthLine}`);
+  return lines.join('\n');
+}
+
+/** 예측분석 메뉴와 동일 소스 — AI 예측·순위 보정용 (백테스트 1회) */
+export async function loadPredictionFeedbackForStore(storeId: string): Promise<PredictionFeedbackBundle> {
+  const yesterday = getKSTYesterdayYMD();
+  const [calibration, itemGrowth, predicted, actual] = await Promise.all([
+    runBacktest(storeId, yesterday, BACKTEST_LOOKBACK_DAYS),
+    computeItemGrowthRates(storeId, yesterday),
+    loadPredictionForTarget(storeId, yesterday),
+    loadActualForDate(storeId, yesterday),
+  ]);
+
+  const predNames = (predicted?.topItems || []).map(p => String(p.item || '')).filter(Boolean);
+  const actualNames = actual.topItems.map(a => a.name);
+  const accuracyDetail = predNames.length > 0 && actualNames.length > 0
+    ? evaluatePrediction(predNames, actualNames, PREDICTION_ACCURACY_K)
+    : null;
+
+  let modelAccuracy = calibration.avgAccuracy;
+  if (accuracyDetail?.score != null && modelAccuracy != null) {
+    modelAccuracy = Math.round(accuracyDetail.score * 0.6 + modelAccuracy * 0.4);
+  } else if (modelAccuracy == null && accuracyDetail?.score != null) {
+    modelAccuracy = accuracyDetail.score;
+  }
+
+  const insightsText = buildInsightsTextFromBundle(
+    yesterday,
+    calibration,
+    itemGrowth,
+    accuracyDetail,
+  );
+
+  return { calibration, insightsText, modelAccuracy, itemGrowth };
+}
+
+/** 위젯용 — 낮은 「정합성」 오해 방지 */
+export function formatPredictionAccuracyDisplay(
+  feedback: PredictionFeedbackBundle | null,
+): {
+  modelAccuracy: number | null;
+  accuracyLabel: string;
+  accuracyHint: string | null;
+  backtestDays: number;
+} {
+  const days = feedback?.calibration.recentScores?.length ?? 0;
+  const btAvg = feedback?.calibration.avgAccuracy;
+
+  if (days < 3) {
+    return {
+      modelAccuracy: null,
+      accuracyLabel: '예측 적중률',
+      accuracyHint: `과거 예측 대비 실적 비교가 ${days}일뿐이라 아직 표시하지 않습니다. 예측분석 메뉴에서 데이터가 쌓이면 자동 반영됩니다.`,
+      backtestDays: days,
+    };
+  }
+
+  const score = feedback?.modelAccuracy ?? btAvg ?? null;
+  let hint: string | null = null;
+  if (days < 7) {
+    hint = `비교 가능한 날이 ${days}일뿐이라 적중률이 낮게 나올 수 있습니다.`;
+  } else if (score != null && score < 45) {
+    hint =
+      '품목명 표기 차이·과거 예측 TOP 개수(5/10) 불일치·실적 순위(매출)와 예측 순위 차이로 점수가 낮게 측정됩니다. 오늘 예측 품목 신뢰도와는 별개 지표입니다.';
+  }
+
+  return {
+    modelAccuracy: score,
+    accuracyLabel: `예측 적중률(${feedback?.calibration.lookbackDays ?? BACKTEST_LOOKBACK_DAYS}일)`,
+    accuracyHint: hint,
+    backtestDays: days,
+  };
+}
+
+export async function savePredictionAnalysisDailyLog(
+  storeId: string,
+  analysisDate: string,
+  bundle: PredictionFeedbackBundle,
+): Promise<void> {
+  await adminDb.collection('prediction_analysis_daily').doc(`${storeId}_${analysisDate}`).set({
+    storeId,
+    analysisDate,
+    avgAccuracy: bundle.modelAccuracy,
+    backtestAvg: bundle.calibration.avgAccuracy,
+    lookbackDays: bundle.calibration.lookbackDays,
+    calibrationNotes: bundle.calibration.calibrationNotes,
+    frequentlyMissed: bundle.calibration.frequentlyMissed,
+    frequentlyOverpredicted: bundle.calibration.frequentlyOverpredicted,
+    reliableItems: bundle.calibration.reliableItems,
+    recentScores: bundle.calibration.recentScores.slice(0, 14),
+    insightSummary: bundle.insightsText.slice(0, 800),
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
+}
+
+/** TOP 순위 — 예측분석 백테스트 보정 */
+export function reorderTopItemsWithCalibration<
+  T extends { item: string; rank?: number },
+>(topItems: T[], calibration: PredictionCalibration): T[] {
+  const scored = topItems.map((it, idx) => {
+    let boost = 0;
+    if (calibration.frequentlyMissed.some(r => itemNamesMatch(r, it.item))) boost += 4;
+    if (calibration.reliableItems.some(r => itemNamesMatch(r, it.item))) boost += 2;
+    if (calibration.frequentlyOverpredicted.some(r => itemNamesMatch(r, it.item))) boost -= 4;
+    return { it, boost, idx };
+  });
+  return scored
+    .sort((a, b) => b.boost - a.boost || a.idx - b.idx)
+    .map((s, i) => ({ ...s.it, rank: i + 1 }));
+}
+
+/** BOTTOM — 과대예측 품목 우선 포함 */
+export function mergeBottomWithCalibration<
+  T extends { item: string; rank?: number },
+>(
+  bottomItems: T[],
+  calibration: PredictionCalibration,
+  topItemNames: string[],
+  statDailyByName: Map<string, number>,
+): T[] {
+  const topSet = new Set(topItemNames.map(n => normalizeItemName(n)));
+  const existing = new Set(bottomItems.map(it => normalizeItemName(it.item)));
+  const extras = calibration.frequentlyOverpredicted
+    .filter(name => {
+      const key = normalizeItemName(name);
+      return !topSet.has(key) && !existing.has(key) && [...statDailyByName.keys()].some(k => itemNamesMatch(k, name));
+    })
+    .slice(0, 3)
+    .map((item, i) => {
+      let daily = 0;
+      for (const [k, v] of statDailyByName) {
+        if (itemNamesMatch(k, item)) { daily = v; break; }
+      }
+      return {
+        item,
+        rank: bottomItems.length + i + 1,
+        expectedSales: daily,
+        dailyAvgSales: daily,
+        salesUnit: '원',
+        confidence: 58,
+        changeVsLastWeek: -15,
+        badges: ['📉DOWN'],
+        reasons: ['예측분석 과대예측'],
+        reasonDetail: `예측분석: 최근 ${calibration.lookbackDays}일 예측 대비 실적 약함. 일평균 ${daily.toLocaleString()}원`,
+        displayRecommend: '진열 축소',
+      } as unknown as T;
+    });
+
+  return [...bottomItems, ...extras]
+    .slice(0, 10)
+    .map((it, i) => ({ ...it, rank: i + 1 }));
 }
 
 export async function buildPredictionAnalysisSnapshot(
   storeId: string,
   targetDate?: string,
 ): Promise<PredictionAnalysisSnapshot> {
-  const today = getKSTTodayYMD();
   const target = targetDate || getKSTYesterdayYMD();
+  const today = getKSTTodayYMD();
   const isPartialDay = target === today;
+  const dataThroughYmd = isPartialDay ? getKSTYesterdayYMD() : target;
 
   const [itemGrowth, predicted, actual, backtest] = await Promise.all([
-    computeItemGrowthRates(storeId, target),
+    computeItemGrowthRates(storeId, dataThroughYmd),
     loadPredictionForTarget(storeId, target),
     loadActualForDate(storeId, target),
-    runBacktest(storeId, addDaysYMD(target, -1), 14),
+    runBacktest(storeId, addDaysYMD(dataThroughYmd, -1), BACKTEST_LOOKBACK_DAYS),
   ]);
 
   const predNames = (predicted?.topItems || []).map(p => String(p.item || '')).filter(Boolean);
   const actualNames = actual.topItems.map(a => a.name);
   const itemCompare = compareItems(predicted?.topItems || [], actual.topItems);
   const accuracyDetail = predNames.length > 0 && actualNames.length > 0
-    ? evaluatePrediction(predNames, actualNames)
+    ? evaluatePrediction(predNames, actualNames, PREDICTION_ACCURACY_K)
     : null;
 
   let accuracyScore = accuracyDetail?.score ?? null;
@@ -583,6 +792,8 @@ export async function buildPredictionAnalysisSnapshot(
 
   return {
     targetDate: target,
+    dataThroughYmd,
+    dataBasisLabel: `${dataThroughYmd} 23:59 마감 기준 (00:00 일마감 전 확정분)`,
     predictionDate: predicted?.date || addDaysYMD(target, -1),
     isPartialDay,
     noData,
@@ -605,43 +816,9 @@ export async function buildPredictionAnalysisSnapshot(
 export async function getPredictionAnalysisInsights(storeId: string): Promise<string> {
   if (!storeId) return '';
   try {
-    const snap = await buildPredictionAnalysisSnapshot(storeId);
-    if (snap.noData && snap.backtest.recentScores.length === 0) return '';
-
-    const lines: string[] = [
-      `[예측분석 ${snap.targetDate}] ${snap.insightSummary}`,
-    ];
-
-    if (snap.accuracyDetail) {
-      lines.push(
-        `당일 TOP5: 적중 ${snap.accuracyDetail.top5Hits}/${snap.accuracyDetail.top5Total}, ` +
-        `과대예측 ${snap.accuracyDetail.missed.join('/') || '없음'}, ` +
-        `누락 ${snap.accuracyDetail.surprises.join('/') || '없음'}`,
-      );
-    }
-
-    const bt = snap.backtest;
-    if (bt.avgAccuracy != null) {
-      lines.push(`백테스트 ${bt.recentScores.length}일 평균 적중률 ${bt.avgAccuracy}% — 다음 예측 시 반영:`);
-    }
-    bt.calibrationNotes.forEach(note => lines.push(`· ${note}`));
-
-    if (bt.frequentlyMissed.length) {
-      lines.push(`→ 과소예측 보정: ${bt.frequentlyMissed.join(', ')} 는 실적 TOP에 자주 등장. TOP5에 포함 검토`);
-    }
-    if (bt.frequentlyOverpredicted.length) {
-      lines.push(`→ 과대예측 주의: ${bt.frequentlyOverpredicted.join(', ')} 는 예측 대비 실적 약함`);
-    }
-    if (bt.reliableItems.length) {
-      lines.push(`→ 안정 품목: ${bt.reliableItems.join(', ')}`);
-    }
-
-    const growthLine = snap.itemGrowth.slice(0, 5)
-      .map(g => `${g.name}:${g.growthPct != null ? g.growthPct + '%' : '-'}`)
-      .join(', ');
-    if (growthLine) lines.push(`품목 성장률(7일): ${growthLine}`);
-
-    return lines.join('\n');
+    const bundle = await loadPredictionFeedbackForStore(storeId);
+    if (!bundle.calibration.recentScores.length && !bundle.insightsText) return '';
+    return bundle.insightsText;
   } catch {
     return '';
   }

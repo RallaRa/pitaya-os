@@ -5,6 +5,7 @@ import {
   Plus, X, Check, Bot, SquarePen, Trash2, RefreshCw, AlertTriangle, Loader2,
 } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { formatLeaveRemainLabel, leaveRemainClass } from '@/lib/hr/leaveRemainDisplay';
 import DateRangePicker from './DateRangePicker';
 
 const LEAVE_TYPE_LABELS: Record<string, string> = {
@@ -102,7 +103,7 @@ export default function LeavePanel({
 
   const handleBalanceResponse = (data: { warning?: string; balance?: { overused?: boolean; remain?: number } }) => {
     if (data.warning) showToast(data.warning, false);
-    else if (data.balance?.overused) showToast('저장됨 (연차 초과 사용 — 점검 필요)', false);
+    else if (data.balance?.overused) showToast('저장됨 (선사용 상태)', false);
     else showToast('저장되었습니다');
   };
 
@@ -270,7 +271,7 @@ export default function LeavePanel({
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       const b = data.balance;
-      if (b?.overused) showToast('저장됨 (초과 사용 상태)', false);
+      if (b?.overused) showToast('저장됨 (선사용 상태)', false);
       else showToast(recalculate ? '승인 내역 기준으로 재계산했습니다' : '연차 잔액을 수정했습니다');
       setModal(null);
       reloadAll();
@@ -319,8 +320,8 @@ export default function LeavePanel({
                   <div className="flex items-center gap-3 shrink-0 tabular-nums text-xs">
                     <span className="text-slate-500">총 {b.total}</span>
                     <span className="text-orange-400">사용 {b.used}</span>
-                    <span className={b.overused ? 'text-red-400 font-semibold' : 'text-teal-400'}>
-                      잔여 {b.remain}
+                    <span className={leaveRemainClass(b.remain)}>
+                      잔여 {formatLeaveRemainLabel(b.remain)}
                     </span>
                     <button onClick={() => openBalanceEdit(b)}
                       className="text-slate-500 hover:text-teal-400 p-0.5" title="잔액 수정">
@@ -332,7 +333,7 @@ export default function LeavePanel({
             </div>
           )}
           <p className="text-[10px] text-slate-600 mt-2">
-            초과 사용 허용 · 승인 내역 수정/삭제 시 사용일수 자동 재계산 · 총/사용 일수는 연필 아이콘으로 수동 조정
+            선사용(잔여 마이너스) 허용 · 승인 내역 수정/삭제 시 사용일수 자동 재계산 · 총/사용 일수는 연필 아이콘으로 수동 조정
           </p>
         </div>
       )}
@@ -361,7 +362,7 @@ export default function LeavePanel({
                         <div className="flex items-center gap-2 mb-0.5">
                           <p className="text-slate-400 text-xs">{l.userName}</p>
                           {bal?.overused && (
-                            <span className="text-[10px] text-red-400 bg-red-900/30 px-1.5 py-0.5 rounded">초과사용</span>
+                            <span className="text-[10px] text-red-400 bg-red-900/30 px-1.5 py-0.5 rounded">선사용</span>
                           )}
                         </div>
                       )}
@@ -592,10 +593,9 @@ export default function LeavePanel({
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200" />
               </div>
               <p className="text-xs text-slate-500">
-                잔여: <span className={balanceEdit.used > balanceEdit.total ? 'text-red-400' : 'text-teal-400'}>
-                  {balanceEdit.total - balanceEdit.used}일
+                잔여: <span className={leaveRemainClass(balanceEdit.total - balanceEdit.used)}>
+                  {formatLeaveRemainLabel(balanceEdit.total - balanceEdit.used)}
                 </span>
-                {balanceEdit.used > balanceEdit.total && ' (초과 사용)'}
               </p>
             </div>
             <div className="p-5 border-t border-slate-800 flex flex-col gap-2">

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/authVerify';
 import { buildPredictionAnalysisSnapshot } from '@/lib/predictionAnalysis';
-import { getKSTYesterdayYMD } from '@/lib/dateUtils';
+import { getSidebarAnalysisDefaultYmd } from '@/lib/predictionDailyLock';
 
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
@@ -9,14 +9,15 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const storeId = searchParams.get('storeId') || '';
-  const targetDate = searchParams.get('date') || getKSTYesterdayYMD();
+  const requested = searchParams.get('date') || '';
+  const targetDate = requested || getSidebarAnalysisDefaultYmd();
 
   if (!storeId) {
     return NextResponse.json({ error: 'storeId required' }, { status: 400 });
   }
 
   try {
-    const data = await buildPredictionAnalysisSnapshot(storeId, targetDate);
+  const data = await buildPredictionAnalysisSnapshot(storeId, targetDate);
     return NextResponse.json(data);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);

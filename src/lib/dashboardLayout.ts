@@ -1,7 +1,7 @@
 import type { LayoutItem } from 'react-grid-layout';
 
 export const GRID_COLS = 12;
-export const DASHBOARD_LAYOUT_VERSION = 2;
+export const DASHBOARD_LAYOUT_VERSION = 3;
 
 export interface WidgetMeta {
   id: string;
@@ -15,61 +15,61 @@ export const WIDGET_META: WidgetMeta[] = [
   {
     id: 'sales_prediction',
     title: 'AI 매출 예측',
-    defaultItem: { i: 'sales_prediction', x: 0, y: 0, w: 12, h: 7, minW: 6, minH: 5, maxW: 12, maxH: 14 },
+    defaultItem: { i: 'sales_prediction', x: 0, y: 0, w: 12, h: 11, minW: 6, minH: 7, maxW: 12, maxH: 20 },
     permKey: 'sales_prediction',
   },
   {
     id: 'today_sales',
     title: '당일 매출 현황',
-    defaultItem: { i: 'today_sales', x: 0, y: 7, w: 3, h: 3, minW: 3, minH: 3, maxW: 6, maxH: 8 },
+    defaultItem: { i: 'today_sales', x: 0, y: 9, w: 3, h: 3, minW: 3, minH: 3, maxW: 6, maxH: 8 },
     permKey: 'today_sales',
   },
   {
     id: 'sales_compare',
     title: '매출 비교',
-    defaultItem: { i: 'sales_compare', x: 3, y: 7, w: 5, h: 3, minW: 3, minH: 3, maxW: 8, maxH: 8 },
+    defaultItem: { i: 'sales_compare', x: 3, y: 9, w: 5, h: 3, minW: 3, minH: 3, maxW: 8, maxH: 8 },
     permKey: 'sales_compare',
   },
   {
     id: 'weather',
     title: '오늘 날씨',
-    defaultItem: { i: 'weather', x: 8, y: 7, w: 4, h: 3, minW: 4, minH: 2, maxW: 12, maxH: 5 },
+    defaultItem: { i: 'weather', x: 8, y: 9, w: 4, h: 3, minW: 4, minH: 2, maxW: 12, maxH: 5 },
     permKey: 'weather',
   },
   {
     id: 'quick_menu',
     title: '빠른 메뉴',
-    defaultItem: { i: 'quick_menu', x: 0, y: 10, w: 3, h: 3, minW: 2, minH: 2, maxW: 6, maxH: 6 },
+    defaultItem: { i: 'quick_menu', x: 0, y: 12, w: 3, h: 3, minW: 2, minH: 2, maxW: 6, maxH: 6 },
     permKey: 'quick_menu',
   },
   {
     id: 'weekly_analysis',
     title: 'AI 주간 분석',
-    defaultItem: { i: 'weekly_analysis', x: 3, y: 10, w: 4, h: 4, minW: 3, minH: 3, maxW: 12, maxH: 6 },
+    defaultItem: { i: 'weekly_analysis', x: 3, y: 12, w: 4, h: 4, minW: 3, minH: 3, maxW: 12, maxH: 6 },
     permKey: 'weekly_analysis',
   },
   {
     id: 'yesterday_analysis',
     title: '전일 판매 분석',
-    defaultItem: { i: 'yesterday_analysis', x: 7, y: 10, w: 5, h: 4, minW: 3, minH: 3, maxW: 12, maxH: 6 },
+    defaultItem: { i: 'yesterday_analysis', x: 7, y: 12, w: 5, h: 4, minW: 3, minH: 3, maxW: 12, maxH: 6 },
     permKey: 'yesterday_analysis',
   },
   {
     id: 'news',
     title: '정육 최신 뉴스',
-    defaultItem: { i: 'news', x: 0, y: 14, w: 12, h: 4, minW: 3, minH: 2, maxW: 12, maxH: 6 },
+    defaultItem: { i: 'news', x: 0, y: 16, w: 12, h: 4, minW: 3, minH: 2, maxW: 12, maxH: 6 },
     permKey: 'news',
   },
   {
     id: 'ai_insight',
     title: 'AI 종합 운영의견',
-    defaultItem: { i: 'ai_insight', x: 0, y: 18, w: 12, h: 6, minW: 8, minH: 5, maxW: 12, maxH: 10 },
+    defaultItem: { i: 'ai_insight', x: 0, y: 20, w: 12, h: 6, minW: 8, minH: 5, maxW: 12, maxH: 10 },
     permKey: 'ai_insight',
   },
   {
     id: 'total_partner',
     title: 'AI 토탈 운영파트너',
-    defaultItem: { i: 'total_partner', x: 0, y: 24, w: 12, h: 6, minW: 8, minH: 5, maxW: 12, maxH: 10 },
+    defaultItem: { i: 'total_partner', x: 0, y: 26, w: 12, h: 6, minW: 8, minH: 5, maxW: 12, maxH: 10 },
     permKey: 'total_partner',
   },
 ];

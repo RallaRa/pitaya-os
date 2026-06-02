@@ -1,8 +1,17 @@
+export const DEFAULT_ATTENDANCE_RADIUS_M = 500;
+
 export const STORE_CONFIG = {
   lat: parseFloat(process.env.KAKAO_STORE_LAT || '37.5509'),
   lng: parseFloat(process.env.KAKAO_STORE_LNG || '126.8495'),
-  radius: parseInt(process.env.KAKAO_ATTENDANCE_RADIUS || '200', 10),
+  radius: parseInt(process.env.KAKAO_ATTENDANCE_RADIUS || String(DEFAULT_ATTENDANCE_RADIUS_M), 10),
   name: '강서정육점',
+};
+
+export type StoreGeoInput = {
+  attendanceLat?: number;
+  attendanceLng?: number;
+  attendanceRadiusM?: number;
+  storeName?: string;
 };
 
 export function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -30,23 +39,19 @@ export function calculateDistanceM(
   return calculateDistance(lat1, lng1, lat2, lng2);
 }
 
-export function resolveStoreGeo(store?: {
-  attendanceLat?: number;
-  attendanceLng?: number;
-  attendanceRadiusM?: number;
-} | null) {
+export function resolveStoreGeo(store?: StoreGeoInput | null) {
   return {
     lat: store?.attendanceLat ?? STORE_CONFIG.lat,
     lng: store?.attendanceLng ?? STORE_CONFIG.lng,
     radiusM: store?.attendanceRadiusM ?? STORE_CONFIG.radius,
-    name: STORE_CONFIG.name,
+    name: store?.storeName ?? STORE_CONFIG.name,
   };
 }
 
 export function isWithinStoreGeo(
   userLat: number,
   userLng: number,
-  store?: { attendanceLat?: number; attendanceLng?: number; attendanceRadiusM?: number } | null,
+  store?: StoreGeoInput | null,
 ): boolean {
   const geo = resolveStoreGeo(store);
   return calculateDistance(userLat, userLng, geo.lat, geo.lng) <= geo.radiusM;

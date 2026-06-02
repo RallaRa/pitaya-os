@@ -1,6 +1,16 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { countLeaveDaysUsed } from '@/lib/hr/annualLeave';
+import { computeLeaveRemain, leaveRemainFields } from '@/lib/hr/leaveRemainDisplay';
+
+function leaveBalanceUpdate(total: number, used: number, extra: Record<string, unknown> = {}) {
+  return {
+    ...extra,
+    ...leaveRemainFields(total, used),
+    usedAnnualLeave: used,
+    updatedAt: new Date().toISOString(),
+  };
+}
 
 export async function findEmployeeByUserId(storeId: string, userId: string) {
   const snap = await adminDb.collection('hr_employees')
@@ -50,12 +60,9 @@ export async function recalculateUsedLeave(
   });
 
   const total = Number(emp.totalAnnualLeave ?? 0);
-  const remain = total - used;
+  const remain = computeLeaveRemain(total, used);
 
-  await empDoc.ref.update({
-    usedAnnualLeave: used,
-    updatedAt: new Date().toISOString(),
-  });
+  await empDoc.ref.update(leaveBalanceUpdate(total, used));
 
   return { ok: true, used, total, remain, overused: remain < 0 };
 }
@@ -83,31 +90,29 @@ export async function deductLeaveBalance(
 
   const total = Number(emp.totalAnnualLeave ?? 0);
   const used = Number(emp.usedAnnualLeave ?? 0);
-  const remain = total - used;
+  const beforeRemain = computeLeaveRemain(total, used);
 
-  if (!allowOveruse && daysUsed > remain) {
+  if (!allowOveruse && daysUsed > beforeRemain) {
     return {
       ok: false,
-      error: `잔여 연차 부족 (잔여 ${remain}일, 신청 ${daysUsed}일)`,
+      error: `잔여 연차 부족 (잔여 ${beforeRemain}일, 신청 ${daysUsed}일)`,
       used,
       total,
-      remain,
+      remain: beforeRemain,
     };
   }
 
   const newUsed = used + daysUsed;
-  await empDoc.ref.update({
-    usedAnnualLeave: newUsed,
-    updatedAt: new Date().toISOString(),
-  });
+  const remain = computeLeaveRemain(total, newUsed);
+  await empDoc.ref.update(leaveBalanceUpdate(total, newUsed));
 
   return {
     ok: true,
     daysUsed,
     used: newUsed,
     total,
-    remain: total - newUsed,
-    overused: newUsed > total,
+    remain,
+    overused: remain < 0,
   };
 }
 
@@ -126,11 +131,9 @@ export async function restoreLeaveBalance(
   const daysUsed = countLeaveDaysUsed(startDate, endDate, leaveType, daysOff);
   if (daysUsed <= 0) return;
 
-  const used = Number(emp.usedAnnualLeave ?? 0);
-  await empDoc.ref.update({
-    usedAnnualLeave: Math.max(0, used - daysUsed),
-    updatedAt: new Date().toISOString(),
-  });
+  const total = Number(emp.totalAnnualLeave ?? 0);
+  const used = Math.max(0, Number(emp.usedAnnualLeave ?? 0) - daysUsed);
+  await empDoc.ref.update(leaveBalanceUpdate(total, used));
 }
 
 /** 관리자 수동 조정 (총/사용 연차) */
@@ -143,20 +146,14 @@ export async function adjustLeaveBalance(
   if (!empDoc) return { ok: false, error: '연결된 사원 정보를 찾을 수 없습니다' };
 
   const emp = empDoc.data();
-  const updates: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+  const total = Number(patch.totalAnnualLeave ?? emp.totalAnnualLeave ?? 0);
+  const used = Number(patch.usedAnnualLeave ?? emp.usedAnnualLeave ?? 0);
+  const remain = computeLeaveRemain(total, used);
 
-  if (patch.totalAnnualLeave !== undefined) {
-    updates.totalAnnualLeave = Number(patch.totalAnnualLeave);
-  }
-  if (patch.usedAnnualLeave !== undefined) {
-    updates.usedAnnualLeave = Number(patch.usedAnnualLeave);
-  }
-
-  await empDoc.ref.update(updates);
-
-  const total = Number(updates.totalAnnualLeave ?? emp.totalAnnualLeave ?? 0);
-  const used = Number(updates.usedAnnualLeave ?? emp.usedAnnualLeave ?? 0);
-  const remain = total - used;
+  await empDoc.ref.update({
+    ...(patch.totalAnnualLeave !== undefined ? { totalAnnualLeave: total } : {}),
+    ...leaveBalanceUpdate(total, used),
+  });
 
   return { ok: true, total, used, remain, overused: remain < 0 };
 }

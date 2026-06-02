@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
-import { FieldValue } from 'firebase-admin/firestore';
-import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
+import { runWeatherItemCalibration } from '@/lib/weatherItemCalibration';
 
 export async function POST(req: Request) {
   const secret = req.headers.get('x-cron-secret');
@@ -11,39 +10,26 @@ export async function POST(req: Request) {
   try {
     const varsSnap = await adminDb.collection('weather_impact_variables').get();
     let recalibrated = 0;
+    const results: Array<{ storeId: string; seriesDays: number; skipped?: boolean }> = [];
 
     for (const doc of varsSnap.docs) {
-      const data = doc.data();
-      const variables = data.variables || [];
-      let changed = false;
+      const storeId = doc.id;
+      if (!storeId || storeId === 'global') continue;
 
-      const calibrateNeeded = variables.filter((v:any) => v.sampleCount >= 50 && v.active);
-      if (calibrateNeeded.length === 0) continue;
+      let regionSido: string | undefined;
+      try {
+        const storeSnap = await adminDb.collection('stores').doc(storeId).get();
+        regionSido = storeSnap.data()?.regionSido as string | undefined;
+      } catch { /* ignore */ }
 
-      if (hasAnyAiProvider()) {
-        try {
-          for (const variable of calibrateNeeded) {
-            const prompt = `날씨 변수 "${variable.name}" (sampleCount: ${variable.sampleCount})에 대한 품목별 영향도를 재계산해주세요. 현재 영향도: ${JSON.stringify(variable.itemEffects)}. 정육점 상황에서 이 날씨 조건이 각 품목 판매에 미치는 영향을 -100 ~ +100 범위로 JSON으로 반환하세요. 예: {"한우등심": 15, "삼겹살": -10}`;
-            try {
-              const { text } = await generateTextWithFallback({ prompt, json: true, useCase: 'prediction' });
-              const newEffects = JSON.parse(stripJsonMarkdown(text));
-              variable.itemEffects = newEffects;
-              variable.lastUpdated = new Date().toISOString();
-              variable.calibratedAt = new Date().toISOString();
-              changed = true;
-            } catch { /* skip variable */ }
-          }
-        } catch { /* ignore batch */ }
-      }
-
-      if (changed) {
-        await doc.ref.update({ variables, updatedAt: FieldValue.serverTimestamp() });
-        recalibrated++;
-      }
+      const result = await runWeatherItemCalibration(storeId, { regionSido, force: false });
+      results.push({ storeId, seriesDays: result.seriesDays, skipped: result.skipped });
+      if (!result.skipped && result.seriesDays >= 20) recalibrated++;
     }
 
-    return NextResponse.json({ ok: true, recalibrated });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ ok: true, recalibrated, results });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

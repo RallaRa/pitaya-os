@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
+import { firestoreTimestampToMillis } from '@/lib/dateUtils';
 
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
@@ -18,10 +19,18 @@ export async function GET(req: Request) {
       .where('targetUid', '==', uid)
       .get();
 
-    let notifications = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
+    let notifications = snap.docs.map(doc => {
+      const data = doc.data();
+      const ms = firestoreTimestampToMillis(data.createdAt);
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: ms != null ? new Date(ms).toISOString() : null,
+      };
+    }) as any[];
     notifications.sort((a, b) => {
-      const ta = a.createdAt?.seconds ?? 0;
-      const tb = b.createdAt?.seconds ?? 0;
+      const ta = firestoreTimestampToMillis(a.createdAt) ?? 0;
+      const tb = firestoreTimestampToMillis(b.createdAt) ?? 0;
       return tb - ta;
     });
     notifications = notifications.slice(0, limit);

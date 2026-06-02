@@ -1,10 +1,12 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { decrypt } from '@/lib/encryption';
+import { isMaskedPhone, normalizePhoneDigits } from '@/lib/phonePii';
 
 export interface CustomerPii {
   name: string;
   phone: string;
   birth: string;
+  phoneIncomplete?: boolean;
 }
 
 export function decryptCustomerFields(data: Record<string, unknown>): CustomerPii {
@@ -28,7 +30,14 @@ export function decryptCustomerFields(data: Record<string, unknown>): CustomerPi
   } catch {
     birth = '(복호화 실패)';
   }
-  return { name, phone, birth };
+
+  if (phone && !isMaskedPhone(phone)) {
+    const digits = normalizePhoneDigits(phone);
+    if (digits) phone = digits;
+  }
+
+  const phoneIncomplete = !!data.phonePiiIncomplete || isMaskedPhone(phone);
+  return { name, phone, birth, phoneIncomplete };
 }
 
 export async function fetchCustomerPiiBulk(

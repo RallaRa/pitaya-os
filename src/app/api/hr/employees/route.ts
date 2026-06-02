@@ -3,6 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { verifyToken } from '@/lib/authVerify';
 import { isAdminOrAbove } from '@/lib/auth/permissions';
 import { encrypt, maskPhone } from '@/lib/encryption';
+import { leaveRemainFields } from '@/lib/hr/leaveRemainDisplay';
 
 async function checkAdmin(req: Request) {
   const user = await verifyToken(req);
@@ -92,6 +93,8 @@ export async function GET(req: Request) {
       photoUrl:  data.photoUrl || '',
       totalAnnualLeave: data.totalAnnualLeave ?? 0,
       usedAnnualLeave: data.usedAnnualLeave ?? 0,
+      remainAnnualLeave: data.remainAnnualLeave ?? ((data.totalAnnualLeave ?? 0) - (data.usedAnnualLeave ?? 0)),
+      leavePreusedDays: data.leavePreusedDays ?? 0,
       lastLeaveYear: data.lastLeaveYear ?? null,
       leaveYearStart: data.leaveYearStart || '',
     };
@@ -185,6 +188,7 @@ export async function POST(req: Request) {
     annualLeaveBase:  body.annualLeaveBase   || body.hireDate,
     totalAnnualLeave: Number(body.totalAnnualLeave) || 15,
     usedAnnualLeave:  Number(body.usedAnnualLeave)  || 0,
+    ...leaveRemainFields(Number(body.totalAnnualLeave) || 15, Number(body.usedAnnualLeave) || 0),
     education:        body.education         || [],
     certifications:   body.certifications    || [],
     hygieneCertDate:  body.hygieneCertDate   || '',
@@ -297,6 +301,10 @@ export async function PUT(req: Request) {
     annualLeaveBase:  body.annualLeaveBase  ?? existing.annualLeaveBase  ?? '',
     totalAnnualLeave: body.totalAnnualLeave !== undefined ? Number(body.totalAnnualLeave) : (existing.totalAnnualLeave ?? 15),
     usedAnnualLeave:  body.usedAnnualLeave  !== undefined ? Number(body.usedAnnualLeave)  : (existing.usedAnnualLeave  ?? 0),
+    ...leaveRemainFields(
+      body.totalAnnualLeave !== undefined ? Number(body.totalAnnualLeave) : (existing.totalAnnualLeave ?? 15),
+      body.usedAnnualLeave !== undefined ? Number(body.usedAnnualLeave) : (existing.usedAnnualLeave ?? 0),
+    ),
     education:        body.education        ?? existing.education        ?? [],
     certifications:   body.certifications   ?? existing.certifications   ?? [],
     hygieneCertDate:  body.hygieneCertDate  ?? existing.hygieneCertDate  ?? '',

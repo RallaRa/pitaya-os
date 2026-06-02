@@ -13,7 +13,9 @@ import {
   addDaysYMD,
   formatDateWithDow,
   getKSTTodayYMD,
+  getKSTYesterdayYMD,
 } from '@/lib/dateUtils';
+import { getSidebarAnalysisDefaultYmd } from '@/lib/predictionDailyLock';
 
 function GrowthBadge({ pct }: { pct: number | null }) {
   if (pct === null) return <span className="text-slate-500 text-xs">-</span>;
@@ -48,7 +50,7 @@ export default function PredictionAnalysisPage() {
   const [data, setData] = useState<PredictionAnalysisSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedDate, setSelectedDate] = useState(getKSTTodayYMD);
+  const [selectedDate, setSelectedDate] = useState(getSidebarAnalysisDefaultYmd);
 
   const maxDate = getKSTTodayYMD();
   const isToday = selectedDate === maxDate;
@@ -97,6 +99,9 @@ export default function PredictionAnalysisPage() {
           </h1>
           <p className="text-slate-400 text-sm mt-1">
             {formatDateWithDow(selectedDate)} 기준 · 품목 성장률 · 예측 vs 실제 · AI 반영 근거
+          </p>
+          <p className="text-slate-500 text-xs mt-0.5">
+            기본 데이터는 전일 23:59 마감(00:00 일마감 전 확정분). 당일 선택 시 실적만 누적 표시됩니다.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -175,6 +180,12 @@ export default function PredictionAnalysisPage() {
 
       {data && (
         <>
+          {data.dataBasisLabel && (
+            <div className="bg-slate-900/80 border border-slate-700 rounded-xl px-4 py-2 text-xs text-slate-400">
+              집계 기준: {data.dataBasisLabel}
+            </div>
+          )}
+
           {/* 요약 카드 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
@@ -220,7 +231,7 @@ export default function PredictionAnalysisPage() {
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <p className="text-xs font-semibold text-slate-300 mb-2">정확도 산출 ({data.accuracyDetail.method})</p>
               <div className="flex flex-wrap gap-3 text-xs">
-                <span className="text-teal-400">TOP5 적중 {data.accuracyDetail.top5Hits}/{data.accuracyDetail.top5Total}</span>
+                <span className="text-teal-400">TOP10 적중 {data.accuracyDetail.top5Hits}/{data.accuracyDetail.top5Total}</span>
                 <span className="text-slate-400">순위보너스 +{data.accuracyDetail.rankBonus}점</span>
                 {data.accuracyDetail.missed.length > 0 && (
                   <span className="text-amber-400">과대예측: {data.accuracyDetail.missed.join(', ')}</span>

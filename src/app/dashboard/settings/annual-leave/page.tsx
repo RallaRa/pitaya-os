@@ -1,5 +1,7 @@
 'use client';
 
+import { computeLeaveRemain, formatLeaveRemainLabel, leaveRemainClass } from '@/lib/hr/leaveRemainDisplay';
+
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
@@ -225,7 +227,9 @@ export default function AnnualLeavePage() {
                         )}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums text-orange-400">{emp.usedAnnualLeave}일</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-teal-400">{remain}일</td>
+                      <td className={`px-3 py-2 text-right tabular-nums ${leaveRemainClass(remain)}`}>
+                        {formatLeaveRemainLabel(remain)}
+                      </td>
                       <td className="px-3 py-2 text-xs text-slate-500 max-w-[140px] truncate" title={emp.rule}>
                         {emp.rule || '-'}
                       </td>

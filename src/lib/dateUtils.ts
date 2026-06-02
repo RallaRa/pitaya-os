@@ -24,6 +24,17 @@ export function getKSTYesterdayYMD(): string {
   return addDaysYMD(getKSTTodayYMD(), -1);
 }
 
+/** KST 시각 (0–23) */
+export function getKSTHour(date = new Date()): number {
+  return Number(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Seoul',
+      hour: 'numeric',
+      hour12: false,
+    }).format(date),
+  );
+}
+
 export function getKSTNow(): Date {
   const { year, month, day } = getKSTParts();
   return new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T12:00:00+09:00`);
@@ -125,4 +136,57 @@ export function formatDateWithDow(ymd: string): string {
   if (!ymd) return '';
   const dow = getWeekdayKo(ymd);
   return `${ymd}${dow ? `(${dow})` : ''}`;
+}
+
+/** Firestore Timestamp / API JSON / ISO → epoch ms */
+export function firestoreTimestampToMillis(ts: unknown): number | null {
+  if (ts == null) return null;
+  if (typeof ts === 'number') {
+    if (!Number.isFinite(ts)) return null;
+    return ts < 1e12 ? ts * 1000 : ts;
+  }
+  if (typeof ts === 'string') {
+    const ms = Date.parse(ts);
+    return Number.isNaN(ms) ? null : ms;
+  }
+  if (ts instanceof Date) {
+    const ms = ts.getTime();
+    return Number.isNaN(ms) ? null : ms;
+  }
+  if (typeof ts === 'object') {
+    const o = ts as Record<string, unknown>;
+    if (typeof o.toMillis === 'function') {
+      const ms = (o.toMillis as () => number)();
+      return Number.isFinite(ms) ? ms : null;
+    }
+    if (typeof o.toDate === 'function') {
+      const ms = (o.toDate as () => Date)().getTime();
+      return Number.isNaN(ms) ? null : ms;
+    }
+    const sec = o.seconds ?? o._seconds;
+    if (typeof sec === 'number' && Number.isFinite(sec)) {
+      return sec * 1000;
+    }
+  }
+  return null;
+}
+
+/** 알림·목록용 상대 시각 (KST 기준 경과) */
+export function formatTimeAgoKST(ts: unknown): string {
+  const ms = firestoreTimestampToMillis(ts);
+  if (ms == null) return '';
+  const diff = Date.now() - ms;
+  if (diff < 0) return '방금 전';
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return '방금 전';
+  if (mins < 60) return `${mins}분 전`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}시간 전`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}일 전`;
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    month: 'numeric',
+    day: 'numeric',
+  }).format(new Date(ms));
 }

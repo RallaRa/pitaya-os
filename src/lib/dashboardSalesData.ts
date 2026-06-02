@@ -1,5 +1,6 @@
 import { adminDb } from '@/lib/firebase/admin';
 import type { QueryDocumentSnapshot, QuerySnapshot } from 'firebase-admin/firestore';
+import { addDaysYMD } from '@/lib/dateUtils';
 import { pickBestReportByDate } from '@/lib/reportDedup';
 import { getDisplayNetSales, getDisplayTotalSale, type SalesDocData } from '@/lib/posDailySales';
 
@@ -18,6 +19,128 @@ export interface ItemAggregate {
   qty: number;
   amount: number;
   days: Set<string>;
+}
+
+/** AI 예측용 품목 통계 — dailyAvgSales = 일평균매출(누적매출÷판매발생일수). 객단가·건당과 분리 */
+export interface PredictionItemStat {
+  name: string;
+  qty: number;
+  amount: number;
+  salesDays: number;
+  dailyAvgSales: number;
+  changeVsLastWeek: number;
+}
+
+function addItemDay(
+  map: Record<string, { qty: number; amount: number; days: Set<string>; w7: number; d7: Set<string>; wPrev7: number; dPrev7: Set<string> }>,
+  name: string,
+  date: string,
+  qty: number,
+  amount: number,
+  window: 'all' | 'last7' | 'prev7',
+) {
+  const n = name.trim();
+  if (!n || n.length > 50) return;
+  if (!map[n]) {
+    map[n] = { qty: 0, amount: 0, days: new Set(), w7: 0, d7: new Set(), wPrev7: 0, dPrev7: new Set() };
+  }
+  const row = map[n];
+  row.qty += qty;
+  row.amount += amount;
+  row.days.add(date);
+  if (window === 'last7') {
+    row.w7 += amount;
+    row.d7.add(date);
+  } else if (window === 'prev7') {
+    row.wPrev7 += amount;
+    row.dPrev7.add(date);
+  }
+}
+
+/** 90일 품목별 매출 — 날짜 중복 제거 후 일평균매출·전주 대비 */
+export async function fetchPredictionItemStats(
+  storeId: string,
+  sinceYmd: string,
+  todayYmd: string,
+  limit = 20,
+): Promise<PredictionItemStat[]> {
+  const last7Start = addDaysYMD(todayYmd, -6);
+  const prev7Start = addDaysYMD(todayYmd, -13);
+  const prev7End = addDaysYMD(todayYmd, -7);
+
+  const map: Record<string, {
+    qty: number;
+    amount: number;
+    days: Set<string>;
+    w7: number;
+    d7: Set<string>;
+    wPrev7: number;
+    dPrev7: Set<string>;
+  }> = {};
+
+  const drSnap = await fetchDailyReportsSince(storeId, sinceYmd);
+  if (drSnap && !drSnap.empty) {
+    const reports = drSnap.docs.map(d => ({
+      ...d.data(),
+      reportDate: d.data().reportDate as string,
+      storeId: d.data().storeId as string,
+      items: d.data().items as Array<{ name?: string; barcode?: string; qty?: number; netSales?: number; amount?: number }> | undefined,
+    }));
+    for (const d of pickBestReportByDate(reports, storeId).values()) {
+      const date = d.reportDate || '';
+      if (!date || date > todayYmd) continue;
+      let win: 'all' | 'last7' | 'prev7' = 'all';
+      if (date >= last7Start) win = 'last7';
+      else if (date >= prev7Start && date <= prev7End) win = 'prev7';
+      (d.items || []).forEach(item => {
+        const name = item.name || item.barcode || '';
+        const qty = Number(item.qty || 0);
+        const amt = Number(item.netSales || item.amount || 0);
+        addItemDay(map, name, date, qty, amt, 'all');
+        if (win === 'last7') addItemDay(map, name, date, qty, amt, 'last7');
+        if (win === 'prev7') addItemDay(map, name, date, qty, amt, 'prev7');
+      });
+    }
+  }
+
+  if (Object.keys(map).length === 0) {
+    const sinceCompact = sinceYmd.replace(/-/g, '');
+    const detailSnap = await fetchPosSalesDetailSince(storeId, sinceCompact, 8000);
+    detailSnap?.docs.forEach(doc => {
+      const r = doc.data();
+      const date = posDetailDateYmd(String(r.date || ''));
+      if (!date || date < sinceYmd || date > todayYmd) return;
+      let win: 'all' | 'last7' | 'prev7' = 'all';
+      if (date >= last7Start) win = 'last7';
+      else if (date >= prev7Start && date <= prev7End) win = 'prev7';
+      const name = String(r.goodsName || '');
+      const qty = Number(r.saleCount || 0);
+      const amt = Number(r.totalPrice || 0);
+      addItemDay(map, name, date, qty, amt, 'all');
+      if (win === 'last7') addItemDay(map, name, date, qty, amt, 'last7');
+      if (win === 'prev7') addItemDay(map, name, date, qty, amt, 'prev7');
+    });
+  }
+
+  return Object.entries(map)
+    .map(([name, row]) => {
+      const salesDays = row.days.size || 1;
+      const dailyAvgSales = Math.round(row.amount / salesDays);
+      const avg7 = row.d7.size > 0 ? Math.round(row.w7 / row.d7.size) : 0;
+      const avgPrev7 = row.dPrev7.size > 0 ? Math.round(row.wPrev7 / row.dPrev7.size) : 0;
+      const changeVsLastWeek =
+        avgPrev7 > 0 ? Math.round(((avg7 - avgPrev7) / avgPrev7) * 100) : avg7 > 0 ? 100 : 0;
+      return {
+        name,
+        qty: row.qty,
+        amount: row.amount,
+        salesDays,
+        dailyAvgSales,
+        changeVsLastWeek,
+      };
+    })
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, limit);
 }
 
 function asQuerySnapshot(docs: QueryDocumentSnapshot[]): QuerySnapshot {

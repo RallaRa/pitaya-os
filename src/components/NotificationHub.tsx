@@ -7,6 +7,7 @@ import { db } from '@/lib/firebase/firebase';
 import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { formatTimeAgoKST } from '@/lib/dateUtils';
 
 interface Notification {
   id: string;
@@ -35,18 +36,6 @@ const TYPE_ICON: Record<string, string> = {
   system:          '🔔',
   message:         '💬',
 };
-
-function timeAgo(ts: any): string {
-  if (!ts) return '';
-  const d = ts.seconds ? new Date(ts.seconds * 1000) : new Date(ts);
-  const diff = Date.now() - d.getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return '방금 전';
-  if (mins < 60) return `${mins}분 전`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}시간 전`;
-  return `${Math.floor(hrs / 24)}일 전`;
-}
 
 interface NotificationHubProps {
   label?: string;
@@ -216,7 +205,7 @@ export default function NotificationHub({ label, buttonClassName }: Notification
                         {n.message}
                       </p>
                       <div className="flex items-center justify-between mt-1">
-                        <span className="text-xs text-slate-500">{timeAgo(n.createdAt)}</span>
+                        <span className="text-xs text-slate-500">{formatTimeAgoKST(n.createdAt) || '방금 전'}</span>
                         {n.link && (
                           <span className="text-xs text-teal-400">바로가기 →</span>
                         )}

@@ -7,3 +7,22 @@
     @apply bg-slate-950 text-slate-50;
   }
 }
+
+/* 메인 대시보드 react-grid-layout — 위젯 내용이 셀 밖으로 비치지 않게 */
+.dashboard-grid .react-grid-layout {
+  position: relative;
+}
+
+.dashboard-grid .react-grid-item {
+  overflow: hidden;
+  z-index: 0;
+}
+
+.dashboard-grid .react-grid-item.react-draggable-dragging,
+.dashboard-grid .react-grid-item.resizing {
+  z-index: 10;
+}
+
+.dashboard-grid .react-grid-item > .react-resizable-handle {
+  z-index: 5;
+}

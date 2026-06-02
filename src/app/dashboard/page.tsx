@@ -31,8 +31,10 @@ import {
   makeDefaultLayout,
   resolveDashboardLayout,
   mergeLayoutChange,
+  compactDashboardLayout,
   type WidgetMeta,
 } from '@/lib/dashboardLayout';
+import DashboardGridItem from '@/components/dashboard/DashboardGridItem';
 import { isSuperuserEmail } from '@/lib/auth/permissions';
 import { useLicense } from '@/hooks/useLicense';
 import { db } from '@/lib/firebase/firebase';
@@ -120,6 +122,7 @@ export default function DashboardPage() {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const saveTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const heightSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* 모바일 감지 + 컨테이너 너비 */
   useEffect(() => {
@@ -257,6 +260,22 @@ export default function DashboardPage() {
     setLayouts(next);
     persistLayout(merged as GridLayout, activeWidgets);
   }, [visibleActive, layouts, activeWidgets, persistLayout]);
+
+  /* AI 예측 등 가변 높이 위젯 — 콘텐츠에 맞춰 그리드 h 갱신 후 아래 위젯 재배치 */
+  const handleWidgetHeight = useCallback((id: string, h: number) => {
+    setLayouts(prev => {
+      const lg = [...(prev.lg || [])];
+      const idx = lg.findIndex(l => l.i === id);
+      if (idx < 0 || lg[idx].h === h) return prev;
+      lg[idx] = { ...lg[idx], h };
+      const compacted = compactDashboardLayout(activeWidgets, lg);
+      if (heightSaveTimer.current) clearTimeout(heightSaveTimer.current);
+      heightSaveTimer.current = setTimeout(() => {
+        persistLayout(compacted as GridLayout, activeWidgets);
+      }, 800);
+      return { ...prev, lg: compacted as GridLayout };
+    });
+  }, [activeWidgets, persistLayout]);
 
   /* 위젯 추가 */
   const addWidget = (id: string) => {
@@ -415,12 +434,13 @@ export default function DashboardPage() {
           </div>
         ) : (
           <ResponsiveGridLayout
+            className="dashboard-grid"
             width={containerW}
             layouts={{ lg: currentLayout, md: currentLayout, sm: currentLayout }}
             breakpoints={{ lg: 1200, md: 996, sm: 768 }}
             cols={{ lg: 12, md: 10, sm: 6 }}
             rowHeight={80}
-            margin={[12, 12]}
+            margin={[16, 16]}
             compactor={verticalCompactor}
             dragConfig={{ enabled: editMode && isSuperuser, handle: '.widget-drag-handle' }}
             resizeConfig={{ enabled: editMode && isSuperuser }}
@@ -431,13 +451,20 @@ export default function DashboardPage() {
               const meta = WIDGET_META.find(m => m.id === id);
               const item = currentLayout.find(l => l.i === id) || (meta ? { ...meta.defaultItem } : null);
               if (!item) return null;
+              const autoMeasure = id === 'sales_prediction';
               return (
-                <div key={id} className="relative">
-                  {/* 드래그 핸들 (슈퍼유저 편집 모드에서만) */}
+                <div key={id} className="relative h-full min-h-0">
                   {editMode && isSuperuser && (
                     <div className="widget-drag-handle absolute inset-x-0 top-0 h-8 z-10 cursor-grab active:cursor-grabbing" />
                   )}
-                  {renderWidget(id)}
+                  <DashboardGridItem
+                    id={id}
+                    autoMeasure={autoMeasure}
+                    minH={meta?.defaultItem.minH}
+                    onHeight={handleWidgetHeight}
+                  >
+                    {renderWidget(id)}
+                  </DashboardGridItem>
                 </div>
               );
             })}

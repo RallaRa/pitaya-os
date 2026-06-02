@@ -25,6 +25,8 @@ interface WeatherVariable {
   description: string;
   dataSource: string;
   sampleCount: number;
+  analysisNote?: string;
+  calibratedAt?: string;
 }
 
 /* ── 상수 ── */
@@ -40,8 +42,8 @@ const CATEGORY_ORDER = ['temperature', 'precipitation', 'dayofweek', 'event'];
 function conditionLabel(c: Condition): string {
   const { metric, operator, value } = c;
   const metricMap: Record<string, string> = {
-    tempMax: '최고기온', tempMin: '최저기온', precipProb: '강수확률',
-    dayOfWeek: '요일', dayOfMonth: '날짜', holidayEve: '연휴전날',
+    tempMax: '최고기온', tempMin: '최저기온', precipProb: '강수확률', precipMm: '일강수(mm)',
+    dayOfWeek: '요일', dayOfMonth: '날짜', holidayEve: '연휴전날', isHoliday: '공휴일·기념일',
   };
   const m = metricMap[metric] || metric;
   if (operator === 'between' && Array.isArray(value)) return `${m} ${value[0]}~${value[1]}`;
@@ -150,7 +152,12 @@ function VariableCard({
               {conditionLabel(variable.condition)}
             </span>
             {variable.sampleCount > 0 && (
-              <span className="text-[10px] text-slate-500">{variable.sampleCount}회 학습</span>
+              <span className="text-[10px] text-slate-500">조건일 {variable.sampleCount}일</span>
+            )}
+            {Object.keys(variable.itemEffects || {}).length > 0 && (
+              <span className="text-[10px] text-teal-500/90">
+                품목 {Object.keys(variable.itemEffects).length}개
+              </span>
             )}
           </div>
           <p className="text-[11px] text-slate-500 mt-0.5 truncate">{variable.description}</p>
@@ -198,6 +205,9 @@ function VariableCard({
           <div className="bg-slate-800/50 rounded-lg px-3 py-2">
             <p className="text-[10px] text-slate-500 mb-1">적용 조건 (자동 감지)</p>
             <p className="text-xs text-slate-300 font-mono">{conditionLabel(variable.condition)}</p>
+            {variable.analysisNote && (
+              <p className="text-[10px] text-slate-500 mt-1">{variable.analysisNote}</p>
+            )}
           </div>
 
           <ItemEffectsEditor
@@ -221,6 +231,9 @@ export default function PredictionVariablesPage() {
   const [saving,    setSaving]    = useState(false);
   const [saved,     setSaved]     = useState(false);
   const [error,     setError]     = useState<string | null>(null);
+  const [calibrating, setCalibrating] = useState(false);
+  const [lastCalibratedAt, setLastCalibratedAt] = useState<string | null>(null);
+  const [calibrateMsg, setCalibrateMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -230,6 +243,7 @@ export default function PredictionVariablesPage() {
       if (data.error) throw new Error(data.error);
       setVariables(data.variables || []);
       setOriginal(data.variables || []);
+      setLastCalibratedAt(data.lastCalibratedAt || null);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -265,6 +279,39 @@ export default function PredictionVariablesPage() {
     if (confirm('변경사항을 취소하고 저장된 값으로 되돌릴까요?')) setVariables(original);
   };
 
+  const handleCalibrate = async () => {
+    setCalibrating(true);
+    setCalibrateMsg(null);
+    setError(null);
+    try {
+      const res = await fetch('/api/weather-variables/calibrate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storeId, force: true }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      if (data.skipped) {
+        setCalibrateMsg(data.reason || '분석을 건너뛰었습니다.');
+      } else {
+        setVariables(data.variables || []);
+        setOriginal(data.variables || []);
+        setLastCalibratedAt(data.calibratedAt || null);
+        const totalItems = (data.details || []).reduce(
+          (s: number, d: { itemCount?: number }) => s + (d.itemCount || 0),
+          0,
+        );
+        setCalibrateMsg(
+          `최근 ${data.seriesDays}일 매출·날씨 비교 완료 · 변수별 품목 영향 ${totalItems}건 반영`,
+        );
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCalibrating(false);
+    }
+  };
+
   const updateVar = (updated: WeatherVariable) =>
     setVariables(vs => vs.map(v => v.id === updated.id ? updated : v));
 
@@ -291,10 +338,21 @@ export default function PredictionVariablesPage() {
           {!loading && (
             <p className="text-xs text-slate-500 mt-1">
               활성 {activeCount}개 · 비활성 {inactiveCount}개
+              {lastCalibratedAt && (
+                <> · 마지막 분석 {new Date(lastCalibratedAt).toLocaleString('ko-KR')}</>
+              )}
             </p>
           )}
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex gap-2 shrink-0 flex-wrap justify-end">
+          <button
+            onClick={handleCalibrate}
+            disabled={calibrating || loading}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs text-teal-300 border border-teal-700/50 hover:border-teal-500 rounded-xl transition-colors disabled:opacity-50"
+          >
+            {calibrating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+            매출·날씨 재분석
+          </button>
           {isDirty && (
             <button
               onClick={handleReset}
@@ -330,10 +388,18 @@ export default function PredictionVariablesPage() {
       <div className="flex items-start gap-2 bg-blue-950/30 border border-blue-700/30 rounded-xl px-4 py-3 mb-6">
         <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
         <div className="text-[11px] text-blue-300/80 space-y-0.5">
-          <p>각 변수가 활성화되면 AI 매출 예측 시 해당 조건이 충족될 때 자동으로 반영됩니다.</p>
-          <p>품목 영향도는 <strong>%(증감률)</strong> 형태로 입력하세요. 예: 삼겹살 +20, 국거리 -10</p>
+          <p>각 변수가 활성화되면 매출 예측 시 해당 조건(기온·강수·공휴일 등)이 충족될 때 자동 반영됩니다.</p>
+          <p><strong>매출·날씨 재분석</strong>으로 최근 일별 POS 매출과 Open-Meteo·공휴일을 비교해 품목 영향도(%)를 자동 채웁니다.</p>
+          <p>수동 조정도 가능합니다. 예: 삼겹살 +20, 국거리 -10</p>
         </div>
       </div>
+
+      {calibrateMsg && (
+        <div className="flex items-center gap-2 bg-teal-950/30 border border-teal-700/30 rounded-xl px-4 py-3 mb-4">
+          <Check className="w-4 h-4 text-teal-400 shrink-0" />
+          <p className="text-xs text-teal-200/90">{calibrateMsg}</p>
+        </div>
+      )}
 
       {/* 오류 */}
       {error && (

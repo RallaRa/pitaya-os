@@ -248,7 +248,7 @@ export async function PUT(req: Request) {
       success: true,
       balance,
       overused: balance.overused,
-      warning: balance.overused ? '연차 초과 사용 상태입니다. 총/사용 일수를 점검해주세요.' : undefined,
+      warning: balance.overused ? '연차 선사용 상태입니다(잔여 마이너스). 급여·연차 정산 시 참고하세요.' : undefined,
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : '처리 실패';

@@ -11,6 +11,7 @@ import {
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import EmployeeDocumentsPanel from '@/components/hr/EmployeeDocumentsPanel';
 import type { HrEmployeeDocument } from '@/lib/hrEmployeeDocs';
+import { computeLeaveRemain, formatLeaveRemainLabel, leaveRemainClass } from '@/lib/hr/leaveRemainDisplay';
 
 /* ─────────────────── 타입 ─────────────────── */
 interface Department { id: string; name: string; }
@@ -60,6 +61,7 @@ interface Employee {
   workHours: { start: string; end: string };
   daysOff: string[];
   annualLeaveBase: string; totalAnnualLeave: number; usedAnnualLeave: number;
+  remainAnnualLeave?: number; leavePreusedDays?: number;
   // 학력/자격
   education: EducationRow[]; certifications: CertRow[];
   hygieneCertDate: string; hygieneCertExpiry: string; otherEducation: string;
@@ -1071,7 +1073,7 @@ function TabWork({ form, set }: { form: Employee; set: (p: string, v: unknown) =
     const cur = form.daysOff;
     set('daysOff', cur.includes(day) ? cur.filter(d => d !== day) : [...cur, day]);
   };
-  const residual = form.totalAnnualLeave - form.usedAnnualLeave;
+  const residual = computeLeaveRemain(form.totalAnnualLeave, form.usedAnnualLeave);
 
   return (
     <div className="space-y-3">
@@ -1117,9 +1119,8 @@ function TabWork({ form, set }: { form: Employee; set: (p: string, v: unknown) =
         <Input label="사용 연차 (일)" type="number" value={form.usedAnnualLeave} onChange={e => set('usedAnnualLeave', Number(e.target.value))} />
         <div className="flex flex-col gap-1">
           <label className="text-xs text-slate-400">잔여 연차</label>
-          <div className={`bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm font-semibold
-            ${residual > 5 ? 'text-teal-400' : residual > 0 ? 'text-yellow-400' : 'text-red-400'}`}>
-            {residual}일
+          <div className={`bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm font-semibold ${leaveRemainClass(residual)}`}>
+            {formatLeaveRemainLabel(residual)}
           </div>
         </div>
       </div>

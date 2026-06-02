@@ -3,146 +3,275 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getStoreCoords, getWeatherCondition, WEATHER_ICONS } from '@/lib/weather';
 import { verifyToken } from '@/lib/authVerify';
-import { fetchDailyReportsSince, fetchStoreItemSales } from '@/lib/dashboardSalesData';
-import { getPredictionAnalysisInsights, getPredictionCalibration, applyCalibrationToPredictions } from '@/lib/predictionAnalysis';
+import { fetchDailyReportsSince, fetchPredictionItemStats } from '@/lib/dashboardSalesData';
+import { addDaysYMD, getKSTTodayYMD } from '@/lib/dateUtils';
 import {
-  AiAllProvidersFailedError,
-  generateJsonWithFallback,
-  hasAnyAiProvider,
-} from '@/lib/aiProviderFallback';
+  getCurrentPredictionSlot,
+  getPredictionDataThroughYmd,
+  isDailyPredictionCacheValid,
+  PREDICTION_LOCK_VERSION,
+  PREDICTION_UPDATE_SCHEDULE_LABEL,
+  formatDataThroughLabel,
+} from '@/lib/predictionDailyLock';
+import {
+  applyCalibrationToPredictions,
+  formatPredictionAccuracyDisplay,
+  loadPredictionFeedbackForStore,
+  mergeBottomWithCalibration,
+  reorderTopItemsWithCalibration,
+  savePredictionAnalysisDailyLog,
+} from '@/lib/predictionAnalysis';
+import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
 import { buildSalesPredictionEmptyReason } from '@/lib/dashboardEmptyReason';
+import {
+  buildStatisticalSupporterComment,
+  isPlaceholderSupporterComment,
+} from '@/lib/salesPredictionBuild';
+import { buildPredictionScheduleContext } from '@/lib/predictionCalendarContext';
+import {
+  buildPredictionEnrichment,
+  enrichPredictionItemRows,
+  PREDICTION_ITEM_POOL,
+  rankItemsForToday,
+} from '@/lib/predictionEnrichment';
+import { itemNamesMatch } from '@/lib/itemNameMatch';
+import { SALES_METRIC_RULES_PROMPT } from '@/lib/salesMetricRules';
+import {
+  buildSlotChangeContext,
+  buildSlotChangeSummaryShort,
+  compactSlotFromResult,
+  getPriorSlotsToday,
+  mergeSlotHistory,
+  type SlotHistoryMap,
+} from '@/lib/predictionSlotHistory';
+import { ensureWeatherVariablesCalibrated, runWeatherItemCalibration } from '@/lib/weatherItemCalibration';
+import { annotateCompareDatesInComment } from '@/lib/annotateCompareDatesInText';
+import {
+  enrichPredictionItemsWithTodayActual,
+  isTodayActualCacheFresh,
+  PREDICTION_POS_REFRESH_LABEL,
+  refreshStoreTodayActualSales,
+} from '@/lib/predictionTodayActual';
 
 function toYMD(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-async function fetchHolidays(apiKey: string, yyyymm: string) {
-  try {
-    const year = yyyymm.slice(0,4); const month = yyyymm.slice(4,6);
-    const url = `http://apis.data.go.kr/B090041/openapi/service/SpcdeInfoService/getRestDeInfo?serviceKey=${apiKey}&solYear=${year}&solMonth=${month}&numOfRows=30&pageNo=1&_type=json`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    const json = await res.json();
-    const items = json?.response?.body?.items?.item || [];
-    return (Array.isArray(items) ? items : [items]).map((i:any) => String(i.locdate));
-  } catch { return []; }
+function serializePredictionDoc(data: Record<string, unknown>) {
+  const g = data.generatedAt as { toDate?: () => Date } | string | undefined;
+  const generatedAt =
+    g && typeof g === 'object' && typeof g.toDate === 'function'
+      ? g.toDate().toISOString()
+      : g;
+  return { ...data, generatedAt };
 }
 
 async function fetchWeatherForecast(coords: {lat:number;lng:number}) {
   try {
-    const today = toYMD(new Date());
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lng}&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_probability_max&timezone=Asia%2FSeoul&start_date=${today}&end_date=${today}`;
+    const today = getKSTTodayYMD();
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lng}&daily=temperature_2m_max,temperature_2m_min,weathercode,precipitation_probability_max,precipitation_sum&timezone=Asia%2FSeoul&start_date=${today}&end_date=${today}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
     const json = await res.json();
+    const precipMm = Math.round((json.daily?.precipitation_sum?.[0] ?? 0) * 10) / 10;
     return {
       tempMax: Math.round(json.daily?.temperature_2m_max?.[0] ?? 20),
       tempMin: Math.round(json.daily?.temperature_2m_min?.[0] ?? 10),
       precipProb: Math.round(json.daily?.precipitation_probability_max?.[0] ?? 0),
+      precipMm,
       condition: getWeatherCondition(json.daily?.weathercode?.[0] ?? 0),
     };
   } catch { return null; }
 }
 
+function isCronAuthorized(req: Request): boolean {
+  const secret = req.headers.get('x-cron-secret');
+  return Boolean(process.env.CRON_SECRET && secret === process.env.CRON_SECRET);
+}
+
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
-  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const cronOk = isCronAuthorized(req);
+  if (!authUser && !cronOk) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
   const storeId = searchParams.get('storeId') || '';
   const refresh = searchParams.get('refresh') === '1';
 
-  const today = toYMD(new Date());
+  const today = getKSTTodayYMD();
+  const dataThroughYmd = getPredictionDataThroughYmd();
+  const slot = getCurrentPredictionSlot();
   const cacheRef = adminDb.collection('predictions').doc(today + '_' + (storeId || 'global'));
 
-  // 캐시 확인
+  let slotHistory: SlotHistoryMap = {};
+  if (storeId && !refresh) {
+    try {
+      const prevSnap = await cacheRef.get();
+      if (prevSnap.exists) {
+        slotHistory = (prevSnap.data()?.slotHistory as SlotHistoryMap) || {};
+      }
+    } catch { /* ignore */ }
+  } else if (storeId && refresh) {
+    try {
+      const prevSnap = await cacheRef.get();
+      if (prevSnap.exists) {
+        slotHistory = (prevSnap.data()?.slotHistory as SlotHistoryMap) || {};
+      }
+    } catch { /* keep history on force refresh */ }
+  }
+  const priorSlotsToday = getPriorSlotsToday(slotHistory, slot.slotHour, today);
+
+  // 당일 갱신 슬롯 고정 (00·10·15·18시 KST — refresh=1 일 때만 재생성)
   if (!refresh) {
     try {
       const cached = await cacheRef.get();
-      if (cached.exists) {
+      if (cached.exists && isDailyPredictionCacheValid(
+        cached.data() as Record<string, unknown>,
+        today,
+        slot.slotHour,
+      )) {
         const d = cached.data()!;
-        const age = Date.now() - (d.generatedAt?.toMillis?.() || 0);
-        const hasContent = (d.topItems?.length > 0 || d.bottomItems?.length > 0)
-          && String(d.supporterComment || '').trim().length > 0;
-        if (age < 6 * 60 * 60 * 1000 && !d.noData && hasContent) {
-          return NextResponse.json({ ...d, cached: true });
+        let cachedBody: Awaited<ReturnType<typeof enrichPredictionItemsWithTodayActual>>;
+        if (
+          isTodayActualCacheFresh(d.todayActualUpdatedAt)
+          && Array.isArray(d.topItems)
+          && (d.topItems as Array<Record<string, unknown>>).some(
+            row => row.todayActualSales !== undefined && row.todayActualSales !== null,
+          )
+        ) {
+          cachedBody = {
+            topItems: (d.topItems as Array<Record<string, unknown>>) || [],
+            baseTopItems: (d.baseTopItems as Array<Record<string, unknown>>) || [],
+            bottomItems: (d.bottomItems as Array<Record<string, unknown>>) || [],
+            todaySalesAsOf: String(d.todaySalesAsOf || today),
+            hasTodaySalesData: Boolean(d.hasTodaySalesData),
+            todayActualUpdatedAt: d.todayActualUpdatedAt,
+          };
+        } else if (storeId) {
+          await refreshStoreTodayActualSales(storeId, today);
+          const refreshed = await cacheRef.get();
+          const r = refreshed.data()!;
+          cachedBody = {
+            topItems: (r.topItems as Array<Record<string, unknown>>) || [],
+            baseTopItems: (r.baseTopItems as Array<Record<string, unknown>>) || [],
+            bottomItems: (r.bottomItems as Array<Record<string, unknown>>) || [],
+            todaySalesAsOf: String(r.todaySalesAsOf || today),
+            hasTodaySalesData: Boolean(r.hasTodaySalesData),
+            todayActualUpdatedAt: r.todayActualUpdatedAt,
+          };
+        } else {
+          cachedBody = await enrichPredictionItemsWithTodayActual(storeId, today, {
+            topItems: (d.topItems as Array<Record<string, unknown>>) || [],
+            baseTopItems: (d.baseTopItems as Array<Record<string, unknown>>) || [],
+            bottomItems: (d.bottomItems as Array<Record<string, unknown>>) || [],
+          });
         }
+        return NextResponse.json({
+          ...serializePredictionDoc(d as Record<string, unknown>),
+          ...cachedBody,
+          cached: true,
+          dailyLocked: true,
+          dataThroughYmd: String(d.dataThroughYmd || dataThroughYmd),
+          dataThroughLabel: formatDataThroughLabel(String(d.dataThroughYmd || dataThroughYmd)),
+          lockSlotHour: d.lockSlotHour ?? slot.slotHour,
+          lockSlotLabel: String(d.lockSlotLabel || slot.slotLabel),
+          updateSchedule: PREDICTION_UPDATE_SCHEDULE_LABEL,
+          posRefreshSchedule: PREDICTION_POS_REFRESH_LABEL,
+          nextUpdateLabel: slot.nextSlotLabel,
+        });
       }
-    } catch {}
+    } catch { /* regenerate */ }
   }
 
   const apiKey = process.env.PUBLIC_DATA_API_KEY || '';
+  let regionSido = '서울';
+  let regionSigungu = '';
   const coords = await (async () => {
     if (!storeId) return { lat: 37.5665, lng: 126.9780 };
     try {
       const snap = await adminDb.collection('stores').doc(storeId).get();
-      const r = snap.data()?.regionSido || '';
-      return getStoreCoords(r);
+      const d = snap.data();
+      regionSido = d?.regionSido || regionSido;
+      regionSigungu = d?.regionSigungu || '';
+      return getStoreCoords(regionSido);
     } catch { return { lat: 37.5665, lng: 126.9780 }; }
   })();
 
   const predictionDate = today;
-  const yyyymm = today.replace(/-/g,'').slice(0,6);
 
   // 병렬 데이터 수집
-  const [salesSnap, purchasesSnap, weatherRes, holidaysRes, weatherVarsSnap, fallbackItems] = await Promise.allSettled([
-    fetchDailyReportsSince(storeId, toYMD(new Date(Date.now() - 90 * 86400000))),
+  const since90 = addDaysYMD(today, -90);
+
+  const forceCalibrate = searchParams.get('calibrate') === '1';
+
+  const [salesSnap, purchasesSnap, weatherRes, scheduleRes, calibrateRes, itemStatsRes, feedbackRes] = await Promise.allSettled([
+    fetchDailyReportsSince(storeId, since90),
     adminDb.collection('purchases')
       .where('storeId', '==', storeId)
       .orderBy('purchaseDate', 'desc').limit(30).get(),
     fetchWeatherForecast(coords),
-    apiKey ? fetchHolidays(apiKey, yyyymm) : Promise.resolve([]),
-    adminDb.collection('weather_impact_variables').doc(storeId || 'global').get(),
-    fetchStoreItemSales(storeId, 90, 20),
+    buildPredictionScheduleContext(storeId, apiKey, today),
+    storeId
+      ? (forceCalibrate
+          ? runWeatherItemCalibration(storeId, { regionSido, force: true }).then(r => r.variables)
+          : ensureWeatherVariablesCalibrated(storeId, regionSido)
+        ).catch(() => [] as Awaited<ReturnType<typeof ensureWeatherVariablesCalibrated>>)
+      : Promise.resolve([]),
+    fetchPredictionItemStats(storeId, since90, dataThroughYmd, PREDICTION_ITEM_POOL),
+    storeId ? loadPredictionFeedbackForStore(storeId) : Promise.resolve(null),
   ]);
+
+  const predictionFeedback =
+    feedbackRes.status === 'fulfilled' && feedbackRes.value ? feedbackRes.value : null;
 
   const sales = salesSnap.status === 'fulfilled' && salesSnap.value ? salesSnap.value.docs : [];
   const purchases = purchasesSnap.status === 'fulfilled' ? purchasesSnap.value.docs : [];
   const weather = weatherRes.status === 'fulfilled' ? weatherRes.value : null;
-  const holidays = holidaysRes.status === 'fulfilled' ? holidaysRes.value : [];
-  const weatherVarsDoc = weatherVarsSnap.status === 'fulfilled' ? weatherVarsSnap.value : null;
-  const activeVars = (weatherVarsDoc?.exists ? weatherVarsDoc.data()?.variables || [] : [])
-    .filter((v:any) => v.active);
+  const schedule = scheduleRes.status === 'fulfilled' ? scheduleRes.value : null;
+  const calibratedVars =
+    calibrateRes.status === 'fulfilled' && Array.isArray(calibrateRes.value) && calibrateRes.value.length > 0
+      ? calibrateRes.value
+      : null;
+  const activeVars = (calibratedVars || [])
+    .filter((v: { active?: boolean }) => v.active !== false);
 
   // 데이터 소스 상태
-  const dataSourceStatus = {
+  const dataSourceStatus: Record<string, string> = {
     sales:    sales.length > 0 ? '✅' : '❌',
     purchases: purchases.length > 0 ? '✅' : '❌',
     weather:  weather ? '✅' : '❌',
-    holiday:  holidays.length >= 0 ? '✅' : '❌',
+    holiday:  schedule ? '✅' : '⚠️',
     weatherVars: activeVars.length > 0 ? '✅' : '⚠️',
     naverTrend: process.env.NAVER_CLIENT_ID ? '⚠️' : '❌',
     meatPrice:  apiKey ? '⚠️' : '❌',
     cardPayment: '❌',
   };
 
-  // 판매 데이터 집계
-  const itemMap: Record<string, {qty:number;amount:number;days:number}> = {};
-  sales.forEach(doc => {
-    (doc.data().items || []).forEach((item:any) => {
-      const name = item.name || '';
-      if (!name) return;
-      if (!itemMap[name]) itemMap[name] = {qty:0,amount:0,days:0};
-      itemMap[name].qty += Number(item.qty||0);
-      itemMap[name].amount += Number(item.netSales||item.amount||0);
-      itemMap[name].days++;
-    });
-  });
-  if (Object.keys(itemMap).length === 0 && fallbackItems.status === 'fulfilled') {
-    fallbackItems.value.forEach(({ name, qty, amount }) => {
-      if (!itemMap[name]) itemMap[name] = { qty: 0, amount: 0, days: 1 };
-      itemMap[name].qty += qty;
-      itemMap[name].amount += amount;
-    });
-  }
-  const sortedItems = Object.entries(itemMap)
-    .sort((a,b) => b[1].qty - a[1].qty)
-    .slice(0, 20);
-
-  const todayDow = new Date().getDay();
+  const sortedItems =
+    itemStatsRes.status === 'fulfilled' && itemStatsRes.value.length > 0
+      ? itemStatsRes.value
+      : [];
+  const todayDow = new Date(`${today}T12:00:00+09:00`).getDay();
   const dowNames = ['일','월','화','수','목','금','토'];
-  const isHoliday = holidays.includes(today.replace(/-/g,''));
+  const isHoliday = schedule?.todayHoliday.isHoliday ?? false;
+  const isTmrHoliday = schedule?.tomorrowHoliday.isHoliday ?? false;
   const isWeekend = todayDow === 0 || todayDow === 6;
-  const isPayDay = (() => { const d = new Date().getDate(); return d >= 22 && d <= 28; })();
+  const monthDay = Number(today.slice(8, 10));
+  const isPayDay = monthDay >= 22 && monthDay <= 28;
+
+  const scheduleNotes = [
+    schedule?.tomorrowHoliday.label
+      ? `**내일(${schedule.tomorrowYmd}) ${schedule.tomorrowHoliday.label}** — 소비·유동 변동, 발주·진열·인력 조정 검토.`
+      : isTmrHoliday
+        ? `**내일(${schedule?.tomorrowYmd || ''}) 공휴일** — 매출 패턴 변동 가능.`
+        : '',
+    schedule?.absenceTomorrow.length
+      ? `내일 매장 휴무·결원: ${schedule.absenceTomorrow.join(', ')}.`
+      : '',
+    schedule?.absenceToday.length
+      ? `오늘 매장 휴무·결원: ${schedule.absenceToday.join(', ')}.`
+      : '',
+  ].filter(Boolean).join(' ');
 
   if (sortedItems.length === 0) {
     const emptyReason = buildSalesPredictionEmptyReason({
@@ -162,175 +291,361 @@ export async function GET(req: Request) {
     return NextResponse.json({ ...fallback, cached: false });
   }
 
-  // Gemini 예측
-  const summaryLines = sortedItems.map(([name, d]) =>
-    `${name}: 총수량=${d.qty}, 총금액=${d.amount.toLocaleString()}원, 판매일수=${d.days}일`
-  ).join('\n');
-
   const weatherContext = weather
     ? `날씨: ${weather.condition}, 최고${weather.tempMax}°/최저${weather.tempMin}°, 강수확률${weather.precipProb}%`
     : '날씨: 정보없음';
 
   const contextInfo = [
-    `오늘: ${today} (${dowNames[todayDow]}요일)`,
+    `오늘: ${today} (${dowNames[todayDow]}요일)${schedule?.todayHoliday.label ? ` — ${schedule.todayHoliday.label}` : isHoliday ? ' — 공휴일' : isWeekend ? ' — 주말' : ' — 평일'}`,
+    `내일: ${schedule?.tomorrowYmd || ''} (${schedule?.tomorrowDow || ''}요일)${schedule?.tomorrowHoliday.label ? ` — ${schedule.tomorrowHoliday.label}` : isTmrHoliday ? ' — 공휴일' : ''}`,
     weatherContext,
-    isHoliday ? '공휴일 또는 연휴' : isWeekend ? '주말' : '평일',
     isPayDay ? '급여일 인근 (소비증가 가능)' : '',
     activeVars.length > 0 ? `활성 날씨변수 ${activeVars.length}개` : '',
   ].filter(Boolean).join(' | ');
 
-  const predictionFeedback = storeId
-    ? await getPredictionAnalysisInsights(storeId).catch(() => '')
-    : '';
+  const dowLabel = `${dowNames[todayDow]}요일`;
 
-  const prompt = `정육점 AI 매출 예측 분석을 수행하세요. 경영진 보고용으로 **분석적·수치 중심**으로 작성하세요.
+  const enrichment = await buildPredictionEnrichment({
+    storeId,
+    today,
+    dataThroughYmd,
+    sortedItems,
+    schedule,
+    weatherLine: weatherContext,
+    dowLabel,
+    contextInfo,
+    activeWeatherVars: activeVars.length,
+    regionSido,
+    regionSigungu,
+  });
 
-[컨텍스트]
-${contextInfo}
-${predictionFeedback ? `\n[전일 예측분석 피드백 — 반영 필수]\n${predictionFeedback}` : ''}
+  const summaryLines = sortedItems.map(d => {
+    const b = enrichment.itemBenchmarks.get(d.name);
+    const benchStr = b
+      ? enrichment.benchmarkDates
+          .slice(0, 4)
+          .map(k => `${k.dateFull}=${(b.benchmarks[k.key] || 0).toLocaleString()}원`)
+          .join(', ')
+      : '';
+    return `${d.name}: 90일=${d.amount.toLocaleString()}원/${d.salesDays}일, 일평균=${d.dailyAvgSales.toLocaleString()}원, ${benchStr}, 3개월${b?.trend3mPct != null ? `${b.trend3mPct > 0 ? '+' : ''}${b.trend3mPct}%` : '—'}`;
+  }).join('\n');
 
-[최근 90일 판매 데이터 (상위20품목)]
-${summaryLines}
-
-다음 JSON 형식으로만 응답하세요 (마크다운 없이):
-{
-  "supporterComment": "오늘 매출·품목 예측 **종합 분석 (500자 이내, 반드시 준수)**. 구조: ①오늘 매출·수요 전망(한 문장) ②핵심 변수(요일/날씨/공휴일/급여일) 각각 수치·근거 ③TOP 품목군 방향(전주·90일 대비 %) ④리스크·주의 품목 ⑤오늘 실행 1가지. 감정·추상 표현 금지. **볼드**로 핵심 수치·품목만 강조",
-  "keyFactors": ["주요변수1","주요변수2","주요변수3"],
-  "topItems": [
-    {
-      "rank": 1,
-      "item": "품목명",
-      "expectedSales": 숫자(kg또는개),
-      "displayRecommend": "진열권장사항",
-      "changeVsLastWeek": 숫자(퍼센트, 양수=증가),
-      "confidence": 숫자(0-100),
-      "badges": ["🔥HOT"],
-      "reasons": ["근거1","근거2"],
-      "reasonDetail": "100자 이내. 증감 예상 이유를 수치·요일·날씨·전주대비 등 **계산 근거**로 객관적으로 작성 (주관적 표현 금지)"
-    }
-  ],
-  "bottomItems": [같은구조 5개]
-}
-topItems: 오늘 판매 증가 예상 TOP5
-bottomItems: 오늘 판매 감소 예상 TOP5
-badges는 조건에 따라: 🔥HOT(+30%↑), ⬆️UP(+10~30%), 📉DOWN(-20%↓), 💡추천(confidence90+)
-reasonDetail은 반드시 100자 이내, "전주 동요일 대비 +12%", "최근7일 일평균 3.2kg" 같은 구체 수치 포함`;
-
-  interface PredictionAiJson {
-    supporterComment?: string;
-    keyFactors?: string[];
-    topItems?: unknown[];
-    bottomItems?: unknown[];
-  }
-
-  function isValidPredictionJson(parsed: unknown): parsed is PredictionAiJson {
-    if (!parsed || typeof parsed !== 'object') return false;
-    const p = parsed as PredictionAiJson;
-    const comment = String(p.supporterComment || '').trim();
-    const tops = Array.isArray(p.topItems) ? p.topItems : [];
-    const bottoms = Array.isArray(p.bottomItems) ? p.bottomItems : [];
-    return comment.length >= 20 && (tops.length > 0 || bottoms.length > 0);
-  }
-
-  const buildStatisticalFallback = () => {
-    const tops = sortedItems.slice(0, 5).map(([name, d], i) => ({
-      rank: i + 1,
-      item: name,
-      expectedSales: Math.round(d.qty / Math.max(d.days, 1)),
-      displayRecommend: '기본 진열 유지',
-      changeVsLastWeek: 0,
-      confidence: 60,
-      badges: [] as string[],
-      reasons: ['판매 이력 기반'],
-      reasonDetail: `90일 일평균 ${Math.round(d.qty / Math.max(d.days, 1))}kg, 판매일 ${d.days}일`,
-    }));
-    const bottoms = sortedItems.slice(-5).reverse().map(([name, d], i) => ({
-      rank: i + 1,
-      item: name,
-      expectedSales: Math.round(d.qty / Math.max(d.days, 1)),
-      displayRecommend: '재고 최소화',
-      changeVsLastWeek: -10,
-      confidence: 55,
-      badges: ['📉DOWN'],
-      reasons: ['하위 판매 이력'],
-      reasonDetail: `90일 일평균 ${Math.round(d.qty / Math.max(d.days, 1))}kg, 하위권 품목`,
-    }));
-    return { tops, bottoms };
-  };
+  const predictionFeedbackText = predictionFeedback?.insightsText || '';
 
   let aiInfo: ReturnType<typeof aiMetaJson> | undefined;
   let topItems: any[] = [];
   let bottomItems: any[] = [];
   let supporterComment = '';
   let keyFactors: string[] = [];
-  let aiFailureReason: string | undefined;
   let aiUsedStatisticalFallback = false;
+  let aiFailureReason: string | null = null;
 
-  if (!hasAnyAiProvider()) {
-    aiFailureReason =
-      'AI API 키가 설정되지 않았습니다. GEMINI / ANTHROPIC / OPENAI / GROQ 중 하나 이상을 Vercel 환경변수에 등록하세요.';
-    const stat = buildStatisticalFallback();
-    topItems = stat.tops;
-    bottomItems = stat.bottoms;
-    supporterComment = `**통계 기반** 예측입니다. (AI 미연동)\n\n${aiFailureReason}`;
+  const totalAmount = sortedItems.reduce((s, d) => s + d.amount, 0) || 1;
+  const weatherLine = weatherContext;
+
+  const statisticalComment = buildStatisticalSupporterComment({
+    today,
+    dowLabel,
+    contextInfo,
+    scheduleNotes,
+    sortedItems,
+    weatherLine,
+    salesReportDays: sales.length,
+  });
+
+  const rankCtx = {
+    todayYmd: today,
+    weather: weather
+      ? {
+          tempMax: weather.tempMax,
+          tempMin: weather.tempMin,
+          precipProb: weather.precipProb,
+          precipMm: weather.precipMm,
+          condition: weather.condition,
+        }
+      : null,
+    schedule,
+    activeVariables: activeVars,
+  };
+
+  const {
+    topNames,
+    bottomNames,
+    baseTopNames,
+    contextLabels,
+    metricsByName,
+  } = rankItemsForToday(
+    sortedItems,
+    enrichment,
+    predictionFeedback?.calibration,
+    rankCtx,
+  );
+
+  const buildRows = (
+    names: string[],
+    tier: 'spotlight' | 'base' | 'bottom',
+  ) =>
+    enrichPredictionItemRows(
+      names.map((name, i) => ({ item: name, rank: i + 1 })),
+      enrichment,
+      sortedItems,
+      tier,
+      metricsByName,
+      contextLabels,
+    );
+
+  topItems = buildRows(topNames, 'spotlight');
+  const baseTopItems = buildRows(baseTopNames, 'base');
+  bottomItems = buildRows(bottomNames, 'bottom');
+  supporterComment = enrichment.supporterComment || statisticalComment;
+  let analysisSourcesLine = enrichment.analysisSourcesLine;
+  Object.assign(dataSourceStatus, enrichment.dataSourceStatus);
+  dataSourceStatus.predictionAnalysis = predictionFeedback?.calibration.recentScores.length
+    ? '✅'
+    : '⚠️';
+
+  if (contextLabels.length > 0 && !keyFactors.some(k => k.includes('이슈'))) {
+    keyFactors = [...keyFactors, `오늘 이슈: ${contextLabels.slice(0, 4).join(', ')}`].slice(0, 6);
+  }
+
+  const currentTopCompact = topItems.map((it, i) => ({
+    rank: Number(it.rank) || i + 1,
+    item: String(it.item || ''),
+    expectedSales: Number(it.dailyAvgSales ?? it.expectedSales) || 0,
+  }));
+
+  const slotChangeContext = buildSlotChangeContext({
+    predictionDate: today,
+    dataThroughYmd,
+    currentSlotHour: slot.slotHour,
+    currentSlotLabel: slot.slotLabel,
+    priorSlots: priorSlotsToday,
+    currentTop: currentTopCompact,
+    keyFactors,
+  });
+
+  const prompt = `정육점 AI 매출 예측 — **종합 의견만** JSON으로 응답. 품목 수치는 서버 통계가 채웁니다.
+
+${SALES_METRIC_RULES_PROMPT}
+
+[당일 시간대 예측 비교 — 전일 마감 데이터 동일, 당일 이전 슬롯만 참조]
+${slotChangeContext}
+
+[컨텍스트]
+${contextInfo}
+${schedule?.scheduleBlock ? `\n[휴일·매장휴무]\n${schedule.scheduleBlock}` : ''}
+${predictionFeedbackText ? `\n[예측분석 사이드바 — 백테스트·실적 비교, 반영 필수]\n${predictionFeedbackText}` : ''}
+
+[기간별 매출 비교]
+${enrichment.dataBlocks.compare}
+
+[3개월 품목 추이]
+${enrichment.dataBlocks.trend3m}
+
+[품목 상세]
+${summaryLines}
+
+[네이버 트렌드] ${enrichment.dataBlocks.naverTrend}
+[뉴스] ${enrichment.dataBlocks.news}
+[축산가격] ${enrichment.dataBlocks.meat}
+[상권] ${enrichment.dataBlocks.commercial}
+${enrichment.dataBlocks.storeSales}
+
+반드시 반영: 오늘 주목 품목은 평소대비 상승·날씨·공휴일·기념일 중심(절대매출만으로 설명 금지). 품목일평균매출(매출÷판매일수), 전일, 전주동요일, 3개월추이, 뉴스·검색. 객단가·건당매출은 매장 요약에만.
+
+JSON만:
+{
+  "supporterComment": "450~500자. ①당일 직전 갱신 대비 TOP·요인 변화(있으면 필수) ②변화 원인 ③오늘·내일·공휴일·날씨 ④TOP·일평균 ⑤실행. **볼드** 핵심만",
+  "keyFactors": ["변수1","변수2","변수3","변수4","변수5"]
+}`;
+
+  const applyStatisticalFallback = (failureReason?: string) => {
+    supporterComment = enrichment.supporterComment || statisticalComment;
     aiUsedStatisticalFallback = true;
-  } else {
-    try {
-      const aiResult = await generateJsonWithFallback({
-        prompt,
-        json: true,
-        useCase: 'prediction',
-        validate: isValidPredictionJson,
-      });
-      const parsed = aiResult.data;
-      aiInfo = aiMetaJson(aiResult);
-      topItems = (parsed.topItems || []).slice(0, 5).map((it: any) => ({
-        ...it,
-        reasonDetail: String(it.reasonDetail || '').slice(0, 100),
-      }));
-      bottomItems = (parsed.bottomItems || []).slice(0, 5).map((it: any) => ({
-        ...it,
-        reasonDetail: String(it.reasonDetail || '').slice(0, 100),
-      }));
-      supporterComment = String(parsed.supporterComment || '').slice(0, 500);
-      keyFactors = parsed.keyFactors || [];
-    } catch (e: unknown) {
-      const stat = buildStatisticalFallback();
-      topItems = stat.tops;
-      bottomItems = stat.bottoms;
-      aiUsedStatisticalFallback = true;
-
-      if (e instanceof AiAllProvidersFailedError) {
-        aiFailureReason = e.message;
-      } else {
-        aiFailureReason = e instanceof Error ? e.message : String(e);
-      }
-
-      supporterComment =
-        `**AI 분석 실패** — 아래 품목은 판매 이력 기반 통계 예측입니다.\n\n${aiFailureReason || '알 수 없는 오류'}`;
+    if (failureReason) aiFailureReason = failureReason;
+    if (keyFactors.length === 0) {
+      keyFactors = [
+        predictionFeedback?.calibration.avgAccuracy != null
+          ? `예측분석 적중률 ${predictionFeedback.calibration.avgAccuracy}%`
+          : '',
+        dowLabel,
+        weather?.condition || '날씨',
+        schedule?.todayHoliday.label || (isHoliday ? '오늘 공휴일' : isWeekend ? '주말' : '평일'),
+        schedule?.tomorrowHoliday.label ? `내일 ${schedule.tomorrowHoliday.label}` : isTmrHoliday ? '내일 공휴일' : '',
+        '품목일평균매출',
+        '전주동요일',
+      ].filter(Boolean) as string[];
     }
+  };
+
+  if (hasAnyAiProvider()) {
+    try {
+      const aiResult = await generateTextWithFallback({ prompt, json: true, useCase: 'prediction' });
+      const parsed = JSON.parse(stripJsonMarkdown(aiResult.text));
+      aiInfo = aiMetaJson(aiResult);
+      if (Array.isArray(parsed.keyFactors) && parsed.keyFactors.length > 0) {
+        keyFactors = parsed.keyFactors.map(String);
+      }
+      if (schedule?.tomorrowHoliday.label) {
+        const tag = `내일 ${schedule.tomorrowHoliday.label}`;
+        if (!keyFactors.some(k => k.includes('내일') || k.includes('선거') || k.includes('공휴'))) {
+          keyFactors = [...keyFactors, tag].slice(0, 6);
+        }
+      }
+      let aiComment = String(parsed.supporterComment || '').slice(0, 500);
+      if (
+        schedule?.tomorrowHoliday.label &&
+        !aiComment.includes(schedule.tomorrowHoliday.label) &&
+        !aiComment.includes('내일')
+      ) {
+        const prefix = `내일(${schedule.tomorrowYmd}) **${schedule.tomorrowHoliday.label}** — 매출·유동 변동 가능. `;
+        aiComment = (prefix + aiComment).slice(0, 500);
+      }
+      if (!isPlaceholderSupporterComment(aiComment)) {
+        supporterComment = aiComment;
+        aiUsedStatisticalFallback = false;
+        aiFailureReason = null;
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'AI 호출 실패';
+      aiFailureReason = `AI 종합 의견 생성 실패(${msg.slice(0, 80)}). 품목·코멘트는 다기준 통계로 표시합니다.`;
+      applyStatisticalFallback(aiFailureReason);
+    }
+  } else {
+    aiFailureReason = 'AI API 키 미설정 — 다기준 통계·외부 API 기반입니다.';
+    applyStatisticalFallback();
   }
 
-  // 백테스트 보정 — 과소/과대예측 패턴 반영
-  if (storeId && topItems.length > 0) {
-    try {
-      const calibration = await getPredictionCalibration(storeId);
-      topItems = applyCalibrationToPredictions(topItems, calibration);
-    } catch { /* skip */ }
+  if (!supporterComment.trim() || isPlaceholderSupporterComment(supporterComment)) {
+    supporterComment = enrichment.supporterComment || statisticalComment;
+    applyStatisticalFallback();
   }
+
+  const statDailyMap = new Map(sortedItems.map(s => [s.name, s.dailyAvgSales]));
+  const calibration = predictionFeedback?.calibration;
+  if (calibration && topItems.length > 0) {
+    topItems = applyCalibrationToPredictions(topItems, calibration, statDailyMap);
+    topItems = reorderTopItemsWithCalibration(topItems, calibration);
+    bottomItems = mergeBottomWithCalibration(
+      bottomItems,
+      calibration,
+      topItems.map(it => String(it.item || '')),
+      statDailyMap,
+    );
+    topItems = topItems.map(it => {
+      const stat = sortedItems.find(s => itemNamesMatch(s.name, String(it.item || '')));
+      const daily = stat?.dailyAvgSales ?? (Number(it.dailyAvgSales ?? it.expectedSales) || 0);
+      const note = calibration.frequentlyMissed.some(r => itemNamesMatch(r, String(it.item || '')))
+        ? '\n[예측분석] 실적 TOP 누락 빈번 → 순위 상향'
+        : calibration.reliableItems.some(r => itemNamesMatch(r, String(it.item || '')))
+          ? '\n[예측분석] 안정 적중 품목'
+          : '';
+      return {
+        ...it,
+        expectedSales: daily,
+        dailyAvgSales: daily,
+        salesUnit: '원',
+        reasonDetail: String(it.reasonDetail || '') + note,
+      };
+    });
+  }
+
+  if (predictionFeedback?.modelAccuracy != null) {
+    analysisSourcesLine = `${analysisSourcesLine} · 예측분석 ${predictionFeedback.modelAccuracy}%`.slice(0, 100);
+  }
+
+  const finalTopCompact = topItems.map((it, i) => ({
+    rank: Number(it.rank) || i + 1,
+    item: String(it.item || ''),
+    expectedSales: Number(it.dailyAvgSales ?? it.expectedSales) || 0,
+  }));
+  const slotChangeSummary = buildSlotChangeSummaryShort(
+    priorSlotsToday,
+    finalTopCompact,
+    slot.slotLabel,
+    dataThroughYmd,
+  );
+  if (
+    slotChangeSummary &&
+    priorSlotsToday.length > 0 &&
+    !supporterComment.includes('갱신') &&
+    !supporterComment.includes('변화')
+  ) {
+    const prefix = `[${slotChangeSummary}] `;
+    supporterComment = (prefix + supporterComment).slice(0, 500);
+  }
+
+  const scheduleContext = schedule ? {
+    tomorrowYmd: schedule.tomorrowYmd,
+    tomorrowHoliday: schedule.tomorrowHoliday.label,
+    todayHoliday: schedule.todayHoliday.label,
+    absenceToday: schedule.absenceToday,
+    absenceTomorrow: schedule.absenceTomorrow,
+  } : null;
+
+  const accuracyDisplay = formatPredictionAccuracyDisplay(predictionFeedback);
+
+  supporterComment = annotateCompareDatesInComment(supporterComment, today);
+
+  const slotSnapshot = compactSlotFromResult({
+    lockSlotHour: slot.slotHour,
+    lockSlotLabel: slot.slotLabel,
+    dataThroughYmd,
+    topItems,
+    bottomItems,
+    supporterComment,
+    keyFactors,
+  });
+  const mergedSlotHistory = mergeSlotHistory(slotHistory, slotSnapshot);
 
   const resultObj = {
-    predictionDate, supporterComment, topItems, bottomItems,
-    keyFactors, dataSourceStatus,
+    predictionDate,
+    dataThroughYmd,
+    dataThroughLabel: formatDataThroughLabel(dataThroughYmd),
+    lockedForDate: today,
+    lockVersion: PREDICTION_LOCK_VERSION,
+    lockSlotHour: slot.slotHour,
+    lockSlotLabel: slot.slotLabel,
+    updateSchedule: PREDICTION_UPDATE_SCHEDULE_LABEL,
+    posRefreshSchedule: PREDICTION_POS_REFRESH_LABEL,
+    nextUpdateLabel: slot.nextSlotLabel,
+    slotChangeSummary,
+    slotHistory: mergedSlotHistory,
+    dailyLocked: true,
+    supporterComment,
+    analysisSourcesLine,
+    topItems,
+    baseTopItems,
+    bottomItems,
+    activeContextLabels: contextLabels,
+    keyFactors,
+    scheduleContext,
+    dataSourceStatus,
     activeVariables: activeVars.length,
-    modelAccuracy: Math.min(95, Math.max(40, sales.length * 0.8 + activeVars.length * 2)),
+    modelAccuracy: accuracyDisplay.modelAccuracy,
+    accuracyLabel: accuracyDisplay.accuracyLabel,
+    accuracyHint: accuracyDisplay.accuracyHint,
+    backtestDays: accuracyDisplay.backtestDays,
+    predictionAnalysisApplied: Boolean(predictionFeedback?.calibration.recentScores.length),
     noData: false,
-    aiFailureReason: aiFailureReason || null,
     aiUsedStatisticalFallback,
+    aiFailureReason,
     generatedAt: FieldValue.serverTimestamp(),
     ...(aiInfo || {}),
   };
 
   await cacheRef.set(resultObj).catch(()=>{});
-  return NextResponse.json({ ...resultObj, cached: false });
+  if (storeId && predictionFeedback) {
+    savePredictionAnalysisDailyLog(storeId, today, predictionFeedback).catch(() => {});
+  }
+  const jsonBody = {
+    ...resultObj,
+    generatedAt: new Date().toISOString(),
+  };
+  const withToday = await enrichPredictionItemsWithTodayActual(storeId, today, {
+    topItems: jsonBody.topItems as Array<Record<string, unknown>>,
+    baseTopItems: jsonBody.baseTopItems as Array<Record<string, unknown>>,
+    bottomItems: jsonBody.bottomItems as Array<Record<string, unknown>>,
+  });
+  return NextResponse.json({ ...jsonBody, ...withToday, cached: false });
 }

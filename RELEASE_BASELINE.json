@@ -1,0 +1,20 @@
+{
+  "label": "pitaya-os production baseline",
+  "date": "2026-06-02",
+  "predictionLockVersion": 5,
+  "features": [
+    "prediction_pos_refresh_30m",
+    "prediction_ai_slots_0_10_15_18_kst",
+    "prediction_item_reason_collapsed_default",
+    "weather_item_calibration",
+    "prediction_uplift_rank",
+    "annotate_compare_dates_in_comment",
+    "hr_attendance_geo",
+    "leave_preused_display"
+  ],
+  "cron": {
+    "predictionTodayActual": "*/30 * * * *",
+    "predictionAiSlot": ["5 15 * * *", "5 1 * * *", "5 6 * * *", "5 9 * * *"]
+  },
+  "primaryStoreId": "STR-1779194754785"
+}

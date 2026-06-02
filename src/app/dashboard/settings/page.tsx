@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2, Tag, Package, CalendarDays, UserCircle } from 'lucide-react';
+import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2, Tag, Package, CalendarDays, UserCircle, Target } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -141,6 +141,13 @@ export default function SettingsPage() {
       icon: <SlidersHorizontal className="w-5 h-5 text-orange-400" />,
       label: 'AI 예측 변수 설정',
       description: '날씨·요일·이벤트가 매출에 미치는 영향 변수 관리',
+      show: isAdminLevelGroup(storeRole),
+    },
+    {
+      href: '/dashboard/settings/sales-targets',
+      icon: <Target className="w-5 h-5 text-amber-400" />,
+      label: '매출·객수 목표',
+      description: '월별 순매출·총객수 목표 (기간별) — 대시보드 매출 비교에 반영',
       show: isAdminLevelGroup(storeRole),
     },
   ].filter(m => m.show);

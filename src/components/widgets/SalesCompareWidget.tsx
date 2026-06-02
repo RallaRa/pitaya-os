@@ -1,14 +1,37 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import WidgetWrapper from './WidgetWrapper';
 import WidgetEmptyReason from './WidgetEmptyReason';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, Target, Settings } from 'lucide-react';
+import type { TargetProgressResult } from '@/lib/salesTargets';
 
 interface PeriodStat { label: string; net: number; total: number; customers: number; }
-interface CompareBlock { current: PeriodStat; previous: PeriodStat; pct: number | null; }
-interface SalesCompareData { week: CompareBlock; month: CompareBlock; emptyReason?: string | null; }
+interface TargetBlock {
+  sales: number;
+  customers: number;
+  progress: TargetProgressResult;
+}
+interface CompareBlock {
+  current: PeriodStat;
+  previous: PeriodStat;
+  pct: number | null;
+  target: TargetBlock;
+}
+interface TargetsMeta {
+  todayYm: string;
+  activePeriod: { startYm: string; endYm: string } | null;
+  previousPeriod: { startYm: string; endYm: string } | null;
+  hasMonthTarget: boolean;
+}
+interface SalesCompareData {
+  week: CompareBlock;
+  month: CompareBlock;
+  targetsMeta: TargetsMeta;
+  emptyReason?: string | null;
+}
 
 export default function SalesCompareWidget({
   editMode, onRemove, storeId,
@@ -54,54 +77,106 @@ export default function SalesCompareWidget({
     );
   };
 
-  const Block = ({ block, label }: { block: CompareBlock; label: string }) => (
-    <div className="bg-slate-800/50 rounded-xl p-3 space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-slate-400 text-xs font-semibold">{label}</span>
-        <DiffBadge pct={block.pct} />
-      </div>
+  const PaceBadge = ({ pct, label }: { pct: number | null; label: string }) => {
+    if (pct === null) return null;
+    const color = pct >= 100 ? 'text-emerald-400' : pct >= 80 ? 'text-amber-400' : 'text-red-400';
+    return (
+      <span className={`text-[9px] ${color}`}>
+        {label} {pct}%
+      </span>
+    );
+  };
 
-      <div className="grid grid-cols-2 gap-2">
-        {/* 이번 기간 */}
-        <div className="space-y-0.5">
-          <p className="text-slate-500 text-[9px] uppercase tracking-wider">{block.current.label}</p>
-          <p className="text-white font-bold text-sm">{fmt(block.current.net)}<span className="text-slate-500 text-[10px] ml-0.5">원</span></p>
-          <p className="text-slate-500 text-[9px]">고객 {block.current.customers}명</p>
+  const TargetBlockView = ({
+    block,
+    label,
+    kind,
+  }: {
+    block: CompareBlock;
+    label: string;
+    kind: 'week' | 'month';
+  }) => {
+    const { current, target, pct } = block;
+    const prog = target.progress;
+    const hasTarget = target.sales > 0 || target.customers > 0;
+
+    return (
+      <div className="bg-slate-800/50 rounded-xl p-3 space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-slate-400 text-xs font-semibold flex items-center gap-1">
+            <Target className="w-3 h-3 text-amber-400" />
+            {label}
+          </span>
+          {hasTarget ? (
+            <span className="text-[9px] text-amber-400/90">목표 기준</span>
+          ) : (
+            <Link
+              href="/dashboard/settings/sales-targets"
+              className="text-[9px] text-teal-400 hover:text-teal-300 flex items-center gap-0.5"
+            >
+              <Settings className="w-2.5 h-2.5" /> 목표 설정
+            </Link>
+          )}
         </div>
 
-        {/* 지난 기간 */}
-        <div className="space-y-0.5 text-right">
-          <p className="text-slate-500 text-[9px] uppercase tracking-wider">{block.previous.label}</p>
-          <p className="text-slate-400 font-semibold text-sm">{fmt(block.previous.net)}<span className="text-slate-600 text-[10px] ml-0.5">원</span></p>
-          <p className="text-slate-600 text-[9px]">고객 {block.previous.customers}명</p>
-        </div>
-      </div>
+        <p className="text-[9px] text-slate-500">{current.label}</p>
 
-      {/* 바 차트 비교 */}
-      {block.previous.net > 0 && (
-        <div className="space-y-1 pt-1">
-          <div className="flex items-center gap-2">
-            <span className="text-[9px] text-slate-500 w-10 text-right shrink-0">{block.current.label}</span>
-            <div className="flex-1 bg-slate-700/50 rounded-full h-1.5 overflow-hidden">
-              <div
-                className="h-full bg-teal-500 rounded-full transition-all duration-500"
-                style={{ width: `${Math.min(100, block.previous.net > 0 ? (block.current.net / Math.max(block.current.net, block.previous.net)) * 100 : 0)}%` }}
-              />
+        {/* 매출 */}
+        <div className="space-y-1">
+          <p className="text-[9px] text-slate-500 uppercase tracking-wider">매출 (순매출)</p>
+          <p className="text-white font-bold text-sm">
+            {fmt(current.net)}<span className="text-slate-500 text-[10px] ml-0.5">원</span>
+          </p>
+          {hasTarget && (
+            <div className="text-[10px] text-slate-400 space-y-0.5">
+              <p>목표 {fmt(target.sales)}원 · 달성 {prog.salesPct ?? '-'}%</p>
+              <PaceBadge pct={prog.salesPacePct} label="진도(오늘까지)" />
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[9px] text-slate-500 w-10 text-right shrink-0">{block.previous.label}</span>
-            <div className="flex-1 bg-slate-700/50 rounded-full h-1.5 overflow-hidden">
-              <div
-                className="h-full bg-slate-500 rounded-full transition-all duration-500"
-                style={{ width: `${Math.min(100, block.current.net > 0 ? (block.previous.net / Math.max(block.current.net, block.previous.net)) * 100 : 0)}%` }}
-              />
-            </div>
-          </div>
+          )}
         </div>
-      )}
-    </div>
-  );
+
+        {/* 객수 */}
+        <div className="space-y-1 border-t border-slate-700/50 pt-2">
+          <p className="text-[9px] text-slate-500 uppercase tracking-wider">객수</p>
+          <p className="text-slate-200 text-xs">
+            총 <strong className="text-white">{fmt(current.customers)}</strong>명
+            <span className="text-slate-500 mx-1">·</span>
+            일평균 <strong className="text-teal-300">{prog.avgDailyCustomers}</strong>명/일
+            <span className="text-slate-600 text-[9px]"> ({prog.daysElapsed}일)</span>
+          </p>
+          {hasTarget && (
+            <div className="text-[10px] text-slate-400 space-y-0.5">
+              <p>
+                목표 총 {fmt(target.customers)}명 · 일평균 {prog.targetDailyCustomers}명
+              </p>
+              <p className="flex flex-wrap gap-1 items-center">
+                <span>달성 {prog.customersPct ?? '-'}%</span>
+                <PaceBadge pct={prog.customersPacePct} label="진도" />
+              </p>
+            </div>
+          )}
+        </div>
+
+        {hasTarget && target.sales > 0 && (
+          <div className="h-1.5 bg-slate-700/50 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-amber-500 rounded-full transition-all"
+              style={{ width: `${Math.min(100, prog.salesPct ?? 0)}%` }}
+            />
+          </div>
+        )}
+
+        {/* 전기간 대비 (보조) */}
+        <div className="border-t border-slate-700/40 pt-2 flex items-center justify-between text-[9px] text-slate-500">
+          <span>전{kind === 'week' ? '주' : '월'} 대비</span>
+          <DiffBadge pct={pct} />
+          <span className="text-slate-600">{fmt(block.previous.net)}원</span>
+        </div>
+      </div>
+    );
+  };
+
+  const meta = data?.targetsMeta;
 
   return (
     <WidgetWrapper
@@ -119,9 +194,20 @@ export default function SalesCompareWidget({
         </div>
       ) : data ? (
         <div className="h-full overflow-y-auto p-3 space-y-3">
+          {meta?.activePeriod && (
+            <div className="text-[9px] text-slate-500 bg-slate-800/40 rounded-lg px-2 py-1.5 leading-relaxed">
+              적용 목표 기간: <span className="text-slate-300">{meta.activePeriod.startYm} ~ {meta.activePeriod.endYm}</span>
+              {meta.previousPeriod && (
+                <> · 직전 기간: {meta.previousPeriod.startYm} ~ {meta.previousPeriod.endYm}</>
+              )}
+              {!meta.hasMonthTarget && (
+                <span className="text-amber-400 block mt-0.5">이번 달({meta.todayYm}) 목표 미등록 — 설정에서 입력하세요</span>
+              )}
+            </div>
+          )}
           {data.emptyReason && <WidgetEmptyReason reason={data.emptyReason} />}
-          <Block block={data.week}  label="주간 비교" />
-          <Block block={data.month} label="월간 비교" />
+          <TargetBlockView block={data.week} label="주간" kind="week" />
+          <TargetBlockView block={data.month} label="월간" kind="month" />
         </div>
       ) : !loading && !error ? (
         <p className="text-slate-500 text-xs text-center mt-4">매출 데이터 없음</p>

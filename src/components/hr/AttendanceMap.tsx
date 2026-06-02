@@ -1,8 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { isWithinStore, calculateDistance, STORE_CONFIG } from '@/lib/kakao/location';
 import { MapPin, CheckCircle, XCircle, Clock } from 'lucide-react';
+import {
+  attendanceDistanceM,
+  isWithinAttendanceRange,
+  resolveAttendanceGeo,
+} from '@/lib/hr/attendanceGeo';
+import type { StoreGeoInput } from '@/lib/kakao/location';
 
 declare global {
   interface Window {
@@ -19,11 +24,16 @@ declare global {
 }
 
 export default function AttendanceMap({
+  store,
+  storeName,
   onAttend,
 }: {
+  store?: StoreGeoInput | null;
+  storeName?: string;
   onAttend: (type: 'in' | 'out', lat: number, lng: number) => void;
 }) {
   const mapRef = useRef<HTMLDivElement>(null);
+  const geo = resolveAttendanceGeo({ ...store, storeName: storeName || store?.storeName });
   const [withinRange, setWithinRange] = useState<boolean | null>(null);
   const [distance, setDistance] = useState(0);
   const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(null);
@@ -45,21 +55,21 @@ export default function AttendanceMap({
             const lat = pos.coords.latitude;
             const lng = pos.coords.longitude;
             setUserPos({ lat, lng });
-            const dist = calculateDistance(lat, lng, STORE_CONFIG.lat, STORE_CONFIG.lng);
-            setDistance(Math.round(dist));
-            setWithinRange(isWithinStore(lat, lng));
+            const dist = attendanceDistanceM(lat, lng, store);
+            setDistance(dist);
+            setWithinRange(isWithinAttendanceRange(lat, lng, store));
             setLoading(false);
 
             if (!mapRef.current || !window.kakao?.maps) return;
             const map = new window.kakao.maps.Map(mapRef.current, {
-              center: new window.kakao.maps.LatLng(STORE_CONFIG.lat, STORE_CONFIG.lng),
+              center: new window.kakao.maps.LatLng(geo.lat, geo.lng),
               level: 4,
             });
 
             new window.kakao.maps.Marker({
               map,
-              position: new window.kakao.maps.LatLng(STORE_CONFIG.lat, STORE_CONFIG.lng),
-              title: STORE_CONFIG.name,
+              position: new window.kakao.maps.LatLng(geo.lat, geo.lng),
+              title: geo.name,
             });
 
             new window.kakao.maps.Marker({
@@ -70,12 +80,12 @@ export default function AttendanceMap({
 
             new window.kakao.maps.Circle({
               map,
-              center: new window.kakao.maps.LatLng(STORE_CONFIG.lat, STORE_CONFIG.lng),
-              radius: STORE_CONFIG.radius,
+              center: new window.kakao.maps.LatLng(geo.lat, geo.lng),
+              radius: geo.radiusM,
               strokeWeight: 2,
-              strokeColor: dist <= STORE_CONFIG.radius ? '#10b981' : '#ef4444',
+              strokeColor: dist <= geo.radiusM ? '#10b981' : '#ef4444',
               strokeOpacity: 0.8,
-              fillColor: dist <= STORE_CONFIG.radius ? '#10b981' : '#ef4444',
+              fillColor: dist <= geo.radiusM ? '#10b981' : '#ef4444',
               fillOpacity: 0.1,
             });
           },
@@ -86,7 +96,7 @@ export default function AttendanceMap({
     };
     document.head.appendChild(script);
     return () => { script.remove(); };
-  }, []);
+  }, [store, storeName, geo.lat, geo.lng, geo.radiusM, geo.name]);
 
   return (
     <div className="space-y-4">
@@ -107,12 +117,12 @@ export default function AttendanceMap({
             }
             <div>
               <p className={`text-sm font-medium ${withinRange ? 'text-green-300' : 'text-red-300'}`}>
-                {withinRange ? '매장 범위 내' : '매장 범위 밖'}
+                {withinRange ? '출퇴근 가능 범위' : '범위 밖'}
               </p>
               <p className="text-xs text-slate-400 flex items-center gap-1">
                 <MapPin className="w-3 h-3" />
-                {STORE_CONFIG.name}까지 {distance}m
-                {!withinRange && ` (${STORE_CONFIG.radius}m 이내 필요)`}
+                {geo.name}까지 {distance}m
+                {!withinRange && ` (${geo.radiusM}m 이내 필요)`}
               </p>
             </div>
           </div>

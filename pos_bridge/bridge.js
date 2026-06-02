@@ -11,6 +11,7 @@
  *   node bridge.js customers            # Cus_Mst 고객 마스터 (레거시)
  *   node bridge.js sync-employees       # 사원정보만 동기화
  *   node bridge.js sync-customers       # Customer_Info 고객 동기화
+ *   node bridge.js probe-customer-phones # DB 전화 컬럼 원본 확인
  *   node bridge.js check-tables         # DB 테이블 확인
  *   node bridge.js --dry-run            # 조회만
  *
@@ -52,12 +53,9 @@ const REALTIME_INTERVAL_MS = 30 * 1000; // 30초
 // ── 유틸 ──────────────────────────────────────────────────────────
 const toInt = v => (v == null ? 0 : parseInt(v, 10) || 0);
 
-function now() {
-  return new Date().toISOString().slice(0, 19).replace('T', ' ');
-}
-function log(msg)  { console.log(`[${now()}] ${msg}`); }
-function warn(msg) { console.warn(`[${now()}] ⚠️  ${msg}`); }
-function err(msg)  { console.error(`[${now()}] ❌ ${msg}`); }
+function log(msg)  { console.log(`[${now()} KST] ${msg}`); }
+function warn(msg) { console.warn(`[${now()} KST] ⚠️  ${msg}`); }
+function err(msg)  { console.error(`[${now()} KST] ❌ ${msg}`); }
 
 // YYYYMM 추출 (SaT_202605 형식 테이블명용)
 function ym(dateStr) {
@@ -66,6 +64,24 @@ function ym(dateStr) {
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
+}
+
+/** 로그·오늘 날짜 — 항상 KST(Asia/Seoul). (UTC toISOString 사용 금지) */
+function getKSTTodayYMD(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(date);
+}
+
+function now() {
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(new Date());
 }
 
 // ── DB 연결 ───────────────────────────────────────────────────────
@@ -256,6 +272,58 @@ function maskPhone(phone) {
   return phone;
 }
 
+function isMaskedPhone(phone) {
+  if (!phone) return true;
+  const s = String(phone);
+  return s.includes('*') || /x{2,}/i.test(s);
+}
+
+/** Cus_Mst Cus_HP 우선 — DB 원본 숫자 */
+function pickBestPhone(...candidates) {
+  const list = candidates.map(c => String(c || '').trim()).filter(Boolean);
+  const full = list.find(p => !isMaskedPhone(p));
+  return full || list[0] || '';
+}
+
+function normalizePhoneDigits(phone) {
+  if (!phone || isMaskedPhone(phone)) return '';
+  const d = String(phone).replace(/\D/g, '');
+  if (d.length === 10 && d.startsWith('1')) return '0' + d;
+  if (d.length >= 9 && d.length <= 11) return d;
+  return '';
+}
+
+function auditCustomerPhones(customers) {
+  let fullCount = 0;
+  let maskedCount = 0;
+  let emptyCount = 0;
+  let recoverableFromMst = 0;
+
+  for (const c of customers) {
+    const mobile = String(c.mobile || '');
+    const tel = String(c.tel || '');
+    const cusHp = String(c.cusHp || '');
+    const digits = normalizePhoneDigits(pickBestPhone(cusHp, tel, mobile));
+
+    if (!digits && !mobile && !tel && !cusHp) { emptyCount++; continue; }
+    if (digits) fullCount++;
+    else {
+      maskedCount++;
+      if ((isMaskedPhone(mobile) || isMaskedPhone(tel)) && cusHp && !isMaskedPhone(cusHp)) {
+        recoverableFromMst++;
+      }
+    }
+  }
+
+  log(`전화 원본 숫자: ${fullCount}명 | DB 마스킹만: ${maskedCount}명 | 빈값: ${emptyCount}명`);
+  if (recoverableFromMst > 0) {
+    log(`Cus_Mst(Cus_HP)로 복구 가능: ${recoverableFromMst}명`);
+  }
+  if (maskedCount > 0 && fullCount === 0) {
+    warn('Customer_Info 전화가 전부 마스킹입니다. Cus_Mst 조인·Cus_HP 컬럼을 확인하세요.');
+  }
+}
+
 // ── 사원 조회 (Admin_User) ───────────────────────────────────────
 async function fetchEmployees(pool) {
   try {
@@ -286,35 +354,72 @@ async function fetchEmployees(pool) {
   }
 }
 
-// ── 고객 조회 (Customer_Info) ────────────────────────────────────
+// ── 고객 조회 (Customer_Info + Cus_Mst Cus_HP 원본) ───────────────
 async function fetchCustomerInfo(pool) {
+  const sqlJoin = `
+    SELECT
+      ci.Cus_Code       as cusCode,
+      ci.Cus_Name       as name,
+      ci.Cus_Gubun      as cusGubun,
+      ci.Cus_Class      as cusClass,
+      ci.Cus_Mobile     as mobile,
+      ci.Cus_Tel        as tel,
+      cm.Cus_HP         as cusHp,
+      ci.Cus_BirDay     as birthday,
+      ci.Mem_Day        as joinDate,
+      ci.Vis_Date       as lastVisitDate,
+      ci.last_eDATE     as lastEventDate,
+      ci.Cus_Point      as point,
+      ci.Cus_TPoint     as totalPoint,
+      ci.Cus_UsePoint   as usedPoint,
+      ci.Pur_Pri        as totalPurchase,
+      ci.Dec_Pri        as totalDiscount,
+      ci.Vis_Count      as visitCount,
+      ci.cPoint_Use     as pointUseYn,
+      ci.Cus_Use        as isActive,
+      ci.Email          as email
+    FROM Customer_Info ci
+    LEFT JOIN Cus_Mst cm ON ci.Cus_Code = cm.Cus_Code
+    WHERE ci.Cus_Use = '1'
+    ORDER BY ci.Vis_Date DESC
+  `;
+
+  const sqlPlain = `
+    SELECT
+      Cus_Code       as cusCode,
+      Cus_Name       as name,
+      Cus_Gubun      as cusGubun,
+      Cus_Class      as cusClass,
+      Cus_Mobile     as mobile,
+      Cus_Tel        as tel,
+      Cus_BirDay     as birthday,
+      Mem_Day        as joinDate,
+      Vis_Date       as lastVisitDate,
+      last_eDATE     as lastEventDate,
+      Cus_Point      as point,
+      Cus_TPoint     as totalPoint,
+      Cus_UsePoint   as usedPoint,
+      Pur_Pri        as totalPurchase,
+      Dec_Pri        as totalDiscount,
+      Vis_Count      as visitCount,
+      cPoint_Use     as pointUseYn,
+      Cus_Use        as isActive,
+      Email          as email
+    FROM Customer_Info
+    WHERE Cus_Use = '1'
+    ORDER BY Vis_Date DESC
+  `;
+
   try {
-    const result = await pool.request().query(`
-      SELECT
-        Cus_Code       as cusCode,
-        Cus_Name       as name,
-        Cus_Gubun      as cusGubun,
-        Cus_Class      as cusClass,
-        Cus_Mobile     as mobile,
-        Cus_Tel        as tel,
-        Cus_BirDay     as birthday,
-        Mem_Day        as joinDate,
-        Vis_Date       as lastVisitDate,
-        last_eDATE     as lastEventDate,
-        Cus_Point      as point,
-        Cus_TPoint     as totalPoint,
-        Cus_UsePoint   as usedPoint,
-        Pur_Pri        as totalPurchase,
-        Dec_Pri        as totalDiscount,
-        Vis_Count      as visitCount,
-        cPoint_Use     as pointUseYn,
-        Cus_Use        as isActive,
-        Email          as email
-      FROM Customer_Info
-      WHERE Cus_Use = '1'
-      ORDER BY Vis_Date DESC
-    `);
-    log(`고객 정보 ${result.recordset.length}명 조회`);
+    let result;
+    try {
+      result = await pool.request().query(sqlJoin);
+      log(`고객 정보 ${result.recordset.length}명 (Customer_Info + Cus_Mst Cus_HP)`);
+    } catch (joinErr) {
+      warn('Cus_Mst JOIN 실패, Customer_Info 단독 조회: ' + joinErr.message);
+      result = await pool.request().query(sqlPlain);
+      log(`고객 정보 ${result.recordset.length}명 (Customer_Info만)`);
+    }
     return result.recordset;
   } catch (e) {
     log('고객 조회 실패: ' + e.message);
@@ -450,38 +555,46 @@ async function syncEmployees(pool) {
 
 // ── 고객 정보 동기화 (Customer_Info) ─────────────────────────────
 async function syncCustomers(pool) {
-  log('━━━ 고객 정보 동기화 시작 ━━━');
+  log('━━━ 고객 정보 동기화 시작 (원본 전화번호) ━━━');
   const customers = await fetchCustomerInfo(pool);
   if (customers.length === 0) {
     log('고객 정보 없음');
     return;
   }
 
+  auditCustomerPhones(customers);
+
   const batchSize = 400;
   let totalSynced = 0;
 
   for (let i = 0; i < customers.length; i += batchSize) {
-    const batch = customers.slice(i, i + batchSize).map(c => ({
-      cusCode:        String(c.cusCode        || '').trim(),
-      name:           String(c.name           || '').trim(),
-      cusGubun:       String(c.cusGubun       || '').trim(),
-      cusClass:       String(c.cusClass       || '').trim(),
-      mobile:         String(c.mobile         || '').trim(),
-      tel:            String(c.tel            || '').trim(),
-      birthday:       String(c.birthday       || '').trim(),
-      joinDate:       String(c.joinDate       || '').trim(),
-      lastVisitDate:  String(c.lastVisitDate  || '').trim(),
-      lastEventDate:  String(c.lastEventDate  || '').trim(),
-      point:          toInt(c.point),
-      totalPoint:     toInt(c.totalPoint),
-      usedPoint:      toInt(c.usedPoint),
-      totalPurchase:  toInt(c.totalPurchase),
-      totalDiscount:  toInt(c.totalDiscount),
-      visitCount:     toInt(c.visitCount),
-      pointUseYn:     String(c.pointUseYn     || '').trim(),
-      isActive:       String(c.isActive       || '1').trim(),
-      email:          String(c.email          || '').trim(),
-    })).filter(c => c.cusCode);
+    const batch = customers.slice(i, i + batchSize).map(c => {
+      const rawBest = pickBestPhone(c.cusHp, c.tel, c.mobile);
+      const phoneFull = normalizePhoneDigits(rawBest);
+      return {
+        cusCode:        String(c.cusCode        || '').trim(),
+        name:           String(c.name           || '').trim(),
+        cusGubun:       String(c.cusGubun       || '').trim(),
+        cusClass:       String(c.cusClass       || '').trim(),
+        mobile:         String(c.mobile         || '').trim(),
+        tel:            String(c.tel            || '').trim(),
+        cusHp:          String(c.cusHp          || '').trim(),
+        phoneFull,
+        birthday:       String(c.birthday       || '').trim(),
+        joinDate:       String(c.joinDate       || '').trim(),
+        lastVisitDate:  String(c.lastVisitDate  || '').trim(),
+        lastEventDate:  String(c.lastEventDate  || '').trim(),
+        point:          toInt(c.point),
+        totalPoint:     toInt(c.totalPoint),
+        usedPoint:      toInt(c.usedPoint),
+        totalPurchase:  toInt(c.totalPurchase),
+        totalDiscount:  toInt(c.totalDiscount),
+        visitCount:     toInt(c.visitCount),
+        pointUseYn:     String(c.pointUseYn     || '').trim(),
+        isActive:       String(c.isActive       || '1').trim(),
+        email:          String(c.email          || '').trim(),
+      };
+    }).filter(c => c.cusCode);
 
     try {
       await axios.post(
@@ -516,7 +629,7 @@ async function checkTables(pool) {
       warn(`${table} 조회 실패: ${e.message}`);
     }
   }
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getKSTTodayYMD();
   try {
     const sat = await fetchHeaders(today);
     log(`SaT_${ym(today)} 오늘 헤더: ${sat.length ? sat[0].totalSale.toLocaleString() + '원' : '없음'}`);
@@ -528,7 +641,7 @@ async function checkTables(pool) {
 // ── 날씨 조회 (open-meteo 무료 API) ──────────────────────────────
 async function fetchWeather(dateStr) {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getKSTTodayYMD();
     const base = dateStr < today
       ? 'https://archive-api.open-meteo.com/v1/archive'
       : 'https://api.open-meteo.com/v1/forecast';
@@ -708,7 +821,7 @@ async function syncDate(dateStr, dryRun) {
 
 // 오늘 1회
 async function runToday(dryRun) {
-  const dateStr = new Date().toISOString().slice(0, 10);
+  const dateStr = getKSTTodayYMD();
   log(`======== 오늘 동기화: ${dateStr} ========`);
   const ok = await syncDate(dateStr, dryRun);
   if (!dryRun && ok) {
@@ -873,13 +986,65 @@ async function main() {
         const p = await getPool();
         if (dryRun) {
           const list = await fetchCustomerInfo(p);
-          log(`[DRY-RUN] 고객 ${list.length}명 조회. 상위 3명:`);
-          list.slice(0, 3).forEach(c =>
-            console.log(`  [${c.cusCode}] ${c.name || '-'} | 등급:${c.cusClass || '-'} | 포인트:${c.point || 0}`)
-          );
+          auditCustomerPhones(list);
+          log(`[DRY-RUN] 고객 ${list.length}명. 전화 샘플 5명:`);
+          list.slice(0, 5).forEach(c => {
+            const digits = normalizePhoneDigits(pickBestPhone(c.cusHp, c.tel, c.mobile));
+            console.log(
+              `  [${c.cusCode}] Cus_HP:${c.cusHp || '-'} tel:${c.tel || '-'} mobile:${c.mobile || '-'} → digits:${digits || '(마스킹/없음)'}`
+            );
+          });
         } else {
           await syncCustomers(p);
         }
+        break;
+      }
+
+      case 'probe-customer-phones': {
+        const p = await getPool();
+        const list = await fetchCustomerInfo(p);
+        auditCustomerPhones(list);
+        log('── 전화 컬럼 샘플 (상위 10명) ──');
+        list.slice(0, 10).forEach(c => {
+          const digits = normalizePhoneDigits(pickBestPhone(c.cusHp, c.tel, c.mobile));
+          console.log(JSON.stringify({
+            cusCode: c.cusCode,
+            cusHp: c.cusHp || null,
+            tel: c.tel || null,
+            mobile: c.mobile || null,
+            syncDigits: digits || null,
+          }));
+        });
+        break;
+      }
+
+      case 'probe-en-ukey': {
+        const p = await getPool();
+        const result = await p.request().query(`
+          SELECT TOP 10
+            Cus_Code   as cusCode,
+            Cus_Mobile as mobile,
+            en_uKey1, en_uKey2, en_uKey3, en_uKey4, en_uKey5
+          FROM Customer_Info
+          WHERE en_uKey2 IS NOT NULL AND en_uKey2 != ''
+          ORDER BY Cus_Code
+        `);
+        const countResult = await p.request().query(`
+          SELECT COUNT(*) as cnt FROM Customer_Info WHERE en_uKey2 IS NOT NULL AND en_uKey2 != ''
+        `);
+        log(`en_uKey2 보유 고객: ${countResult.recordset[0].cnt}명`);
+        log('── en_uKey 샘플 (상위 10명) ──');
+        result.recordset.forEach(r => {
+          console.log(JSON.stringify({
+            cusCode: r.cusCode,
+            mobile: r.mobile,
+            en_uKey1: r.en_uKey1 || null,
+            en_uKey2: r.en_uKey2 || null,
+            en_uKey3: r.en_uKey3 || null,
+            en_uKey4: r.en_uKey4 || null,
+            en_uKey5: r.en_uKey5 || null,
+          }));
+        });
         break;
       }
 
@@ -895,7 +1060,7 @@ async function main() {
           success = await runDate(mode, dryRun);
         } else {
           err(`알 수 없는 모드: ${mode}`);
-          console.log('사용법: node bridge.js [today|realtime|date YYYY-MM-DD|migrate START END|customers|sync-employees|sync-customers|check-tables] [--dry-run]');
+          console.log('사용법: node bridge.js [today|realtime|date YYYY-MM-DD|migrate START END|customers|sync-employees|sync-customers|probe-customer-phones|probe-en-ukey|check-tables] [--dry-run]');
           process.exit(1);
         }
     }

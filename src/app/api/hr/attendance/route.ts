@@ -2,12 +2,17 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
-import { isWithinStore, isWithinStoreGeo } from '@/lib/kakao/location';
+import { isWithinStore } from '@/lib/kakao/location';
+import {
+  attendanceDistanceM,
+  isWithinAttendanceRange,
+  resolveAttendanceGeo,
+} from '@/lib/hr/attendanceGeo';
+import { getKSTTodayYMD } from '@/lib/dateUtils';
 import { sendKakaoNotifySafe, sendKakaoNotifyToStore } from '@/lib/kakao/sendNotify';
 
 function todayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return getKSTTodayYMD();
 }
 
 export async function GET(req: Request) {
@@ -65,9 +70,16 @@ export async function POST(req: Request) {
     const storeDoc = await adminDb.collection('stores').doc(storeId).get();
     const storeData = storeDoc.exists ? storeDoc.data() : null;
 
-    if (!isWithinStoreGeo(Number(lat), Number(lng), storeData) && !isWithinStore(Number(lat), Number(lng))) {
+    const userLat = Number(lat);
+    const userLng = Number(lng);
+    const geo = resolveAttendanceGeo(storeData);
+    const inRange = isWithinAttendanceRange(userLat, userLng, storeData)
+      || isWithinStore(userLat, userLng);
+
+    if (!inRange) {
+      const dist = attendanceDistanceM(userLat, userLng, storeData);
       return NextResponse.json(
-        { error: '매장 근처에서만 출퇴근이 가능합니다' },
+        { error: `매장 ${geo.radiusM}m 밖입니다 (${dist}m). 매장 근처에서만 출퇴근할 수 있습니다.` },
         { status: 400 },
       );
     }

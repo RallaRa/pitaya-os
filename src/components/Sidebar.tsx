@@ -27,6 +27,7 @@ import {
   posDailySalesDocId,
   type SalesDocData,
 } from '@/lib/posDailySales';
+import SidebarAttendanceButtons from '@/components/SidebarAttendanceButtons';
 import {
   buildTodayTomorrowGroups,
   dateInRange,
@@ -643,6 +644,11 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               </Link>
             )}
           </div>
+        )}
+
+        {/* 출퇴근 */}
+        {!accessLoading && (menuAccess.hrCalendar || isSuperuser) && currentStore?.storeId && user && (
+          <SidebarAttendanceButtons onClose={onClose} />
         )}
 
         {/* 휴무·연차 (오늘/내일) */}
