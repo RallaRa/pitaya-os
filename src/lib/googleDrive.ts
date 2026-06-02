@@ -9,11 +9,30 @@ const CALLBACK_PATH = '/api/auth/google-drive/callback';
 const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const DRIVE_FULL_SCOPE = 'https://www.googleapis.com/auth/drive';
 
+function getAppBaseUrl(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (fromEnv && fromEnv.startsWith('https://') && !fromEnv.includes('localhost')) {
+    return fromEnv.replace(/\/$/, '');
+  }
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL.replace(/\/$/, '')}`;
+  }
+  if (process.env.VERCEL_URL && !process.env.VERCEL_URL.includes('localhost')) {
+    return `https://${process.env.VERCEL_URL.replace(/\/$/, '')}`;
+  }
+  return PROD_URL;
+}
+
 export function getDriveOAuth2Client() {
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) {
+    throw new Error('GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET가 필요합니다');
+  }
   return new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    `${process.env.NEXT_PUBLIC_APP_URL || PROD_URL}${CALLBACK_PATH}`,
+    clientId,
+    clientSecret,
+    `${getAppBaseUrl()}${CALLBACK_PATH}`,
   );
 }
 
@@ -32,7 +51,7 @@ export function stripBase64Data(content: string): string {
 }
 
 export function drivePhotoProxyUrl(fileId: string, storeId: string): string {
-  const base = process.env.NEXT_PUBLIC_APP_URL || PROD_URL;
+  const base = getAppBaseUrl();
   return `${base}/api/drive/view?id=${encodeURIComponent(fileId)}&store=${encodeURIComponent(storeId)}`;
 }
 
