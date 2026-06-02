@@ -208,9 +208,10 @@ export function mergeLayoutChange(
   visibleIds: string[],
   newLayout: LayoutItem[],
 ): LayoutItem[] {
-  return visibleIds.map(id => {
-    const meta = META_BY_ID.get(id)!;
+  return visibleIds.flatMap(id => {
+    const meta = META_BY_ID.get(id);
+    if (!meta) return [];
     const updated = newLayout.find(l => l.i === id);
-    return updated ? clampItem({ ...meta.defaultItem, ...updated }, meta) : { ...meta.defaultItem };
+    return [updated ? clampItem({ ...meta.defaultItem, ...updated }, meta) : { ...meta.defaultItem }];
   });
 }

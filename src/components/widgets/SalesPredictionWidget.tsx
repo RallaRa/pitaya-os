@@ -313,7 +313,7 @@ export default function SalesPredictionWidget({
     '배송불가': { bg: 'bg-red-900/40 border-red-500/50', text: 'text-red-200 font-bold animate-pulse', msg: `🚨 긴급 발주 필요 — 배송 불가 구간 (${orderInfo?.gaps?.[0]?.start}~${orderInfo?.gaps?.[0]?.end})` },
   }[dDayType] : null;
 
-  const hasValidComment = Boolean(data?.supporterComment?.trim()) && !isPlaceholderSupporterComment(data.supporterComment);
+  const hasValidComment = Boolean(data?.supporterComment?.trim()) && !isPlaceholderSupporterComment(data?.supporterComment || '');
   const showEmptyReason = data?.noData || (!hasValidComment && !(data?.topItems?.length));
   const showAiFailure = !!(data?.aiFailureReason && !data?.noData);
   const showStaleCommentHint = Boolean(
@@ -438,7 +438,7 @@ export default function SalesPredictionWidget({
           </div>
         )}
 
-        {data?.noData ? null : (
+        {data && !data.noData ? (
           <div className="flex flex-col gap-3 px-2">
             {data.activeContextLabels && data.activeContextLabels.length > 0 && (
               <p className="text-[10px] text-amber-400/90 px-1 leading-snug">
@@ -491,7 +491,7 @@ export default function SalesPredictionWidget({
               </div>
             </div>
           </div>
-        )}
+        ) : null}
 
         {data && !data.noData && (
           <div className="px-2 pt-2 mt-1 border-t border-slate-800/60 shrink-0">
