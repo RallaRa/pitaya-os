@@ -1,14 +1,20 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import {
-  Plus, Copy, ExternalLink, Loader2, Trash2, Save, Upload,
-  Play, Pause, Link2,
+  Copy, ExternalLink, Loader2, Trash2, ChevronLeft, ChevronRight,
+  GripVertical, Link2, Play, Pause,
 } from 'lucide-react';
 import { useStore } from '@/context/StoreContext';
-import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import type { PublicOrderLine } from '@/lib/publicOrders';
+
+const PublicOrderAIChat = dynamic(
+  () => import('@/components/public-orders/PublicOrderAIChat'),
+  { ssr: false },
+);
 
 interface SessionSummary {
   id: string;
@@ -18,18 +24,6 @@ interface SessionSummary {
   orderDeadline: string | null;
   createdAt: string | null;
 }
-
-const EMPTY_LINE = {
-  name: '',
-  description: '',
-  origin: '',
-  photoUrl: '',
-  normalPrice: 0,
-  discountPrice: 0,
-  unit: 'ea',
-  totalQty: 10,
-  sortOrder: 0,
-};
 
 export default function PublicOrdersAdminPage() {
   const { currentStore } = useStore();
@@ -48,11 +42,9 @@ export default function PublicOrdersAdminPage() {
     title: '', description: '', status: 'draft', orderDeadline: '', publicToken: '',
   });
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [lineForm, setLineForm] = useState({ ...EMPTY_LINE });
-  const [editingLineId, setEditingLineId] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [aiOpen, setAiOpen] = useState(true);
+  const [aiWidth, setAiWidth] = useState(320);
+  const resizingRef = useRef(false);
 
   const loadSessions = useCallback(async () => {
     if (!storeId) return;
@@ -82,438 +74,210 @@ export default function PublicOrdersAdminPage() {
       });
       setLines(data.lines || []);
       setEntries(data.entries || []);
-    } catch (e: unknown) {
-      setMsg(e instanceof Error ? e.message : '로드 실패');
     } finally {
       setLoading(false);
     }
   }, [storeId]);
 
-  useEffect(() => { loadSessions(); }, [loadSessions]);
+  const refreshAll = useCallback(async () => {
+    await loadSessions();
+    if (selectedId) await loadDetail(selectedId);
+  }, [loadSessions, loadDetail, selectedId]);
 
+  useEffect(() => { loadSessions(); }, [loadSessions]);
   useEffect(() => {
     if (sessionFromUrl) setSelectedId(sessionFromUrl);
   }, [sessionFromUrl]);
-
   useEffect(() => {
     if (selectedId) loadDetail(selectedId);
   }, [selectedId, loadDetail]);
-
   useEffect(() => {
     if (!selectedId) return;
-    const timer = setInterval(() => {
-      loadDetail(selectedId);
-    }, 30000);
+    const timer = setInterval(() => loadDetail(selectedId), 30000);
     return () => clearInterval(timer);
   }, [selectedId, loadDetail]);
 
-  const createSession = async () => {
-    if (!newTitle.trim() || !storeId) return;
-    setSaving(true);
-    try {
-      const headers = await getAuthJsonHeaders();
-      const res = await fetch('/api/public-orders/sessions', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ storeId, title: newTitle.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setNewTitle('');
-      await loadSessions();
-      setSelectedId(data.id);
-      setMsg('주문 회차가 생성되었습니다');
-    } catch (e: unknown) {
-      setMsg(e instanceof Error ? e.message : '생성 실패');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const saveSession = async () => {
-    if (!selectedId) return;
-    setSaving(true);
-    try {
-      const headers = await getAuthJsonHeaders();
-      const res = await fetch(`/api/public-orders/sessions/${selectedId}`, {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({
-          title: sessionMeta.title,
-          description: sessionMeta.description,
-          status: sessionMeta.status,
-          orderDeadline: sessionMeta.orderDeadline || null,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error);
-      }
-      setMsg('저장되었습니다');
-      await loadSessions();
-    } catch (e: unknown) {
-      setMsg(e instanceof Error ? e.message : '저장 실패');
-    } finally {
-      setSaving(false);
-    }
-  };
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!resizingRef.current) return;
+      setAiWidth(Math.min(520, Math.max(260, window.innerWidth - e.clientX)));
+    };
+    const onUp = () => {
+      resizingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
 
   const copyPublicLink = () => {
     const url = `${window.location.origin}/order/${sessionMeta.publicToken}`;
     navigator.clipboard.writeText(url);
-    setMsg('공개 링크가 복사되었습니다');
   };
 
-  const uploadPhoto = async (file: File) => {
-    if (!selectedId) return;
-    const reader = new FileReader();
-    const base64 = await new Promise<string>((resolve, reject) => {
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-    const headers = await getAuthJsonHeaders();
-    const res = await fetch(`/api/public-orders/sessions/${selectedId}/upload`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        fileName: file.name,
-        fileContent: base64,
-        mimeType: file.type,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    setLineForm(f => ({ ...f, photoUrl: data.photoUrl }));
-  };
-
-  const saveLine = async () => {
-    if (!selectedId || !lineForm.name.trim()) return;
-    setSaving(true);
-    try {
-      const headers = await getAuthJsonHeaders();
-      if (editingLineId) {
-        const res = await fetch(`/api/public-orders/sessions/${selectedId}/lines`, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify({ lineId: editingLineId, ...lineForm }),
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error);
-        }
-      } else {
-        const res = await fetch(`/api/public-orders/sessions/${selectedId}/lines`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(lineForm),
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error);
-        }
-      }
-      setLineForm({ ...EMPTY_LINE });
-      setEditingLineId(null);
-      await loadDetail(selectedId);
-      setMsg('품목이 저장되었습니다');
-    } catch (e: unknown) {
-      setMsg(e instanceof Error ? e.message : '품목 저장 실패');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const editLine = (line: PublicOrderLine) => {
-    setEditingLineId(line.id);
-    setLineForm({
-      name: line.name,
-      description: line.description,
-      origin: line.origin,
-      photoUrl: line.photoUrl,
-      normalPrice: line.normalPrice,
-      discountPrice: line.discountPrice,
-      unit: line.unit,
-      totalQty: line.totalQty,
-      sortOrder: line.sortOrder,
-    });
-  };
-
-  const deleteLine = async (lineId: string) => {
-    if (!selectedId || !confirm('이 품목을 삭제(비활성)하시겠습니까?')) return;
+  const deleteSession = async (id: string) => {
+    if (!confirm('이 회차를 삭제하시겠습니까?')) return;
     const headers = await getAuthHeaders();
-    await fetch(
-      `/api/public-orders/sessions/${selectedId}/lines?lineId=${lineId}`,
-      { method: 'DELETE', headers },
-    );
-    await loadDetail(selectedId);
+    await fetch(`/api/public-orders/sessions/${id}?storeId=${storeId}`, {
+      method: 'DELETE',
+      headers,
+    });
+    if (selectedId === id) setSelectedId(null);
+    await refreshAll();
   };
 
   if (!storeId) {
-    return (
-      <div className="p-6 text-slate-500 text-sm">매장을 선택해 주세요</div>
-    );
+    return <div className="p-6 text-slate-500 text-sm">매장을 선택해 주세요</div>;
   }
 
   const publicUrl = sessionMeta.publicToken
     ? `${typeof window !== 'undefined' ? window.location.origin : ''}/order/${sessionMeta.publicToken}`
     : '';
 
+  const statusLabel = (s: string) =>
+    s === 'open' ? '접수중' : s === 'closed' ? '마감' : '준비';
+
   return (
-    <div className="flex flex-col lg:flex-row min-h-full gap-0">
+    <div className="flex h-full min-h-[calc(100vh-4rem)] bg-slate-950 text-slate-100 overflow-hidden">
       {/* 회차 목록 */}
-      <aside className="w-full lg:w-72 border-r border-slate-800 bg-slate-900/30 p-4 shrink-0">
-        <h1 className="text-lg font-bold text-white mb-1">공개 주문 관리</h1>
-        <p className="text-xs text-slate-500 mb-4">
-          손님은 링크로 주문만 가능 · 주문 내역은 매장(이 화면)에서만 확인
+      <aside className="w-full lg:w-56 shrink-0 border-r border-slate-800 bg-slate-900/40 p-3 flex flex-col">
+        <h1 className="text-sm font-bold text-white mb-0.5">공개 주문</h1>
+        <p className="text-[10px] text-slate-500 mb-3 leading-snug">
+          AI 채팅으로 회차·품목 생성 · 손님은 링크로만 주문
         </p>
-
-        <div className="flex gap-2 mb-4">
-          <input
-            type="text"
-            placeholder="새 회차 제목"
-            value={newTitle}
-            onChange={e => setNewTitle(e.target.value)}
-            className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-          />
-          <button
-            type="button"
-            onClick={createSession}
-            disabled={saving}
-            className="p-2 bg-teal-600 rounded-lg text-white"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="space-y-1 max-h-[50vh] overflow-y-auto">
-          {sessions.map(s => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => setSelectedId(s.id)}
-              className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-colors ${
-                selectedId === s.id
-                  ? 'bg-teal-600/20 text-teal-200 border border-teal-500/30'
-                  : 'text-slate-400 hover:bg-slate-800'
-              }`}
-            >
-              <p className="font-medium truncate">{s.title}</p>
-              <p className="text-[10px] mt-0.5">
-                <span className={
-                  s.status === 'open' ? 'text-emerald-400'
-                    : s.status === 'closed' ? 'text-red-400' : 'text-slate-500'
-                }>
-                  {s.status === 'open' ? '접수중' : s.status === 'closed' ? '마감' : '준비'}
-                </span>
-              </p>
-            </button>
-          ))}
+        <div className="space-y-1 flex-1 overflow-y-auto">
+          {sessions.length === 0 ? (
+            <p className="text-[10px] text-slate-600 py-4 text-center">
+              회차 없음<br />우측 AI에 말해 보세요
+            </p>
+          ) : (
+            sessions.map(s => (
+              <div
+                key={s.id}
+                className={`flex items-center gap-1 rounded-xl transition-colors ${
+                  selectedId === s.id
+                    ? 'bg-teal-600/20 border border-teal-500/30'
+                    : 'hover:bg-slate-800 border border-transparent'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setSelectedId(s.id)}
+                  className="flex-1 text-left px-2.5 py-2 min-w-0"
+                >
+                  <p className="text-xs font-medium truncate text-slate-200">{s.title}</p>
+                  <p className={`text-[9px] mt-0.5 ${
+                    s.status === 'open' ? 'text-emerald-400'
+                      : s.status === 'closed' ? 'text-red-400' : 'text-slate-500'
+                  }`}>
+                    {statusLabel(s.status)}
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => deleteSession(s.id)}
+                  className="p-1.5 text-slate-700 hover:text-red-400 shrink-0"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            ))
+          )}
         </div>
       </aside>
 
-      {/* 상세 */}
-      <main className="flex-1 p-4 overflow-y-auto">
+      {/* 미리보기 */}
+      <main className="flex-1 min-w-0 overflow-y-auto p-4 pb-[48vh] md:pb-4">
         {!selectedId ? (
-          <p className="text-slate-500 text-sm">왼쪽에서 회차를 선택하거나 새로 만드세요</p>
+          <div className="flex flex-col items-center justify-center h-full min-h-[320px] text-center px-4">
+            <p className="text-slate-400 text-sm mb-2">AI에게 말해서 주문 회차를 만드세요</p>
+            <p className="text-[11px] text-slate-600 max-w-md leading-relaxed">
+              예: 「5월 한우 특판 회차 만들고 등심 50kg 89000원, 갈비 30kg 65000원 넣고 접수 시작해줘」
+            </p>
+          </div>
         ) : loading ? (
           <Loader2 className="w-6 h-6 animate-spin text-teal-400" />
         ) : (
-          <div className="space-y-6 max-w-3xl">
-            {msg && (
-              <p className="text-xs text-teal-400 bg-teal-950/40 border border-teal-800/40 rounded-lg px-3 py-2">
-                {msg}
-              </p>
-            )}
-
-            <section className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-              <h2 className="font-semibold text-white">회차 설정</h2>
-              <input
-                type="text"
-                value={sessionMeta.title}
-                onChange={e => setSessionMeta(m => ({ ...m, title: e.target.value }))}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-              />
-              <textarea
-                value={sessionMeta.description}
-                onChange={e => setSessionMeta(m => ({ ...m, description: e.target.value }))}
-                placeholder="안내 문구"
-                rows={2}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-              />
-              <input
-                type="date"
-                value={sessionMeta.orderDeadline}
-                onChange={e => setSessionMeta(m => ({ ...m, orderDeadline: e.target.value }))}
-                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-              />
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSessionMeta(m => ({ ...m, status: 'open' }))}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs ${
-                    sessionMeta.status === 'open' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'
-                  }`}
-                >
-                  <Play className="w-3 h-3" /> 접수 시작
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSessionMeta(m => ({ ...m, status: 'closed' }))}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs ${
-                    sessionMeta.status === 'closed' ? 'bg-red-600 text-white' : 'bg-slate-800 text-slate-400'
-                  }`}
-                >
-                  <Pause className="w-3 h-3" /> 마감
-                </button>
-                <button
-                  type="button"
-                  onClick={saveSession}
-                  disabled={saving}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs bg-teal-600 text-white"
-                >
-                  <Save className="w-3 h-3" /> 저장
-                </button>
+          <div className="space-y-4 max-w-2xl">
+            <section className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h2 className="font-semibold text-white">{sessionMeta.title}</h2>
+                  {sessionMeta.description && (
+                    <p className="text-xs text-slate-400 mt-1">{sessionMeta.description}</p>
+                  )}
+                  <div className="flex flex-wrap gap-2 mt-2 text-[10px]">
+                    <span className={`px-2 py-0.5 rounded-full ${
+                      sessionMeta.status === 'open'
+                        ? 'bg-emerald-900/40 text-emerald-300'
+                        : sessionMeta.status === 'closed'
+                          ? 'bg-red-900/40 text-red-300'
+                          : 'bg-slate-800 text-slate-400'
+                    }`}>
+                      {sessionMeta.status === 'open' && <Play className="w-2.5 h-2.5 inline mr-0.5" />}
+                      {sessionMeta.status === 'closed' && <Pause className="w-2.5 h-2.5 inline mr-0.5" />}
+                      {statusLabel(sessionMeta.status)}
+                    </span>
+                    {sessionMeta.orderDeadline && (
+                      <span className="text-slate-500">마감 {sessionMeta.orderDeadline}</span>
+                    )}
+                  </div>
+                </div>
               </div>
               {publicUrl && (
-                <div className="flex flex-wrap gap-2 items-center pt-2 border-t border-slate-800">
-                  <Link2 className="w-4 h-4 text-slate-500" />
-                  <code className="text-xs text-slate-400 flex-1 truncate">{publicUrl}</code>
-                  <button type="button" onClick={copyPublicLink} className="p-1.5 text-slate-400 hover:text-white">
-                    <Copy className="w-4 h-4" />
+                <div className="flex flex-wrap gap-2 items-center mt-3 pt-3 border-t border-slate-800">
+                  <Link2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <code className="text-[10px] text-slate-400 flex-1 truncate">{publicUrl}</code>
+                  <button type="button" onClick={copyPublicLink} className="p-1 text-slate-400 hover:text-white">
+                    <Copy className="w-3.5 h-3.5" />
                   </button>
-                  <a href={publicUrl} target="_blank" rel="noopener noreferrer" className="p-1.5 text-slate-400 hover:text-white">
-                    <ExternalLink className="w-4 h-4" />
+                  <a href={publicUrl} target="_blank" rel="noopener noreferrer" className="p-1 text-slate-400 hover:text-white">
+                    <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 </div>
               )}
             </section>
 
-            <section className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-              <h2 className="font-semibold text-white">
-                {editingLineId ? '품목 수정' : '품목 등록'}
-              </h2>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  placeholder="품목명 *"
-                  value={lineForm.name}
-                  onChange={e => setLineForm(f => ({ ...f, name: e.target.value }))}
-                  className="col-span-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-                />
-                <textarea
-                  placeholder="품목 설명"
-                  value={lineForm.description}
-                  onChange={e => setLineForm(f => ({ ...f, description: e.target.value }))}
-                  rows={2}
-                  className="col-span-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-                />
-                <input
-                  placeholder="원산지"
-                  value={lineForm.origin}
-                  onChange={e => setLineForm(f => ({ ...f, origin: e.target.value }))}
-                  className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-                />
-                <input
-                  placeholder="단위 (ea, kg)"
-                  value={lineForm.unit}
-                  onChange={e => setLineForm(f => ({ ...f, unit: e.target.value }))}
-                  className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-                />
-                <input
-                  type="number"
-                  placeholder="정상가"
-                  value={lineForm.normalPrice || ''}
-                  onChange={e => setLineForm(f => ({ ...f, normalPrice: Number(e.target.value) }))}
-                  className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-                />
-                <input
-                  type="number"
-                  placeholder="할인가"
-                  value={lineForm.discountPrice || ''}
-                  onChange={e => setLineForm(f => ({ ...f, discountPrice: Number(e.target.value) }))}
-                  className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-                />
-                <input
-                  type="number"
-                  placeholder="총수량"
-                  value={lineForm.totalQty || ''}
-                  onChange={e => setLineForm(f => ({ ...f, totalQty: Number(e.target.value) }))}
-                  className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-                />
-                <label className="flex items-center gap-2 text-sm text-slate-400 cursor-pointer">
-                  <Upload className="w-4 h-4" />
-                  사진
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={e => {
-                      const f = e.target.files?.[0];
-                      if (f) uploadPhoto(f).catch(err => setMsg(String(err)));
-                    }}
-                  />
-                </label>
-              </div>
-              {lineForm.photoUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={lineForm.photoUrl} alt="" className="h-24 rounded-lg object-cover" />
-              )}
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={saveLine}
-                  disabled={saving}
-                  className="px-4 py-2 bg-teal-600 rounded-lg text-sm text-white font-medium"
-                >
-                  {editingLineId ? '수정 저장' : '품목 추가'}
-                </button>
-                {editingLineId && (
-                  <button
-                    type="button"
-                    onClick={() => { setEditingLineId(null); setLineForm({ ...EMPTY_LINE }); }}
-                    className="px-4 py-2 bg-slate-800 rounded-lg text-sm text-slate-400"
-                  >
-                    취소
-                  </button>
+            <section>
+              <h3 className="text-xs font-semibold text-slate-400 mb-2">품목 ({lines.length})</h3>
+              <div className="space-y-2">
+                {lines.length === 0 ? (
+                  <p className="text-[11px] text-slate-600">AI에게 품목을 추가해 달라고 하세요</p>
+                ) : (
+                  lines.map(line => (
+                    <div
+                      key={line.id}
+                      className="flex items-center gap-3 bg-slate-900 border border-slate-800 rounded-xl p-3"
+                    >
+                      {line.photoUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={line.photoUrl} alt="" className="w-12 h-12 rounded-lg object-cover" />
+                      ) : (
+                        <div className="w-12 h-12 rounded-lg bg-slate-800" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-white text-sm">{line.name}</p>
+                        <p className="text-[10px] text-slate-500">
+                          {(line.discountPrice || line.normalPrice).toLocaleString()}원/{line.unit}
+                          · 잔량 {line.remainingQty}/{line.totalQty}
+                        </p>
+                      </div>
+                    </div>
+                  ))
                 )}
               </div>
             </section>
 
             <section>
-              <h2 className="font-semibold text-white mb-2">등록 품목 ({lines.length})</h2>
-              <div className="space-y-2">
-                {lines.map(line => (
-                  <div
-                    key={line.id}
-                    className="flex items-center gap-3 bg-slate-900 border border-slate-800 rounded-xl p-3"
-                  >
-                    {line.photoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={line.photoUrl} alt="" className="w-14 h-14 rounded-lg object-cover" />
-                    ) : (
-                      <div className="w-14 h-14 rounded-lg bg-slate-800" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-white text-sm">{line.name}</p>
-                      <p className="text-[10px] text-slate-500">
-                        {line.discountPrice || line.normalPrice}원 · 잔량 {line.remainingQty}/{line.totalQty}
-                      </p>
-                    </div>
-                    <button type="button" onClick={() => editLine(line)} className="text-xs text-teal-400">
-                      수정
-                    </button>
-                    <button type="button" onClick={() => deleteLine(line.id)} className="text-slate-600 hover:text-red-400">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section>
-              <h2 className="font-semibold text-white mb-1">주문 접수 내역 ({entries.length})</h2>
-              <p className="text-[10px] text-slate-500 mb-2">새 주문 시 알림 · 30초마다 자동 갱신</p>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
+              <h3 className="text-xs font-semibold text-slate-400 mb-1">
+                주문 접수 ({entries.length}) · 30초마다 갱신
+              </h3>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
                 {entries.map(e => (
                   <div key={e.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-sm">
                     <div className="flex justify-between">
@@ -533,6 +297,54 @@ export default function PublicOrdersAdminPage() {
           </div>
         )}
       </main>
+
+      {/* AI 채팅 — 데스크탑 우측 */}
+      {aiOpen ? (
+        <div className="hidden md:flex shrink-0 h-full relative" style={{ width: aiWidth }}>
+          <div
+            role="separator"
+            onMouseDown={() => {
+              resizingRef.current = true;
+              document.body.style.cursor = 'col-resize';
+              document.body.style.userSelect = 'none';
+            }}
+            className="absolute left-0 top-0 bottom-0 w-1.5 -ml-0.5 z-20 cursor-col-resize hover:bg-teal-500/20"
+          />
+          <button
+            type="button"
+            onClick={() => setAiOpen(false)}
+            className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-full z-10 w-4 h-8 bg-slate-800 border border-slate-700 rounded-l-md flex items-center justify-center text-slate-500 hover:text-teal-400"
+          >
+            <ChevronRight className="w-3 h-3" />
+          </button>
+          <div className="flex flex-col w-full h-full min-w-0">
+            <PublicOrderAIChat
+              storeId={storeId}
+              sessionId={selectedId}
+              onSessionChange={setSelectedId}
+              onRefresh={refreshAll}
+            />
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setAiOpen(true)}
+          className="hidden md:flex flex-col items-center justify-center w-8 shrink-0 border-l border-slate-800 text-slate-500 hover:text-teal-400 hover:bg-slate-800/80"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+      )}
+
+      {/* AI 채팅 — 모바일 하단 */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 h-[45vh] border-t border-slate-800 bg-slate-900">
+        <PublicOrderAIChat
+          storeId={storeId}
+          sessionId={selectedId}
+          onSessionChange={setSelectedId}
+          onRefresh={refreshAll}
+        />
+      </div>
     </div>
   );
 }
