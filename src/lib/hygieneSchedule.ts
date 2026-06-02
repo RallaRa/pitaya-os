@@ -70,11 +70,33 @@ export function hasSectionsComplete(items: HygieneItems, sectionIndices: number[
 
 export type ReminderKind = 'morning' | 'midday' | 'closing';
 
-/** cron 실행 시각(KST)에 맞는 알림 종류 */
+const REMINDER_KINDS = new Set<ReminderKind>(['morning', 'midday', 'closing']);
+
+export function parseReminderKindParam(value: string | null): ReminderKind | null {
+  const v = (value || '').trim() as ReminderKind;
+  return REMINDER_KINDS.has(v) ? v : null;
+}
+
+/**
+ * cron 실행 시각(KST)에 맞는 알림 종류.
+ * Vercel Hobby ±59분 오차 대비 — 목표 시각 전후 넓은 창 사용.
+ * GitHub Actions 등에서는 ?kind=morning|midday|closing 로 강제 지정.
+ */
 export function getReminderKind(hour: number, minute: number): ReminderKind | null {
-  if (hour === 11 && minute < 25) return 'morning';
-  if (hour === 14 && minute < 25) return 'midday';
-  if (hour === 20 && minute >= 30 && minute < 55) return 'closing';
+  // 11:00 KST (작업전) — 10:30~12:14
+  if (hour === 10 && minute >= 30) return 'morning';
+  if (hour === 11) return 'morning';
+  if (hour === 12 && minute < 15) return 'morning';
+
+  // 14:00 KST (작업중) — 13:30~15:14
+  if (hour === 13 && minute >= 30) return 'midday';
+  if (hour === 14) return 'midday';
+  if (hour === 15 && minute < 15) return 'midday';
+
+  // 20:30 KST (마감) — 20:00~21:29
+  if (hour === 20 && minute >= 0) return 'closing';
+  if (hour === 21 && minute < 30) return 'closing';
+
   return null;
 }
 

@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { isCronAuthorized, cronUnauthorizedResponse, getCronSecret } from '@/lib/cronAuth';
 import {
   getReminderKind,
   kstDateParts,
   needsHygieneReminder,
+  parseReminderKindParam,
   REMINDER_MESSAGES,
   type ReminderKind,
 } from '@/lib/hygieneSchedule';
@@ -41,18 +43,16 @@ async function sendNotificationsToStore(
 
 /** KST 11시 / 14시 / 20:30 — 미완료 시 매장 전체 알림 */
 export async function POST(req: Request) {
-  const secret = req.headers.get('x-cron-secret');
-  if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  if (!isCronAuthorized(req)) return cronUnauthorizedResponse();
 
   const { hour, minute, dateStr } = kstDateParts();
-  const kind = getReminderKind(hour, minute);
+  const forcedKind = parseReminderKindParam(new URL(req.url).searchParams.get('kind'));
+  const kind = forcedKind ?? getReminderKind(hour, minute);
   if (!kind) {
     return NextResponse.json({
       ok: true,
       skipped: true,
-      reason: `kst ${hour}:${minute} — not a reminder window`,
+      reason: `kst ${hour}:${minute} — not a reminder window (use ?kind=morning|midday|closing)`,
     });
   }
 
@@ -71,7 +71,6 @@ export async function POST(req: Request) {
         .get();
 
       const data = checkSnap.empty ? null : checkSnap.docs[0].data();
-      const sentKey = `notificationsSent.${kind}`;
       if (data?.notificationsSent?.[kind] === true) {
         skipped++;
         continue;
