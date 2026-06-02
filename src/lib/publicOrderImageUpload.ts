@@ -1,5 +1,5 @@
-import { adminDb, adminStorage } from '@/lib/firebase/admin';
-import { v4 as uuidv4 } from 'uuid';
+import { adminDb } from '@/lib/firebase/admin';
+import { uploadPublicOrderPhotoToDrive } from '@/lib/googleDrive';
 
 export async function uploadPublicOrderPhoto(
   storeId: string,
@@ -8,26 +8,7 @@ export async function uploadPublicOrderPhoto(
   fileName: string,
   mimeType = 'image/jpeg',
 ): Promise<string> {
-  const base64 = fileContent.includes(',') ? fileContent.split(',')[1] : fileContent;
-  const buffer = Buffer.from(base64, 'base64');
-  if (buffer.length > 10 * 1024 * 1024) {
-    throw new Error('10MB 이하만 업로드 가능합니다');
-  }
-
-  const token = uuidv4();
-  const ext = fileName.split('.').pop()?.toLowerCase() || 'jpg';
-  const safeName = `line_${Date.now()}_${token.slice(0, 8)}.${ext}`;
-  const storagePath = `stores/${storeId}/public-orders/${sessionId}/${safeName}`;
-
-  const bucket = adminStorage.bucket();
-  await bucket.file(storagePath).save(buffer, {
-    metadata: {
-      contentType: mimeType,
-      metadata: { firebaseStorageDownloadTokens: token },
-    },
-  });
-
-  return `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
+  return uploadPublicOrderPhotoToDrive(storeId, sessionId, fileContent, fileName, mimeType);
 }
 
 export interface ChatImageInput {

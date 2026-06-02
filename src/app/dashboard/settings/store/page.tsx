@@ -5,9 +5,9 @@ import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import {
   Store, Copy, Check, Loader2,
-  Save, RefreshCw, Users,
+  Save, RefreshCw, Users, HardDrive,
 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, ImageIcon } from 'lucide-react';
 import StoreDocuments from '@/components/store/StoreDocuments';
@@ -21,6 +21,9 @@ export default function StoreSettingsPage() {
   const { user } = useAuth();
   const { currentStore, refreshStores } = useStore();
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const [driveConnected, setDriveConnected] = useState<boolean | null>(null);
 
   const [form, setForm] = useState({
     storeName: '',
@@ -53,6 +56,48 @@ export default function StoreSettingsPage() {
       });
     }
   }, [currentStore]);
+
+  useEffect(() => {
+    const driveParam = searchParams.get('drive');
+    if (driveParam === 'connected') {
+      setSaveMsg('✅ Google Drive가 연결되었습니다.');
+    } else if (driveParam === 'error' || driveParam === 'no_token') {
+      setError('Google Drive 연결에 실패했습니다. 다시 시도해 주세요.');
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!currentStore?.storeId) return;
+    (async () => {
+      try {
+        const headers = await getAuthJsonHeaders();
+        const res = await fetch(
+          `/api/auth/google-drive/status?storeId=${encodeURIComponent(currentStore.storeId)}`,
+          { headers },
+        );
+        const data = await res.json();
+        setDriveConnected(!!data.connected);
+      } catch {
+        setDriveConnected(false);
+      }
+    })();
+  }, [currentStore?.storeId, searchParams]);
+
+  const connectDrive = async () => {
+    if (!currentStore?.storeId) return;
+    try {
+      const headers = await getAuthJsonHeaders();
+      const res = await fetch(
+        `/api/auth/google-drive/connect?storeId=${encodeURIComponent(currentStore.storeId)}`,
+        { headers },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Drive 연결 URL을 가져오지 못했습니다');
+      if (data.url) window.location.href = data.url;
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Drive 연결 실패');
+    }
+  };
 
   const handleCopy = () => {
     if (!currentStore?.storeId) return;
@@ -155,6 +200,37 @@ export default function StoreSettingsPage() {
               : <><Copy className="w-4 h-4" /> 복사</>
             }
           </button>
+        </div>
+      </div>
+
+      {/* Google Drive */}
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 mb-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-white font-semibold text-sm flex items-center gap-2 mb-1">
+              <HardDrive className="w-4 h-4 text-teal-400" />
+              Google Drive
+            </p>
+            <p className="text-slate-400 text-xs leading-relaxed">
+              공개주문 품목 사진을 Drive의 <code className="text-teal-300/80">Pitaya_공개주문</code> 폴더에 저장합니다.
+            </p>
+            <p className={`text-xs mt-2 ${driveConnected ? 'text-teal-400' : 'text-amber-400'}`}>
+              {driveConnected === null
+                ? '연결 상태 확인 중…'
+                : driveConnected
+                  ? '● 연결됨'
+                  : '● 미연결 — 사진 첨부 전 연결이 필요합니다'}
+            </p>
+          </div>
+          {canManageImages && (
+            <button
+              type="button"
+              onClick={connectDrive}
+              className="shrink-0 bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors"
+            >
+              {driveConnected ? '다시 연결' : 'Drive 연결'}
+            </button>
+          )}
         </div>
       </div>
 

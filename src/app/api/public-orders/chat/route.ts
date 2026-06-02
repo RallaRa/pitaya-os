@@ -16,6 +16,7 @@ import {
   ensureSessionForPhotos,
   type ChatImageInput,
 } from '@/lib/publicOrderImageUpload';
+import { isDriveConnected } from '@/lib/googleDrive';
 
 const SYSTEM = `당신은 정육점 「공개 주문(손님 링크 주문)」 관리 AI입니다.
 사용자의 자연어 요청을 분석해 Firestore에 반영할 작업(actions)과 친절한 한국어 reply를 JSON으로만 반환하세요.
@@ -75,6 +76,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'AI API 키가 설정되지 않았습니다' }, { status: 503 });
     }
 
+    if (images.length > 0 && !(await isDriveConnected(storeId))) {
+      return NextResponse.json({
+        error: 'Google Drive가 연결되지 않았습니다. 매장 설정 → Google Drive 연결 후 다시 시도해 주세요.',
+      }, { status: 503 });
+    }
+
     const context = await loadPublicOrderChatContext(storeId, sessionId);
     const historyText = history.slice(-8).map(m => `${m.role}: ${m.content}`).join('\n');
 
@@ -95,6 +102,7 @@ export async function POST(req: Request) {
       activeAfterPhotos = targetSessionId;
 
       const photoUrls: string[] = [];
+      const uploadErrors: string[] = [];
       for (let i = 0; i < images.length; i++) {
         const img = images[i];
         try {
@@ -106,7 +114,9 @@ export async function POST(req: Request) {
             img.mimeType || 'image/jpeg',
           );
           photoUrls.push(url);
-        } catch {
+        } catch (e: unknown) {
+          const msg = e instanceof Error ? e.message : String(e);
+          uploadErrors.push(`사진 ${i + 1}: ${msg}`);
           photoUrls.push('');
         }
       }
@@ -135,7 +145,7 @@ export async function POST(req: Request) {
 
       visionBlock = `[사진 분석 — ${images.length}장]
 ${visionReply}
-인식 품목: ${linesWithPhotos.map(l => `${l.name}${l.photoUrl ? ' (사진첨부)' : ''}`).join(', ')}`;
+인식 품목: ${linesWithPhotos.map(l => `${l.name}${l.photoUrl ? ' (사진첨부)' : ''}`).join(', ')}${uploadErrors.length ? `\n업로드 오류: ${uploadErrors.join('; ')}` : ''}`;
     }
 
     const prompt = `[매장 storeId: ${storeId}]
