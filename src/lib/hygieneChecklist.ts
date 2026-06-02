@@ -1,6 +1,6 @@
 export const HYGIENE_SECTIONS = [
   {
-    category: '개인위생(정용)',
+    category: '개인위생(공통)',
     items: [
       '위생복, 위생모, 위생화, 장갑 등은 청결하게 관리되고 있는가?',
       '두발, 수염, 손톱 등 개인위생 상태는 잘 지켜지고 있는가?',
