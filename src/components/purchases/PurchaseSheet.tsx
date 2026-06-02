@@ -12,9 +12,19 @@ import {
   isMeatCategory,
   PURCHASE_UNITS,
 } from '@/lib/purchaseCategories';
+import {
+  ItemCodePicker,
+  SupplierCodePicker,
+  usePurchaseMasterData,
+  mapScaleCategory,
+  type ScaleCodeOption,
+  type SupplierOption,
+} from '@/components/purchases/PurchaseMasterSelect';
 
 export interface PurchaseItem {
   name: string;
+  itemCode?: number;
+  scaleCodeId?: string;
   category: string;
   qty: number;
   unit: string;
@@ -30,6 +40,7 @@ export interface PurchaseItem {
 export interface Invoice {
   purchaseDate: string;
   supplierName: string;
+  supplierId?: string;
   invoiceNumber: string;
   items: PurchaseItem[];
   supplyAmount: number;
@@ -66,6 +77,7 @@ interface Props {
   onGroupsChange: (groups: InvoiceGroup[]) => void;
   onSaveGroup: (groupId: string) => Promise<void>;
   savingGroupIds: Set<string>;
+  storeId?: string;
 }
 
 type OptionalCol = 'traceNo' | 'origin' | 'cut' | 'grade';
@@ -233,10 +245,11 @@ function ImageViewerModal({
 }
 
 export default function PurchaseSheet({
-  groups, onGroupsChange, onSaveGroup, savingGroupIds,
+  groups, onGroupsChange, onSaveGroup, savingGroupIds, storeId = '',
 }: Props) {
   const [visibleCols, setVisibleCols] = useState<Set<OptionalCol>>(new Set());
   const [viewer, setViewer] = useState<{ groupId: string; index: number } | null>(null);
+  const { scaleCodes, suppliers, reload: reloadMaster } = usePurchaseMasterData(storeId);
 
   const hasData = useMemo<Record<OptionalCol, boolean>>(() => {
     const r: Record<OptionalCol, boolean> = { traceNo: false, origin: false, cut: false, grade: false };
@@ -280,6 +293,43 @@ export default function PurchaseSheet({
     updateGroup(groupId, g => ({
       ...g, invoice: recalcTotals({ ...g.invoice, [field]: value }),
     }));
+  };
+
+  const updateSupplier = (groupId: string, supplier: SupplierOption | null) => {
+    updateGroup(groupId, g => ({
+      ...g,
+      invoice: recalcTotals({
+        ...g.invoice,
+        supplierId: supplier?.id || '',
+        supplierName: supplier?.supplierName || '',
+      }),
+    }));
+  };
+
+  const selectItemCode = (groupId: string, idx: number, opt: ScaleCodeOption | null) => {
+    updateGroup(groupId, g => {
+      const items = g.invoice.items.map((item, i) => {
+        if (i !== idx) return item;
+        if (!opt) {
+          return { ...item, itemCode: undefined, scaleCodeId: undefined };
+        }
+        const cat = mapScaleCategory(opt.category) || item.category;
+        return applyItemChange(
+          {
+            ...item,
+            itemCode: opt.code,
+            scaleCodeId: opt.id,
+            name: opt.name,
+            category: ALL_ITEM_CATEGORIES.includes(cat as typeof ALL_ITEM_CATEGORIES[number])
+              ? cat
+              : item.category,
+          },
+          'name',
+          opt.name,
+        );
+      });
+      return { ...g, invoice: recalcTotals({ ...g.invoice, items }) };
+    });
   };
 
   const updateItem = (groupId: string, idx: number, field: keyof PurchaseItem, value: string | number) => {
@@ -382,12 +432,24 @@ export default function PurchaseSheet({
                 className="bg-transparent text-[10px] text-slate-400 focus:outline-none focus:bg-slate-800 rounded px-0.5 w-[7.5rem] shrink-0"
               />
 
-              <input
-                value={inv.supplierName}
-                onChange={e => updateHeader(group.id, 'supplierName', e.target.value)}
-                placeholder="공급업체명"
-                className="bg-transparent text-[11px] text-white font-semibold focus:outline-none focus:bg-slate-800 rounded px-0.5 flex-1 min-w-[5rem] placeholder:text-slate-600"
-              />
+              {storeId ? (
+                <SupplierCodePicker
+                  storeId={storeId}
+                  supplierId={inv.supplierId}
+                  supplierName={inv.supplierName}
+                  suppliers={suppliers}
+                  onReload={reloadMaster}
+                  onSelect={s => updateSupplier(group.id, s)}
+                  compact
+                />
+              ) : (
+                <input
+                  value={inv.supplierName}
+                  onChange={e => updateHeader(group.id, 'supplierName', e.target.value)}
+                  placeholder="공급업체명"
+                  className="bg-transparent text-[11px] text-white font-semibold focus:outline-none focus:bg-slate-800 rounded px-0.5 flex-1 min-w-[5rem] placeholder:text-slate-600"
+                />
+              )}
 
               {inv.aiTag && (
                 <span
@@ -481,7 +543,7 @@ export default function PurchaseSheet({
                     <tr className="border-b border-slate-700/60 bg-slate-800/30">
                       <th className="text-left text-slate-500 px-1.5 py-1 font-medium w-6">#</th>
                       <th className="text-left text-slate-400 px-1 py-1 font-medium w-16">구분</th>
-                      <th className="text-left text-slate-400 px-1 py-1 font-medium w-[20%]">품명</th>
+                      <th className="text-left text-slate-400 px-1 py-1 font-medium w-[22%]">품목코드·품명</th>
                       <th className="text-right text-slate-400 px-1 py-1 font-medium w-12">수량</th>
                       <th className="text-left text-slate-400 px-1 py-1 font-medium w-10">단위</th>
                       <th className="text-right text-slate-400 px-1 py-1 font-medium w-16">단가</th>
@@ -529,13 +591,24 @@ export default function PurchaseSheet({
                           </select>
                         </td>
 
-                        {/* 품명 */}
+                        {/* 품목코드·품명 */}
                         <td className="px-0.5 py-0">
-                          <input
-                            value={item.name}
-                            onChange={e => updateItem(group.id, idx, 'name', e.target.value)}
-                            className="w-full bg-transparent px-1 py-0.5 text-[10px] text-slate-200 focus:outline-none focus:bg-slate-800 rounded truncate"
-                          />
+                          {storeId ? (
+                            <ItemCodePicker
+                              storeId={storeId}
+                              itemCode={item.itemCode}
+                              itemName={item.name}
+                              scaleCodes={scaleCodes}
+                              onReload={reloadMaster}
+                              onSelect={opt => selectItemCode(group.id, idx, opt)}
+                            />
+                          ) : (
+                            <input
+                              value={item.name}
+                              onChange={e => updateItem(group.id, idx, 'name', e.target.value)}
+                              className="w-full bg-transparent px-1 py-0.5 text-[10px] text-slate-200 focus:outline-none focus:bg-slate-800 rounded truncate"
+                            />
+                          )}
                         </td>
 
                         {/* 수량 */}

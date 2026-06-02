@@ -377,6 +377,7 @@ export default function PurchaseInputPage() {
             onGroupsChange={setGroups}
             onSaveGroup={saveGroup}
             savingGroupIds={savingGroupIds}
+            storeId={currentStore?.storeId}
           />
         </div>
       </div>
