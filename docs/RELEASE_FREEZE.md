@@ -8,7 +8,7 @@
 |------|-----|---------|
 | `PREDICTION_LOCK_VERSION` | `src/lib/predictionDailyLock.ts` | 예측 스키마/로직 변경 시 **+1** (캐시 자동 무효화) |
 | `RELEASE_TAG` | Git tag `release-YYYY-MM-DD-N` | 프로덕션 배포 직후 태그 생성 |
-| `vercel.json` crons | 30분 POS + AI 4슬롯 | 스케줄 변경은 PR + 태그 필수 |
+| `vercel.json` crons | POS 3시간마다(서버) + 위젯 30분(클라) + AI 4슬롯 | Hobby: `*/30` 불가 → Pro 시 30분 cron 가능 |
 
 배포 직후:
 

@@ -19,7 +19,7 @@
     { "path": "/api/cron/calendar-notifications", "schedule": "0 0 * * *" },
     { "path": "/api/cron/holiday-notification",    "schedule": "0 0 * * *" },
     { "path": "/api/cron/sales-hourly-alert",      "schedule": "0 4 * * *" },
-    { "path": "/api/cron/prediction-today-actual", "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/prediction-today-actual", "schedule": "0 6 * * *" },
     { "path": "/api/cron/prediction-ai-slot",      "schedule": "5 15 * * *" },
     { "path": "/api/cron/prediction-ai-slot",      "schedule": "5 1 * * *" },
     { "path": "/api/cron/prediction-ai-slot",      "schedule": "5 6 * * *" },

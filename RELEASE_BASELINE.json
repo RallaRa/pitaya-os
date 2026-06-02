@@ -13,7 +13,7 @@
     "leave_preused_display"
   ],
   "cron": {
-    "predictionTodayActual": "*/30 * * * *",
+    "predictionTodayActual": "0 0,3,6,9,12 * * * (UTC, ~3h) + widget 30m",
     "predictionAiSlot": ["5 15 * * *", "5 1 * * *", "5 6 * * *", "5 9 * * *"]
   },
   "primaryStoreId": "STR-1779194754785"
