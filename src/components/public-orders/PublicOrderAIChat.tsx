@@ -14,9 +14,13 @@ interface AttachedImage {
   mimeType: string;
 }
 
+type JobStatus = 'queued' | 'processing' | 'done' | 'error';
+
 interface ChatMessage {
+  id: string;
   role: 'user' | 'assistant';
   content: string;
+  status?: JobStatus;
   publicUrl?: string;
   ai?: AiMetaDisplay;
   imagePreviews?: string[];
@@ -36,6 +40,9 @@ const QUICK_PROMPTS = [
   '주문 현황 알려줘',
 ];
 
+const MAX_CONCURRENT = 3;
+const MAX_QUEUE = 20;
+
 function genId() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -48,29 +55,103 @@ export default function PublicOrderAIChat({
 }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
+      id: 'welcome',
       role: 'assistant',
       content:
-        '공개 주문을 **말로** 또는 **사진으로** 만들 수 있습니다.\n\n• 텍스트: 「5월 특판 만들고 등심 50kg 89000원 추가」\n• 사진: 품목 사진 첨부 + 「이 품목 추가해줘」\n• 드래그·붙여넣기·📎 버튼 지원\n\nAI가 품목명·가격을 인식하고 사진을 품목에 연결합니다.',
+        '공개 주문을 **말로** 또는 **사진으로** 만들 수 있습니다.\n\n• 여러 건을 **연속으로 보내도** 백그라운드에서 병렬 처리됩니다 (최대 3건 동시)\n• 처리 중에도 다른 사진·명령을 계속 올리세요\n\n• 텍스트: 「5월 특판 만들고 등심 50kg 89000원 추가」\n• 사진: 품목 사진 첨부 + 「이 품목 추가해줘」',
     },
   ]);
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<AttachedImage[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [queueStats, setQueueStats] = useState({ queued: 0, processing: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounter = useRef(0);
 
+  const sessionIdRef = useRef(sessionId);
+  const messagesRef = useRef(messages);
+  const activeCountRef = useRef(0);
+  const jobQueueRef = useRef<Array<() => Promise<void>>>([]);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => {
+      onRefresh();
+      refreshTimerRef.current = null;
+    }, 600);
+  }, [onRefresh]);
+
+  const updateMessage = useCallback((id: string, patch: Partial<ChatMessage>) => {
+    setMessages(prev => prev.map(m => (m.id === id ? { ...m, ...patch } : m)));
+  }, []);
+
+  const pumpQueue = useCallback(() => {
+    while (activeCountRef.current < MAX_CONCURRENT && jobQueueRef.current.length > 0) {
+      const run = jobQueueRef.current.shift()!;
+      activeCountRef.current += 1;
+      setQueueStats({
+        queued: jobQueueRef.current.length,
+        processing: activeCountRef.current,
+      });
+      run()
+        .catch(() => {})
+        .finally(() => {
+          activeCountRef.current -= 1;
+          setQueueStats({
+            queued: jobQueueRef.current.length,
+            processing: activeCountRef.current,
+          });
+          pumpQueue();
+        });
+    }
+    setQueueStats({
+      queued: jobQueueRef.current.length,
+      processing: activeCountRef.current,
+    });
+  }, []);
+
+  const enqueueJob = useCallback((run: () => Promise<void>) => {
+    if (jobQueueRef.current.length >= MAX_QUEUE) {
+      setMessages(prev => [
+        ...prev,
+        {
+          id: genId(),
+          role: 'assistant',
+          content: '⚠️ 대기열이 가득 찼습니다. 잠시 후 다시 시도해 주세요.',
+          status: 'error',
+        },
+      ]);
+      return;
+    }
+    jobQueueRef.current.push(run);
+    setQueueStats({
+      queued: jobQueueRef.current.length,
+      processing: activeCountRef.current,
+    });
+    pumpQueue();
+  }, [pumpQueue]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, queueStats]);
 
   const addImageFiles = useCallback(async (files: FileList | File[]) => {
     const list = Array.from(files).filter(f => f.type.startsWith('image/'));
     if (!list.length) return;
 
+    const room = Math.max(0, 5 - attachments.length);
     const added: AttachedImage[] = [];
-    for (const file of list.slice(0, 5 - attachments.length)) {
+    for (const file of list.slice(0, room)) {
       try {
         const content = await compressImageFile(file, 1280, 0.82, true);
         added.push({
@@ -126,22 +207,17 @@ export default function PublicOrderAIChat({
     if (e.dataTransfer.files.length) addImageFiles(e.dataTransfer.files);
   };
 
-  const send = useCallback(async (text: string) => {
-    const trimmed = text.trim();
-    if ((!trimmed && attachments.length === 0) || loading || !storeId) return;
+  const runChatJob = useCallback(async (
+    assistantId: string,
+    trimmed: string,
+    sentAttachments: AttachedImage[],
+  ) => {
+    updateMessage(assistantId, { status: 'processing', content: '⏳ 처리 중…' });
 
-    const previews = attachments.map(a => a.preview);
-    const userMsg: ChatMessage = {
-      role: 'user',
-      content: trimmed || `(사진 ${attachments.length}장)`,
-      imagePreviews: previews.length ? previews : undefined,
-    };
-    setMessages(prev => [...prev, userMsg]);
-
-    const sentAttachments = [...attachments];
-    setInput('');
-    setAttachments([]);
-    setLoading(true);
+    const history = messagesRef.current
+      .filter(m => m.status === 'done' || m.role === 'user')
+      .slice(-10)
+      .map(m => ({ role: m.role, content: m.content }));
 
     try {
       const headers = await getAuthJsonHeaders();
@@ -150,9 +226,9 @@ export default function PublicOrderAIChat({
         headers,
         body: JSON.stringify({
           storeId,
-          sessionId: sessionId || undefined,
+          sessionId: sessionIdRef.current || undefined,
           message: trimmed,
-          history: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+          history,
           images: sentAttachments.map(a => ({
             fileName: a.name,
             fileContent: a.content,
@@ -163,34 +239,63 @@ export default function PublicOrderAIChat({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '요청 실패');
 
-      if (data.sessionId) onSessionChange(data.sessionId);
-      onRefresh();
+      if (data.sessionId) {
+        sessionIdRef.current = data.sessionId;
+        onSessionChange(data.sessionId);
+      }
+      scheduleRefresh();
 
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: data.reply || '처리했습니다.',
-          publicUrl: data.publicUrl,
-          ai: data.ai,
-        },
-      ]);
+      updateMessage(assistantId, {
+        status: 'done',
+        content: data.reply || '처리했습니다.',
+        publicUrl: data.publicUrl,
+        ai: data.ai,
+      });
     } catch (e: unknown) {
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          content: `⚠️ ${e instanceof Error ? e.message : '오류가 발생했습니다'}`,
-        },
-      ]);
-    } finally {
-      setLoading(false);
+      updateMessage(assistantId, {
+        status: 'error',
+        content: `⚠️ ${e instanceof Error ? e.message : '오류가 발생했습니다'}`,
+      });
     }
-  }, [loading, storeId, sessionId, messages, attachments, onSessionChange, onRefresh]);
+  }, [storeId, onSessionChange, scheduleRefresh, updateMessage]);
+
+  const send = useCallback((text: string) => {
+    const trimmed = text.trim();
+    if ((!trimmed && attachments.length === 0) || !storeId) return;
+
+    const previews = attachments.map(a => a.preview);
+    const userId = genId();
+    const assistantId = genId();
+
+    setMessages(prev => [
+      ...prev,
+      {
+        id: userId,
+        role: 'user',
+        content: trimmed || `(사진 ${attachments.length}장)`,
+        imagePreviews: previews.length ? previews : undefined,
+        status: 'done',
+      },
+      {
+        id: assistantId,
+        role: 'assistant',
+        content: '📋 대기열에 추가됨',
+        status: 'queued',
+      },
+    ]);
+
+    const sentAttachments = [...attachments];
+    setInput('');
+    setAttachments([]);
+
+    enqueueJob(() => runChatJob(assistantId, trimmed, sentAttachments));
+  }, [attachments, storeId, enqueueJob, runChatJob]);
 
   const copyLink = (url: string) => {
     navigator.clipboard.writeText(url);
   };
+
+  const busy = queueStats.queued + queueStats.processing > 0;
 
   return (
     <div
@@ -215,18 +320,31 @@ export default function PublicOrderAIChat({
         <Bot className="w-4 h-4 text-teal-400 shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-xs font-semibold text-teal-300">AI 공개주문</p>
-          <p className="text-[10px] text-slate-500 truncate">말·사진으로 회차·품목 설정</p>
+          <p className="text-[10px] text-slate-500 truncate">
+            {busy
+              ? `처리 중 ${queueStats.processing} · 대기 ${queueStats.queued}`
+              : '말·사진으로 회차·품목 설정 · 병렬 처리'}
+          </p>
         </div>
+        {busy && (
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-400 shrink-0" />
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+        {messages.map(msg => (
+          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
               className={`max-w-[92%] rounded-xl px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap ${
                 msg.role === 'user'
                   ? 'bg-teal-600/30 text-teal-100'
-                  : 'bg-slate-800 text-slate-200'
+                  : msg.status === 'error'
+                    ? 'bg-red-950/40 text-red-200 border border-red-800/40'
+                    : msg.status === 'queued'
+                      ? 'bg-slate-800/60 text-slate-400 border border-dashed border-slate-600'
+                      : msg.status === 'processing'
+                        ? 'bg-slate-800 text-slate-300 border border-teal-700/40'
+                        : 'bg-slate-800 text-slate-200'
               }`}
             >
               {msg.imagePreviews && msg.imagePreviews.length > 0 && (
@@ -242,8 +360,13 @@ export default function PublicOrderAIChat({
                   ))}
                 </div>
               )}
-              {msg.content}
-              {msg.publicUrl && (
+              <div className="flex items-start gap-2">
+                {(msg.status === 'queued' || msg.status === 'processing') && (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-400 shrink-0 mt-0.5" />
+                )}
+                <span className="flex-1">{msg.content}</span>
+              </div>
+              {msg.publicUrl && msg.status === 'done' && (
                 <div className="mt-2 pt-2 border-t border-slate-700/60 flex flex-wrap gap-2 items-center">
                   <code className="text-[10px] text-slate-400 truncate max-w-[180px]">{msg.publicUrl}</code>
                   <button
@@ -265,18 +388,10 @@ export default function PublicOrderAIChat({
                   </a>
                 </div>
               )}
-              {msg.ai && <AiUsedBadge ai={msg.ai} className="mt-2" />}
+              {msg.ai && msg.status === 'done' && <AiUsedBadge ai={msg.ai} className="mt-2" />}
             </div>
           </div>
         ))}
-        {loading && (
-          <div className="flex justify-start">
-            <div className="bg-slate-800 rounded-xl px-3 py-2 flex items-center gap-2 text-xs text-slate-400">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-teal-400" />
-              {attachments.length ? '사진 분석 중…' : '처리 중…'}
-            </div>
-          </div>
-        )}
         <div ref={bottomRef} />
       </div>
 
@@ -304,9 +419,8 @@ export default function PublicOrderAIChat({
             <button
               key={q}
               type="button"
-              disabled={loading}
               onClick={() => send(q)}
-              className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 px-2 py-1 rounded-lg border border-slate-700/50 disabled:opacity-40"
+              className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 px-2 py-1 rounded-lg border border-slate-700/50"
             >
               {q}
             </button>
@@ -328,7 +442,7 @@ export default function PublicOrderAIChat({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={loading || attachments.length >= 5}
+            disabled={attachments.length >= 5}
             className="shrink-0 p-2 rounded-lg bg-slate-800 border border-slate-700/60 text-slate-400 hover:text-teal-300 disabled:opacity-40"
             title="사진 첨부"
           >
@@ -343,14 +457,13 @@ export default function PublicOrderAIChat({
                 send(input);
               }
             }}
-            placeholder="말로 입력하거나 📎로 사진 첨부"
-            disabled={loading}
-            className="flex-1 bg-slate-800 border border-slate-700/60 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-teal-500/50 disabled:opacity-50"
+            placeholder={busy ? '계속 입력·사진 추가 가능' : '말로 입력하거나 📎로 사진 첨부'}
+            className="flex-1 bg-slate-800 border border-slate-700/60 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-teal-500/50"
           />
           <button
             type="button"
             onClick={() => send(input)}
-            disabled={loading || (!input.trim() && attachments.length === 0)}
+            disabled={!input.trim() && attachments.length === 0}
             className="bg-teal-600 hover:bg-teal-500 disabled:bg-slate-700 text-white px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
           >
             <Send className="w-3.5 h-3.5" />
