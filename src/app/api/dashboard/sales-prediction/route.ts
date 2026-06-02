@@ -47,10 +47,10 @@ import {
 } from '@/lib/predictionSlotHistory';
 import { ensureWeatherVariablesCalibrated, runWeatherItemCalibration } from '@/lib/weatherItemCalibration';
 import { annotateCompareDatesInComment } from '@/lib/annotateCompareDatesInText';
+import { PREDICTION_POS_REFRESH_LABEL } from '@/lib/predictionRefreshConfig';
 import {
   enrichPredictionItemsWithTodayActual,
   isTodayActualCacheFresh,
-  PREDICTION_POS_REFRESH_LABEL,
   refreshStoreTodayActualSales,
 } from '@/lib/predictionTodayActual';
 

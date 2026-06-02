@@ -5,13 +5,11 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getKSTTodayYMD } from '@/lib/dateUtils';
 import { predictionCacheDocId } from '@/lib/predictionDailyLock';
+import { PREDICTION_POS_REFRESH_LABEL, PREDICTION_POS_REFRESH_MS } from '@/lib/predictionRefreshConfig';
 import { dailyReportDocId } from '@/lib/reportCompare';
 import { itemNamesMatch } from '@/lib/itemNameMatch';
 
-/** 당일 실매출(POS) 갱신 주기 — AI 예측(00·10·15·18)과 분리 */
-export const PREDICTION_POS_REFRESH_MS = 30 * 60 * 1000;
-
-export const PREDICTION_POS_REFRESH_LABEL = '당일 실매출 30분마다 · AI 예측 00·10·15·18시';
+export { PREDICTION_POS_REFRESH_MS, PREDICTION_POS_REFRESH_LABEL } from '@/lib/predictionRefreshConfig';
 
 function ymdCompact(ymd: string): string {
   return ymd.replace(/-/g, '');
@@ -148,7 +146,14 @@ export async function enrichPredictionItemsWithTodayActual(
     bottomItems?: Array<Record<string, unknown>>;
   },
 ) {
-  if (!storeId) return payload;
+  if (!storeId) {
+    return {
+      ...payload,
+      todaySalesAsOf: todayYmd,
+      hasTodaySalesData: false,
+      todayActualUpdatedAt: null,
+    };
+  }
   const ctx = await fetchTodayItemSalesContext(storeId, todayYmd);
   return {
     ...payload,

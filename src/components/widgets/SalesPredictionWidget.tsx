@@ -8,7 +8,7 @@ import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { isPlaceholderSupporterComment } from '@/lib/salesPredictionBuild';
 import { annotateCompareDatesInComment } from '@/lib/annotateCompareDatesInText';
-import { PREDICTION_POS_REFRESH_MS } from '@/lib/predictionTodayActual';
+import { PREDICTION_POS_REFRESH_MS } from '@/lib/predictionRefreshConfig';
 
 interface PredictionItem {
   rank: number; item: string; expectedSales: number;
