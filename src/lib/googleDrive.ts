@@ -50,9 +50,18 @@ export function stripBase64Data(content: string): string {
   return content.includes(',') ? content.split(',')[1] : content;
 }
 
+/** Firestore에 저장되는 URL — localhost/preview 배포와 무관하게 프로덕션 프록시 사용 */
 export function drivePhotoProxyUrl(fileId: string, storeId: string): string {
-  const base = getAppBaseUrl();
-  return `${base}/api/drive/view?id=${encodeURIComponent(fileId)}&store=${encodeURIComponent(storeId)}`;
+  return `${PROD_URL}/api/drive/view?id=${encodeURIComponent(fileId)}&store=${encodeURIComponent(storeId)}`;
+}
+
+export async function getOAuthRefreshToken(storeId: string): Promise<string | null> {
+  await ensureDriveConnection(storeId);
+  const doc = await adminDb.collection('store_settings').doc(storeId).get();
+  const storeToken = doc.data()?.googleDriveRefreshToken as string | undefined;
+  if (storeToken) return storeToken;
+  const envRefresh = process.env.GOOGLE_DRIVE_REFRESH_TOKEN?.trim();
+  return envRefresh || null;
 }
 
 async function getServiceAccountDriveClient(): Promise<drive_v3.Drive | null> {
@@ -109,26 +118,30 @@ export async function ensureDriveConnection(storeId: string): Promise<boolean> {
   }
 }
 
+/** 공개주문 사진 업로드/조회 — OAuth 필수 (서비스 계정은 Drive 저장 용량 없음) */
+export async function resolveOAuthDriveClient(storeId: string): Promise<drive_v3.Drive> {
+  const token = await getOAuthRefreshToken(storeId);
+  if (!token) {
+    throw new Error(
+      'Google Drive가 연결되지 않았습니다. 매장 설정 → 「Drive 연결」 후 다시 시도해 주세요.',
+    );
+  }
+  if (!process.env.GOOGLE_CLIENT_SECRET?.trim()) {
+    throw new Error('서버에 GOOGLE_CLIENT_SECRET이 설정되지 않았습니다.');
+  }
+  return getOAuthDriveClient(token);
+}
+
 export async function resolveDriveClient(storeId: string): Promise<drive_v3.Drive> {
-  await ensureDriveConnection(storeId);
-
-  const doc = await adminDb.collection('store_settings').doc(storeId).get();
-  const storeToken = doc.data()?.googleDriveRefreshToken as string | undefined;
-  if (storeToken) {
-    return getOAuthDriveClient(storeToken);
+  try {
+    return await resolveOAuthDriveClient(storeId);
+  } catch {
+    const saDrive = await getServiceAccountDriveClient();
+    if (saDrive) return saDrive;
+    throw new Error(
+      'Google Drive가 연결되지 않았습니다. 매장 설정에서 Drive를 연결하거나 GOOGLE_DRIVE_REFRESH_TOKEN을 설정해 주세요.',
+    );
   }
-
-  const envRefresh = process.env.GOOGLE_DRIVE_REFRESH_TOKEN?.trim();
-  if (envRefresh) {
-    return getOAuthDriveClient(envRefresh);
-  }
-
-  const saDrive = await getServiceAccountDriveClient();
-  if (saDrive) return saDrive;
-
-  throw new Error(
-    'Google Drive가 연결되지 않았습니다. 매장 설정에서 Drive를 연결하거나 GOOGLE_DRIVE_REFRESH_TOKEN을 설정해 주세요.',
-  );
 }
 
 export async function testDriveConnection(storeId: string): Promise<boolean> {
@@ -213,7 +226,7 @@ export async function uploadPublicOrderPhotoToDrive(
   fileName: string,
   mimeType = 'image/jpeg',
 ): Promise<string> {
-  const drive = await resolveDriveClient(storeId);
+  const drive = await resolveOAuthDriveClient(storeId);
   const base64 = stripBase64Data(fileContent);
   const buffer = Buffer.from(base64, 'base64');
   if (buffer.length > 10 * 1024 * 1024) {
@@ -259,7 +272,7 @@ export async function streamDriveFile(
   storeId: string,
   fileId: string,
 ): Promise<{ stream: NodeJS.ReadableStream; mimeType: string }> {
-  const drive = await resolveDriveClient(storeId);
+  const drive = await resolveOAuthDriveClient(storeId);
   const meta = await drive.files.get({ fileId, fields: 'mimeType' });
   const res = await drive.files.get(
     { fileId, alt: 'media' },
@@ -271,10 +284,14 @@ export async function streamDriveFile(
   };
 }
 
+/** 공개주문 사진용 — OAuth refresh token + 실제 Drive 접근 가능 여부 */
 export async function isDriveConnected(storeId: string): Promise<boolean> {
   try {
-    if (await ensureDriveConnection(storeId)) return true;
-    return await testDriveConnection(storeId);
+    const token = await getOAuthRefreshToken(storeId);
+    if (!token || !process.env.GOOGLE_CLIENT_SECRET?.trim()) return false;
+    const drive = await getOAuthDriveClient(token);
+    await verifyDriveClient(drive);
+    return true;
   } catch {
     return false;
   }

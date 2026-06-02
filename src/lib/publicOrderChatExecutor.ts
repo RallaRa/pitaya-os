@@ -1,6 +1,7 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { generatePublicToken, serializeLine } from '@/lib/publicOrders';
+import { sanitizePhotoUrl } from '@/lib/sanitizePhotoUrl';
 
 export interface PublicOrderLineInput {
   name: string;
@@ -166,7 +167,7 @@ export async function executePublicOrderActions(
               name,
               description: String(line.description || '').trim(),
               origin: String(line.origin || '').trim(),
-              photoUrl: String(line.photoUrl || '').trim(),
+              photoUrl: sanitizePhotoUrl(line.photoUrl),
               normalPrice,
               discountPrice,
               unit: String(line.unit || 'kg').trim(),
@@ -214,7 +215,7 @@ export async function executePublicOrderActions(
           if (u.discountPrice != null) patch.discountPrice = Number(u.discountPrice) || 0;
           if (u.unit) patch.unit = String(u.unit).trim();
           if (u.totalQty != null) patch.totalQty = Math.max(0, Math.floor(Number(u.totalQty) || 0));
-          if (u.photoUrl != null) patch.photoUrl = String(u.photoUrl).trim();
+          if (u.photoUrl != null) patch.photoUrl = sanitizePhotoUrl(u.photoUrl);
           await doc.ref.update(patch);
           activeSessionId = sid;
           results.push({ ok: true, message: `품목 「${targetName}」 수정`, sessionId: sid });

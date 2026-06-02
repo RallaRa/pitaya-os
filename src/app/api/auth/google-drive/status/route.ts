@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/authVerify';
-import { ensureDriveConnection, isDriveConnected } from '@/lib/googleDrive';
+import { adminDb } from '@/lib/firebase/admin';
+import { ensureDriveConnection, isDriveConnected, getOAuthRefreshToken } from '@/lib/googleDrive';
 
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
@@ -11,5 +12,10 @@ export async function GET(req: Request) {
 
   await ensureDriveConnection(storeId);
   const connected = await isDriveConnected(storeId);
-  return NextResponse.json({ connected });
+  const doc = await adminDb.collection('store_settings').doc(storeId).get();
+  return NextResponse.json({
+    connected,
+    email: doc.data()?.googleDriveEmail || null,
+    hasToken: !!(await getOAuthRefreshToken(storeId)),
+  });
 }

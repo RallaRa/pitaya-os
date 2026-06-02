@@ -111,10 +111,20 @@ export default function StoreSettingsPage() {
               body: JSON.stringify({ code, storeId: currentStore.storeId }),
             });
             const exData = await exRes.json();
-            if (!exRes.ok) throw new Error(exData.error || 'Drive 토큰 저장 실패');
+            if (!exRes.ok || !exData.connected) {
+              throw new Error(exData.error || 'Drive 토큰 저장 실패');
+            }
           },
         );
-        setDriveConnected(true);
+        const statusRes = await fetch(
+          `/api/auth/google-drive/status?storeId=${encodeURIComponent(currentStore.storeId)}`,
+          { headers: await getAuthJsonHeaders() },
+        );
+        const statusData = await statusRes.json();
+        setDriveConnected(!!statusData.connected);
+        if (!statusData.connected) {
+          throw new Error('Drive 연결 확인에 실패했습니다. 다시 시도해 주세요.');
+        }
         setSaveMsg('✅ Google Drive가 연결되었습니다.');
         return;
       }
