@@ -9,15 +9,7 @@ import { useStore } from '@/context/StoreContext';
 import { useAuth } from '@/context/AuthContext';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { HYGIENE_SECTIONS, TOTAL_ITEMS } from '@/lib/hygieneChecklist';
-import { db } from '@/lib/firebase/firebase';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-
-// 섹션 표시키 → HYGIENE_SECTIONS category 매핑
-const SECTION_CATEGORY: Record<string, string> = {
-  작업전:   '위생상태(작업전)',
-  중간점검: '위생상태(작업중)',
-  마감점검: '위생상태(작업후)',
-};
+import { kstDateParts } from '@/lib/hygieneSchedule';
 
 interface CheckItemState {
   evaluation: '적정' | '부적정' | null;
@@ -45,79 +37,6 @@ function HygieneChecklistContent() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // 섹션 자동 체크 (클라이언트 → Firestore 직접 업데이트)
-  const autoCheckSection = useCallback(async (
-    sectionKey: string,
-    isAuto: boolean,
-  ) => {
-    if (!currentStore?.storeId) return;
-    const kstToday = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const category = SECTION_CATEGORY[sectionKey];
-    if (!category) return;
-    const section = HYGIENE_SECTIONS.find(s => s.category === category);
-    if (!section) return;
-
-    const byName = isAuto ? '자동완성' : (user?.displayName || user?.email || '');
-    const ts     = serverTimestamp();
-
-    const updates: Record<string, unknown> = {
-      storeId: currentStore.storeId,
-      checkDate: kstToday,
-      [`sections.${sectionKey}.completed`]:   true,
-      [`sections.${sectionKey}.completedBy`]: byName,
-      [`sections.${sectionKey}.completedAt`]: ts,
-      [`autoChecks.${sectionKey}`]: { auto: isAuto, at: ts },
-      updatedAt: ts,
-    };
-    section.items.forEach((_, idx) => {
-      updates[`sections.${sectionKey}.items.${idx}.checked`]   = true;
-      updates[`sections.${sectionKey}.items.${idx}.checkedBy`] = byName;
-      updates[`sections.${sectionKey}.items.${idx}.checkedAt`] = ts;
-    });
-
-    const docRef = doc(db, 'hygiene_checklists', `${currentStore.storeId}_${kstToday}`);
-    await setDoc(docRef, updates, { merge: true });
-
-    // 로컬 UI 상태도 적정으로 업데이트
-    setChecklistState(prev => {
-      const next = { ...prev };
-      const catState = { ...(next[category] || {}) };
-      section.items.forEach((_, ii) => {
-        catState[ii] = { ...(catState[ii] || { evaluation: null, notes: '' }), evaluation: '적정' };
-      });
-      next[category] = catState;
-      return next;
-    });
-  }, [currentStore?.storeId, user]);
-
-  // 페이지 진입 시 KST 11시 이후이면 작업전 자동 체크
-  useEffect(() => {
-    const handleEntry = async () => {
-      if (!currentStore?.storeId || !user?.uid) return;
-      const kstNow   = new Date(Date.now() + 9 * 60 * 60 * 1000);
-      const kstHour  = kstNow.getUTCHours();
-      const kstToday = kstNow.toISOString().slice(0, 10);
-      if (kstHour < 11) return;
-
-      const docRef = doc(db, 'hygiene_checklists', `${currentStore.storeId}_${kstToday}`);
-      const snap   = await getDoc(docRef);
-      const data   = snap.data();
-
-      if (data?.sections?.작업전?.completed || data?.notifications?.morning === false) return;
-
-      await autoCheckSection('작업전', false);
-
-      await setDoc(docRef, {
-        notifications:   { morning: false },
-        lastEntryUser:   user.uid,
-        lastEntryName:   user.displayName || user.email || '',
-        lastEntryAt:     serverTimestamp(),
-      }, { merge: true });
-    };
-    handleEntry().catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentStore?.storeId, user?.uid]);
-
   useEffect(() => {
     if (user?.displayName) setInspectorName(user.displayName);
   }, [user]);
@@ -144,21 +63,62 @@ function HygieneChecklistContent() {
   }, []);
 
   useEffect(() => {
-    if (!currentStore?.storeId) return;
-    const targetDate = dateParam || new Date().toISOString().slice(0, 10);
-    getAuthHeaders()
-      .then(headers => fetch(`/api/hygiene?storeId=${currentStore.storeId}&date=${targetDate}`, { headers }))
-      .then(r => r.json())
-      .then(data => {
+    if (!currentStore?.storeId || !user?.uid) return;
+    const targetDate = dateParam || kstDateParts().dateStr;
+    const isToday = targetDate === kstDateParts().dateStr;
+
+    (async () => {
+      try {
+        const headers = await getAuthJsonHeaders();
+        if (isToday) {
+          const applyRes = await fetch('/api/hygiene/apply-schedule', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              storeId: currentStore.storeId,
+              checkDate: targetDate,
+              inspectorName: user.displayName || user.email || '',
+            }),
+          });
+          const applyData = await applyRes.json();
+          if (applyRes.ok && applyData.record) {
+            restoreFromRecord(applyData.record);
+            if (applyData.record.inspectorName) {
+              setInspectorName(applyData.record.inspectorName);
+            } else if (user.displayName) {
+              setInspectorName(user.displayName);
+            }
+            if (applyData.applied) {
+              const labels = applyData.autoFilledLabels || '';
+              const finalNote = applyData.finalSaved ? ' · 최종저장 반영' : '';
+              setLoadInfo(`⏱ ${labels} 자동 적정 처리${finalNote}`);
+              setTimeout(() => setLoadInfo(null), 5000);
+              if (Array.isArray(applyData.autoFilledSections)) {
+                setSavedSections(new Set(applyData.autoFilledSections as number[]));
+              }
+            }
+            return;
+          }
+        }
+
+        const res = await fetch(
+          `/api/hygiene?storeId=${currentStore.storeId}&date=${targetDate}`,
+          { headers },
+        );
+        const data = await res.json();
         if (data.record) {
           restoreFromRecord(data.record);
-          const label = data.record.saveType === 'draft' ? '이전 중간저장 데이터를 불러왔습니다.' : '저장된 최종 데이터를 불러왔습니다.';
+          const label = data.record.saveType === 'draft'
+            ? '이전 중간저장 데이터를 불러왔습니다.'
+            : '저장된 최종 데이터를 불러왔습니다.';
           setLoadInfo(label);
           setTimeout(() => setLoadInfo(null), 4000);
         }
-      })
-      .catch(() => {});
-  }, [currentStore?.storeId, dateParam, restoreFromRecord]);
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [currentStore?.storeId, user?.uid, user?.displayName, dateParam, restoreFromRecord]);
 
   // [수정 1] 토글 핸들러
   const handleToggle = (category: string, itemIndex: number, value: '적정' | '부적정') => {

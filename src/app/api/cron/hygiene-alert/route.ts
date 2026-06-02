@@ -1,23 +1,19 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
-
-function kstNow() {
-  const now = new Date();
-  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  return {
-    hour:    kst.getUTCHours(),
-    minute:  kst.getUTCMinutes(),
-    dateStr: kst.toISOString().slice(0, 10),
-  };
-}
+import {
+  getReminderKind,
+  kstDateParts,
+  needsHygieneReminder,
+  REMINDER_MESSAGES,
+  type ReminderKind,
+} from '@/lib/hygieneSchedule';
 
 async function sendNotificationsToStore(
   storeId: string,
-  title: string,
-  message: string,
-  link: string,
+  kind: ReminderKind,
 ) {
+  const { title, message } = REMINDER_MESSAGES[kind];
   const membersSnap = await adminDb
     .collection('user_store_map')
     .where('storeId', '==', storeId)
@@ -28,33 +24,36 @@ async function sendNotificationsToStore(
   membersSnap.docs.forEach(m => {
     const ref = adminDb.collection('notifications').doc();
     batch.set(ref, {
-      targetUid:  m.data().uid,
-      senderUid:  '',
+      targetUid: m.data().uid,
+      senderUid: '',
       senderName: 'Pitaya OS',
-      type:       'hygiene_alert',
+      type: 'hygiene_alert',
       title,
       message,
-      link,
-      isRead:     false,
-      createdAt:  FieldValue.serverTimestamp(),
+      link: '/dashboard/hygiene',
+      isRead: false,
+      createdAt: FieldValue.serverTimestamp(),
     });
   });
   await batch.commit();
   return membersSnap.size;
 }
 
-// KST 11:00~11:55 사이 5분 간격으로 실행됨 (UTC 02:00~02:55)
+/** KST 11시 / 14시 / 20:30 — 미완료 시 매장 전체 알림 */
 export async function POST(req: Request) {
   const secret = req.headers.get('x-cron-secret');
   if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { hour, minute, dateStr } = kstNow();
-
-  // KST 11:00~11:55 범위 외에는 무시
-  if (hour !== 11) {
-    return NextResponse.json({ ok: true, skipped: true, reason: `kstHour=${hour} (not 11)` });
+  const { hour, minute, dateStr } = kstDateParts();
+  const kind = getReminderKind(hour, minute);
+  if (!kind) {
+    return NextResponse.json({
+      ok: true,
+      skipped: true,
+      reason: `kst ${hour}:${minute} — not a reminder window`,
+    });
   }
 
   const storesSnap = await adminDb.collection('stores').get();
@@ -64,7 +63,6 @@ export async function POST(req: Request) {
   for (const storeDoc of storesSnap.docs) {
     const storeId = storeDoc.id;
     try {
-      // 오늘 위생 점검일지 조회
       const checkSnap = await adminDb
         .collection('hygiene_checklists')
         .where('storeId', '==', storeId)
@@ -73,26 +71,42 @@ export async function POST(req: Request) {
         .get();
 
       const data = checkSnap.empty ? null : checkSnap.docs[0].data();
-
-      // 작업전(위생상태(작업전)) 완료 여부 확인
-      const morningDone =
-        data?.sections?.작업전?.completed === true ||
-        data?.notifications?.morning === false;
-
-      if (morningDone) {
+      const sentKey = `notificationsSent.${kind}`;
+      if (data?.notificationsSent?.[kind] === true) {
         skipped++;
         continue;
       }
 
-      const count = await sendNotificationsToStore(
-        storeId,
-        '🧹 위생점검일지 작성 알림',
-        `작업전 위생점검을 아직 작성하지 않았습니다! (${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')} KST)`,
-        '/dashboard/hygiene',
-      );
+      if (!needsHygieneReminder(data, kind)) {
+        skipped++;
+        continue;
+      }
+
+      const count = await sendNotificationsToStore(storeId, kind);
       alerted += count;
-    } catch {}
+
+      const docRef = checkSnap.empty
+        ? adminDb.collection('hygiene_checklists').doc(`${storeId}_${dateStr}`)
+        : checkSnap.docs[0].ref;
+
+      await docRef.set({
+        storeId,
+        checkDate: dateStr,
+        [`notificationsSent.${kind}`]: true,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    } catch {
+      /* store loop */
+    }
   }
 
-  return NextResponse.json({ ok: true, dateStr, kstHour: hour, kstMinute: minute, alerted, skipped });
+  return NextResponse.json({
+    ok: true,
+    dateStr,
+    kind,
+    kstHour: hour,
+    kstMinute: minute,
+    alerted,
+    skipped,
+  });
 }

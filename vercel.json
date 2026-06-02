@@ -25,7 +25,8 @@
     { "path": "/api/cron/recalibrate-variables",    "schedule": "0 7 * * 1" },
     { "path": "/api/cron/generate-partner-analysis","schedule": "0 6 * * *" },
     { "path": "/api/cron/hygiene-alert",            "schedule": "0 2 * * *" },
-    { "path": "/api/cron/hygiene-auto-check",       "schedule": "0 11 * * *" },
+    { "path": "/api/cron/hygiene-alert",            "schedule": "0 5 * * *" },
+    { "path": "/api/cron/hygiene-alert",            "schedule": "30 11 * * *" },
     { "path": "/api/cron/pos-sync-check",           "schedule": "0 12 * * *" }
   ]
 }
