@@ -10,6 +10,7 @@ export interface PublicOrderLineInput {
   discountPrice?: number;
   unit?: string;
   totalQty?: number;
+  photoUrl?: string;
 }
 
 export interface PublicOrderAiAction {
@@ -165,7 +166,7 @@ export async function executePublicOrderActions(
               name,
               description: String(line.description || '').trim(),
               origin: String(line.origin || '').trim(),
-              photoUrl: '',
+              photoUrl: String(line.photoUrl || '').trim(),
               normalPrice,
               discountPrice,
               unit: String(line.unit || 'kg').trim(),
@@ -213,6 +214,7 @@ export async function executePublicOrderActions(
           if (u.discountPrice != null) patch.discountPrice = Number(u.discountPrice) || 0;
           if (u.unit) patch.unit = String(u.unit).trim();
           if (u.totalQty != null) patch.totalQty = Math.max(0, Math.floor(Number(u.totalQty) || 0));
+          if (u.photoUrl != null) patch.photoUrl = String(u.photoUrl).trim();
           await doc.ref.update(patch);
           activeSessionId = sid;
           results.push({ ok: true, message: `품목 「${targetName}」 수정`, sessionId: sid });
