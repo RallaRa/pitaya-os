@@ -27,6 +27,7 @@ import {
 } from './CalendarTypes';
 import DateRangePicker from './DateRangePicker';
 import LeavePanel from './LeavePanel';
+import { isAdminLevelGroup } from '@/lib/roleMapping';
 
 /** calendar_events 컬렉션으로 저장·수정 가능한 개인 일정인지 */
 function isEditablePersonalEvent(ev: Partial<CalEvent> | CalEvent): boolean {
@@ -1409,7 +1410,9 @@ export default function CalendarApp() {
     getAuthHeaders()
       .then(headers => fetch(`/api/permissions?type=myAccess&uid=${uid}&storeId=${storeId}`, { headers }))
       .then(r => r.json())
-      .then(d => { setIsAdmin(['master', 'admin', 'owner'].includes(d.groupId || d.role || '')); })
+      .then(d => {
+        setIsAdmin(isAdminLevelGroup(d.groupId || d.role || '') || d.isSuperuser === true);
+      })
       .catch(() => {});
   }, [uid, storeId, storeReady]);
 
@@ -1473,13 +1476,23 @@ export default function CalendarApp() {
         }
       }
 
-      // 연차/휴무
+      // 연차/휴무 (관리자: 매장 전체, 일반: 본인)
       try {
         const monthKey = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
-        const leaveRes  = await fetch(`/api/hr/leave?storeId=${storeId}&month=${monthKey}`, { headers: authHeaders });
-        const dayoffRes = await fetch(`/api/hr/dayoff?storeId=${storeId}&month=${monthKey}`, { headers: authHeaders });
-        const lData = await leaveRes.json();
-        const dData = await dayoffRes.json();
+        const leaveUrl = isAdmin
+          ? `/api/hr/leave?storeId=${storeId}&month=${monthKey}`
+          : `/api/hr/leave?userId=${uid}&month=${monthKey}`;
+        const dayoffUrl = isAdmin
+          ? `/api/hr/dayoff?storeId=${storeId}&month=${monthKey}`
+          : `/api/hr/dayoff?userId=${uid}&month=${monthKey}`;
+        const [leaveRes, dayoffRes] = await Promise.all([
+          fetch(leaveUrl, { headers: authHeaders }),
+          fetch(dayoffUrl, { headers: authHeaders }),
+        ]);
+        const lData = leaveRes.ok ? await leaveRes.json() : { requests: [] };
+        const dData = dayoffRes.ok ? await dayoffRes.json() : { requests: [] };
+        if (!leaveRes.ok) console.error('leave load failed:', lData.error);
+        if (!dayoffRes.ok) console.error('dayoff load failed:', dData.error);
 
         (lData.requests || []).forEach((l: any) => {
           evList.push({
@@ -1503,7 +1516,7 @@ export default function CalendarApp() {
     } finally {
       setLoading(false);
     }
-  }, [uid, storeId, storeReady, cursor]);
+  }, [uid, storeId, storeReady, cursor, isAdmin]);
 
   const loadTodos = useCallback(async () => {
     if (!uid || !storeReady) return;

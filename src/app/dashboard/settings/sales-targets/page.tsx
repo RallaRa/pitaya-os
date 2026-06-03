@@ -168,7 +168,7 @@ export default function SalesTargetsSettingsPage() {
           <h1 className="text-xl font-bold text-slate-100">매출·객수 목표</h1>
           <p className="text-slate-500 text-sm mt-1">
             월별 <strong className="text-slate-400">순매출(원)</strong>·<strong className="text-slate-400">총객수(명)</strong> 목표.
-            대시보드 「매출 비교」 주간·월간이 목표 대비로 표시됩니다.
+            대시보드 「매출 목표」 주간·월간이 목표 대비로 표시됩니다.
           </p>
         </div>
       </div>

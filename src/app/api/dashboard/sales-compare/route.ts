@@ -7,6 +7,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import {
   computeTargetProgress,
   createDefaultTargetsDoc,
+  daysInMonthYm,
   getMonthTarget,
   prorateWeekTarget,
   resolveActivePeriod,
@@ -81,8 +82,9 @@ export async function GET(req: Request) {
       actualCustomers: thisMonth.customers,
       startYmd: thisMonthStart,
       endYmd: todayStr,
-      monthTarget,
+      target: monthTarget,
       todayYmd: todayStr,
+      periodDays: daysInMonthYm(todayYm),
     });
 
     const weekProgress = computeTargetProgress({
@@ -90,8 +92,9 @@ export async function GET(req: Request) {
       actualCustomers: thisWeek.customers,
       startYmd: thisWeekStart,
       endYmd: todayStr,
-      monthTarget: weekTarget,
+      target: weekTarget,
       todayYmd: todayStr,
+      periodDays: 7,
     });
 
     return NextResponse.json({

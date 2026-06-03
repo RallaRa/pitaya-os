@@ -16,7 +16,7 @@ const WIDGET_LIST = [
   { key: 'total_partner',      label: 'AI 토탈 운영파트너', desc: '4기간 AI 운영 분석' },
   { key: 'sales_prediction',   label: 'AI 매출 예측',      desc: '예측 + AI 서포터 코멘트' },
   { key: 'today_sales',        label: '당일 매출 현황',    desc: '실시간 POS 매출' },
-  { key: 'sales_compare',      label: '매출 비교',         desc: '6개 기간 비교 차트' },
+  { key: 'sales_compare',      label: '매출 목표',         desc: '주·월 목표 달성·진도율' },
 ];
 
 const ROLE_COLS: { key: string; label: string; locked?: boolean }[] = [

@@ -1,20 +1,14 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { verifyToken, getActualGroupId } from '@/lib/authVerify';
+import { verifyToken } from '@/lib/authVerify';
+import { isHrStoreAdmin } from '@/lib/hr/storeAdmin';
 import {
   calculateAnnualLeaveEntitlement,
   formatYmd,
 } from '@/lib/hr/annualLeave';
 import { logLeaveGrant } from '@/lib/hr/leaveBalance';
 import { computeLeaveRemain, leaveRemainFields } from '@/lib/hr/leaveRemainDisplay';
-
-const ADMIN_ROLES = ['master', 'admin', 'owner'];
-
-async function isStoreAdmin(uid: string, storeId: string) {
-  const role = await getActualGroupId(uid, storeId);
-  return ADMIN_ROLES.includes(role);
-}
 
 function todayStr() {
   const d = new Date();
@@ -119,7 +113,7 @@ export async function GET(req: Request) {
 
   if (!storeId) return NextResponse.json({ error: 'storeId required' }, { status: 400 });
 
-  const admin = await isStoreAdmin(authUser.uid, storeId);
+  const admin = await isHrStoreAdmin(authUser.uid, storeId, authUser.email);
   if (!admin) return NextResponse.json({ error: '권한 없음' }, { status: 403 });
 
   try {
@@ -154,7 +148,7 @@ export async function POST(req: Request) {
 
     if (!storeId) return NextResponse.json({ error: 'storeId required' }, { status: 400 });
 
-    const admin = await isStoreAdmin(authUser.uid, storeId);
+    const admin = await isHrStoreAdmin(authUser.uid, storeId, authUser.email);
     if (!admin) return NextResponse.json({ error: '권한 없음' }, { status: 403 });
 
     const referenceDate = asOf || todayStr();

@@ -147,7 +147,7 @@ export default function SettingsPage() {
       href: '/dashboard/settings/sales-targets',
       icon: <Target className="w-5 h-5 text-amber-400" />,
       label: '매출·객수 목표',
-      description: '월별 순매출·총객수 목표 (기간별) — 대시보드 매출 비교에 반영',
+      description: '월별 순매출·총객수 목표 (기간별) — 대시보드 매출 목표에 반영',
       show: isAdminLevelGroup(storeRole),
     },
   ].filter(m => m.show);

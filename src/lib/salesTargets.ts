@@ -156,38 +156,48 @@ export function computeTargetProgress(opts: {
   actualCustomers: number;
   startYmd: string;
   endYmd: string;
-  monthTarget: MonthTarget;
+  /** 해당 구간 목표 (월간=월 목표, 주간=주간 환산 목표) */
+  target: MonthTarget;
   todayYmd: string;
+  /**
+   * 진도율(페이스) 분모 — 월간: 당월 총 일수, 주간: 7(월~일)
+   * 미지정 시 당월 일수 (주간에 월 일수를 쓰면 진도율이 비정상적으로 커짐)
+   */
+  periodDays?: number;
 }): TargetProgressResult {
-  const { actualNet, actualCustomers, startYmd, endYmd, monthTarget, todayYmd } = opts;
+  const { actualNet, actualCustomers, startYmd, endYmd, target, todayYmd } = opts;
   const ym = todayYmd.slice(0, 7);
   const daysInMonth = daysInMonthYm(ym);
+  const periodDays = opts.periodDays ?? daysInMonth;
   const daysElapsed = countDaysInclusive(startYmd, todayYmd > endYmd ? endYmd : todayYmd);
 
   const avgDailyCustomers = Math.round(actualCustomers / daysElapsed);
+  const isWeekScope = periodDays < daysInMonth;
   const targetDailyCustomers =
-    monthTarget.customers > 0 ? Math.round(monthTarget.customers / daysInMonth) : 0;
+    target.customers > 0
+      ? Math.round(target.customers / (isWeekScope ? daysElapsed : daysInMonth))
+      : 0;
 
   const salesPct =
-    monthTarget.sales > 0 ? Math.round((actualNet / monthTarget.sales) * 100) : null;
+    target.sales > 0 ? Math.round((actualNet / target.sales) * 100) : null;
   const customersPct =
-    monthTarget.customers > 0
-      ? Math.round((actualCustomers / monthTarget.customers) * 100)
+    target.customers > 0
+      ? Math.round((actualCustomers / target.customers) * 100)
       : null;
 
-  const timeRatio = daysElapsed / daysInMonth;
+  const timeRatio = periodDays > 0 ? daysElapsed / periodDays : 0;
   const salesPacePct =
-    monthTarget.sales > 0 && timeRatio > 0
-      ? Math.round((actualNet / monthTarget.sales / timeRatio) * 100)
+    target.sales > 0 && timeRatio > 0
+      ? Math.round((actualNet / target.sales / timeRatio) * 100)
       : null;
   const customersPacePct =
-    monthTarget.customers > 0 && timeRatio > 0
-      ? Math.round((actualCustomers / monthTarget.customers / timeRatio) * 100)
+    target.customers > 0 && timeRatio > 0
+      ? Math.round((actualCustomers / target.customers / timeRatio) * 100)
       : null;
 
   return {
     daysElapsed,
-    daysInMonth,
+    daysInMonth: periodDays,
     avgDailyCustomers,
     targetDailyCustomers,
     salesPct,

@@ -31,7 +31,6 @@ import {
   makeDefaultLayout,
   resolveDashboardLayout,
   mergeLayoutChange,
-  compactDashboardLayout,
   type WidgetMeta,
 } from '@/lib/dashboardLayout';
 import DashboardGridItem from '@/components/dashboard/DashboardGridItem';
@@ -116,13 +115,14 @@ export default function DashboardPage() {
   const [widgetPerms,   setWidgetPerms]   = useState<Record<string, Record<string, boolean>>>({});
   const [userRole,      setUserRole]      = useState('user');
   const [showAddModal,  setShowAddModal]  = useState(false);
-  const [isMobile,      setIsMobile]      = useState(false);
+  const [isMobile,      setIsMobile]      = useState(
+    () => (typeof window !== 'undefined' ? window.innerWidth < 768 : false),
+  );
   const [layoutLoaded,  setLayoutLoaded]  = useState(false);
   const [containerW,    setContainerW]    = useState(1280);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const saveTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const heightSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* 모바일 감지 + 컨테이너 너비 */
   useEffect(() => {
@@ -261,22 +261,6 @@ export default function DashboardPage() {
     persistLayout(merged as GridLayout, activeWidgets);
   }, [visibleActive, layouts, activeWidgets, persistLayout]);
 
-  /* AI 예측 등 가변 높이 위젯 — 콘텐츠에 맞춰 그리드 h 갱신 후 아래 위젯 재배치 */
-  const handleWidgetHeight = useCallback((id: string, h: number) => {
-    setLayouts(prev => {
-      const lg = [...(prev.lg || [])];
-      const idx = lg.findIndex(l => l.i === id);
-      if (idx < 0 || lg[idx].h === h) return prev;
-      lg[idx] = { ...lg[idx], h };
-      const compacted = compactDashboardLayout(activeWidgets, lg);
-      if (heightSaveTimer.current) clearTimeout(heightSaveTimer.current);
-      heightSaveTimer.current = setTimeout(() => {
-        persistLayout(compacted as GridLayout, activeWidgets);
-      }, 800);
-      return { ...prev, lg: compacted as GridLayout };
-    });
-  }, [activeWidgets, persistLayout]);
-
   /* 위젯 추가 */
   const addWidget = (id: string) => {
     if (activeWidgets.includes(id)) return;
@@ -321,7 +305,7 @@ export default function DashboardPage() {
       case 'yesterday_analysis': return <YesterdayWidget      editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
       case 'quick_menu':         return <QuickMenuWidget      editMode={editMode} onRemove={() => removeWidget(id)} />;
       case 'ai_insight':         return <AiInsightWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
-      case 'sales_prediction':   return <SalesPredictionWidget  editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
+      case 'sales_prediction':   return <SalesPredictionWidget  editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} mobileLayout={isMobile} />;
       case 'total_partner':      return <TotalPartnerWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
       case 'today_sales':        return <TodaySalesWidget       editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
       case 'sales_compare':      return <SalesCompareWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
@@ -344,7 +328,7 @@ export default function DashboardPage() {
   /* 모바일 세로 스택 */
   if (isMobile) {
     return (
-      <div className="flex flex-col min-h-full bg-slate-950 p-3 space-y-3">
+      <div className="flex flex-col min-h-full bg-slate-950 p-3 space-y-3 touch-pan-y [-webkit-overflow-scrolling:touch]">
         <div className="flex items-center px-1">
           <h1 className="text-slate-300 font-semibold text-sm flex-1">대시보드</h1>
           <span className="text-slate-600 text-[10px]">모바일 뷰</span>
@@ -352,7 +336,7 @@ export default function DashboardPage() {
         {visibleActive.map(id => (
           <div
             key={id}
-            className={id === PRIORITY_WIDGET_ID ? 'min-h-0 h-auto' : 'h-64 shrink-0'}
+            className={id === PRIORITY_WIDGET_ID ? 'w-full min-h-0 h-auto overflow-visible touch-pan-y' : 'h-64 shrink-0 overflow-hidden'}
           >
             {renderWidget(id)}
           </div>
@@ -363,7 +347,7 @@ export default function DashboardPage() {
 
   /* 데스크탑 그리드 */
   return (
-    <div className="flex flex-col min-h-full bg-slate-950">
+    <div className="flex flex-col h-full min-h-0 bg-slate-950">
       {/* 슈퍼유저 편집 모드 배너 */}
       {editMode && isSuperuser && (
         <div className="flex items-center gap-2 px-6 py-2 bg-purple-900/40 border-b border-purple-700/40 shrink-0">
@@ -412,7 +396,7 @@ export default function DashboardPage() {
       </div>
 
       {/* 그리드 영역 */}
-      <div ref={containerRef} className="flex-1 overflow-auto p-4">
+      <div ref={containerRef} className="flex-1 min-h-0 overflow-y-auto p-4">
         {!layoutLoaded ? (
           /* 스켈레톤 */
           <div className="grid grid-cols-4 gap-3">
@@ -451,18 +435,12 @@ export default function DashboardPage() {
               const meta = WIDGET_META.find(m => m.id === id);
               const item = currentLayout.find(l => l.i === id) || (meta ? { ...meta.defaultItem } : null);
               if (!item) return null;
-              const autoMeasure = id === 'sales_prediction';
               return (
-                <div key={id} className="relative h-full min-h-0">
+                <div key={id} className="relative h-full min-h-0 flex flex-col">
                   {editMode && isSuperuser && (
                     <div className="widget-drag-handle absolute inset-x-0 top-0 h-8 z-10 cursor-grab active:cursor-grabbing" />
                   )}
-                  <DashboardGridItem
-                    id={id}
-                    autoMeasure={autoMeasure}
-                    minH={meta?.defaultItem.minH}
-                    onHeight={handleWidgetHeight}
-                  >
+                  <DashboardGridItem id={id}>
                     {renderWidget(id)}
                   </DashboardGridItem>
                 </div>

@@ -1,5 +1,6 @@
 'use client';
 
+import { RefObject } from 'react';
 import { RefreshCw, X, AlertCircle } from 'lucide-react';
 
 interface Props {
@@ -14,11 +15,13 @@ interface Props {
   className?: string;
   /** false면 고정 높이 대신 내용만큼 늘어남 (모바일 AI 예측 등) */
   autoHeight?: boolean;
+  /** 대시보드 스크롤 연동용 (카드 전체 ref) */
+  rootRef?: RefObject<HTMLDivElement | null>;
 }
 
 export default function WidgetWrapper({
   title, editMode, onRemove, onRefresh, updatedAt,
-  loading, error, children, className = '', autoHeight = false,
+  loading, error, children, className = '', autoHeight = false, rootRef,
 }: Props) {
   const timeLabel = updatedAt
     ? `${updatedAt.getFullYear()}.${String(updatedAt.getMonth() + 1).padStart(2, '0')}.${String(updatedAt.getDate()).padStart(2, '0')} ${updatedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`
@@ -26,6 +29,7 @@ export default function WidgetWrapper({
 
   return (
     <div
+      ref={rootRef}
       className={`flex flex-col bg-slate-900 rounded-2xl border transition-colors ${
         autoHeight ? 'h-auto min-h-0' : 'h-full overflow-hidden'
       } ${
@@ -55,16 +59,16 @@ export default function WidgetWrapper({
         )}
       </div>
 
-      {/* 본문 */}
-      <div className={`relative ${autoHeight ? 'flex-none' : 'flex-1 overflow-hidden'}`}>
+      {/* 본문 — autoHeight 시 h-full 금지(모바일에서 높이 0으로 사라짐) */}
+      <div className={`relative min-h-0 ${autoHeight ? 'flex-none' : 'flex-1 overflow-hidden flex flex-col'}`}>
         {loading ? (
-          <div className="p-3 space-y-2 h-full">
+          <div className={`p-3 space-y-2 ${autoHeight ? 'min-h-[5rem]' : 'h-full'}`}>
             {[...Array(4)].map((_, i) => (
               <div key={i} className="h-4 bg-slate-800 rounded animate-pulse" style={{ width: `${70 + i * 5}%` }} />
             ))}
           </div>
         ) : error ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2 text-slate-500 p-4">
+          <div className={`flex flex-col items-center justify-center gap-2 text-slate-500 p-4 ${autoHeight ? 'min-h-[5rem]' : 'h-full'}`}>
             <AlertCircle className="w-5 h-5 text-red-500/70" />
             <p className="text-xs text-center">{error}</p>
             {onRefresh && (
@@ -74,7 +78,7 @@ export default function WidgetWrapper({
             )}
           </div>
         ) : (
-          children
+          <div className={autoHeight ? 'flex flex-col' : 'h-full min-h-0 flex flex-col'}>{children}</div>
         )}
       </div>
     </div>

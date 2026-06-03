@@ -9,6 +9,8 @@ import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { isPlaceholderSupporterComment } from '@/lib/salesPredictionBuild';
 import { annotateCompareDatesInComment } from '@/lib/annotateCompareDatesInText';
 import { PREDICTION_POS_REFRESH_MS } from '@/lib/predictionRefreshConfig';
+import { useNestedScrollChain } from '@/hooks/useNestedScrollChain';
+import { useIsMobileView } from '@/hooks/useIsMobileView';
 
 interface PredictionItem {
   rank: number; item: string; expectedSales: number;
@@ -217,8 +219,8 @@ function ItemRow({
 }
 
 export default function SalesPredictionWidget({
-  editMode, onRemove, storeId,
-}: { editMode: boolean; onRemove: () => void; storeId?: string }) {
+  editMode, onRemove, storeId, mobileLayout,
+}: { editMode: boolean; onRemove: () => void; storeId?: string; mobileLayout?: boolean }) {
   const [data,       setData]       = useState<PredictionData | null>(null);
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState<string | null>(null);
@@ -227,6 +229,15 @@ export default function SalesPredictionWidget({
   const [orderInfo,  setOrderInfo]  = useState<{ dDayType?: string; gaps?: { start: string; end: string }[] } | null>(null);
   const [posRefreshing, setPosRefreshing] = useState(false);
   const autoRefreshAttempted = useRef(false);
+  const mqMobile = useIsMobileView();
+  const isMobileView = mobileLayout ?? mqMobile;
+  const widgetRootRef = useRef<HTMLDivElement>(null);
+  const scrollBodyRef = useRef<HTMLDivElement>(null);
+  const scrollOverflows = useNestedScrollChain(
+    scrollBodyRef,
+    widgetRootRef,
+    !isMobileView,
+  );
 
   const refreshTodayActual = useCallback(async () => {
     if (!storeId) return;
@@ -335,10 +346,16 @@ export default function SalesPredictionWidget({
       updatedAt={updatedAt}
       loading={loading}
       error={error}
+      autoHeight={isMobileView}
+      rootRef={widgetRootRef}
     >
-      <div className="flex flex-col h-full min-h-0 text-xs">
+      <div
+        className={`flex flex-col text-xs ${
+          isMobileView ? '' : 'h-full min-h-0 overflow-hidden'
+        }`}
+      >
 
-        <div className="mx-2 mt-1 mb-1 flex items-start gap-1.5 bg-amber-950/40 border border-amber-500/30 rounded-lg px-2.5 py-1.5">
+        <div className="shrink-0 mx-2 mt-1 mb-1 flex items-start gap-1.5 bg-amber-950/40 border border-amber-500/30 rounded-lg px-2.5 py-1.5">
           <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" />
           <p className="text-amber-300/80 text-[10px] leading-tight">
             AI 예측은 참조 수단입니다. 관리자의 실제 경험에 도움을 주는 참고 자료로 활용하세요.
@@ -363,7 +380,7 @@ export default function SalesPredictionWidget({
         </div>
 
         {data?.scheduleContext?.tomorrowHoliday && (
-          <div className="mx-2 mb-2 flex items-start gap-1.5 bg-purple-950/50 border border-purple-500/35 rounded-lg px-2.5 py-1.5">
+          <div className="shrink-0 mx-2 mb-2 flex items-start gap-1.5 bg-purple-950/50 border border-purple-500/35 rounded-lg px-2.5 py-1.5">
             <Target className="w-3 h-3 text-purple-400 shrink-0 mt-0.5" />
             <p className="text-purple-200/90 text-[10px] leading-tight">
               내일({data.scheduleContext.tomorrowYmd}) <strong>{data.scheduleContext.tomorrowHoliday}</strong>
@@ -376,12 +393,21 @@ export default function SalesPredictionWidget({
         )}
 
         {dDayBanner && (
-          <div className={`mx-2 mb-2 border rounded-lg px-2.5 py-1.5 ${dDayBanner.bg}`}>
+          <div className={`shrink-0 mx-2 mb-2 border rounded-lg px-2.5 py-1.5 ${dDayBanner.bg}`}>
             <p className={`text-[10px] ${dDayBanner.text}`}>{dDayBanner.msg}</p>
           </div>
         )}
 
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+        <div
+          ref={scrollBodyRef}
+          className={
+            isMobileView
+              ? 'flex flex-col touch-pan-y'
+              : `flex-1 min-h-0 overflow-x-hidden touch-pan-y overscroll-y-auto ${
+                  scrollOverflows ? 'overflow-y-auto' : 'overflow-y-visible'
+                }`
+          }
+        >
         {showEmptyReason && data?.emptyReason && (
           <WidgetEmptyReason
             reason={data.emptyReason}

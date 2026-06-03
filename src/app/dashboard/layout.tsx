@@ -93,7 +93,7 @@ export default function DashboardLayout({
       </header>
       <div className="flex flex-1 overflow-hidden">
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 min-h-0 overflow-y-auto flex flex-col touch-pan-y [-webkit-overflow-scrolling:touch]">
           {children}
         </main>
       </div>

@@ -1,16 +1,11 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { verifyToken, getActualGroupId } from '@/lib/authVerify';
+import { verifyToken } from '@/lib/authVerify';
+import { isHrStoreAdmin } from '@/lib/hr/storeAdmin';
 import { notifyUser } from '@/lib/notifications/notifyUser';
 
-const ADMIN_ROLES = ['master', 'admin', 'owner'];
 const SUPERUSER_EMAIL = process.env.SUPERUSER_EMAIL || process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || '';
-
-async function isStoreAdmin(uid: string, storeId: string) {
-  const role = await getActualGroupId(uid, storeId);
-  return ADMIN_ROLES.includes(role);
-}
 
 async function sendNotification(targetUid: string, title: string, body: string, link: string) {
   await notifyUser(targetUid, { title, message: body, link, type: 'hr_dayoff' });
@@ -56,7 +51,7 @@ export async function GET(req: Request) {
   const month   = searchParams.get('month');
 
   if (storeId) {
-    const admin = await isStoreAdmin(authUser.uid, storeId);
+    const admin = await isHrStoreAdmin(authUser.uid, storeId, authUser.email);
     if (!admin) return NextResponse.json({ error: '권한 없음' }, { status: 403 });
   } else if (userId) {
     if (userId !== authUser.uid) return NextResponse.json({ error: '권한 없음' }, { status: 403 });
@@ -153,7 +148,7 @@ export async function PUT(req: Request) {
     if (!snap.exists) return NextResponse.json({ error: '신청 없음' }, { status: 404 });
 
     const data = snap.data()!;
-    const admin = await isStoreAdmin(authUser.uid, data.storeId);
+    const admin = await isHrStoreAdmin(authUser.uid, data.storeId, authUser.email);
     if (!admin) return NextResponse.json({ error: '권한 없음' }, { status: 403 });
 
     await ref.update({

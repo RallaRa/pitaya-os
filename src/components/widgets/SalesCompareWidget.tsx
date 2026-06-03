@@ -55,7 +55,7 @@ export default function SalesCompareWidget({
       setData(d);
       setUpdatedAt(new Date());
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '매출 비교 데이터를 불러오지 못했습니다');
+      setError(e instanceof Error ? e.message : '매출 목표 데이터를 불러오지 못했습니다');
     } finally {
       setLoading(false);
     }
@@ -77,12 +77,12 @@ export default function SalesCompareWidget({
     );
   };
 
-  const PaceBadge = ({ pct, label }: { pct: number | null; label: string }) => {
+  const PaceBadge = ({ pct }: { pct: number | null }) => {
     if (pct === null) return null;
     const color = pct >= 100 ? 'text-emerald-400' : pct >= 80 ? 'text-amber-400' : 'text-red-400';
     return (
       <span className={`text-[9px] ${color}`}>
-        {label} {pct}%
+        진도율 {pct}%
       </span>
     );
   };
@@ -129,8 +129,8 @@ export default function SalesCompareWidget({
           </p>
           {hasTarget && (
             <div className="text-[10px] text-slate-400 space-y-0.5">
-              <p>목표 {fmt(target.sales)}원 · 달성 {prog.salesPct ?? '-'}%</p>
-              <PaceBadge pct={prog.salesPacePct} label="진도(오늘까지)" />
+              <p>목표 {fmt(target.sales)}원 · 달성율 {prog.salesPct ?? '-'}%</p>
+              <PaceBadge pct={prog.salesPacePct} />
             </div>
           )}
         </div>
@@ -150,8 +150,8 @@ export default function SalesCompareWidget({
                 목표 총 {fmt(target.customers)}명 · 일평균 {prog.targetDailyCustomers}명
               </p>
               <p className="flex flex-wrap gap-1 items-center">
-                <span>달성 {prog.customersPct ?? '-'}%</span>
-                <PaceBadge pct={prog.customersPacePct} label="진도" />
+                <span>달성율 {prog.customersPct ?? '-'}%</span>
+                <PaceBadge pct={prog.customersPacePct} />
               </p>
             </div>
           )}
@@ -180,7 +180,7 @@ export default function SalesCompareWidget({
 
   return (
     <WidgetWrapper
-      title="📈 매출 비교"
+      title="🎯 매출 목표"
       editMode={editMode}
       onRemove={onRemove}
       onRefresh={load}

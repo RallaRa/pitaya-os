@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { verifyToken, getActualGroupId } from '@/lib/authVerify';
+import { verifyToken } from '@/lib/authVerify';
 import { recalculateUsedLeave } from '@/lib/hr/leaveBalance';
+import { isHrStoreAdmin, leaveRequestOverlapsMonth } from '@/lib/hr/storeAdmin';
 import { notifyUser } from '@/lib/notifications/notifyUser';
 
 const LEAVE_TYPE_LABEL: Record<string, string> = {
@@ -12,13 +13,7 @@ const LEAVE_TYPE_LABEL: Record<string, string> = {
   monthly: '월차',
 };
 
-const ADMIN_ROLES = ['master', 'admin', 'owner'];
 const SUPERUSER_EMAIL = process.env.SUPERUSER_EMAIL || process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || '';
-
-async function isStoreAdmin(uid: string, storeId: string) {
-  const role = await getActualGroupId(uid, storeId);
-  return ADMIN_ROLES.includes(role);
-}
 
 async function sendNotification(targetUid: string, title: string, body: string, link: string, type = 'leave_request') {
   await notifyUser(targetUid, { title, message: body, link, type });
@@ -64,7 +59,7 @@ export async function GET(req: Request) {
   const month   = searchParams.get('month');
 
   if (storeId) {
-    const admin = await isStoreAdmin(authUser.uid, storeId);
+    const admin = await isHrStoreAdmin(authUser.uid, storeId, authUser.email);
     if (!admin) return NextResponse.json({ error: '권한 없음' }, { status: 403 });
   } else if (userId) {
     if (userId !== authUser.uid) return NextResponse.json({ error: '권한 없음' }, { status: 403 });
@@ -84,9 +79,7 @@ export async function GET(req: Request) {
     docs = docs.slice(0, 200);
 
     if (month) {
-      docs = docs.filter(d =>
-        String(d.startDate || '').startsWith(month) || String(d.endDate || '').startsWith(month),
-      );
+      docs = docs.filter(d => leaveRequestOverlapsMonth(d.startDate, d.endDate, month));
     }
 
     return NextResponse.json({ requests: docs });
@@ -111,7 +104,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
     }
 
-    const admin = storeId ? await isStoreAdmin(authUser.uid, storeId) : false;
+    const admin = storeId ? await isHrStoreAdmin(authUser.uid, storeId, authUser.email) : false;
     if (userId !== authUser.uid && !admin) {
       return NextResponse.json({ error: '권한 없음' }, { status: 403 });
     }
@@ -194,7 +187,7 @@ export async function PUT(req: Request) {
     if (!snap.exists) return NextResponse.json({ error: '신청 없음' }, { status: 404 });
 
     const data = snap.data()!;
-    const admin = await isStoreAdmin(authUser.uid, data.storeId);
+    const admin = await isHrStoreAdmin(authUser.uid, data.storeId, authUser.email);
     if (!admin) return NextResponse.json({ error: '권한 없음' }, { status: 403 });
 
     const userDoc = await adminDb.collection('users').doc(authUser.uid).get();
@@ -271,7 +264,7 @@ export async function DELETE(req: Request) {
     if (!snap.exists) return NextResponse.json({ error: '신청 없음' }, { status: 404 });
 
     const data = snap.data()!;
-    const admin = await isStoreAdmin(authUser.uid, data.storeId);
+    const admin = await isHrStoreAdmin(authUser.uid, data.storeId, authUser.email);
 
     if (data.userId !== authUser.uid && !admin) {
       return NextResponse.json({ error: '권한 없음' }, { status: 403 });

@@ -26,7 +26,7 @@ export const WIDGET_META: WidgetMeta[] = [
   },
   {
     id: 'sales_compare',
-    title: '매출 비교',
+    title: '매출 목표',
     defaultItem: { i: 'sales_compare', x: 3, y: 9, w: 5, h: 3, minW: 3, minH: 3, maxW: 8, maxH: 8 },
     permKey: 'sales_compare',
   },
