@@ -12,6 +12,37 @@ import { getKSTTodayYMD } from '@/lib/dateUtils';
 export const SALES_ALERT_START_HOUR = 11;
 export const SALES_DROP_THRESHOLD = 0.1;
 export const SALES_RISE_THRESHOLD = 0.1;
+/** 기준 누적이 이보다 작으면 % 비교 제외 (데이터 미수집·부분 시간대) */
+export const SALES_ALERT_MIN_BENCHMARK_TOTAL = 100_000;
+/** 기준이 오늘의 15% 미만이면 제외 (50만 vs 5만 → 900% 같은 왜곡 방지) */
+export const SALES_ALERT_MIN_BENCHMARK_RATIO = 0.15;
+/** 상승·하락 최소 금액 차이 */
+export const SALES_ALERT_MIN_ABS_DELTA = 50_000;
+/** 알림 문구에 표시할 최대 % (초과 시 "200%+" ) */
+export const SALES_ALERT_MAX_DISPLAY_PCT = 200;
+
+export function isBenchmarkComparable(benchTotal: number, todayTotal: number): boolean {
+  if (benchTotal < SALES_ALERT_MIN_BENCHMARK_TOTAL) return false;
+  if (todayTotal > 0 && benchTotal < todayTotal * SALES_ALERT_MIN_BENCHMARK_RATIO) return false;
+  return true;
+}
+
+export function formatAlertChangePct(pct: number, direction: 'up' | 'down'): string {
+  const raw = Math.round(pct * 100);
+  const capped = Math.min(Math.max(raw, 0), SALES_ALERT_MAX_DISPLAY_PCT);
+  const suffix = raw > SALES_ALERT_MAX_DISPLAY_PCT ? '+' : '';
+  const arrow = direction === 'up' ? '↑' : '↓';
+  return `${capped}%${suffix}${arrow}`;
+}
+
+export function formatBenchmarkAlertLine(
+  label: string,
+  benchTotal: number,
+  pct: number,
+  direction: 'up' | 'down',
+): string {
+  return `${label} ${formatAlertChangePct(pct, direction)} (기준 ${benchTotal.toLocaleString()}원)`;
+}
 
 const BENCHMARKS: { key: keyof ReturnType<typeof getCompareDates>; label: string }[] = [
   { key: 'yesterday', label: '전일' },
@@ -253,10 +284,11 @@ export async function analyzeSalesHourlyDrop(
     benchmarkSnapshots.push(snap);
 
     const benchTotal = cumulativeSalesBetweenHours(snap, SALES_ALERT_START_HOUR, hour);
-    if (benchTotal <= 0) continue;
+    if (!isBenchmarkComparable(benchTotal, todayTotal)) continue;
 
     const dropPct = (benchTotal - todayTotal) / benchTotal;
-    if (dropPct >= SALES_DROP_THRESHOLD) {
+    const absDrop = benchTotal - todayTotal;
+    if (dropPct >= SALES_DROP_THRESHOLD && absDrop >= SALES_ALERT_MIN_ABS_DELTA) {
       drops.push({
         label: bm.label,
         date: cmpDate,
@@ -287,7 +319,7 @@ export async function analyzeSalesHourlyDrop(
 
   const dropLines = drops
     .slice(0, 3)
-    .map(d => `${d.label} ${Math.round(d.dropPct * 100)}%↓`)
+    .map(d => formatBenchmarkAlertLine(d.label, d.amount, d.dropPct, 'down'))
     .join(', ');
 
   const itemLines = focusItems.length
@@ -338,10 +370,11 @@ export async function analyzeSalesHourlyRise(
     benchmarkSnapshots.push(snap);
 
     const benchTotal = cumulativeSalesBetweenHours(snap, SALES_ALERT_START_HOUR, hour);
-    if (benchTotal <= 0) continue;
+    if (!isBenchmarkComparable(benchTotal, todayTotal)) continue;
 
     const risePct = (todayTotal - benchTotal) / benchTotal;
-    if (risePct >= SALES_RISE_THRESHOLD) {
+    const absRise = todayTotal - benchTotal;
+    if (risePct >= SALES_RISE_THRESHOLD && absRise >= SALES_ALERT_MIN_ABS_DELTA) {
       rises.push({
         label: bm.label,
         date: cmpDate,
@@ -372,7 +405,7 @@ export async function analyzeSalesHourlyRise(
 
   const riseLines = rises
     .slice(0, 3)
-    .map(r => `${r.label} ${Math.round(r.risePct * 100)}%↑`)
+    .map(r => formatBenchmarkAlertLine(r.label, r.amount, r.risePct, 'up'))
     .join(', ');
 
   const itemLines = focusItems.length

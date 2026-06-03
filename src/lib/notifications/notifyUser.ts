@@ -1,6 +1,7 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { sendKakaoNotifySafe } from '@/lib/kakao/sendNotify';
+import { getKakaoNotifyImageUrl } from '@/lib/kakao/notifyImage';
 
 const APP_BASE = process.env.NEXT_PUBLIC_APP_URL || 'https://pitaya-osv1.vercel.app';
 
@@ -31,6 +32,8 @@ export async function notifyUser(targetUid: string, opts: NotifyOptions) {
     title: opts.title,
     message: opts.message,
     link: opts.link.startsWith('http') ? opts.link : `${APP_BASE}${opts.link}`,
+    imageUrl: getKakaoNotifyImageUrl(opts.type),
+    notifyType: opts.type,
   });
 }
 

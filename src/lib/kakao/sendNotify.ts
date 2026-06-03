@@ -2,6 +2,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { normalizeGroupId, normalizeRole } from '@/lib/roleMapping';
 import { getValidKakaoToken } from './tokenManager';
 import { KAKAO_APP_BASE_URL } from './config';
+import { getDefaultKakaoNotifyImageUrl, getKakaoNotifyImageUrl } from './notifyImage';
 
 interface KakaoNotifyOptions {
   userId: string;
@@ -9,6 +10,8 @@ interface KakaoNotifyOptions {
   message: string;
   link?: string;
   imageUrl?: string;
+  /** 알림 유형 — 기본 피드 이미지 선택용 */
+  notifyType?: string;
 }
 
 export async function sendKakaoNotify({
@@ -17,17 +20,19 @@ export async function sendKakaoNotify({
   message,
   link,
   imageUrl,
+  notifyType,
 }: KakaoNotifyOptions): Promise<{ success: boolean; error?: string }> {
   const token = await getValidKakaoToken(userId);
   if (!token) return { success: false, error: '카카오 로그인 필요' };
 
   const webUrl = link || `${KAKAO_APP_BASE_URL}/dashboard`;
+  const feedImage = imageUrl || getKakaoNotifyImageUrl(notifyType) || getDefaultKakaoNotifyImageUrl();
   const templateObject = {
     object_type: 'feed',
     content: {
       title,
       description: message,
-      image_url: imageUrl || `${KAKAO_APP_BASE_URL}/icon-192.png`,
+      image_url: feedImage,
       image_width: 800,
       image_height: 400,
       link: {

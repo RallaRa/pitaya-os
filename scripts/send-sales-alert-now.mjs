@@ -139,7 +139,7 @@ async function sendKakao(uid, title, message, link) {
     content: {
       title,
       description: message,
-      image_url: `${APP_BASE}/icon-192.png`,
+      image_url: `${APP_BASE}/images/kakao-feed.png`,
       image_width: 800,
       image_height: 400,
       link: { web_url: webUrl, mobile_web_url: webUrl },

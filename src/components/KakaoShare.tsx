@@ -61,7 +61,7 @@ export default function KakaoShare({
       content: {
         title,
         description,
-        imageUrl: imageUrl || `${appUrl}/icon-192.png`,
+        imageUrl: imageUrl || `${appUrl}/images/kakao-feed.png`,
         link: { webUrl: link, mobileWebUrl: link },
       },
       buttons: [{
