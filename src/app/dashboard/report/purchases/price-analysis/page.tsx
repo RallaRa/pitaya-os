@@ -16,6 +16,7 @@ const SOURCE_COLORS: Record<string, string> = {
   meatfriends: '#f59e0b',
   bondaero: '#ef4444',
   ekcm: '#8b5cf6',
+  chamwoodon: '#ec4899',
 };
 
 interface PriceEntry {

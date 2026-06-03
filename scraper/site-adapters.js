@@ -368,6 +368,118 @@ async function scrapeBondaeroCategory(source, category) {
   return items;
 }
 
+const CHAMWOODON_API = 'https://api.chamwoodon.co.kr';
+const CHAMWOODON_HEADERS = {
+  ...DEFAULT_HEADERS,
+  Accept: 'application/json',
+  Origin: 'https://www.chamwoodon.co.kr',
+  Referer: 'https://www.chamwoodon.co.kr/',
+};
+
+function chamwoodonProducts(data) {
+  if (Array.isArray(data)) return data;
+  return data?.products ?? [];
+}
+
+function mapChamwoodonProduct(p, source, category) {
+  const price = normalizePrice(String(p.pricePerKg ?? p.finalSellingPrice ?? ''));
+  if (!p.productName || !price || price < 500) return null;
+
+  const productType = p.productType || 'BEF';
+  const id = p.id;
+  const url = id
+    ? `https://www.chamwoodon.co.kr/pdp?id=${id}&productType=${productType}`
+    : category.url;
+
+  const rawName = p.productName;
+  const categoryLabel =
+    category.name === '전체'
+      ? [p.species, p.part].filter(Boolean).join(' · ') || category.name
+      : category.name;
+
+  return {
+    rawName,
+    rawPrice: String(p.pricePerKg ?? p.finalSellingPrice ?? price),
+    price,
+    url,
+    category: categoryLabel,
+  };
+}
+
+async function scrapeChamwoodonSearch(source, category) {
+  const params = {};
+  if (category.keyword) params.keyword = category.keyword;
+
+  const { data, status } = await axios.get(`${CHAMWOODON_API}/user/list/search`, {
+    headers: CHAMWOODON_HEADERS,
+    params,
+    timeout: 45000,
+    validateStatus: () => true,
+  });
+
+  if (status !== 200) {
+    console.warn(`[${source.name}] search API HTTP ${status}`);
+    return [];
+  }
+
+  const items = [];
+  const seen = new Set();
+  for (const p of chamwoodonProducts(data)) {
+    const item = mapChamwoodonProduct(p, source, category);
+    if (!item) continue;
+    const key = String(p.id || item.url);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push(item);
+  }
+  return items;
+}
+
+async function scrapeChamwoodonPlp(source, category) {
+  const label = category.chamwoodonLabel || category.name;
+  const storageTypes = category.storageType ? [category.storageType] : ['냉장', '냉동'];
+  const items = [];
+  const seen = new Set();
+
+  for (const storageType of storageTypes) {
+    const { data, status } = await axios.get(`${CHAMWOODON_API}/user/list/plp`, {
+      headers: CHAMWOODON_HEADERS,
+      params: {
+        category: label,
+        company: category.company || '전체',
+        storageType,
+        part: category.part || '전체',
+      },
+      timeout: 30000,
+      validateStatus: () => true,
+    });
+
+    if (status !== 200) {
+      console.warn(`[${source.name}] plp API HTTP ${status} (${label}/${storageType})`);
+      continue;
+    }
+
+    for (const p of chamwoodonProducts(data)) {
+      const item = mapChamwoodonProduct(p, source, category);
+      if (!item) continue;
+      const key = String(p.id || item.url);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push(item);
+    }
+
+    if (storageTypes.length > 1) await new Promise((r) => setTimeout(r, 300));
+  }
+
+  return items;
+}
+
+async function scrapeChamwoodonCategory(source, category) {
+  const mode = category.chamwoodonMode || source.chamwoodonMode || 'search';
+  if (mode === 'search') return scrapeChamwoodonSearch(source, category);
+  return scrapeChamwoodonPlp(source, category);
+}
+
 let ekcmCategoryCache = null;
 
 async function fetchEkcmCategories() {
@@ -579,6 +691,9 @@ async function scrapeCategory(source, category) {
   if (source.id === 'ekcm' || source.scrapeMode === 'ekcm-disp-goods') {
     return scrapeEkcmCategory(source, category);
   }
+  if (source.id === 'chamwoodon' || source.scrapeMode === 'chamwoodon-search' || source.scrapeMode === 'chamwoodon-plp') {
+    return scrapeChamwoodonCategory(source, category);
+  }
   return scrapeGenericCategory(source, category);
 }
 
@@ -588,6 +703,7 @@ module.exports = {
   scrapeTopmeatCategory,
   scrapeMeatfriendsCategory,
   scrapeBondaeroCategory,
+  scrapeChamwoodonCategory,
   scrapeEkcmCategory,
   scrapeGenericCategory,
   meatclubCategoryCode,

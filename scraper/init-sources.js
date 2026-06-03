@@ -102,6 +102,23 @@ const SOURCES = [
       price: '[class*="price"]',
     },
   },
+  {
+    id: 'chamwoodon',
+    name: '참우돈미트',
+    url: 'https://www.chamwoodon.co.kr',
+    enabled: true,
+    encoding: 'utf-8',
+    scrapeMode: 'chamwoodon-search',
+    chamwoodonMode: 'search',
+    categories: [
+      { url: 'https://www.chamwoodon.co.kr/category', name: '전체', chamwoodonMode: 'search' },
+    ],
+    selectors: {
+      item: '[class*="product"], [class*="item"]',
+      name: '[class*="name"], [class*="title"]',
+      price: '[class*="price"]',
+    },
+  },
 ];
 
 async function init() {
