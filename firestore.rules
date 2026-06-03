@@ -295,6 +295,9 @@ service cloud.firestore {
     match /sales_hourly_alert_sent/{docId} {
       allow read, write: if false;
     }
+    match /sales_hourly_rise_alert_sent/{docId} {
+      allow read, write: if false;
+    }
     match /items/{docId} {
       allow read: if request.auth != null;
       allow write: if false;

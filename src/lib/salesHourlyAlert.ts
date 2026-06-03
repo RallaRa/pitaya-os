@@ -11,6 +11,7 @@ import { getKSTTodayYMD } from '@/lib/dateUtils';
 
 export const SALES_ALERT_START_HOUR = 11;
 export const SALES_DROP_THRESHOLD = 0.1;
+export const SALES_RISE_THRESHOLD = 0.1;
 
 const BENCHMARKS: { key: keyof ReturnType<typeof getCompareDates>; label: string }[] = [
   { key: 'yesterday', label: '전일' },
@@ -107,6 +108,22 @@ export interface SalesHourlyAlertResult {
   message: string;
 }
 
+export interface SalesRiseBenchmark {
+  label: string;
+  date: string;
+  amount: number;
+  risePct: number;
+}
+
+export interface SalesHourlyRiseAlertResult {
+  triggered: boolean;
+  todayTotal: number;
+  hour: number;
+  rises: SalesRiseBenchmark[];
+  focusItems: string[];
+  message: string;
+}
+
 export function recommendFocusItems(
   todayItems: ReportSnapshot['items'],
   benchmarkSnapshots: ReportSnapshot[],
@@ -157,6 +174,56 @@ export function recommendFocusItems(
   for (const it of ranked.slice(0, limit * 2)) {
     if (picks.length >= limit) break;
     if (!picks.includes(it.name)) picks.push(it.name);
+  }
+
+  return picks.slice(0, limit);
+}
+
+export function recommendRiseFocusItems(
+  todayItems: ReportSnapshot['items'],
+  benchmarkSnapshots: ReportSnapshot[],
+  fromHour: number,
+  toHour: number,
+  limit = 5,
+): string[] {
+  const benchTotals = new Map<string, number>();
+  let benchDays = 0;
+
+  for (const snap of benchmarkSnapshots) {
+    const filtered = filterItemsBetweenHours(snap?.items, fromHour, toHour);
+    if (!filtered.length) continue;
+    benchDays += 1;
+    for (const it of topItems(filtered, 25)) {
+      benchTotals.set(it.name, (benchTotals.get(it.name) || 0) + it.amount);
+    }
+  }
+
+  if (benchDays === 0) {
+    const todayTop = topItems(filterItemsBetweenHours(todayItems, fromHour, toHour), limit);
+    return todayTop.map(i => i.name);
+  }
+
+  const todayMap = new Map<string, number>();
+  for (const it of topItems(filterItemsBetweenHours(todayItems, fromHour, toHour), 25)) {
+    todayMap.set(it.name, it.amount);
+  }
+
+  const ranked = [...todayMap.entries()]
+    .map(([name, todayAmt]) => {
+      const benchSum = benchTotals.get(name) || 0;
+      const avgBench = benchSum / benchDays;
+      return { name, score: todayAmt - avgBench, avgBench, todayAmt };
+    })
+    .filter(x => x.todayAmt >= 10000)
+    .sort((a, b) => b.score - a.score);
+
+  const picks = ranked.slice(0, limit).map(r => r.name);
+
+  if (picks.length < limit) {
+    for (const it of topItems(filterItemsBetweenHours(todayItems, fromHour, toHour), limit)) {
+      if (!picks.includes(it.name)) picks.push(it.name);
+      if (picks.length >= limit) break;
+    }
   }
 
   return picks.slice(0, limit);
@@ -242,6 +309,91 @@ export async function analyzeSalesHourlyDrop(
     todayTotal,
     hour,
     drops,
+    focusItems,
+    message,
+  };
+}
+
+export async function analyzeSalesHourlyRise(
+  storeId: string,
+  hour: number,
+  baseDate = getKSTTodayYMD(),
+): Promise<SalesHourlyRiseAlertResult | null> {
+  if (hour < SALES_ALERT_START_HOUR) return null;
+
+  const dates = getCompareDates(baseDate);
+  const todaySnap = await loadReportSnapshot(storeId, baseDate);
+  if (!todaySnap) return null;
+
+  const todayTotal = cumulativeSalesBetweenHours(todaySnap, SALES_ALERT_START_HOUR, hour);
+  if (todayTotal <= 0) return null;
+
+  const rises: SalesRiseBenchmark[] = [];
+  const benchmarkSnapshots: ReportSnapshot[] = [];
+
+  for (const bm of BENCHMARKS) {
+    const cmpDate = dates[bm.key];
+    const snap = await loadReportSnapshot(storeId, cmpDate);
+    if (!snap) continue;
+    benchmarkSnapshots.push(snap);
+
+    const benchTotal = cumulativeSalesBetweenHours(snap, SALES_ALERT_START_HOUR, hour);
+    if (benchTotal <= 0) continue;
+
+    const risePct = (todayTotal - benchTotal) / benchTotal;
+    if (risePct >= SALES_RISE_THRESHOLD) {
+      rises.push({
+        label: bm.label,
+        date: cmpDate,
+        amount: benchTotal,
+        risePct,
+      });
+    }
+  }
+
+  if (!rises.length) {
+    return {
+      triggered: false,
+      todayTotal,
+      hour,
+      rises: [],
+      focusItems: [],
+      message: '',
+    };
+  }
+
+  rises.sort((a, b) => b.risePct - a.risePct);
+  const focusItems = recommendRiseFocusItems(
+    todaySnap.items,
+    benchmarkSnapshots,
+    SALES_ALERT_START_HOUR,
+    hour,
+  );
+
+  const riseLines = rises
+    .slice(0, 3)
+    .map(r => `${r.label} ${Math.round(r.risePct * 100)}%↑`)
+    .join(', ');
+
+  const itemLines = focusItems.length
+    ? focusItems.map((name, i) => `${i + 1}. ${name}`).join('\n')
+    : '데이터 부족 — 당일 인기 품목 위주로 재고·진열을 유지하세요';
+
+  const message = [
+    `${SALES_ALERT_START_HOUR}~${hour}시 누적 ${todayTotal.toLocaleString()}원`,
+    `기준 대비 상승: ${riseLines}`,
+    '',
+    '잘 팔린 품목:',
+    itemLines,
+    '',
+    '재고·진열을 유지하고 프로모션을 이어가세요.',
+  ].join('\n');
+
+  return {
+    triggered: true,
+    todayTotal,
+    hour,
+    rises,
     focusItems,
     message,
   };

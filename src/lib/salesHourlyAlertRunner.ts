@@ -4,10 +4,45 @@ import { getKSTTodayYMD } from '@/lib/dateUtils';
 import { notifyUser } from '@/lib/notifications/notifyUser';
 import {
   analyzeSalesHourlyDrop,
+  analyzeSalesHourlyRise,
   getKSTHour,
   getStoreActiveUserIds,
   SALES_ALERT_START_HOUR,
 } from '@/lib/salesHourlyAlert';
+
+async function sendHourlyAlert(opts: {
+  storeId: string;
+  todayStr: string;
+  kstHour: number;
+  uid: string;
+  collection: string;
+  title: string;
+  message: string;
+  type: string;
+  extra: Record<string, unknown>;
+}): Promise<boolean> {
+  const dedupeId = `${opts.storeId}_${opts.todayStr}_${opts.kstHour}_${opts.uid}`;
+  const sentRef = adminDb.collection(opts.collection).doc(dedupeId);
+  const sentSnap = await sentRef.get();
+  if (sentSnap.exists) return false;
+
+  await notifyUser(opts.uid, {
+    title: opts.title,
+    message: opts.message,
+    link: '/dashboard/report/view',
+    type: opts.type,
+  });
+
+  await sentRef.set({
+    storeId: opts.storeId,
+    uid: opts.uid,
+    date: opts.todayStr,
+    hour: opts.kstHour,
+    sentAt: FieldValue.serverTimestamp(),
+    ...opts.extra,
+  });
+  return true;
+}
 
 export async function runSalesHourlyAlertsForStore(storeId: string, storeName?: string) {
   const kstHour = getKSTHour();
@@ -16,42 +51,67 @@ export async function runSalesHourlyAlertsForStore(storeId: string, storeName?: 
   }
 
   const todayStr = getKSTTodayYMD();
-  const result = await analyzeSalesHourlyDrop(storeId, kstHour, todayStr);
-  if (!result?.triggered) {
-    return { triggered: false, kstHour, todayStr };
-  }
-
   const name = storeName || storeId;
   const userIds = await getStoreActiveUserIds(storeId);
-  let sent = 0;
 
-  for (const uid of userIds) {
-    const dedupeId = `${storeId}_${todayStr}_${kstHour}_${uid}`;
-    const sentRef = adminDb.collection('sales_hourly_alert_sent').doc(dedupeId);
-    const sentSnap = await sentRef.get();
-    if (sentSnap.exists) continue;
+  const dropResult = await analyzeSalesHourlyDrop(storeId, kstHour, todayStr);
+  const riseResult = await analyzeSalesHourlyRise(storeId, kstHour, todayStr);
 
-    await notifyUser(uid, {
-      title: `📉 ${kstHour}시 매출 하락 알림 (${name})`,
-      message: result.message,
-      link: '/dashboard/report/view',
-      type: 'sales_hourly_drop',
-    });
+  let dropSent = 0;
+  let riseSent = 0;
 
-    await sentRef.set({
-      storeId,
-      uid,
-      date: todayStr,
-      hour: kstHour,
-      todayTotal: result.todayTotal,
-      drops: result.drops,
-      focusItems: result.focusItems,
-      sentAt: FieldValue.serverTimestamp(),
-    });
-    sent += 1;
+  if (dropResult?.triggered) {
+    for (const uid of userIds) {
+      const ok = await sendHourlyAlert({
+        storeId,
+        todayStr,
+        kstHour,
+        uid,
+        collection: 'sales_hourly_alert_sent',
+        title: `📉 ${kstHour}시 매출 하락 알림 (${name})`,
+        message: dropResult.message,
+        type: 'sales_hourly_drop',
+        extra: {
+          todayTotal: dropResult.todayTotal,
+          drops: dropResult.drops,
+          focusItems: dropResult.focusItems,
+        },
+      });
+      if (ok) dropSent += 1;
+    }
   }
 
-  return { triggered: true, kstHour, todayStr, sent, drops: result.drops.length };
+  if (riseResult?.triggered) {
+    for (const uid of userIds) {
+      const ok = await sendHourlyAlert({
+        storeId,
+        todayStr,
+        kstHour,
+        uid,
+        collection: 'sales_hourly_rise_alert_sent',
+        title: `📈 ${kstHour}시 매출 상승 알림 (${name})`,
+        message: riseResult.message,
+        type: 'sales_hourly_rise',
+        extra: {
+          todayTotal: riseResult.todayTotal,
+          rises: riseResult.rises,
+          focusItems: riseResult.focusItems,
+        },
+      });
+      if (ok) riseSent += 1;
+    }
+  }
+
+  return {
+    kstHour,
+    todayStr,
+    dropTriggered: !!dropResult?.triggered,
+    riseTriggered: !!riseResult?.triggered,
+    dropSent,
+    riseSent,
+    triggered: !!(dropResult?.triggered || riseResult?.triggered),
+    sent: dropSent + riseSent,
+  };
 }
 
 export async function runSalesHourlyAlertsAllStores() {
@@ -61,7 +121,8 @@ export async function runSalesHourlyAlertsAllStores() {
   }
 
   const storesSnap = await adminDb.collection('stores').get();
-  let alerts = 0;
+  let dropAlerts = 0;
+  let riseAlerts = 0;
   let sent = 0;
 
   for (const storeDoc of storesSnap.docs) {
@@ -70,14 +131,13 @@ export async function runSalesHourlyAlertsAllStores() {
         storeDoc.id,
         (storeDoc.data().storeName as string) || storeDoc.id,
       );
-      if (r.triggered) {
-        alerts += 1;
-        sent += r.sent || 0;
-      }
+      if (r.dropTriggered) dropAlerts += 1;
+      if (r.riseTriggered) riseAlerts += 1;
+      sent += r.sent || 0;
     } catch (e) {
       console.error('[sales-hourly-alert]', storeDoc.id, e);
     }
   }
 
-  return { ok: true, kstHour, alerts, sent };
+  return { ok: true, kstHour, dropAlerts, riseAlerts, alerts: dropAlerts + riseAlerts, sent };
 }
