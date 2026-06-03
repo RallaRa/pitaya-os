@@ -12,7 +12,9 @@ import {
   ensembleOcr,
 } from '@/lib/ensembleOcr';
 import { applyAliasesToInvoices, loadStoreAliases } from '@/lib/applyItemAliases';
-import { normalizePurchaseItem, OCR_CATEGORY_RULES } from '@/lib/purchaseCategories';
+import { normalizePurchaseItem } from '@/lib/purchaseCategories';
+import { ANALYZE_MULTI_SYSTEM } from '@/lib/purchaseOcrRules';
+import { postProcessInvoice } from '@/lib/purchasePostProcess';
 import {
   formatAiTag,
   formatEnsembleReplyBlock,
@@ -41,63 +43,15 @@ function extractMimeType(content: string, fallback = 'image/jpeg'): string {
   return match?.[1] || fallback;
 }
 
-const SYSTEM_INSTRUCTION = `당신은 한국 정육점·식자재 매입 문서(거래명세서, 세금계산서, 매입전표, 영수증) 전문 OCR·분석 AI입니다.
-
-작업:
-1. 이미지/PDF에서 **모든 글자**를 읽는다 (작은 글씨, 표, 손글씨 포함).
-2. 공급업체·날짜·품목·수량·단가·공급가·세액·합계를 추출한다.
-3. 아래 JSON **배열**만 반환한다 (마크다운·설명 금지).
-
-[
-  {
-    "purchaseDate": "YYYY-MM-DD",
-    "supplierName": "공급업체명",
-    "invoiceNumber": "전표번호 (없으면 빈 문자열)",
-    "items": [
-      {
-        "name": "품명",
-        "category": "한돈|한우|수입육|계육및기타|박스|용기|봉투|케이스|스티커|기타원부자재",
-        "qty": 수량(숫자),
-        "unit": "kg|개|박스|세트|롤 등",
-        "unitPrice": 단가(숫자),
-        "supplyAmount": 공급가액(숫자),
-        "taxAmount": 세액(숫자),
-        "traceNo": "이력번호 (고기류만, 없으면 빈 문자열)",
-        "origin": "원산지 (고기류만)",
-        "cut": "부위 (고기류만)",
-        "grade": "등급 (고기류만)"
-      }
-    ],
-    "supplyAmount": 공급가액합계,
-    "taxAmount": 세액합계,
-    "totalAmount": 합계금액,
-    "paymentMethod": "현금|카드|외상|이체",
-    "memo": "특이사항"
-  }
-]
-
-규칙:
-- 글자가 흐려도 **추정 가능한 숫자·품목명은 반드시 포함**. 빈 배열 [] 반환 금지 (최소 1건 객체).
-- supplierName을 못 읽으면 "미확인" + items 또는 totalAmount라도 채운다.
-- 금액 콤마 제거 (1,250,000 → 1250000).
-- 여러 장/여러 업체 → 각각 별도 객체.
-${OCR_CATEGORY_RULES}`;
+const SYSTEM_INSTRUCTION = ANALYZE_MULTI_SYSTEM;
 
 function normalizeInvoice(raw: Record<string, unknown>) {
-  const items = (Array.isArray(raw.items) ? raw.items : []).map(it =>
-    normalizePurchaseItem(it as Record<string, unknown>),
-  );
-  const supplierName = String(raw.supplierName || '').trim() || (items.length ? '미확인' : '');
-  const { _conflicts, ...rest } = raw;
-  return {
-    ...rest,
-    supplierName,
-    items,
-    totalAmount: Number(raw.totalAmount || 0),
-    supplyAmount: Number(raw.supplyAmount || 0),
-    taxAmount: Number(raw.taxAmount || 0),
-    _conflicts,
-  };
+  return postProcessInvoice({
+    ...raw,
+    items: (Array.isArray(raw.items) ? raw.items : []).map(it =>
+      normalizePurchaseItem(it as Record<string, unknown>),
+    ),
+  });
 }
 
 function isValidInvoice(inv: Record<string, unknown>): boolean {

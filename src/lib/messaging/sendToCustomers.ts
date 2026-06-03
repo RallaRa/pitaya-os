@@ -209,6 +209,11 @@ export async function sendCustomerMessages(
 
   for (const row of queryResult.customers) {
     const pii = piiMap.get(row.cusCode);
+    if (pii?.phoneNeedsReconcile) {
+      skipped++;
+      skipReasons.phone_needs_reconcile = (skipReasons.phone_needs_reconcile || 0) + 1;
+      continue;
+    }
     if (!pii?.phone || pii.phone.includes('복호화')) {
       skipped++;
       skipReasons.no_phone = (skipReasons.no_phone || 0) + 1;

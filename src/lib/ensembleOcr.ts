@@ -9,7 +9,8 @@ import {
   type AiModelKey,
 } from '@/lib/aiRouter';
 import { stripJsonMarkdown } from '@/lib/aiProviderFallback';
-import { OCR_CATEGORY_RULES } from '@/lib/purchaseCategories';
+import { ENSEMBLE_OCR_PROMPT } from '@/lib/purchaseOcrRules';
+import { postProcessInvoice } from '@/lib/purchasePostProcess';
 import { trackTokens, trackUsage } from '@/lib/trackUsage';
 
 export interface EnsembleConflict {
@@ -40,24 +41,7 @@ const CLAUDE_MODEL = 'claude-sonnet-4-6';
 const GPT_MODEL = 'gpt-4o';
 const GEMINI_MODEL = 'gemini-2.0-flash';
 
-export const OCR_PROMPT = `거래명세서/세금계산서/매입전표를 분석해서 아래 JSON 배열로만 반환해.
-마크다운 없이 순수 JSON만. 최소 1개 객체 포함.
-
-[{
-  "purchaseDate": "YYYY-MM-DD",
-  "supplierName": "공급업체명",
-  "invoiceNumber": "",
-  "items": [{
-    "name": "품명",
-    "category": "한돈|한우|수입육|계육및기타|박스|용기|봉투|케이스|스티커|기타원부자재",
-    "qty": 0, "unit": "kg", "unitPrice": 0,
-    "supplyAmount": 0, "taxAmount": 0, "traceNo": "", "origin": "", "cut": "", "grade": ""
-  }],
-  "supplyAmount": 0, "taxAmount": 0, "totalAmount": 0,
-  "paymentMethod": "", "memo": ""
-}]
-
-${OCR_CATEGORY_RULES}`;
+export const OCR_PROMPT = ENSEMBLE_OCR_PROMPT;
 
 function parseOcrJson(text: string): Record<string, unknown>[] {
   const cleaned = stripJsonMarkdown(text);
@@ -266,7 +250,7 @@ export function mergeInvoiceResults(
       allConflicts.push(...(m._conflicts as EnsembleConflict[]));
       delete m._conflicts;
     }
-    merged.push(m);
+    merged.push(postProcessInvoice(m));
   }
 
   return { merged, conflicts: allConflicts };

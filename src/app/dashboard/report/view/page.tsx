@@ -51,12 +51,16 @@ interface ReportRow {
   posBreakdown?: PosBreakdown[];
 }
 
-type Preset = 'week' | 'month' | 'lastMonth' | 'custom';
+type Preset = 'today' | 'week' | 'month' | 'lastMonth' | 'custom';
 
 const PRESET_LABELS: Record<Preset, string> = {
-  week: '이번 주', month: '이번 달', lastMonth: '지난 달', custom: '직접입력',
+  today: '오늘', week: '이번 주', month: '이번 달', lastMonth: '지난 달', custom: '직접입력',
 };
 
+function getToday() {
+  const today = getKSTTodayYMD();
+  return { start: today, end: today };
+}
 function getThisWeek() {
   const today = getKSTTodayYMD();
   const d = new Date(`${today}T12:00:00+09:00`);
@@ -82,7 +86,11 @@ function getLastMonth() {
 
 function presetRangeLabel(p: Preset): string {
   if (p === 'custom') return PRESET_LABELS.custom;
-  const r = p === 'week' ? getThisWeek() : p === 'month' ? getThisMonth() : getLastMonth();
+  const r = p === 'today' ? getToday()
+    : p === 'week' ? getThisWeek()
+    : p === 'month' ? getThisMonth()
+    : getLastMonth();
+  if (p === 'today') return `${PRESET_LABELS.today} (${r.start.slice(5)})`;
   return `${PRESET_LABELS[p]} (${r.start.slice(5)}~${r.end.slice(5)})`;
 }
 
@@ -187,8 +195,8 @@ export default function ReportViewPage() {
   const { currentStore, storesLoaded } = useStore();
   const { canAccess: canManualSales } = useManualSalesAccess();
 
-  const [preset, setPreset]          = useState<Preset>('month');
-  const init                          = getThisMonth();
+  const [preset, setPreset]          = useState<Preset>('today');
+  const init                          = getToday();
   const [range, setRange]             = useState(init);
   const [customStart, setCustomStart] = useState(init.start);
   const [customEnd, setCustomEnd]     = useState(init.end);
@@ -354,6 +362,7 @@ export default function ReportViewPage() {
 
   const handlePreset = (p: Preset) => {
     setPreset(p);
+    if (p === 'today')     setRange(getToday());
     if (p === 'week')      setRange(getThisWeek());
     if (p === 'month')     setRange(getThisMonth());
     if (p === 'lastMonth') setRange(getLastMonth());
@@ -445,7 +454,7 @@ export default function ReportViewPage() {
         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">기간 선택</p>
 
         <div className="flex flex-wrap gap-2">
-          {(['week', 'month', 'lastMonth', 'custom'] as Preset[]).map(p => (
+          {(['today', 'week', 'month', 'lastMonth', 'custom'] as Preset[]).map(p => (
             <button
               key={p}
               onClick={() => handlePreset(p)}

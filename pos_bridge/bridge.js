@@ -12,6 +12,7 @@
  *   node bridge.js sync-employees       # 사원정보만 동기화
  *   node bridge.js sync-customers       # Customer_Info 고객 동기화
  *   node bridge.js probe-customer-phones # DB 전화 컬럼 원본 확인
+ *   node bridge.js probe-member-use     # 사용중 회원 조회 조건 탐색
  *   node bridge.js check-tables         # DB 테이블 확인
  *   node bridge.js --dry-run            # 조회만
  *
@@ -22,8 +23,12 @@
 'use strict';
 
 require('dotenv').config();
+const fs    = require('fs');
+const path  = require('path');
 const sql   = require('mssql');
 const axios = require('axios');
+
+const MEMBER_PROBE_OUT = path.join(__dirname, 'find-pos-member-export.txt');
 
 // ── 설정 ──────────────────────────────────────────────────────────
 const API_BASE = (process.env.PITAYA_API_URL || 'https://pitaya-osv1.vercel.app/api/pos/sync')
@@ -48,7 +53,9 @@ const DB_CONFIG = {
   },
 };
 
-const REALTIME_INTERVAL_MS = 30 * 1000; // 30초
+const REALTIME_INTERVAL_MS = parseInt(process.env.REALTIME_INTERVAL_MS || '30000', 10); // 기본 30초
+/** realtime 모드에서 고객 전체 동기화 간격 (기본 6시간). 매출은 REALTIME_INTERVAL_MS마다 전송 */
+const CUSTOMER_SYNC_EVERY_MS = parseInt(process.env.CUSTOMER_SYNC_EVERY_MS || String(6 * 60 * 60 * 1000), 10);
 
 // ── 유틸 ──────────────────────────────────────────────────────────
 const toInt = v => (v == null ? 0 : parseInt(v, 10) || 0);
@@ -377,7 +384,8 @@ async function fetchCustomerInfo(pool) {
       ci.Vis_Count      as visitCount,
       ci.cPoint_Use     as pointUseYn,
       ci.Cus_Use        as isActive,
-      ci.Email          as email
+      ci.Email          as email,
+      ci.en_uKey2       as enUKey2
     FROM Customer_Info ci
     LEFT JOIN Cus_Mst cm ON ci.Cus_Code = cm.Cus_Code
     WHERE ci.Cus_Use = '1'
@@ -404,7 +412,8 @@ async function fetchCustomerInfo(pool) {
       Vis_Count      as visitCount,
       cPoint_Use     as pointUseYn,
       Cus_Use        as isActive,
-      Email          as email
+      Email          as email,
+      en_uKey2       as enUKey2
     FROM Customer_Info
     WHERE Cus_Use = '1'
     ORDER BY Vis_Date DESC
@@ -593,6 +602,7 @@ async function syncCustomers(pool) {
         pointUseYn:     String(c.pointUseYn     || '').trim(),
         isActive:       String(c.isActive       || '1').trim(),
         email:          String(c.email          || '').trim(),
+        enUKey2:        String(c.enUKey2        || '').trim(),
       };
     }).filter(c => c.cusCode);
 
@@ -616,6 +626,163 @@ async function syncCustomers(pool) {
   }
 
   log(`✅ 고객정보 총 ${totalSynced}명 동기화 완료`);
+}
+
+// ── POS 「사용」 회원 조회 조건 탐색 ───────────────────────────────
+async function probeMemberUse(pool) {
+  const lines = [];
+  const out = (m) => {
+    lines.push(m);
+    log(m);
+  };
+
+  out(`=== probe-member-use ${new Date().toISOString()} ===`);
+  out(`TARGET: POS excel export count = 2828 (사용 기준)`);
+  out('');
+
+  async function cnt(label, query) {
+    try {
+      const r = await pool.request().query(query);
+      const n = r.recordset[0].cnt ?? r.recordset[0].CNT ?? Object.values(r.recordset[0])[0];
+      out(`  ${label}: ${n}`);
+      return Number(n);
+    } catch (e) {
+      out(`  ${label}: ERROR ${e.message}`);
+      return null;
+    }
+  }
+
+  out('--- Customer_Info counts ---');
+  const total = await cnt('total rows', 'SELECT COUNT(*) AS cnt FROM Customer_Info');
+  await cnt("Cus_Use = '1'", "SELECT COUNT(*) AS cnt FROM Customer_Info WHERE Cus_Use = '1'");
+  await cnt("Cus_Use = '0'", "SELECT COUNT(*) AS cnt FROM Customer_Info WHERE Cus_Use = '0'");
+  await cnt('Cus_Use NULL or empty', "SELECT COUNT(*) AS cnt FROM Customer_Info WHERE Cus_Use IS NULL OR Cus_Use = ''");
+  await cnt('en_uKey2 present', "SELECT COUNT(*) AS cnt FROM Customer_Info WHERE en_uKey2 IS NOT NULL AND en_uKey2 <> ''");
+  await cnt('Cus_Mobile has * (masked)', "SELECT COUNT(*) AS cnt FROM Customer_Info WHERE Cus_Mobile LIKE '%*%'");
+  await cnt('Cus_Mobile 11 digits no *', "SELECT COUNT(*) AS cnt FROM Customer_Info WHERE Cus_Mobile NOT LIKE '%*%' AND LEN(REPLACE(REPLACE(Cus_Mobile,'-',''),' ','')) = 11");
+
+  out('');
+  out('--- Cus_Use distribution ---');
+  try {
+    const dist = await pool.request().query(`
+      SELECT ISNULL(NULLIF(RTRIM(Cus_Use), ''), '(empty)') AS Cus_Use, COUNT(*) AS cnt
+      FROM Customer_Info
+      GROUP BY Cus_Use
+      ORDER BY cnt DESC
+    `);
+    dist.recordset.forEach(r => out(`  Cus_Use=[${r.Cus_Use}] → ${r.cnt}`));
+  } catch (e) {
+    out(`  ERROR: ${e.message}`);
+  }
+
+  out('');
+  out('--- Match 2828? (filter candidates) ---');
+  const candidates = [
+    ["Cus_Use='1'", "SELECT COUNT(*) AS cnt FROM Customer_Info WHERE Cus_Use = '1'"],
+    ["Cus_Use='1' AND en_uKey2<>''", "SELECT COUNT(*) AS cnt FROM Customer_Info WHERE Cus_Use = '1' AND en_uKey2 IS NOT NULL AND en_uKey2 <> ''"],
+    ["Cus_Use IN ('1','Y')", "SELECT COUNT(*) AS cnt FROM Customer_Info WHERE Cus_Use IN ('1','Y')"],
+    ["Cus_Use <> '0' OR NULL", "SELECT COUNT(*) AS cnt FROM Customer_Info WHERE Cus_Use IS NULL OR Cus_Use <> '0'"],
+    ['all rows', 'SELECT COUNT(*) AS cnt FROM Customer_Info'],
+  ];
+  for (const [label, q] of candidates) {
+    const n = await cnt(label, q);
+    if (n === 2828) out(`  >>> MATCH 2828: ${label}`);
+  }
+
+  out('');
+  out('--- bridge.js fetchCustomerInfo (current) ---');
+  try {
+    const list = await fetchCustomerInfo(pool);
+    out(`  rows returned: ${list.length} (WHERE Cus_Use='1' ORDER BY Vis_Date DESC)`);
+    list.slice(0, 5).forEach((c, i) => {
+      out(`  [${i + 1}] ${c.cusCode} mobile=${c.mobile || '-'} vis=${c.lastVisitDate || '-'}`);
+    });
+  } catch (e) {
+    out(`  ERROR: ${e.message}`);
+  }
+
+  out('');
+  out('--- ORDER BY Cus_Code TOP 5 (excel order guess) ---');
+  try {
+    const r = await pool.request().query(`
+      SELECT TOP 5 Cus_Code, Cus_Name, Cus_Mobile, Cus_Use, Vis_Date
+      FROM Customer_Info WHERE Cus_Use = '1'
+      ORDER BY Cus_Code
+    `);
+    r.recordset.forEach((row, i) => {
+      out(`  [${i + 1}] ${row.Cus_Code} ${row.Cus_Mobile} use=${row.Cus_Use}`);
+    });
+  } catch (e) {
+    out(`  ERROR: ${e.message}`);
+  }
+
+  out('');
+  out('--- Active-related columns on Customer_Info ---');
+  try {
+    const cols = await pool.request().query(`
+      SELECT COLUMN_NAME, DATA_TYPE
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_NAME = 'Customer_Info'
+        AND (COLUMN_NAME LIKE '%Use%' OR COLUMN_NAME LIKE '%YN%' OR COLUMN_NAME LIKE '%Active%'
+          OR COLUMN_NAME LIKE '%Del%' OR COLUMN_NAME LIKE '%Stop%' OR COLUMN_NAME LIKE '%Stat%')
+      ORDER BY COLUMN_NAME
+    `);
+    cols.recordset.forEach(c => out(`  ${c.COLUMN_NAME} (${c.DATA_TYPE})`));
+  } catch (e) {
+    out(`  ERROR: ${e.message}`);
+  }
+
+  out('');
+  out('--- SQL modules referencing Customer_Info + Cus_Use ---');
+  try {
+    const mods = await pool.request().query(`
+      SELECT TOP 30 o.type_desc, o.name
+      FROM sys.sql_modules m
+      JOIN sys.objects o ON m.object_id = o.object_id
+      WHERE m.definition LIKE '%Customer_Info%'
+        AND m.definition LIKE '%Cus_Use%'
+      ORDER BY o.type_desc, o.name
+    `);
+    if (!mods.recordset.length) out('  (none found — logic may be in POS app EXE, not SQL proc)');
+    mods.recordset.forEach(r => out(`  ${r.type_desc}: ${r.name}`));
+  } catch (e) {
+    out(`  ERROR: ${e.message}`);
+  }
+
+  out('');
+  out('--- Objects named Cus / Customer / Member ---');
+  try {
+    const objs = await pool.request().query(`
+      SELECT o.type_desc, o.name
+      FROM sys.objects o
+      WHERE o.type IN ('P','FN','IF','TF','V')
+        AND (o.name LIKE '%Cus%' OR o.name LIKE '%Customer%' OR o.name LIKE '%Member%')
+      ORDER BY o.type_desc, o.name
+    `);
+    objs.recordset.slice(0, 40).forEach(r => out(`  ${r.type_desc}: ${r.name}`));
+    if (objs.recordset.length > 40) out(`  ... +${objs.recordset.length - 40} more`);
+  } catch (e) {
+    out(`  ERROR: ${e.message}`);
+  }
+
+  out('');
+  out('--- Admin_Option (POS settings) ---');
+  try {
+    const opt = await pool.request().query('SELECT opt_ID, opt_YN FROM Admin_Option ORDER BY opt_ID');
+    opt.recordset.forEach(r => out(`  opt_ID=${r.opt_ID} opt_YN=${r.opt_YN}`));
+  } catch (e) {
+    out(`  ERROR: ${e.message}`);
+  }
+
+  out('');
+  out('--- Conclusion hints ---');
+  if (total != null) out(`  DB total=${total}, POS excel=2828, bridge sync uses Cus_Use='1'`);
+  out('  Decrypted phone in excel: POS COM Hyeongryeol.StringEncrypter / Ko3des (not raw SQL column)');
+  out('  Next: SQL Profiler while POS [사용] search + excel, or run find-pos-member-export.ps1 for EXE strings');
+  out('');
+  out(`Saved: ${MEMBER_PROBE_OUT}`);
+
+  fs.writeFileSync(MEMBER_PROBE_OUT, lines.join('\n'), 'utf8');
 }
 
 // ── DB 테이블 확인 ────────────────────────────────────────────────
@@ -820,14 +987,19 @@ async function syncDate(dateStr, dryRun) {
 // ── 모드별 실행 ───────────────────────────────────────────────────
 
 // 오늘 1회
-async function runToday(dryRun) {
+async function runToday(dryRun, opts = {}) {
+  const { syncCustomerData = true } = opts;
   const dateStr = getKSTTodayYMD();
   log(`======== 오늘 동기화: ${dateStr} ========`);
   const ok = await syncDate(dateStr, dryRun);
   if (!dryRun && ok) {
     const p = await getPool();
     await syncEmployees(p);
-    await syncCustomers(p);
+    if (syncCustomerData) {
+      await syncCustomers(p);
+    } else {
+      log('고객 동기화 스킵 (realtime — 매출·사원만, 고객은 주기적으로만)');
+    }
   }
   log(`======== 완료 ${ok ? '✅' : '❌'} ========`);
   return ok;
@@ -838,10 +1010,16 @@ async function runRealtime(dryRun) {
   const intervalLabel = REALTIME_INTERVAL_MS >= 60000
     ? `${REALTIME_INTERVAL_MS / 60000}분`
     : `${REALTIME_INTERVAL_MS / 1000}초`;
-  log(`======== 실시간 모드 시작 (${intervalLabel} 간격) ========`);
+  const customerLabel = CUSTOMER_SYNC_EVERY_MS >= 3600000
+    ? `${CUSTOMER_SYNC_EVERY_MS / 3600000}시간`
+    : `${Math.round(CUSTOMER_SYNC_EVERY_MS / 60000)}분`;
+  log(`======== 실시간 모드 시작 (매출 ${intervalLabel} / 고객 ${customerLabel}) ========`);
   log('종료하려면 Ctrl+C');
+  let lastCustomerSyncAt = 0;
   while (true) {
-    await runToday(dryRun);
+    const shouldSyncCustomers = Date.now() - lastCustomerSyncAt >= CUSTOMER_SYNC_EVERY_MS;
+    await runToday(dryRun, { syncCustomerData: shouldSyncCustomers });
+    if (shouldSyncCustomers) lastCustomerSyncAt = Date.now();
     log(`다음 전송까지 ${intervalLabel} 대기...`);
     await sleep(REALTIME_INTERVAL_MS);
   }
@@ -1018,6 +1196,12 @@ async function main() {
         break;
       }
 
+      case 'probe-member-use': {
+        const p = await getPool();
+        await probeMemberUse(p);
+        break;
+      }
+
       case 'probe-en-ukey': {
         const p = await getPool();
         const result = await p.request().query(`
@@ -1060,7 +1244,7 @@ async function main() {
           success = await runDate(mode, dryRun);
         } else {
           err(`알 수 없는 모드: ${mode}`);
-          console.log('사용법: node bridge.js [today|realtime|date YYYY-MM-DD|migrate START END|customers|sync-employees|sync-customers|probe-customer-phones|probe-en-ukey|check-tables] [--dry-run]');
+          console.log('사용법: node bridge.js [today|realtime|date YYYY-MM-DD|migrate START END|customers|sync-employees|sync-customers|probe-customer-phones|probe-member-use|probe-en-ukey|check-tables] [--dry-run]');
           process.exit(1);
         }
     }

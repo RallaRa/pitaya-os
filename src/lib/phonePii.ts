@@ -1,4 +1,5 @@
-import { maskPhone } from '@/lib/encryption';
+import { decrypt, encrypt, maskPhone } from '@/lib/encryption';
+import { decryptEnUKey2 } from '@/lib/posUKeyDecrypt';
 
 /** POS/DB에 이미 마스킹된 값인지 (010-****-1234, 01033**8262 등) */
 export function isMaskedPhone(phone?: string | null): boolean {
@@ -61,7 +62,101 @@ export function phoneForDisplay(fullOrMasked: string): string {
   return maskPhone(fullOrMasked);
 }
 
-export type PhoneSource = 'full' | 'masked_only' | 'empty';
+export type PhoneSource = 'full' | 'masked_only' | 'empty' | 'needs_reconcile';
+
+/** sync-customers 전화 병합 결과 */
+export type PhoneSyncOutcome =
+  | 'full'
+  | 'masked_only'
+  | 'empty'
+  | 'protected'
+  | 'full_from_ukey2'
+  | 'needs_reconcile';
+
+export function getStoredPhoneDigitsFromDoc(data: Record<string, unknown>): string {
+  if (!data.phoneEncrypted) return '';
+  try {
+    return normalizePhoneDigits(decrypt(String(data.phoneEncrypted)));
+  } catch {
+    return '';
+  }
+}
+
+function applyFullPhoneToDoc(doc: Record<string, unknown>, digits: string, source: 'full' | 'full_from_ukey2') {
+  doc.phoneSource = 'full';
+  doc.phoneEncrypted = encrypt(digits);
+  doc.phoneMasked = maskPhone(digits);
+  doc.phoneDigitsLen = digits.length;
+  doc.phonePiiIncomplete = false;
+  doc.phoneNeedsReconcile = false;
+  doc.phonePosMismatch = false;
+  return source;
+}
+
+/**
+ * POS sync 시 전화 병합 (변경 반영 우선).
+ * 1) Cus_HP / phoneFull 등 원번호
+ * 2) en_uKey2 복호화 (키 설정 시)
+ * 3) 마스킹 키 동일 → 기존 full 유지
+ * 4) 마스킹 키 다름 + 새 번호 확보 실패 → needs_reconcile (수동·키 필요)
+ */
+export function mergePhoneSyncToDoc(
+  doc: Record<string, unknown>,
+  existing: Record<string, unknown> | undefined,
+  syncedAt: string,
+  enUKey2?: string | null,
+  ...candidates: (string | null | undefined)[]
+): PhoneSyncOutcome {
+  const ukeyDigits = normalizePhoneDigits(decryptEnUKey2(enUKey2) || '');
+  const incoming = buildPhonePiiFields(ukeyDigits || undefined, ...candidates);
+
+  if (incoming.phoneSource === 'full') {
+    const src = ukeyDigits && incoming.phoneDigits === ukeyDigits ? 'full_from_ukey2' : 'full';
+    return applyFullPhoneToDoc(doc, incoming.phoneDigits, src);
+  }
+
+  if (incoming.phoneSource === 'empty') {
+    if (!existing?.phoneEncrypted) {
+      doc.phoneSource = 'empty';
+      doc.phonePiiIncomplete = true;
+    }
+    return 'empty';
+  }
+
+  const posMaskKey = phoneMatchKey(incoming.phoneMasked);
+  const storedDigits = existing ? getStoredPhoneDigitsFromDoc(existing) : '';
+  const storedKey = storedDigits
+    ? phoneMatchKey(storedDigits)
+    : phoneMatchKey(String(existing?.phoneMasked || ''));
+
+  if (storedDigits && posMaskKey && storedKey === posMaskKey) {
+    doc.phoneMasked = incoming.phoneMasked;
+    doc.phoneNeedsReconcile = false;
+    doc.phonePosMismatch = false;
+    return 'protected';
+  }
+
+  if (posMaskKey && storedKey && storedKey !== posMaskKey) {
+    if (ukeyDigits && phoneMatchKey(ukeyDigits) === posMaskKey) {
+      return applyFullPhoneToDoc(doc, ukeyDigits, 'full_from_ukey2');
+    }
+
+    doc.phoneMasked = incoming.phoneMasked;
+    doc.phoneSource = 'needs_reconcile';
+    doc.phonePiiIncomplete = true;
+    doc.phoneNeedsReconcile = true;
+    doc.phonePosMismatch = true;
+    doc.phonePosMismatchAt = syncedAt;
+    return 'needs_reconcile';
+  }
+
+  doc.phoneSource = 'masked_only';
+  doc.phoneMasked = incoming.phoneMasked;
+  doc.phonePiiIncomplete = true;
+  doc.phoneNeedsReconcile = false;
+  doc.phonePosMismatch = false;
+  return 'masked_only';
+}
 
 export interface PhonePiiFields {
   phoneDigits: string;

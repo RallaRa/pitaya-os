@@ -1,5 +1,6 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { inferUnitFromItem, postProcessInvoice } from '@/lib/purchasePostProcess';
 
 export interface AliasEntry {
   alias: string;
@@ -58,11 +59,17 @@ export function applyAliasesToInvoices(
     const nextItems = items.map((raw: Record<string, unknown>) => {
       const name = String(raw.name || '').trim();
       const match = findAliasMatch(name, aliases, supplierName);
-      if (!match || match.normalizedName === name) return raw;
-      applied.push({ from: name, to: match.normalizedName, supplierName });
-      return { ...raw, name: match.normalizedName, _aliasApplied: name };
+      let item = raw;
+      if (match && match.normalizedName !== name) {
+        applied.push({ from: name, to: match.normalizedName, supplierName });
+        item = { ...raw, name: match.normalizedName, _aliasApplied: name };
+      }
+      const normalizedName = String(item.name || '').trim();
+      const category = String(item.category || '');
+      const unit = String(item.unit || '').trim() || inferUnitFromItem(normalizedName, category);
+      return { ...item, unit };
     });
-    return { ...inv, items: nextItems };
+    return postProcessInvoice({ ...inv, items: nextItems });
   });
 
   return { invoices: mapped, applied };

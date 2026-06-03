@@ -307,6 +307,24 @@ export async function POST(req: Request) {
     );
   }
 
+  const hasSalesPayload =
+    headers.length > 0
+    || details.length > 0
+    || !!(finish && ((finish.totalSale ?? 0) > 0 || (finish.netSale ?? 0) > 0));
+
+  if (!hasSalesPayload) {
+    const existingDaily = await adminDb.collection('pos_daily_sales').doc(`${storeId}_${date}`).get();
+    const prevTotal = Number(existingDaily.data()?.totalSales ?? 0);
+    if (existingDaily.exists && prevTotal > 0) {
+      return NextResponse.json({
+        success: true,
+        skipped: true,
+        reason: 'empty_payload_preserves_existing',
+        message: `${date} 기존 매출 ${prevTotal.toLocaleString()}원 유지 — 빈 동기화는 무시했습니다.`,
+      });
+    }
+  }
+
   const batch = adminDb.batch();
 
   // 1. 매출 헤더 (SaT)

@@ -54,6 +54,8 @@ export const DEFAULT_DEV_CONTEXT: DevContext = {
     { id: 'w6', title: '쿠폰 검증 레이어', status: 'open', priority: 'pending' },
     { id: 'w7', title: '포스 자동 동기화', status: 'open', priority: 'pending' },
     { id: 'w8', title: '모바일 AI 개발 콘솔', status: 'open', priority: 'in_progress' },
+    { id: 'sec1', title: '[보안·나중] GitHub PAT workflow scope 재발급 (cron workflow push용)', status: 'open', priority: 'pending' },
+    { id: 'sec2', title: '[보안·나중] deploy.yml 스케줄 cron GitHub 반영 (PAT 또는 웹 편집)', status: 'open', priority: 'pending' },
   ],
   conventions: {
     stack: 'Next.js 16 + Firebase + Vercel',
@@ -64,7 +66,10 @@ export const DEFAULT_DEV_CONTEXT: DevContext = {
     github: 'https://github.com/RallaRa/pitaya-os',
     superuser: 'hipona00@gmail.com',
   },
-  recentDecisions: [],
+  recentDecisions: [
+    { date: '2026-06-02', decision: 'cron 스케줄: Vercel에서 시간민감 job 제거, GitHub Actions·로컬 스크립트로 대체', reason: 'Hobby 오차·skip 방지' },
+    { date: '2026-06-02', decision: '보안 후속(PAT 재발급·workflow push)은 보류', reason: '사용자 요청 — 기록만' },
+  ],
   recentConversations: [],
 };
 

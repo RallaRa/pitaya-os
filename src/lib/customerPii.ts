@@ -7,6 +7,7 @@ export interface CustomerPii {
   phone: string;
   birth: string;
   phoneIncomplete?: boolean;
+  phoneNeedsReconcile?: boolean;
 }
 
 export function decryptCustomerFields(data: Record<string, unknown>): CustomerPii {
@@ -18,6 +19,17 @@ export function decryptCustomerFields(data: Record<string, unknown>): CustomerPi
   } catch {
     name = '(복호화 실패)';
   }
+
+  if (data.phoneNeedsReconcile) {
+    return {
+      name,
+      phone: '',
+      birth: '',
+      phoneIncomplete: true,
+      phoneNeedsReconcile: true,
+    };
+  }
+
   try {
     phone = data.phoneEncrypted
       ? decrypt(String(data.phoneEncrypted))

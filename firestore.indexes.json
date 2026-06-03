@@ -25,6 +25,14 @@
       ]
     },
     {
+      "collectionGroup": "pos_sync_log",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "chat_rooms",
       "queryScope": "COLLECTION",
       "fields": [

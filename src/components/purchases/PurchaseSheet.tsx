@@ -12,6 +12,7 @@ import {
   isMeatCategory,
   PURCHASE_UNITS,
 } from '@/lib/purchaseCategories';
+import { hasInvoiceTotalMismatch } from '@/lib/purchasePostProcess';
 import {
   ItemCodePicker,
   SupplierCodePicker,
@@ -51,8 +52,11 @@ export interface Invoice {
   /** AI 분석에 사용된 모델 꼬리표 (비교용) */
   aiTag?: string;
   /** 앙상블 OCR 원본 (수정 학습용) */
-  _originalAiResult?: Omit<Invoice, '_originalAiResult' | '_conflicts'>;
+  _originalAiResult?: Omit<Invoice, '_originalAiResult' | '_conflicts' | '_totalMismatch' | '_ocrTotalAmount'>;
   _conflicts?: Array<{ field: string; values: Array<{ ai: string; value: unknown }> }>;
+  /** OCR이 읽은 합계 (품목합과 다를 때) */
+  _ocrTotalAmount?: number;
+  _totalMismatch?: boolean;
 }
 
 export interface AttachedFile {
@@ -466,6 +470,19 @@ export default function PurchaseSheet({
                   title={inv._conflicts.map(c => `${c.field}: ${c.values.map(v => `${v.ai}=${v.value}`).join(' / ')}`).join('\n')}
                 >
                   AI 불일치 {inv._conflicts.length}
+                </span>
+              )}
+
+              {hasInvoiceTotalMismatch(inv) && (
+                <span
+                  className="shrink-0 text-[9px] px-1.5 py-0.5 rounded-full bg-orange-900/40 text-orange-300 border border-orange-500/30"
+                  title={
+                    inv._ocrTotalAmount
+                      ? `문서 합계 ${fmt(inv._ocrTotalAmount)}원 ≠ 품목합 ${fmt(inv.totalAmount)}원 — 품목 기준으로 보정됨`
+                      : '품목 합계와 표시 합계가 다릅니다'
+                  }
+                >
+                  합계 확인
                 </span>
               )}
 
