@@ -53,9 +53,11 @@ const SOURCES = [
     url: 'https://www.meatfriends.co.kr',
     enabled: true,
     encoding: 'utf-8',
+    scrapeMode: 'meatfriends-display',
     categories: [
-      { url: 'https://www.meatfriends.co.kr/display/selectDisplayDetail.do?dispNo=27', name: '한돈' },
-      { url: 'https://www.meatfriends.co.kr/display/selectDisplayDetail.do?dispNo=28', name: '수입육' },
+      { url: 'https://www.meatfriends.co.kr/display/displayIndex.do?catNo=7', name: '국내돼지(한돈)' },
+      { url: 'https://www.meatfriends.co.kr/display/displayIndex.do?catNo=10', name: '수입소고기' },
+      { url: 'https://www.meatfriends.co.kr/display/displayIndex.do?catNo=13', name: '수입돼지고기' },
     ],
     selectors: {
       item: '[class*="product-item"], [class*="goods-item"]',
@@ -69,8 +71,10 @@ const SOURCES = [
     url: 'https://www.bondaero.kr',
     enabled: true,
     encoding: 'utf-8',
+    scrapeMode: 'bondaero-hanwoo-api',
     categories: [
-      { url: 'https://www.bondaero.kr/products', name: '한우' },
+      { url: 'https://www.bondaero.kr/products', name: '한우 냉동', coldCondition: 'f' },
+      { url: 'https://www.bondaero.kr/products', name: '한우 냉장', coldCondition: 'r' },
     ],
     selectors: {
       item: '[class*="product"], [class*="item"], [class*="card"]',
@@ -84,8 +88,13 @@ const SOURCES = [
     url: 'https://www.ekcm.co.kr',
     enabled: true,
     encoding: 'utf-8',
+    scrapeMode: 'ekcm-disp-goods',
+    ekcmMaxLeafCategories: 60,
     categories: [
-      { url: 'https://www.ekcm.co.kr/goods/list', name: '전체' },
+      { url: 'https://www.ekcm.co.kr/pd/product?dispCtgNo=1', name: '국내산 한우', ekcmParentNo: '1' },
+      { url: 'https://www.ekcm.co.kr/pd/product?dispCtgNo=3', name: '국내산 돈육', ekcmParentNo: '3' },
+      { url: 'https://www.ekcm.co.kr/pd/product?dispCtgNo=4', name: '수입우육', ekcmParentNo: '4' },
+      { url: 'https://www.ekcm.co.kr/pd/product?dispCtgNo=5', name: '수입돈육', ekcmParentNo: '5' },
     ],
     selectors: {
       item: '.goods-item, .item, [class*="goods"]',
