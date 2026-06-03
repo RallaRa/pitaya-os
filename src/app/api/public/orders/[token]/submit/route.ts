@@ -28,7 +28,7 @@ export async function POST(
   const items = Array.isArray(body.items) ? body.items : [];
 
   if (!ordererName || ordererPhone.length < 10) {
-    return NextResponse.json({ error: '주문자 이름과 연락처(10자리 이상)를 입력해 주세요' }, { status: 400 });
+    return NextResponse.json({ error: '성함(닉네임)과 전화번호(10자리 이상)를 입력해 주세요' }, { status: 400 });
   }
   if (items.length === 0) {
     return NextResponse.json({ error: '주문할 품목을 선택해 주세요' }, { status: 400 });

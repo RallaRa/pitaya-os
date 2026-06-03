@@ -128,8 +128,10 @@ export default function PublicOrderPage() {
     );
   }
 
+  const canOrder = isOpen && lines.some(l => l.remainingQty > 0);
+
   return (
-    <div className="max-w-lg mx-auto pb-24">
+    <div className={`max-w-lg mx-auto ${canOrder ? 'pb-28' : ''}`}>
       <header className="sticky top-0 z-20 bg-slate-950/95 backdrop-blur border-b border-slate-800 px-4 py-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -254,68 +256,76 @@ export default function PublicOrderPage() {
             );
           })
         )}
-      </div>
 
-      {isOpen && lines.some(l => l.remainingQty > 0) && (
-        <div className="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-700 p-4 max-w-lg mx-auto">
-          {submitOk ? (
-            <div className="text-center py-2">
-              <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
-              <p className="text-sm text-emerald-300 font-medium">주문이 접수되었습니다</p>
-              <p className="mt-2 text-xs text-slate-400">매장에서 확인 후 연락드립니다</p>
-              <button
-                type="button"
-                onClick={() => setSubmitOk(false)}
-                className="mt-3 text-xs text-teal-400 underline"
-              >
-                추가 주문하기
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  placeholder="이름"
-                  value={ordererName}
-                  onChange={e => setOrdererName(e.target.value)}
-                  className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-                />
-                <input
-                  type="tel"
-                  placeholder="연락처"
-                  value={ordererPhone}
-                  onChange={e => setOrdererPhone(e.target.value)}
-                  className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
+        {canOrder && !submitOk && (
+          <section className="rounded-2xl border border-slate-700/80 bg-slate-900/50 p-4 space-y-3">
+            <h2 className="text-sm font-semibold text-slate-200">주문자 정보</h2>
+            <div className="grid grid-cols-2 gap-2">
               <input
                 type="text"
-                placeholder="요청사항 (선택)"
-                value={note}
-                onChange={e => setNote(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+                placeholder="성함(닉네임)"
+                value={ordererName}
+                onChange={e => setOrdererName(e.target.value)}
+                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
               />
-              {submitError && (
-                <p className="text-xs text-red-400">{submitError}</p>
-              )}
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={submitting || totalSelected <= 0}
-                className="w-full py-3.5 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-40 font-bold text-white flex items-center justify-center gap-2"
-              >
-                {submitting ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <>
-                    <ShoppingBag className="w-5 h-5" />
-                    주문하기 {totalSelected > 0 ? `· ${fmtPrice(totalSelected)}원` : ''}
-                  </>
-                )}
-              </button>
+              <input
+                type="tel"
+                placeholder="전화번호"
+                value={ordererPhone}
+                onChange={e => setOrdererPhone(e.target.value)}
+                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+              />
             </div>
-          )}
+            <input
+              type="text"
+              placeholder="요청사항 (선택)"
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm"
+            />
+          </section>
+        )}
+      </div>
+
+      {canOrder && (
+        <div className="fixed bottom-0 inset-x-0 z-30 border-t border-slate-700 bg-slate-950/95 backdrop-blur">
+          <div className="max-w-lg mx-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+            {submitOk ? (
+              <div className="text-center py-2">
+                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
+                <p className="text-sm text-emerald-300 font-medium">주문이 접수되었습니다</p>
+                <p className="mt-2 text-xs text-slate-400">매장에서 확인 후 연락드립니다</p>
+                <button
+                  type="button"
+                  onClick={() => setSubmitOk(false)}
+                  className="mt-3 text-xs text-teal-400 underline"
+                >
+                  추가 주문하기
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {submitError && (
+                  <p className="text-xs text-red-400 text-center">{submitError}</p>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={submitting || totalSelected <= 0}
+                  className="w-full py-3.5 rounded-xl bg-teal-600 hover:bg-teal-500 disabled:opacity-40 font-bold text-white flex items-center justify-center gap-2"
+                >
+                  {submitting ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <>
+                      <ShoppingBag className="w-5 h-5" />
+                      주문하기 {totalSelected > 0 ? `· ${fmtPrice(totalSelected)}원` : ''}
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
