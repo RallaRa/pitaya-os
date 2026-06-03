@@ -15,6 +15,10 @@ const PublicOrderAIChat = dynamic(
   () => import('@/components/public-orders/PublicOrderAIChat'),
   { ssr: false },
 );
+const PublicOrderKakaoHookSettings = dynamic(
+  () => import('@/components/public-orders/PublicOrderKakaoHookSettings'),
+  { ssr: false },
+);
 
 interface SessionSummary {
   id: string;
@@ -193,6 +197,9 @@ export default function PublicOrdersAdminPage() {
 
       {/* 미리보기 */}
       <main className="flex-1 min-w-0 overflow-y-auto p-4 pb-[48vh] md:pb-4">
+        <div className="max-w-2xl mb-4">
+          <PublicOrderKakaoHookSettings storeId={storeId} />
+        </div>
         {!selectedId ? (
           <div className="flex flex-col items-center justify-center h-full min-h-[320px] text-center px-4">
             <p className="text-slate-400 text-sm mb-2">AI에게 말해서 주문 회차를 만드세요</p>

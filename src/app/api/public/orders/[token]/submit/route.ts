@@ -53,6 +53,7 @@ export async function POST(
     }
 
     const ordererKey = makeOrdererKey(sessionId, ordererName, ordererPhone);
+    const phoneMasked = maskPhone(ordererPhone);
     const entryLines: { lineId: string; name: string; qty: number; unitPrice: number }[] = [];
     let totalAmount = 0;
 
@@ -106,7 +107,7 @@ export async function POST(
         publicToken: token,
         ordererKey,
         ordererName,
-        ordererPhoneMasked: maskPhone(ordererPhone),
+        ordererPhoneMasked: phoneMasked,
         lines: entryLines,
         note: (body.note || '').trim().slice(0, 200),
         totalAmount,
@@ -119,7 +120,10 @@ export async function POST(
       sessionId,
       sessionTitle: String(session.title || '공개 주문'),
       ordererName,
+      ordererPhoneMasked: phoneMasked,
       totalAmount,
+      lines: entryLines.map(l => ({ name: l.name, qty: l.qty, unitPrice: l.unitPrice })),
+      note: (body.note || '').trim().slice(0, 200),
     });
 
     return NextResponse.json({
