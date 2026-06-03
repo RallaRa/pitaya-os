@@ -56,12 +56,15 @@ export function drivePhotoProxyUrl(fileId: string, storeId: string): string {
 }
 
 export async function getOAuthRefreshToken(storeId: string): Promise<string | null> {
-  await ensureDriveConnection(storeId);
   const doc = await adminDb.collection('store_settings').doc(storeId).get();
   const storeToken = doc.data()?.googleDriveRefreshToken as string | undefined;
   if (storeToken) return storeToken;
   const envRefresh = process.env.GOOGLE_DRIVE_REFRESH_TOKEN?.trim();
-  return envRefresh || null;
+  if (envRefresh) {
+    await ensureDriveConnection(storeId);
+    return envRefresh;
+  }
+  return null;
 }
 
 async function getServiceAccountDriveClient(): Promise<drive_v3.Drive | null> {
@@ -85,9 +88,15 @@ async function getOAuthDriveClient(refreshToken: string): Promise<drive_v3.Drive
   return google.drive({ version: 'v3', auth: oauth2 });
 }
 
+/** drive.file 스코프는 about.get 불가 — files.list로 접근 가능 여부 확인 */
 async function verifyDriveClient(drive: drive_v3.Drive): Promise<string | undefined> {
-  const about = await drive.about.get({ fields: 'user/emailAddress' });
-  return about.data.user?.emailAddress || undefined;
+  try {
+    const about = await drive.about.get({ fields: 'user/emailAddress' });
+    return about.data.user?.emailAddress || undefined;
+  } catch {
+    await drive.files.list({ pageSize: 1, fields: 'files(id)' });
+    return undefined;
+  }
 }
 
 export async function ensureDriveConnection(storeId: string): Promise<boolean> {
@@ -286,9 +295,14 @@ export async function streamDriveFile(
 
 /** 공개주문 사진용 — OAuth refresh token + 실제 Drive 접근 가능 여부 */
 export async function isDriveConnected(storeId: string): Promise<boolean> {
+  if (!process.env.GOOGLE_CLIENT_SECRET?.trim()) return false;
   try {
-    const token = await getOAuthRefreshToken(storeId);
-    if (!token || !process.env.GOOGLE_CLIENT_SECRET?.trim()) return false;
+    const ref = adminDb.collection('store_settings').doc(storeId);
+    const doc = await ref.get();
+    const storeToken = doc.data()?.googleDriveRefreshToken as string | undefined;
+    const envToken = process.env.GOOGLE_DRIVE_REFRESH_TOKEN?.trim();
+    const token = storeToken || envToken;
+    if (!token) return false;
     const drive = await getOAuthDriveClient(token);
     await verifyDriveClient(drive);
     return true;

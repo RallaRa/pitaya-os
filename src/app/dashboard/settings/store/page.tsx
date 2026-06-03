@@ -25,6 +25,8 @@ export default function StoreSettingsPage() {
   const searchParams = useSearchParams();
 
   const [driveConnected, setDriveConnected] = useState<boolean | null>(null);
+  const [driveEmail, setDriveEmail] = useState<string | null>(null);
+  const [driveHint, setDriveHint] = useState('');
   const [driveConnecting, setDriveConnecting] = useState(false);
 
   const [form, setForm] = useState({
@@ -81,6 +83,12 @@ export default function StoreSettingsPage() {
         );
         const data = await res.json();
         setDriveConnected(!!data.connected);
+        setDriveEmail(data.email || null);
+        setDriveHint(
+          !data.oauthConfigured
+            ? '서버 OAuth 미설정 (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)'
+            : data.hint || '',
+        );
       } catch {
         setDriveConnected(false);
       }
@@ -122,8 +130,10 @@ export default function StoreSettingsPage() {
         );
         const statusData = await statusRes.json();
         setDriveConnected(!!statusData.connected);
+        setDriveEmail(statusData.email || null);
+        setDriveHint(statusData.hint || '');
         if (!statusData.connected) {
-          throw new Error('Drive 연결 확인에 실패했습니다. 다시 시도해 주세요.');
+          throw new Error(statusData.hint || 'Drive 연결 확인에 실패했습니다. 다시 시도해 주세요.');
         }
         setSaveMsg('✅ Google Drive가 연결되었습니다.');
         return;
@@ -261,9 +271,12 @@ export default function StoreSettingsPage() {
               {driveConnected === null
                 ? '연결 상태 확인 중…'
                 : driveConnected
-                  ? '● 연결됨'
+                  ? `● 연결됨${driveEmail ? ` (${driveEmail})` : ''}`
                   : '● 미연결 — 사진 첨부 전 연결이 필요합니다'}
             </p>
+            {driveHint && (
+              <p className="text-amber-400/90 text-[11px] mt-1 leading-relaxed">{driveHint}</p>
+            )}
           </div>
           {canManageImages && (
             <button

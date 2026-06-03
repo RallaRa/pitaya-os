@@ -67,10 +67,18 @@ export async function POST(req: Request) {
     }, { merge: true });
 
     const connected = await testDriveConnection(storeId);
+    if (!connected) {
+      return NextResponse.json({
+        error: '토큰은 저장됐지만 Drive 접근 확인에 실패했습니다. Google Drive API 활성화 및 OAuth 동의 화면을 확인해 주세요.',
+        connected: false,
+        email,
+        tokenSaved: true,
+      }, { status: 400 });
+    }
 
     return NextResponse.json({
-      ok: connected,
-      connected,
+      ok: true,
+      connected: true,
       email,
     });
   } catch (e: unknown) {
