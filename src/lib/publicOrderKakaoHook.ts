@@ -1,5 +1,6 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { sendKakaoNotifyToStore } from '@/lib/kakao/sendNotify';
+import { formatPublicOrderNotifyMessage } from '@/lib/publicOrders';
 
 /** 안드로이드가 「나에게 보내기」 알림 → 오픈채팅방 전달에 쓸 설정 */
 export interface PublicOrderKakaoHookConfig {
@@ -69,26 +70,19 @@ export function formatPublicOrderKakaoText(opts: {
   ordererName: string;
   ordererPhoneMasked?: string;
   totalAmount: number;
-  lines?: { name: string; qty: number; unitPrice: number }[];
+  lines?: { name: string; qty: number; unit?: string; unitPrice?: number }[];
   note?: string;
 }): string {
-  const {
-    sessionTitle,
+  const { sessionTitle, ordererName, ordererPhoneMasked, lines = [], note } = opts;
+  const main = formatPublicOrderNotifyMessage({
     ordererName,
     ordererPhoneMasked,
-    totalAmount,
-    lines = [],
-    note,
-  } = opts;
-  const lineText = lines.length
-    ? lines.map(l => `· ${l.name} ${l.qty}개 ${(l.unitPrice * l.qty).toLocaleString()}원`).join('\n')
-    : '';
+    lines,
+  });
   const parts = [
     `[공개주문] ${sessionTitle}`,
-    `주문자: ${ordererName}${ordererPhoneMasked ? ` (${ordererPhoneMasked})` : ''}`,
-    lineText,
-    `합계: ${totalAmount.toLocaleString()}원`,
-    note ? `메모: ${note}` : '',
+    main,
+    note ? `요청사항: ${note}` : '',
   ].filter(Boolean);
   return parts.join('\n');
 }
@@ -99,14 +93,14 @@ export async function sendPublicOrderKakaoMemo(opts: {
   ordererName: string;
   ordererPhoneMasked?: string;
   totalAmount: number;
-  lines?: { name: string; qty: number; unitPrice: number }[];
+  lines?: { name: string; qty: number; unit?: string; unitPrice?: number }[];
   note?: string;
   link?: string;
 }): Promise<void> {
   const text = formatPublicOrderKakaoText(opts);
   await sendKakaoNotifyToStore(opts.storeId, {
-    title: '🛒 공개 주문 접수',
-    message: text.slice(0, 180),
+    title: '🛒 공개 주문',
+    message: text.slice(0, 200),
     link: opts.link || '/dashboard/public-orders',
   });
 }

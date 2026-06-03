@@ -54,7 +54,7 @@ export async function POST(
 
     const ordererKey = makeOrdererKey(sessionId, ordererName, ordererPhone);
     const phoneMasked = maskPhone(ordererPhone);
-    const entryLines: { lineId: string; name: string; qty: number; unitPrice: number }[] = [];
+    const entryLines: { lineId: string; name: string; qty: number; unitPrice: number; unit: string }[] = [];
     let totalAmount = 0;
 
     await adminDb.runTransaction(async (tx) => {
@@ -87,6 +87,7 @@ export async function POST(
           name: String(lineData.name || ''),
           qty,
           unitPrice,
+          unit: String(lineData.unit || 'ea'),
         });
         totalAmount += unitPrice * qty;
 
@@ -110,6 +111,7 @@ export async function POST(
         ordererPhoneMasked: phoneMasked,
         lines: entryLines,
         note: (body.note || '').trim().slice(0, 200),
+        status: 'unconfirmed',
         totalAmount,
         createdAt: FieldValue.serverTimestamp(),
       });
@@ -122,7 +124,12 @@ export async function POST(
       ordererName,
       ordererPhoneMasked: phoneMasked,
       totalAmount,
-      lines: entryLines.map(l => ({ name: l.name, qty: l.qty, unitPrice: l.unitPrice })),
+      lines: entryLines.map(l => ({
+        name: l.name,
+        qty: l.qty,
+        unit: l.unit,
+        unitPrice: l.unitPrice,
+      })),
       note: (body.note || '').trim().slice(0, 200),
     });
 

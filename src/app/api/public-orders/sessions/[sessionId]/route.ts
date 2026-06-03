@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
-import { serializeLine } from '@/lib/publicOrders';
+import { serializeLine, parsePublicOrderEntryStatus } from '@/lib/publicOrders';
 
 export async function GET(
   req: Request,
@@ -44,7 +44,8 @@ export async function GET(
           ordererName: e.ordererName,
           ordererPhoneMasked: e.ordererPhoneMasked,
           lines: e.lines,
-          note: e.note,
+          note: e.note || '',
+          status: parsePublicOrderEntryStatus(e.status),
           totalAmount: e.totalAmount,
           createdAt: e.createdAt?.toDate?.()?.toISOString?.() ?? null,
           _sortMs: e.createdAt?.toMillis?.() ?? 0,

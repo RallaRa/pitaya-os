@@ -32,11 +32,28 @@ export interface PublicOrderLine {
   isActive: boolean;
 }
 
+export type PublicOrderEntryStatus = 'unconfirmed' | 'accepted' | 'ready' | 'completed';
+
+export const PUBLIC_ORDER_ENTRY_STATUSES: PublicOrderEntryStatus[] = [
+  'unconfirmed',
+  'accepted',
+  'ready',
+  'completed',
+];
+
+export const PUBLIC_ORDER_ENTRY_STATUS_LABELS: Record<PublicOrderEntryStatus, string> = {
+  unconfirmed: '미확인',
+  accepted: '접수',
+  ready: '준비완료',
+  completed: '수령완료',
+};
+
 export interface PublicOrderEntryLine {
   lineId: string;
   name: string;
   qty: number;
   unitPrice: number;
+  unit?: string;
 }
 
 export interface PublicOrderEntry {
@@ -46,6 +63,7 @@ export interface PublicOrderEntry {
   ordererPhone: string;
   lines: PublicOrderEntryLine[];
   note?: string;
+  status: PublicOrderEntryStatus;
   totalAmount: number;
   createdAt: string;
 }
@@ -64,6 +82,34 @@ export function maskPhone(phone: string): string {
   const d = phone.replace(/\D/g, '');
   if (d.length < 4) return '****';
   return `${d.slice(0, 3)}****${d.slice(-4)}`;
+}
+
+/** 주문 알림용 — 예: 김 ** */
+export function maskName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return '**';
+  return `${trimmed[0]} **`;
+}
+
+export function formatPublicOrderNotifyMessage(opts: {
+  ordererName: string;
+  ordererPhoneMasked?: string;
+  lines: { name: string; qty: number; unit?: string }[];
+}): string {
+  const maskedName = maskName(opts.ordererName);
+  const phone = opts.ordererPhoneMasked?.trim() || '';
+  const itemsText = opts.lines
+    .map(l => `${l.name} ${l.qty}${l.unit || ''}`)
+    .join(', ');
+  const head = phone ? `${maskedName} ${phone}` : maskedName;
+  return `${head} ${itemsText} 주문되었습니다. 감사합니다.`;
+}
+
+export function parsePublicOrderEntryStatus(raw: unknown): PublicOrderEntryStatus {
+  if (typeof raw === 'string' && PUBLIC_ORDER_ENTRY_STATUSES.includes(raw as PublicOrderEntryStatus)) {
+    return raw as PublicOrderEntryStatus;
+  }
+  return 'unconfirmed';
 }
 
 export function serializeLine(id: string, data: Record<string, unknown>): PublicOrderLine {

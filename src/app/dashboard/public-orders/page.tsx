@@ -9,7 +9,11 @@ import {
 } from 'lucide-react';
 import { useStore } from '@/context/StoreContext';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
-import type { PublicOrderLine } from '@/lib/publicOrders';
+import type { PublicOrderLine, PublicOrderEntryStatus } from '@/lib/publicOrders';
+import {
+  PUBLIC_ORDER_ENTRY_STATUSES,
+  PUBLIC_ORDER_ENTRY_STATUS_LABELS,
+} from '@/lib/publicOrders';
 
 const PublicOrderAIChat = dynamic(
   () => import('@/components/public-orders/PublicOrderAIChat'),
@@ -39,8 +43,14 @@ export default function PublicOrdersAdminPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [lines, setLines] = useState<PublicOrderLine[]>([]);
   const [entries, setEntries] = useState<Array<{
-    id: string; ordererName: string; ordererPhoneMasked: string;
-    lines: unknown[]; totalAmount: number; createdAt: string | null;
+    id: string;
+    ordererName: string;
+    ordererPhoneMasked: string;
+    lines: { name: string; qty: number; unit?: string }[];
+    note?: string;
+    status: PublicOrderEntryStatus;
+    totalAmount: number;
+    createdAt: string | null;
   }>>([]);
   const [sessionMeta, setSessionMeta] = useState({
     title: '', description: '', status: 'draft', orderDeadline: '', publicToken: '',
@@ -124,6 +134,21 @@ export default function PublicOrdersAdminPage() {
     navigator.clipboard.writeText(url);
   };
 
+  const updateEntryStatus = async (entryId: string, status: PublicOrderEntryStatus) => {
+    const headers = await getAuthHeaders();
+    const res = await fetch(
+      `/api/public-orders/entries/${entryId}?storeId=${encodeURIComponent(storeId)}`,
+      {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      },
+    );
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '상태 변경 실패');
+    setEntries(prev => prev.map(e => (e.id === entryId ? { ...e, status } : e)));
+  };
+
   const deleteSession = async (id: string) => {
     if (!confirm('이 회차를 삭제하시겠습니까?')) return;
     const headers = await getAuthHeaders();
@@ -145,6 +170,19 @@ export default function PublicOrdersAdminPage() {
 
   const statusLabel = (s: string) =>
     s === 'open' ? '접수중' : s === 'closed' ? '마감' : '준비';
+
+  const entryStatusClass = (status: PublicOrderEntryStatus) => {
+    switch (status) {
+      case 'accepted':
+        return 'bg-blue-900/40 text-blue-300';
+      case 'ready':
+        return 'bg-violet-900/40 text-violet-300';
+      case 'completed':
+        return 'bg-slate-700/60 text-slate-300';
+      default:
+        return 'bg-amber-900/40 text-amber-300';
+    }
+  };
 
   return (
     <div className="flex h-full min-h-[calc(100vh-4rem)] bg-slate-950 text-slate-100 overflow-hidden">
@@ -284,21 +322,68 @@ export default function PublicOrdersAdminPage() {
               <h3 className="text-xs font-semibold text-slate-400 mb-1">
                 주문 접수 ({entries.length}) · 30초마다 갱신
               </h3>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {entries.map(e => (
-                  <div key={e.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-white font-medium">{e.ordererName}</span>
-                      <span className="text-teal-300">{e.totalAmount?.toLocaleString()}원</span>
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {entries.length === 0 ? (
+                  <p className="text-[11px] text-slate-600">아직 접수된 주문이 없습니다</p>
+                ) : (
+                  entries.map(e => (
+                    <div key={e.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-sm">
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="min-w-0">
+                          <span className="text-white font-medium">{e.ordererName}</span>
+                          <p className="text-[10px] text-slate-500 mt-0.5">{e.ordererPhoneMasked}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="text-teal-300 block">{e.totalAmount?.toLocaleString()}원</span>
+                          {e.createdAt && (
+                            <span className="text-[9px] text-slate-600">
+                              {new Date(e.createdAt).toLocaleString('ko-KR', {
+                                month: 'numeric',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <ul className="mt-2 text-xs text-slate-400 space-y-0.5">
+                        {e.lines.map((l, i) => (
+                          <li key={i}>
+                            {l.name} × {l.qty}{l.unit || ''}
+                          </li>
+                        ))}
+                      </ul>
+                      {e.note ? (
+                        <p className="mt-2 text-xs text-amber-200/90 bg-amber-950/30 border border-amber-800/40 rounded-lg px-2.5 py-2">
+                          <span className="text-[10px] text-amber-400/80 font-semibold">요청사항 </span>
+                          {e.note}
+                        </p>
+                      ) : null}
+                      <div className="mt-2 flex items-center gap-2 flex-wrap">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full ${entryStatusClass(e.status)}`}>
+                          {PUBLIC_ORDER_ENTRY_STATUS_LABELS[e.status]}
+                        </span>
+                        <select
+                          value={e.status}
+                          onChange={ev => {
+                            const next = ev.target.value as PublicOrderEntryStatus;
+                            updateEntryStatus(e.id, next).catch(err => {
+                              alert(err instanceof Error ? err.message : '상태 변경 실패');
+                            });
+                          }}
+                          className="text-[10px] bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-300"
+                        >
+                          {PUBLIC_ORDER_ENTRY_STATUSES.map(s => (
+                            <option key={s} value={s}>
+                              {PUBLIC_ORDER_ENTRY_STATUS_LABELS[s]}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
-                    <p className="text-[10px] text-slate-500">{e.ordererPhoneMasked}</p>
-                    <ul className="mt-1 text-xs text-slate-400">
-                      {(e.lines as { name: string; qty: number }[]).map((l, i) => (
-                        <li key={i}>{l.name} × {l.qty}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </section>
           </div>

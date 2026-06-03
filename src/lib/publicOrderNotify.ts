@@ -6,6 +6,7 @@ import {
   mergeMenuAccess,
   type MenuAccessKey,
 } from '@/lib/menuAccessKeys';
+import { formatPublicOrderNotifyMessage } from '@/lib/publicOrders';
 import { notifyUser } from '@/lib/notifications/notifyUser';
 import { sendPublicOrderKakaoMemo } from '@/lib/publicOrderKakaoHook';
 
@@ -51,7 +52,7 @@ export async function notifyPublicOrderReceived(opts: {
   ordererName: string;
   ordererPhoneMasked?: string;
   totalAmount: number;
-  lines?: { name: string; qty: number; unitPrice: number }[];
+  lines?: { name: string; qty: number; unit?: string; unitPrice?: number }[];
   note?: string;
 }) {
   const {
@@ -61,7 +62,11 @@ export async function notifyPublicOrderReceived(opts: {
   const userIds = await getStoreUserIdsWithMenuAccess(storeId, 'store');
   const link = `/dashboard/public-orders?session=${sessionId}`;
   const title = '🛒 새 공개 주문';
-  const message = `${sessionTitle} · ${ordererName} · ${totalAmount.toLocaleString()}원`;
+  const message = formatPublicOrderNotifyMessage({
+    ordererName,
+    ordererPhoneMasked,
+    lines: lines || [],
+  });
 
   await Promise.all(
     userIds.map(uid =>
