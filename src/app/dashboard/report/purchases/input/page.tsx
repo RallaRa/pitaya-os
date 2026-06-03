@@ -8,6 +8,7 @@ import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import {
   ShoppingCart, Save, Loader2, CheckCircle, AlertCircle, Plus, X,
   Search, Beef, Bot, ChevronLeft, ChevronRight, GripVertical,
+  FileSpreadsheet, MessageSquare,
 } from 'lucide-react';
 import type { Invoice, InvoiceGroup, AttachedFile } from '@/components/purchases/PurchaseSheet';
 
@@ -68,6 +69,8 @@ export default function PurchaseInputPage() {
   const [historyOpen, setHistoryOpen] = useState(true);
   const [aiOpen, setAiOpen] = useState(true);
   const [aiWidth, setAiWidth] = useState(280);
+  /** 모바일: 시트 vs AI 분석 (데스크탑은 우측 패널) */
+  const [mobileTab, setMobileTab] = useState<'sheet' | 'ai'>('sheet');
   const resizingRef = useRef(false);
 
   useEffect(() => {
@@ -209,7 +212,7 @@ export default function PurchaseInputPage() {
   const unsavedCount = groups.filter(g => !g.isSaved).length;
 
   return (
-    <div className="flex h-full bg-slate-950 text-slate-100 overflow-hidden">
+    <div className="flex flex-1 min-h-0 h-full bg-slate-950 text-slate-100 overflow-hidden">
 
       {/* ── 좌측 분석 히스토리 (축소) ── */}
       {historyOpen ? (
@@ -241,8 +244,38 @@ export default function PurchaseInputPage() {
       {/* ── 중앙 시트 영역 ── */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
+        {/* 모바일 탭: 시트 / AI 분석 */}
+        <div className="md:hidden flex border-b border-slate-800 shrink-0">
+          <button
+            type="button"
+            onClick={() => setMobileTab('sheet')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors ${
+              mobileTab === 'sheet'
+                ? 'text-teal-400 border-b-2 border-teal-400'
+                : 'text-slate-500'
+            }`}
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            매입 시트
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileTab('ai')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors ${
+              mobileTab === 'ai'
+                ? 'text-teal-400 border-b-2 border-teal-400'
+                : 'text-slate-500'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4" />
+            AI 분석
+          </button>
+        </div>
+
         {/* 헤더 툴바 */}
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-800/60 bg-slate-900/60 shrink-0">
+        <div className={`flex items-center gap-2 px-3 py-2 border-b border-slate-800/60 bg-slate-900/60 shrink-0 ${
+          mobileTab === 'ai' ? 'hidden md:flex' : ''
+        }`}>
           <ShoppingCart className="w-3.5 h-3.5 text-teal-400 shrink-0" />
           <div className="flex-1 min-w-0">
             <h1 className="text-xs font-bold text-slate-100 leading-tight">AI 매입관리</h1>
@@ -290,6 +323,7 @@ export default function PurchaseInputPage() {
 
         {/* 이력번호 조회 패널 */}
         {traceOpen && (
+          <div className={mobileTab === 'ai' ? 'hidden md:block' : ''}>
           <div className="px-5 py-3 border-b border-amber-900/30 bg-amber-950/20 shrink-0">
             <div className="flex gap-2 items-center">
               <input
@@ -344,9 +378,11 @@ export default function PurchaseInputPage() {
               )
             )}
           </div>
+          </div>
         )}
 
         {/* 알림 영역 */}
+        <div className={mobileTab === 'ai' ? 'hidden md:block' : ''}>
         {(error || savedCount > 0) && (
           <div className="px-5 py-2 space-y-1 shrink-0">
             {error && (
@@ -369,9 +405,12 @@ export default function PurchaseInputPage() {
             )}
           </div>
         )}
+        </div>
 
         {/* 시트 영역 */}
-        <div className="flex-1 overflow-y-auto px-3 py-3">
+        <div className={`flex-1 overflow-y-auto px-3 py-3 min-h-0 ${
+          mobileTab === 'ai' ? 'hidden md:block' : ''
+        }`}>
           <PurchaseSheet
             groups={groups}
             onGroupsChange={setGroups}
@@ -380,6 +419,20 @@ export default function PurchaseInputPage() {
             storeId={currentStore?.storeId}
           />
         </div>
+
+        {/* 모바일: AI 분석 전체 화면 */}
+        {mobileTab === 'ai' && (
+          <div className="flex md:hidden flex-1 flex-col min-h-0 overflow-hidden border-t border-slate-800/60">
+            <PurchaseAIChat
+              storeId={currentStore?.storeId || ''}
+              onInvoicesFound={(invoices, files) => {
+                handleInvoicesFound(invoices, files);
+                setMobileTab('sheet');
+              }}
+              onAnalysisLogged={() => setHistoryRefresh(k => k + 1)}
+            />
+          </div>
+        )}
       </div>
 
       {/* ── 우측 AI 채팅 패널 (접기 + 너비 조절) ── */}
@@ -426,10 +479,6 @@ export default function PurchaseInputPage() {
         </button>
       )}
 
-      {/* 모바일: 하단 플로팅 버튼 (AI 채팅) */}
-      <div className="md:hidden">
-        {/* TODO: mobile bottom sheet for PurchaseAIChat */}
-      </div>
     </div>
   );
 }

@@ -438,7 +438,7 @@ export default function PurchaseAIChat({ onInvoicesFound, storeId = '', onAnalys
 
   return (
     <div
-      className="relative flex flex-col h-full bg-slate-900 border-l border-slate-800/60"
+      className="relative flex flex-col h-full min-h-0 bg-slate-900 md:border-l border-slate-800/60"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -571,7 +571,7 @@ export default function PurchaseAIChat({ onInvoicesFound, storeId = '', onAnalys
       )}
 
       {/* 입력 영역 */}
-      <div className="px-2 pb-2 pt-1.5 shrink-0 border-t border-slate-700/40">
+      <div className="px-2 pt-1.5 shrink-0 border-t border-slate-700/40 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] md:pb-2">
         <div className="flex gap-1.5 items-center">
           <div className="relative shrink-0">
             <button
