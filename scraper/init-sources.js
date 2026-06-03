@@ -33,6 +33,7 @@ const SOURCES = [
     url: 'https://topmeat.co.kr',
     enabled: true,
     encoding: 'euc-kr',
+    scrapeMode: 'topmeat-list',
     categories: [
       { url: 'https://topmeat.co.kr/shop/list.php?ca_id=10', name: '한우' },
       { url: 'https://topmeat.co.kr/shop/list.php?ca_id=20', name: '한우 냉장' },

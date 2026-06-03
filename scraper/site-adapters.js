@@ -79,6 +79,125 @@ async function scrapeMeatclubCategory(source, category) {
   return parseMeatclubHtml(res.data, source, category);
 }
 
+function topmeatCategoryId(categoryUrl) {
+  try {
+    const u = new URL(categoryUrl);
+    return u.searchParams.get('ca_id');
+  } catch {
+    return null;
+  }
+}
+
+function parseTopmeatListHtml(html, source, category) {
+  const $ = cheerio.load(html);
+  const items = [];
+
+  $('li.lists__item, li.js-load').each((_, el) => {
+    const text = $(el).text().replace(/\s+/g, ' ').trim();
+    const itName = $(el).find('input[name^="it_name["]').first().val() || '';
+    const itSub = $(el).find('input[name^="it_name_1["]').first().val() || '';
+    const rawName = [itName, itSub].filter(Boolean).join(' ').trim()
+      || text.split(/\d{1,3}(?:,\d{3})+원/)[0].trim();
+
+    let price = 0;
+    const unitMatch = text.match(/(\d{1,3}(?:,\d{3})+)원\s+[\d.]+\s*Kg/i);
+    if (unitMatch) {
+      price = parseInt(unitMatch[1].replace(/,/g, ''), 10);
+    } else {
+      const kgMatch = text.match(/(\d{1,3}(?:,\d{3})+)원\s*\(?\s*kg/i);
+      if (kgMatch) price = parseInt(kgMatch[1].replace(/,/g, ''), 10);
+    }
+
+    const htmlBlock = $(el).html() || '';
+    const idMatch = htmlBlock.match(/item\.php\?it_id=([^'\"&]+)/);
+    const url = idMatch
+      ? absUrl(source.url, `/shop/item.php?it_id=${idMatch[1]}`)
+      : category.url;
+
+    if (!rawName || !price || price < 1000) return;
+    items.push({
+      rawName,
+      rawPrice: `${price.toLocaleString('ko-KR')}원/kg`,
+      price,
+      url,
+      category: category.name,
+    });
+  });
+
+  return items;
+}
+
+function discoverTopmeatSubCategories(html, parentCaId) {
+  const ids = new Set();
+  const parent = String(parentCaId || '');
+
+  for (const match of html.matchAll(/goods_kind_form_submit\s*\(\s*['"](\d+)['"]\s*\)/g)) {
+    ids.add(match[1]);
+  }
+
+  for (const match of html.matchAll(/list\.php\?ca_id=(\d+)/g)) {
+    const id = match[1];
+    if (parent && id.startsWith(parent) && id.length > parent.length) {
+      ids.add(id);
+    }
+  }
+
+  return [...ids];
+}
+
+async function fetchTopmeatPage(url) {
+  const res = await axios.get(url, {
+    responseType: 'arraybuffer',
+    headers: {
+      ...DEFAULT_HEADERS,
+      Accept: 'text/html',
+    },
+    timeout: 20000,
+  });
+  return iconv.decode(Buffer.from(res.data), 'EUC-KR');
+}
+
+async function scrapeTopmeatCategory(source, category) {
+  const caId = topmeatCategoryId(category.url);
+  if (!caId) {
+    console.warn(`[${source.name}] ca_id 없음: ${category.url}`);
+    return [];
+  }
+
+  const listUrl = absUrl(source.url, `/shop/list.php?ca_id=${caId}`);
+  const html = await fetchTopmeatPage(listUrl);
+  const directItems = parseTopmeatListHtml(html, source, category);
+  if (directItems.length > 0) return directItems;
+
+  const subIds = discoverTopmeatSubCategories(html, caId);
+  if (subIds.length === 0) {
+    console.warn(`[${source.name}] ${category.name}: 상품·하위카테고리 없음`);
+    return [];
+  }
+
+  const items = [];
+  const seen = new Set();
+  const maxSubs = source.topmeatMaxSubcategories || 30;
+
+  for (const subId of subIds.slice(0, maxSubs)) {
+    const subUrl = absUrl(source.url, `/shop/list.php?ca_id=${subId}`);
+    try {
+      const subHtml = await fetchTopmeatPage(subUrl);
+      for (const item of parseTopmeatListHtml(subHtml, source, category)) {
+        const key = item.url || `${item.rawName}:${item.price}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push(item);
+      }
+    } catch (err) {
+      console.warn(`[${source.name}] 하위카테고리 ${subId} 실패:`, err.message);
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+
+  return items;
+}
+
 async function scrapeGenericCategory(source, category) {
   const isEucKr = source.encoding === 'euc-kr';
   const res = await axios.get(category.url, {
@@ -121,13 +240,20 @@ async function scrapeCategory(source, category) {
   if (source.id === 'meatclub' || source.scrapeMode === 'meatclub-search') {
     return scrapeMeatclubCategory(source, category);
   }
+  if (source.id === 'topmeat' || source.scrapeMode === 'topmeat-list') {
+    return scrapeTopmeatCategory(source, category);
+  }
   return scrapeGenericCategory(source, category);
 }
 
 module.exports = {
   scrapeCategory,
   scrapeMeatclubCategory,
+  scrapeTopmeatCategory,
   scrapeGenericCategory,
   meatclubCategoryCode,
+  topmeatCategoryId,
   parseMeatclubHtml,
+  parseTopmeatListHtml,
+  discoverTopmeatSubCategories,
 };
