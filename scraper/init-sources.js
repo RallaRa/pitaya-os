@@ -119,6 +119,27 @@ const SOURCES = [
       price: '[class*="price"]',
     },
   },
+  {
+    id: 'hellomeat',
+    name: '헬로미트',
+    url: 'https://hellomeat.co.kr',
+    enabled: true,
+    encoding: 'utf-8',
+    scrapeMode: 'hellomeat-products',
+    hellomeatPageSize: 50,
+    categories: [
+      { url: 'https://hellomeat.co.kr/products?parent=3612', name: '소고기', hellomeatDepth1: '3612' },
+      { url: 'https://hellomeat.co.kr/products?parent=3614', name: '돼지고기', hellomeatDepth1: '3614' },
+      { url: 'https://hellomeat.co.kr/products?parent=885', name: '세절육', hellomeatDepth1: '885' },
+      { url: 'https://hellomeat.co.kr/products?parent=3591', name: '양념육', hellomeatDepth1: '3591' },
+      { url: 'https://hellomeat.co.kr/products?parent=3616', name: '닭·양·염소', hellomeatDepth1: '3616' },
+    ],
+    selectors: {
+      item: '[class*="product"], .product',
+      name: '[class*="name"], [class*="title"]',
+      price: '[class*="price"]',
+    },
+  },
 ];
 
 async function init() {

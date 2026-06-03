@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, Fragment } from 'react';
-import { ExternalLink, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useCallback, Fragment, useMemo } from 'react';
+import { ExternalLink, RefreshCw, ChevronDown, ChevronRight, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import MergeModal, { type MergeItem } from '@/components/purchases/MergeModal';
@@ -17,6 +17,7 @@ const SOURCE_COLORS: Record<string, string> = {
   bondaero: '#ef4444',
   ekcm: '#8b5cf6',
   chamwoodon: '#ec4899',
+  hellomeat: '#0ea5e9',
 };
 
 interface PriceEntry {
@@ -46,10 +47,51 @@ interface ScraperSource {
   enabled: boolean;
 }
 
+type SortKey = 'animal' | 'origin' | 'name' | 'storage' | 'minPrice' | string;
+type SortDir = 'asc' | 'desc';
+
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
+  if (!active) return <ArrowUpDown size={12} className="inline ml-1 opacity-40" />;
+  return dir === 'asc'
+    ? <ArrowUp size={12} className="inline ml-1 text-teal-400" />
+    : <ArrowDown size={12} className="inline ml-1 text-teal-400" />;
+}
+
+function sortGroupedItems(items: GroupedItem[], sortKey: SortKey, sortDir: SortDir): GroupedItem[] {
+  const dir = sortDir === 'asc' ? 1 : -1;
+  const missing = sortDir === 'asc' ? Infinity : -Infinity;
+
+  return [...items].sort((a, b) => {
+    let cmp = 0;
+
+    if (sortKey === 'animal') {
+      cmp = (a.animalType?.ko || '').localeCompare(b.animalType?.ko || '', 'ko');
+    } else if (sortKey === 'origin') {
+      cmp = (a.origin?.ko || '').localeCompare(b.origin?.ko || '', 'ko');
+    } else if (sortKey === 'name') {
+      cmp = (a.standardName || '').localeCompare(b.standardName || '', 'ko');
+    } else if (sortKey === 'storage') {
+      cmp = (a.storageType || '').localeCompare(b.storageType || '', 'ko');
+    } else if (sortKey === 'minPrice') {
+      const pa = a.minPrice === Infinity ? missing : a.minPrice;
+      const pb = b.minPrice === Infinity ? missing : b.minPrice;
+      cmp = pa - pb;
+    } else {
+      const pa = a.prices[sortKey]?.price ?? missing;
+      const pb = b.prices[sortKey]?.price ?? missing;
+      cmp = pa - pb;
+    }
+
+    return cmp * dir;
+  });
+}
+
 export default function PriceAnalysisPage() {
-  const [animalFilter, setAnimalFilter] = useState('전체');
-  const [originFilter, setOriginFilter] = useState('전체');
-  const [storageFilter, setStorageFilter] = useState('전체');
+  const [animalFilter, setAnimalFilter] = useState('돼지 (Pork)');
+  const [originFilter, setOriginFilter] = useState('국내 (KOR)');
+  const [storageFilter, setStorageFilter] = useState('냉장');
+  const [sortKey, setSortKey] = useState<SortKey>('name');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'all' | 'pending'>('all');
   const [groupedItems, setGroupedItems] = useState<GroupedItem[]>([]);
@@ -166,16 +208,39 @@ export default function PriceAnalysisPage() {
     await loadData();
   }
 
-  const filteredItems = groupedItems.filter(item => {
+  const filteredItems = useMemo(() => groupedItems.filter(item => {
     if (animalFilter !== '전체' && !animalFilter.includes(item.animalType?.ko || '')) return false;
     if (originFilter !== '전체' && !originFilter.includes(item.origin?.ko || '')) return false;
     if (storageFilter !== '전체' && item.storageType !== storageFilter) return false;
     if (search && !item.standardName.includes(search) &&
         !item.origin?.ko.includes(search) && !(item.brand || '').includes(search)) return false;
     return true;
-  });
+  }), [groupedItems, animalFilter, originFilter, storageFilter, search]);
+
+  const sortedItems = useMemo(
+    () => sortGroupedItems(filteredItems, sortKey, sortDir),
+    [filteredItems, sortKey, sortDir],
+  );
 
   const enabledSources = sources.filter(s => s.enabled);
+
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  }
+
+  function sortableTh(key: SortKey, label: React.ReactNode, className = '') {
+    return (
+      <th className={`p-3 select-none cursor-pointer hover:bg-slate-700/50 ${className}`}
+        onClick={() => toggleSort(key)}>
+        <span className="inline-flex items-center gap-0.5">{label}<SortIcon active={sortKey === key} dir={sortDir} /></span>
+      </th>
+    );
+  }
 
   return (
     <div className="p-4 max-w-full overflow-x-auto min-h-screen">
@@ -237,7 +302,7 @@ export default function PriceAnalysisPage() {
           className={`px-4 py-2 rounded-lg text-sm font-medium ${
             tab === 'all' ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-300'
           }`}>
-          전체 품목 ({groupedItems.length})
+          전체 품목 ({filteredItems.length}/{groupedItems.length})
         </button>
         <button onClick={() => setTab('pending')}
           className={`px-4 py-2 rounded-lg text-sm font-medium ${
@@ -252,20 +317,27 @@ export default function PriceAnalysisPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-slate-800/80">
-                <th className="text-left p-3 min-w-20">축종</th>
-                <th className="text-left p-3 min-w-28">원산지<br /><span className="text-xs text-slate-400 font-normal">Origin</span></th>
-                <th className="text-left p-3 min-w-32">품목명<br /><span className="text-xs text-slate-400 font-normal">Item</span></th>
-                <th className="text-center p-3 min-w-16">보관</th>
+                {sortableTh('animal', <>축종</>, 'text-left min-w-20')}
+                {sortableTh('origin', <>원산지<br /><span className="text-xs text-slate-400 font-normal">Origin</span></>, 'text-left min-w-28')}
+                {sortableTh('name', <>품목명<br /><span className="text-xs text-slate-400 font-normal">Item</span></>, 'text-left min-w-32')}
+                {sortableTh('storage', '보관', 'text-center min-w-16')}
                 {enabledSources.map(s => (
-                  <th key={s.id} className="text-center p-3 min-w-28">
-                    <a href={s.url} target="_blank" rel="noopener noreferrer"
-                      className="hover:text-teal-400 inline-flex flex-col items-center gap-0.5">
-                      {s.name}
+                  <th key={s.id} className="text-center p-3 min-w-28 select-none cursor-pointer hover:bg-slate-700/50"
+                    onClick={() => toggleSort(s.id)}>
+                    <span className="inline-flex flex-col items-center gap-0.5">
+                      <span className="inline-flex items-center">
+                        <a href={s.url} target="_blank" rel="noopener noreferrer"
+                          className="hover:text-teal-400"
+                          onClick={e => e.stopPropagation()}>
+                          {s.name}
+                        </a>
+                        <SortIcon active={sortKey === s.id} dir={sortDir} />
+                      </span>
                       <ExternalLink size={10} className="text-slate-500" />
-                    </a>
+                    </span>
                   </th>
                 ))}
-                <th className="text-center p-3 min-w-24 text-green-400">최저가</th>
+                {sortableTh('minPrice', <span className="text-green-400">최저가</span>, 'text-center min-w-24')}
                 <th className="w-10" />
               </tr>
             </thead>
@@ -277,7 +349,7 @@ export default function PriceAnalysisPage() {
                   <p>데이터 없음</p>
                   <p className="text-xs mt-2 text-slate-500">설정 → 스크래핑 소스에서 「수집」 실행 또는 POS PC에서 node dynamic-scraper.js</p>
                 </td></tr>
-              ) : filteredItems.map(item => (
+              ) : sortedItems.map(item => (
                 <Fragment key={item.groupKey}>
                   <tr
                     className="border-t border-slate-800 hover:bg-slate-800/40 cursor-pointer"

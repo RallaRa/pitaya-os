@@ -480,6 +480,140 @@ async function scrapeChamwoodonCategory(source, category) {
   return scrapeChamwoodonPlp(source, category);
 }
 
+const HELLOMEAT_API = 'https://hellomeat.co.kr/api';
+const HELLOMEAT_HEADERS = {
+  ...DEFAULT_HEADERS,
+  Accept: 'application/json',
+  Origin: 'https://hellomeat.co.kr',
+  Referer: 'https://hellomeat.co.kr/products',
+};
+
+let hellomeatPricelistCache = null;
+
+async function fetchHellomeatPricelistTabs() {
+  if (hellomeatPricelistCache) return hellomeatPricelistCache;
+  const { data, status } = await axios.get(`${HELLOMEAT_API}/user/pricelist`, {
+    headers: HELLOMEAT_HEADERS,
+    timeout: 20000,
+    validateStatus: () => true,
+  });
+  if (status !== 200) {
+    console.warn(`[헬로미트] pricelist API HTTP ${status}`);
+    return [];
+  }
+  hellomeatPricelistCache = data?.data?.info ?? [];
+  return hellomeatPricelistCache;
+}
+
+function mapHellomeatProduct(p, source, category) {
+  const price = normalizePrice(String(p.kg_per_price ?? p.price ?? p.sale_price ?? ''));
+  if (!p.name && !p.title) return null;
+  if (!price || price < 500) return null;
+
+  const rawName = String(p.name || p.title).trim();
+  const id = p.id;
+  const url = id ? `https://hellomeat.co.kr/product/${id}` : category.url;
+  const extra = [p.product_from, p.storage, p.grade].filter(Boolean).join(' · ');
+  const categoryLabel = extra ? `${category.name} · ${extra}` : category.name;
+
+  return {
+    rawName,
+    rawPrice: String(p.kg_per_price ?? p.price ?? p.sale_price ?? price),
+    price,
+    url,
+    category: categoryLabel,
+  };
+}
+
+async function fetchHellomeatProducts(params) {
+  const { data, status } = await axios.get(`${HELLOMEAT_API}/user/products`, {
+    headers: HELLOMEAT_HEADERS,
+    params,
+    timeout: 45000,
+    validateStatus: () => true,
+  });
+
+  if (status !== 200) {
+    console.warn(`[헬로미트] products API HTTP ${status}`);
+    return [];
+  }
+
+  return data?.data?.result ?? [];
+}
+
+async function scrapeHellomeatProducts(source, category, queryParams) {
+  const limit = source.hellomeatPageSize || 50;
+  const items = [];
+  const seen = new Set();
+  let offset = 0;
+
+  while (true) {
+    const batch = await fetchHellomeatProducts({
+      offset,
+      limit,
+      first_search: false,
+      sort: category.sort || source.hellomeatSort || 'rank',
+      ...queryParams,
+    });
+
+    for (const p of batch) {
+      const item = mapHellomeatProduct(p, source, category);
+      if (!item) continue;
+      const key = String(p.id || item.url);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push(item);
+    }
+
+    if (batch.length < limit) break;
+    offset += limit;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+
+  return items;
+}
+
+async function scrapeHellomeatPricelistCategory(source, category) {
+  const tabs = await fetchHellomeatPricelistTabs();
+  const tabIndex = (category.hellomeatPricelistTab || 1) - 1;
+  const tab = tabs[tabIndex];
+  if (!tab) {
+    console.warn(`[${source.name}] pricelist tab 없음: ${category.hellomeatPricelistTab}`);
+    return [];
+  }
+
+  return scrapeHellomeatProducts(source, category, {
+    depth1: String(tab.depth1),
+    depths2: tab.depth2,
+    type: 'pricelist',
+    sort: 'low',
+  });
+}
+
+async function scrapeHellomeatCategory(source, category) {
+  const mode = category.hellomeatMode || source.hellomeatMode || 'products';
+  if (mode === 'pricelist') return scrapeHellomeatPricelistCategory(source, category);
+
+  const depth1 = category.hellomeatDepth1 || category.depth1;
+  if (!depth1) {
+    console.warn(`[${source.name}] hellomeatDepth1 없음: ${category.url}`);
+    return [];
+  }
+
+  const params = { depth1: String(depth1) };
+  if (category.hellomeatDepth2 || category.depth2) {
+    params.depth2 = String(category.hellomeatDepth2 || category.depth2);
+  }
+  if (category.hellomeatDepths2 || category.depths2) {
+    params.depths2 = String(category.hellomeatDepths2 || category.depths2);
+  }
+  if (category.hellomeatType || source.hellomeatType) {
+    params.type = category.hellomeatType || source.hellomeatType;
+  }
+
+  return scrapeHellomeatProducts(source, category, params);
+}
+
 let ekcmCategoryCache = null;
 
 async function fetchEkcmCategories() {
@@ -694,6 +828,9 @@ async function scrapeCategory(source, category) {
   if (source.id === 'chamwoodon' || source.scrapeMode === 'chamwoodon-search' || source.scrapeMode === 'chamwoodon-plp') {
     return scrapeChamwoodonCategory(source, category);
   }
+  if (source.id === 'hellomeat' || source.scrapeMode === 'hellomeat-products' || source.scrapeMode === 'hellomeat-pricelist') {
+    return scrapeHellomeatCategory(source, category);
+  }
   return scrapeGenericCategory(source, category);
 }
 
@@ -704,6 +841,7 @@ module.exports = {
   scrapeMeatfriendsCategory,
   scrapeBondaeroCategory,
   scrapeChamwoodonCategory,
+  scrapeHellomeatCategory,
   scrapeEkcmCategory,
   scrapeGenericCategory,
   meatclubCategoryCode,
