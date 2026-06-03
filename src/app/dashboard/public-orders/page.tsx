@@ -13,6 +13,7 @@ import type { PublicOrderLine, PublicOrderEntryStatus } from '@/lib/publicOrders
 import {
   PUBLIC_ORDER_ENTRY_STATUSES,
   PUBLIC_ORDER_ENTRY_STATUS_LABELS,
+  linePriceUnitLabel,
 } from '@/lib/publicOrders';
 
 const PublicOrderAIChat = dynamic(
@@ -336,8 +337,9 @@ export default function PublicOrdersAdminPage() {
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-white text-sm">{line.name}</p>
                         <p className="text-[10px] text-slate-500">
-                          {(line.discountPrice || line.normalPrice).toLocaleString()}원/{line.unit}
-                          · 잔량 {line.remainingQty}/{line.totalQty}
+                          {(line.discountPrice || line.normalPrice).toLocaleString()}원/{linePriceUnitLabel(line)}
+                          · 주문단위 {line.unit}
+                          · 잔량 {line.remainingQty}/{line.totalQty}{line.unit}
                         </p>
                       </div>
                     </div>

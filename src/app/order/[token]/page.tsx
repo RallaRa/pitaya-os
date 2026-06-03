@@ -6,6 +6,7 @@ import {
   ShoppingBag, Minus, Plus, Loader2, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import type { PublicOrderLine } from '@/lib/publicOrders';
+import { linePriceUnitLabel } from '@/lib/publicOrders';
 
 const ORDERER_STORAGE_PREFIX = 'pitaya_orderer_';
 const VISITOR_STORAGE_KEY = 'pitaya_po_visitor';
@@ -228,7 +229,7 @@ export default function PublicOrderPage() {
                     )}
                     <span className="text-lg font-bold text-teal-300">
                       {fmtPrice(price)}원
-                      <span className="text-xs font-normal text-slate-500"> / {line.unit}</span>
+                      <span className="text-xs font-normal text-slate-500"> / {linePriceUnitLabel(line)}</span>
                     </span>
                   </div>
 
@@ -251,7 +252,7 @@ export default function PublicOrderPage() {
 
                   {isOpen && !soldOut && (
                     <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-                      <span className="text-xs text-slate-400">주문 수량</span>
+                      <span className="text-xs text-slate-400">주문 수량 ({line.unit})</span>
                       <div className="flex items-center gap-3">
                         <button
                           type="button"
@@ -260,7 +261,9 @@ export default function PublicOrderPage() {
                         >
                           <Minus className="w-4 h-4" />
                         </button>
-                        <span className="w-8 text-center font-bold">{qty}</span>
+                        <span className="min-w-[2rem] text-center font-bold">
+                          {qty}<span className="text-xs font-normal text-slate-500">{line.unit}</span>
+                        </span>
                         <button
                           type="button"
                           onClick={() => setQty(line.id, qty + 1, line.remainingQty)}

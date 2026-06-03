@@ -10,6 +10,8 @@ export interface PublicOrderLineInput {
   normalPrice?: number;
   discountPrice?: number;
   unit?: string;
+  /** 가격 표시 단위 — unit(주문단위)와 다를 수 있음 */
+  priceUnitLabel?: string;
   totalQty?: number;
   photoUrl?: string;
 }
@@ -172,6 +174,7 @@ export async function executePublicOrderActions(
               normalPrice,
               discountPrice,
               unit: String(line.unit || 'kg').trim(),
+              priceUnitLabel: String(line.priceUnitLabel || '').trim(),
               totalQty: Math.max(1, Math.floor(Number(line.totalQty) || 10)),
               orderedQty: 0,
               isActive: true,
@@ -215,6 +218,7 @@ export async function executePublicOrderActions(
           if (u.normalPrice != null) patch.normalPrice = Number(u.normalPrice) || 0;
           if (u.discountPrice != null) patch.discountPrice = Number(u.discountPrice) || 0;
           if (u.unit) patch.unit = String(u.unit).trim();
+          if (u.priceUnitLabel != null) patch.priceUnitLabel = String(u.priceUnitLabel).trim();
           if (u.totalQty != null) patch.totalQty = Math.max(0, Math.floor(Number(u.totalQty) || 0));
           if (u.photoUrl != null) patch.photoUrl = sanitizePhotoUrl(u.photoUrl);
           await doc.ref.update(patch);

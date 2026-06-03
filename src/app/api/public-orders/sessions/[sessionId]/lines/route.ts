@@ -35,6 +35,7 @@ export async function POST(
       normalPrice: Number(body.normalPrice) || 0,
       discountPrice: Number(body.discountPrice) || 0,
       unit: String(body.unit || 'ea').trim(),
+      priceUnitLabel: String(body.priceUnitLabel || '').trim(),
       totalQty: Math.max(0, Math.floor(Number(body.totalQty) || 0)),
       orderedQty: 0,
       isActive: body.isActive !== false,
@@ -77,7 +78,7 @@ export async function PUT(
     const updates: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
     const fields = [
       'sortOrder', 'name', 'description', 'origin', 'photoUrl',
-      'normalPrice', 'discountPrice', 'unit', 'totalQty', 'isActive',
+      'normalPrice', 'discountPrice', 'unit', 'priceUnitLabel', 'totalQty', 'isActive',
     ] as const;
 
     for (const f of fields) {

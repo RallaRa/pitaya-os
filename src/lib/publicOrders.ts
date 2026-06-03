@@ -25,7 +25,10 @@ export interface PublicOrderLine {
   photoUrl: string;
   normalPrice: number;
   discountPrice: number;
+  /** 주문·재고 단위 (팩, kg, 마리 등) */
   unit: string;
+  /** 가격 옆 표시 (예: 100g(1팩 200~300g)). 없으면 unit 사용 */
+  priceUnitLabel?: string;
   totalQty: number;
   orderedQty: number;
   remainingQty: number;
@@ -112,6 +115,11 @@ export function parsePublicOrderEntryStatus(raw: unknown): PublicOrderEntryStatu
   return 'unconfirmed';
 }
 
+export function linePriceUnitLabel(line: Pick<PublicOrderLine, 'priceUnitLabel' | 'unit'>): string {
+  const label = String(line.priceUnitLabel || '').trim();
+  return label || line.unit || 'ea';
+}
+
 export function serializeLine(id: string, data: Record<string, unknown>): PublicOrderLine {
   const totalQty = Number(data.totalQty) || 0;
   const orderedQty = Number(data.orderedQty) || 0;
@@ -127,6 +135,7 @@ export function serializeLine(id: string, data: Record<string, unknown>): Public
     normalPrice: Number(data.normalPrice) || 0,
     discountPrice: Number(data.discountPrice) || 0,
     unit: String(data.unit || 'ea'),
+    priceUnitLabel: String(data.priceUnitLabel || '').trim(),
     totalQty,
     orderedQty,
     remainingQty: Math.max(0, totalQty - orderedQty),
