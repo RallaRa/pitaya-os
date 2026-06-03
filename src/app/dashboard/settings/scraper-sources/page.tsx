@@ -57,8 +57,6 @@ export default function ScraperSourcesPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [runningSourceId, setRunningSourceId] = useState<string | null>(null);
   const [runningAll, setRunningAll] = useState(false);
-  const [bondaeroTokenDraft, setBondaeroTokenDraft] = useState('');
-  const [savingBondaeroToken, setSavingBondaeroToken] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -138,32 +136,6 @@ export default function ScraperSourcesPage() {
     } finally {
       setRunningSourceId(null);
       setRunningAll(false);
-    }
-  };
-
-  const handleSaveBondaeroToken = async () => {
-    const token = bondaeroTokenDraft.trim();
-    if (!token) {
-      setError('Bearer access token을 입력하세요.');
-      return;
-    }
-    setSavingBondaeroToken(true);
-    setError('');
-    try {
-      const headers = await getAuthJsonHeaders();
-      const res = await fetch('/api/scraper-sources', {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({ id: 'bondaero', bondaeroAccessToken: token }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setBondaeroTokenDraft('');
-      await load();
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setSavingBondaeroToken(false);
     }
   };
 
@@ -264,31 +236,9 @@ export default function ScraperSourcesPage() {
                     {(source.categories?.length ?? 0) > 0 && ` · 카테고리 ${source.categories!.length}개`}
                   </p>
                   {source.id === 'bondaero' && (
-                    <div className="mt-3 p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
-                      <p className="text-xs text-slate-400">
-                        API 토큰: {source.bondaeroAccessToken ? '✅ 등록됨' : '❌ 미등록'}
-                        {source.bondaeroRefreshToken ? ' · refresh 저장됨' : ''}
-                      </p>
-                      <p className="text-[11px] text-slate-500">
-                        bondaero.kr 로그인 → DevTools Network → `products/hanwoo/list` → Authorization Bearer 값
-                      </p>
-                      <div className="flex gap-2">
-                        <input
-                          type="password"
-                          value={bondaeroTokenDraft}
-                          onChange={(e) => setBondaeroTokenDraft(e.target.value)}
-                          placeholder="eyJ... access token"
-                          className="flex-1 bg-slate-900 rounded-lg px-3 py-2 text-xs text-white border border-slate-700 font-mono"
-                        />
-                        <button
-                          onClick={handleSaveBondaeroToken}
-                          disabled={savingBondaeroToken}
-                          className="px-3 py-2 rounded-lg text-xs bg-red-800 text-white hover:bg-red-700 disabled:opacity-50"
-                        >
-                          {savingBondaeroToken ? '저장 중…' : '토큰 저장'}
-                        </button>
-                      </div>
-                    </div>
+                    <p className="text-xs text-green-400/90 mt-2">
+                      v2 공개 API 사용 — 별도 auth token 불필요
+                    </p>
                   )}
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">

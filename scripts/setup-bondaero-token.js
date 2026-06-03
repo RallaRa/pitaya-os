@@ -53,6 +53,24 @@ function setVercelEnv(key, value) {
   return false;
 }
 
+function validateAccessTokenFormat(token) {
+  if (!token) return 'access token이 비어 있습니다.';
+  if (/\.{2,}|복사한|붙여넣|your_token|example/i.test(token)) {
+    return '예시 문구가 아니라 DevTools에서 복사한 실제 토큰을 넣어 주세요.';
+  }
+  if (!token.startsWith('eyJ')) {
+    return 'JWT access token은 보통 eyJ 로 시작합니다. Bearer 접두사 없이 토큰만 넣어 주세요.';
+  }
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    return 'JWT 형식이 아닙니다 (header.payload.signature 3부분). Bearer 없이 eyJ... 전체를 붙여넣으세요.';
+  }
+  if (token.length < 100) {
+    return '토큰이 너무 짧습니다. Network 탭에서 Authorization Bearer 뒤 값 전체를 복사했는지 확인하세요.';
+  }
+  return null;
+}
+
 async function verifyAccessToken(token) {
   const axios = require(path.join(ROOT, 'scraper/node_modules/axios'));
   const res = await axios.post(
@@ -98,9 +116,26 @@ async function main() {
   }
 
   if (accessArg) {
+    const formatErr = validateAccessTokenFormat(accessArg);
+    if (formatErr) {
+      console.error(`❌ ${formatErr}`);
+      console.error('\n복사 방법:');
+      console.error('  1) bondaero.kr 로그인 → 한우 목록 페이지');
+      console.error('  2) Chrome DevTools(F12) → Network → hanwoo/list 클릭');
+      console.error('  3) Request Headers → authorization: Bearer eyJhbGci...');
+      console.error('  4) Bearer 뒤 eyJ... 전체(보통 200자 이상)만 복사');
+      console.error('\n실행 예:');
+      console.error('  node scripts/setup-bondaero-token.js "eyJhbGciOiJFUzI1NiIs..."');
+      process.exit(1);
+    }
     const check = await verifyAccessToken(accessArg);
     if (!check.ok) {
       console.error(`access token 검증 실패 (HTTP ${check.status})`);
+      if (check.status === 400) {
+        console.error('토큰 형식 오류일 수 있습니다. Bearer 없이 eyJ... JWT만 넣었는지 확인하세요.');
+      } else if (check.status === 401) {
+        console.error('토큰이 만료되었거나 로그아웃 상태입니다. bondaero.kr 재로그인 후 새 토큰을 복사하세요.');
+      }
       process.exit(1);
     }
     upsertEnv('BONDAERO_ACCESS_TOKEN', accessArg);

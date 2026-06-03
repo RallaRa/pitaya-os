@@ -301,63 +301,17 @@ async function scrapeMeatfriendsCategory(source, category) {
   return items;
 }
 
-async function refreshBondaeroAccessToken(accessToken, refreshToken) {
-  if (!refreshToken) return accessToken || null;
-
-  const headers = {
-    ...DEFAULT_HEADERS,
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-    'BDR-User-Agent': 'bondaero.kr/web',
-  };
-  if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
-
-  const res = await axios.post(
-    'https://api.bondaero.kr/auths/bondaerotoken',
-    { refreshToken },
-    { headers, timeout: 20000, validateStatus: () => true },
-  );
-
-  const body = res.data?.body ?? res.data;
-  return body?.accessToken || res.data?.accessToken || accessToken || null;
-}
-
-async function resolveBondaeroToken(source) {
-  let accessToken = process.env.BONDAERO_ACCESS_TOKEN || source.bondaeroAccessToken || '';
-  const refreshToken = process.env.BONDAERO_REFRESH_TOKEN || source.bondaeroRefreshToken || '';
-
-  if (!accessToken && refreshToken) {
-    accessToken = await refreshBondaeroAccessToken('', refreshToken);
-  } else if (accessToken && refreshToken) {
-    const probe = await axios.post(
-      'https://api.bondaero.kr/products/hanwoo/list',
-      { filter: null, sort: 'r', page: 0, size: 1, sortOrder: 'ed', coldCondition: 'f' },
-      {
-        headers: {
-          ...DEFAULT_HEADERS,
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        timeout: 15000,
-        validateStatus: () => true,
-      },
-    );
-    if (probe.status === 401) {
-      accessToken = await refreshBondaeroAccessToken(accessToken, refreshToken);
-    }
-  }
-
-  return accessToken || null;
-}
+const BONDAERO_V2_HEADERS = {
+  ...DEFAULT_HEADERS,
+  'Content-Type': 'application/json',
+  Accept: 'application/json',
+  Origin: 'https://www.bondaero.kr',
+  Referer: 'https://www.bondaero.kr/products/hanwoo',
+  'BDR-User-Agent':
+    'Bondaero/2.22.1-273+web;web:unknown;Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+};
 
 async function scrapeBondaeroCategory(source, category) {
-  const token = await resolveBondaeroToken(source);
-  if (!token) {
-    console.warn(`[${source.name}] 본대로 access token 없음 — 스크래핑 소스 관리에서 토큰 등록 필요`);
-    return [];
-  }
-
   const items = [];
   const seen = new Set();
   let page = 0;
@@ -366,7 +320,7 @@ async function scrapeBondaeroCategory(source, category) {
 
   while (hasNext && page < maxPages) {
     const { data, status } = await axios.post(
-      'https://api.bondaero.kr/products/hanwoo/list',
+      'https://www.bondaero.kr/v2/products/hanwoo/list',
       {
         filter: category.bondaeroFilter ?? null,
         sort: category.sort ?? 'r',
@@ -376,21 +330,15 @@ async function scrapeBondaeroCategory(source, category) {
         coldCondition: category.coldCondition ?? 'f',
       },
       {
-        headers: {
-          ...DEFAULT_HEADERS,
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'BDR-User-Agent': 'bondaero.kr/web',
-        },
+        headers: BONDAERO_V2_HEADERS,
         timeout: 20000,
         validateStatus: () => true,
       },
     );
 
-    if (status === 401) {
-      console.warn(`[${source.name}] 본대로 토큰 만료 — 갱신 후 재시도`);
-      return items;
+    if (status !== 200) {
+      console.warn(`[${source.name}] v2 API HTTP ${status}`);
+      break;
     }
 
     const body = data?.body ?? data;
@@ -625,7 +573,7 @@ async function scrapeCategory(source, category) {
   if (source.id === 'meatfriends' || source.scrapeMode === 'meatfriends-display') {
     return scrapeMeatfriendsCategory(source, category);
   }
-  if (source.id === 'bondaero' || source.scrapeMode === 'bondaero-hanwoo-api') {
+  if (source.id === 'bondaero' || source.scrapeMode === 'bondaero-hanwoo-api' || source.scrapeMode === 'bondaero-v2-api') {
     return scrapeBondaeroCategory(source, category);
   }
   if (source.id === 'ekcm' || source.scrapeMode === 'ekcm-disp-goods') {

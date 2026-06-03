@@ -71,7 +71,7 @@ const SOURCES = [
     url: 'https://www.bondaero.kr',
     enabled: true,
     encoding: 'utf-8',
-    scrapeMode: 'bondaero-hanwoo-api',
+    scrapeMode: 'bondaero-v2-api',
     categories: [
       { url: 'https://www.bondaero.kr/products', name: '한우 냉동', coldCondition: 'f' },
       { url: 'https://www.bondaero.kr/products', name: '한우 냉장', coldCondition: 'r' },
