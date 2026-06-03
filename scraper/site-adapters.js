@@ -301,10 +301,60 @@ async function scrapeMeatfriendsCategory(source, category) {
   return items;
 }
 
+async function refreshBondaeroAccessToken(accessToken, refreshToken) {
+  if (!refreshToken) return accessToken || null;
+
+  const headers = {
+    ...DEFAULT_HEADERS,
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    'BDR-User-Agent': 'bondaero.kr/web',
+  };
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+
+  const res = await axios.post(
+    'https://api.bondaero.kr/auths/bondaerotoken',
+    { refreshToken },
+    { headers, timeout: 20000, validateStatus: () => true },
+  );
+
+  const body = res.data?.body ?? res.data;
+  return body?.accessToken || res.data?.accessToken || accessToken || null;
+}
+
+async function resolveBondaeroToken(source) {
+  let accessToken = process.env.BONDAERO_ACCESS_TOKEN || source.bondaeroAccessToken || '';
+  const refreshToken = process.env.BONDAERO_REFRESH_TOKEN || source.bondaeroRefreshToken || '';
+
+  if (!accessToken && refreshToken) {
+    accessToken = await refreshBondaeroAccessToken('', refreshToken);
+  } else if (accessToken && refreshToken) {
+    const probe = await axios.post(
+      'https://api.bondaero.kr/products/hanwoo/list',
+      { filter: null, sort: 'r', page: 0, size: 1, sortOrder: 'ed', coldCondition: 'f' },
+      {
+        headers: {
+          ...DEFAULT_HEADERS,
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        timeout: 15000,
+        validateStatus: () => true,
+      },
+    );
+    if (probe.status === 401) {
+      accessToken = await refreshBondaeroAccessToken(accessToken, refreshToken);
+    }
+  }
+
+  return accessToken || null;
+}
+
 async function scrapeBondaeroCategory(source, category) {
-  const token = process.env.BONDAERO_ACCESS_TOKEN;
+  const token = await resolveBondaeroToken(source);
   if (!token) {
-    console.warn(`[${source.name}] BONDAERO_ACCESS_TOKEN 없음 — 수집 건너뜀`);
+    console.warn(`[${source.name}] 본대로 access token 없음 — 스크래핑 소스 관리에서 토큰 등록 필요`);
     return [];
   }
 
@@ -315,7 +365,7 @@ async function scrapeBondaeroCategory(source, category) {
   const maxPages = source.bondaeroMaxPages || 20;
 
   while (hasNext && page < maxPages) {
-    const { data } = await axios.post(
+    const { data, status } = await axios.post(
       'https://api.bondaero.kr/products/hanwoo/list',
       {
         filter: category.bondaeroFilter ?? null,
@@ -331,10 +381,17 @@ async function scrapeBondaeroCategory(source, category) {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
           Accept: 'application/json',
+          'BDR-User-Agent': 'bondaero.kr/web',
         },
         timeout: 20000,
+        validateStatus: () => true,
       },
     );
+
+    if (status === 401) {
+      console.warn(`[${source.name}] 본대로 토큰 만료 — 갱신 후 재시도`);
+      return items;
+    }
 
     const body = data?.body ?? data;
     const content = body?.content ?? [];

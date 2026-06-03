@@ -61,13 +61,24 @@ export async function PUT(req: Request) {
 
   try {
     const body = await req.json();
-    const { id, enabled } = body;
+    const { id, enabled, bondaeroAccessToken, bondaeroRefreshToken, ...rest } = body;
     if (!id) return NextResponse.json({ error: 'id 필수' }, { status: 400 });
 
-    await adminDb.collection('scraper_sources').doc(id).update({
-      enabled: !!enabled,
+    const patch: Record<string, unknown> = {
       updatedAt: FieldValue.serverTimestamp(),
-    });
+    };
+    if (typeof enabled === 'boolean') patch.enabled = enabled;
+    if (typeof bondaeroAccessToken === 'string') {
+      patch.bondaeroAccessToken = bondaeroAccessToken.trim();
+    }
+    if (typeof bondaeroRefreshToken === 'string') {
+      patch.bondaeroRefreshToken = bondaeroRefreshToken.trim();
+    }
+    for (const [key, value] of Object.entries(rest)) {
+      if (value !== undefined) patch[key] = value;
+    }
+
+    await adminDb.collection('scraper_sources').doc(id).set(patch, { merge: true });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
