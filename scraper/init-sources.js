@@ -8,6 +8,7 @@ const SOURCES = [
     url: 'https://meatclub.kr',
     enabled: true,
     encoding: 'utf-8',
+    scrapeMode: 'meatclub-search',
     categories: [
       { url: 'https://meatclub.kr/goods/catalog?code=000300030001', name: '돼지 삼겹살' },
       { url: 'https://meatclub.kr/goods/catalog?code=000300030003', name: '돼지 목살' },

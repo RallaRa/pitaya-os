@@ -33,12 +33,26 @@ export async function GET(req: Request) {
       return NextResponse.json({ history });
     }
 
-    const snap = await adminDb.collection('market_prices')
+    let snap = await adminDb.collection('market_prices')
       .where('scrapedAt', '==', date)
       .get();
 
+    let usedDate = date;
+    if (snap.empty) {
+      const latestSnap = await adminDb.collection('market_prices')
+        .orderBy('scrapedAt', 'desc')
+        .limit(1)
+        .get();
+      if (!latestSnap.empty) {
+        usedDate = latestSnap.docs[0].data().scrapedAt || date;
+        snap = await adminDb.collection('market_prices')
+          .where('scrapedAt', '==', usedDate)
+          .get();
+      }
+    }
+
     const prices = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    return NextResponse.json({ prices, date });
+    return NextResponse.json({ prices, date: usedDate, requestedDate: date });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

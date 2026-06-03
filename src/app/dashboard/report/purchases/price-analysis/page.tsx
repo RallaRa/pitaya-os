@@ -55,6 +55,7 @@ export default function PriceAnalysisPage() {
   const [pendingItems, setPendingItems] = useState<any[]>([]);
   const [sources, setSources] = useState<ScraperSource[]>([]);
   const [lastRun, setLastRun] = useState('');
+  const [dataDate, setDataDate] = useState('');
   const [loading, setLoading] = useState(true);
   const [expandedChart, setExpandedChart] = useState<string | null>(null);
   const [chartData, setChartData] = useState<any[]>([]);
@@ -77,6 +78,11 @@ export default function PriceAnalysisPage() {
 
       setSources(sourcesData.sources || []);
       setPendingItems(pendingData.pending || []);
+
+      if (pricesData.date) setDataDate(pricesData.date);
+      if (pricesData.requestedDate && pricesData.requestedDate !== pricesData.date) {
+        setDataDate(`${pricesData.date} (오늘 데이터 없음)`);
+      }
 
       if (metaData.meta?.lastRun) {
         const d = metaData.meta.lastRun;
@@ -176,7 +182,7 @@ export default function PriceAnalysisPage() {
         <div>
           <h1 className="text-xl font-bold text-teal-400">매입단가 분석</h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            갱신: {lastRun || '미실행'} · 매일 오전 6시 자동 갱신
+            갱신: {lastRun || '미실행'} · 데이터 기준: {dataDate || '없음'} · 매일 오전 6시 자동 갱신
           </p>
         </div>
         <button
@@ -266,7 +272,10 @@ export default function PriceAnalysisPage() {
               {loading ? (
                 <tr><td colSpan={99} className="text-center p-8 text-slate-400">로딩 중...</td></tr>
               ) : filteredItems.length === 0 ? (
-                <tr><td colSpan={99} className="text-center p-8 text-slate-400">데이터 없음 — 스크래퍼 실행 후 표시됩니다</td></tr>
+                <tr><td colSpan={99} className="text-center p-8 text-slate-400">
+                  <p>데이터 없음</p>
+                  <p className="text-xs mt-2 text-slate-500">설정 → 스크래핑 소스에서 「수집」 실행 또는 POS PC에서 node dynamic-scraper.js</p>
+                </td></tr>
               ) : filteredItems.map(item => (
                 <Fragment key={item.groupKey}>
                   <tr

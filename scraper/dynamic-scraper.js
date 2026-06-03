@@ -1,9 +1,8 @@
+require('./node18-polyfill');
 require('dotenv').config();
-const axios = require('axios');
-const cheerio = require('cheerio');
-const iconv = require('iconv-lite');
-const { normalizeItem, normalizePrice, extractUnit } = require('./normalizer');
+const { normalizeItem, extractUnit } = require('./normalizer');
 const { getDb, uploadPrices, uploadPendingAliases } = require('./firestore-upload');
+const { scrapeCategory } = require('./site-adapters');
 
 async function fetchAliasesFromFirestore() {
   try {
@@ -22,47 +21,19 @@ async function scrapeSource(source, firestoreAliases) {
   for (const category of (source.categories || [])) {
     try {
       console.log(`[${source.name}] ${category.name}`);
-      const isEucKr = source.encoding === 'euc-kr';
-      const res = await axios.get(category.url, {
-        responseType: isEucKr ? 'arraybuffer' : 'text',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-          Accept: 'text/html',
-          'Accept-Language': 'ko-KR,ko;q=0.9',
-          Referer: source.url,
-        },
-        timeout: 20000,
-      });
+      const parsed = await scrapeCategory(source, category);
 
-      const html = isEucKr
-        ? iconv.decode(Buffer.from(res.data), 'EUC-KR')
-        : res.data;
-
-      const $ = cheerio.load(html);
-      const sel = source.selectors || {};
-
-      $(sel.item || '.goods-item').each((_, el) => {
-        const rawName = $(el).find(sel.name || '.name').first().text().trim();
-        const rawPrice = $(el).find(sel.price || '.price').first().text().trim();
-        const href = $(el).find('a').first().attr('href') || '';
-        const itemUrl = href.startsWith('http')
-          ? href
-          : (href ? `${source.url.replace(/\/$/, '')}${href.startsWith('/') ? '' : '/'}${href}` : category.url);
-
-        if (!rawName || !rawPrice) return;
-        const price = normalizePrice(rawPrice);
-        if (!price || price < 1000) return;
-
-        const normalized = normalizeItem(rawName, firestoreAliases);
+      for (const item of parsed) {
+        const normalized = normalizeItem(item.rawName, firestoreAliases);
 
         if (!normalized.aliasMatched) {
           pending.push({
-            originalName: rawName,
+            originalName: item.rawName,
             source: source.id,
             sourceName: source.name,
-            price,
-            url: itemUrl,
-            category: category.name,
+            price: item.price,
+            url: item.url,
+            category: item.category,
             animalType: normalized.animalType,
             origin: normalized.origin,
             storageType: normalized.storageType,
@@ -72,7 +43,7 @@ async function scrapeSource(source, firestoreAliases) {
         results.push({
           source: source.id,
           sourceName: source.name,
-          originalName: rawName,
+          originalName: item.rawName,
           standardName: normalized.standardName,
           animalType: normalized.animalType,
           origin: normalized.origin,
@@ -81,14 +52,14 @@ async function scrapeSource(source, firestoreAliases) {
           storageType: normalized.storageType,
           aliasMatched: normalized.aliasMatched,
           groupKey: normalized.groupKey,
-          unit: extractUnit(rawName),
-          price,
-          url: itemUrl,
+          unit: extractUnit(item.rawName),
+          price: item.price,
+          url: item.url,
           scrapedAt: new Date().toISOString().slice(0, 10),
         });
-      });
+      }
 
-      await new Promise(r => setTimeout(r, 1500));
+      await new Promise(r => setTimeout(r, 1200));
     } catch (e) {
       console.error(`[${source.name}] ${category.name} 실패:`, e.message);
     }
@@ -98,12 +69,15 @@ async function scrapeSource(source, firestoreAliases) {
   return { results, pending };
 }
 
-async function runAll() {
+async function runAll(options = {}) {
+  const sourceId = options.sourceId;
   console.log('🥩 스크래핑 시작:', new Date().toISOString().slice(0, 10));
 
   const db = getDb();
   const [sourcesSnap, firestoreAliases] = await Promise.all([
-    db.collection('scraper_sources').where('enabled', '==', true).get(),
+    sourceId
+      ? db.collection('scraper_sources').doc(sourceId).get().then(d => ({ docs: d.exists ? [d] : [] }))
+      : db.collection('scraper_sources').where('enabled', '==', true).get(),
     fetchAliasesFromFirestore(),
   ]);
 
@@ -112,16 +86,18 @@ async function runAll() {
 
   if (sources.length === 0) {
     console.log('⚠️ 활성 소스 없음. node init-sources.js 먼저 실행하세요.');
-    return;
+    return { totalItems: 0, totalPending: 0, sources: [] };
   }
 
   const allResults = [];
   const allPending = [];
+  const sourceStats = [];
 
   for (const source of sources) {
     const { results, pending } = await scrapeSource(source, firestoreAliases);
     allResults.push(...results);
     allPending.push(...pending);
+    sourceStats.push({ id: source.id, name: source.name, itemCount: results.length, pendingCount: pending.length });
 
     await db.collection('scraper_sources').doc(source.id).update({
       lastScraped: new Date(),
@@ -132,14 +108,41 @@ async function runAll() {
 
   console.log(`\n📊 합계: ${allResults.length}개, 미정의: ${allPending.length}개`);
 
-  if (allResults.length > 0) await uploadPrices(allResults);
-  if (allPending.length > 0) await uploadPendingAliases(allPending);
+  if (!options.dryRun) {
+    if (allResults.length > 0) await uploadPrices(allResults);
+    if (allPending.length > 0) await uploadPendingAliases(allPending);
+    console.log('✅ 완료');
+  } else {
+    console.log('🔍 미리보기 모드 — Firestore 저장 생략');
+    console.log(JSON.stringify({
+      itemCount: allResults.length,
+      pendingCount: allPending.length,
+      sources: sourceStats,
+      items: allResults.slice(0, 30).map(r => ({
+        originalName: r.originalName,
+        standardName: r.standardName,
+        price: r.price,
+        url: r.url,
+        origin: r.origin,
+        animalType: r.animalType,
+        storageType: r.storageType,
+      })),
+    }));
+  }
 
-  console.log('✅ 완료');
+  return {
+    totalItems: allResults.length,
+    totalPending: allPending.length,
+    sources: sourceStats,
+    sample: allResults.slice(0, 20),
+    pendingSample: allPending.slice(0, 20),
+  };
 }
 
 if (require.main === module) {
-  runAll().catch(e => {
+  const sourceId = process.argv.find(a => a.startsWith('--source='))?.split('=')[1];
+  const dryRun = process.argv.includes('--dry-run');
+  runAll({ sourceId, dryRun }).catch(e => {
     console.error('❌', e.message);
     process.exit(1);
   });

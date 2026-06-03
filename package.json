@@ -7,19 +7,23 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "cd scraper && npm install --omit=dev && cd .. && next build",
     "start": "next start",
     "lint": "next lint",
     "restore-phones": "tsx scripts/restore-phone-from-excel.ts",
+    "test-excel-row": "node scripts/test-excel-row-alignment.mjs",
     "restore-phones-ukey2": "tsx scripts/restore-phones-from-ukey2.ts",
     "analyze-recovery": "node scripts/analyze-recovery-paths.mjs",
     "verify-ukey2-key": "node scripts/verify-ukey2-key.mjs",
     "fetch-key-hunt": "node scripts/fetch-key-hunt.mjs",
+    "fetch-member-probe": "node scripts/fetch-member-probe.mjs",
     "check-pos-api": "bash scripts/check-pos-bridge-api.sh",
     "deploy:pos-bridge": "vercel deploy --prod",
     "crack-ukey2": "node scripts/crack-en-ukey2-deep.mjs",
     "crack-ukey2-excel": "node scripts/crack-with-excel-pairs.mjs",
-    "crack-com-iv": "node scripts/crack-com-iv.mjs"
+    "crack-com-iv": "node scripts/crack-com-iv.mjs",
+    "crack-ukey2-bulk": "node scripts/crack-ukey2-bulk.mjs",
+    "verify-ukey2-bulk": "node scripts/crack-ukey2-bulk.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
