@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback, DragEvent } from 'react';
+import { useState, useRef, useEffect, useCallback, DragEvent, ClipboardEvent as ReactClipboardEvent } from 'react';
 import {
   Bot, Send, X, Paperclip, FileSpreadsheet, FileText, Loader2,
   Image as ImageIcon,
 } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { compressImageFromDataUrl, compressImageFile } from '@/lib/compressImageClient';
+import { extractImageFilesFromClipboard } from '@/lib/clipboardImages';
 import type { FileAnalysisMeta } from '@/lib/purchaseAiLabels';
 import { formatEnsembleReplyBlock, formatFileResultLine } from '@/lib/purchaseAiLabels';
 import { logPurchaseAnalysis } from '@/components/purchases/PurchaseAnalysisHistory';
@@ -37,11 +38,11 @@ function genId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-const MAX_IMAGE_BYTES = 900 * 1024; // OCR용 — 해상도 우선
+const MAX_IMAGE_BYTES = 1536 * 1024; // OCR용 — 해상도 우선
 const BATCH_SAFE_BYTES = 2.5 * 1024 * 1024;
 const MAX_FILES_PER_BATCH = 2;
-const OCR_MAX_PX = 1536;
-const OCR_QUALITY = 0.85;
+const OCR_MAX_PX = 2048;
+const OCR_QUALITY = 0.92;
 
 async function compressImageFileWrapper(file: File): Promise<string> {
   return compressImageFile(file, OCR_MAX_PX, OCR_QUALITY, true);
@@ -192,18 +193,26 @@ export default function PurchaseAIChat({ onInvoicesFound, storeId = '', onAnalys
     if (e.dataTransfer.files.length > 0) addFiles(e.dataTransfer.files);
   };
 
-  // Clipboard paste (global while mounted)
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLElement>) => {
+    const imageFiles = extractImageFilesFromClipboard(e.clipboardData);
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      void addFiles(imageFiles);
+    }
+  }, [addFiles]);
+
   useEffect(() => {
     const handler = (e: ClipboardEvent) => {
-      const items = Array.from(e.clipboardData?.items || []);
-      const imageFiles = items
-        .filter(item => item.type.startsWith('image/'))
-        .map(item => item.getAsFile())
-        .filter(Boolean) as File[];
-      if (imageFiles.length > 0) addFiles(imageFiles);
+      const imageFiles = extractImageFilesFromClipboard(e.clipboardData);
+      if (imageFiles.length > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        void addFiles(imageFiles);
+      }
     };
-    document.addEventListener('paste', handler);
-    return () => document.removeEventListener('paste', handler);
+    document.addEventListener('paste', handler, true);
+    return () => document.removeEventListener('paste', handler, true);
   }, [addFiles]);
 
   const removeAttachment = (id: string) => {
@@ -443,6 +452,7 @@ export default function PurchaseAIChat({ onInvoicesFound, storeId = '', onAnalys
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
+      onPaste={handlePaste}
     >
       {/* 드래그 오버레이 */}
       {isDragging && (
@@ -624,6 +634,7 @@ export default function PurchaseAIChat({ onInvoicesFound, storeId = '', onAnalys
           <input
             value={input}
             onChange={e => setInput(e.target.value)}
+            onPaste={handlePaste}
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();

@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback, DragEvent } from 'react';
+import { useState, useRef, useEffect, useCallback, DragEvent, ClipboardEvent as ReactClipboardEvent } from 'react';
 import { Bot, Send, Loader2, Copy, ExternalLink, Paperclip, Image as ImageIcon, X } from 'lucide-react';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { compressImageFile } from '@/lib/compressImageClient';
+import { extractImageFilesFromClipboard } from '@/lib/clipboardImages';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 
 interface AttachedImage {
@@ -67,7 +68,9 @@ export default function PublicOrderAIChat({
   const [isDragging, setIsDragging] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const dragCounter = useRef(0);
+  const [pasteHint, setPasteHint] = useState<string | null>(null);
 
   const sessionIdRef = useRef(sessionId);
   const messagesRef = useRef(messages);
@@ -146,45 +149,61 @@ export default function PublicOrderAIChat({
   }, [messages, queueStats]);
 
   const addImageFiles = useCallback(async (files: FileList | File[]) => {
-    const list = Array.from(files).filter(f => f.type.startsWith('image/'));
+    const list = Array.from(files).filter(
+      f => f.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|heic|heif)$/i.test(f.name),
+    );
     if (!list.length) return;
 
     const room = Math.max(0, 5 - attachments.length);
     const added: AttachedImage[] = [];
+    let failed = 0;
     for (const file of list.slice(0, room)) {
       try {
         const content = await compressImageFile(file, 1280, 0.82, true);
         added.push({
           id: genId(),
-          name: file.name,
+          name: file.name || 'pasted-image.jpg',
           preview: content,
           content,
           mimeType: 'image/jpeg',
         });
-      } catch { /* skip */ }
+      } catch {
+        failed += 1;
+      }
     }
-    if (added.length) setAttachments(prev => [...prev, ...added].slice(0, 5));
+    if (added.length) {
+      setAttachments(prev => [...prev, ...added].slice(0, 5));
+      setPasteHint(null);
+    } else if (failed > 0) {
+      setPasteHint('이미지를 불러오지 못했습니다. 다시 붙여넣거나 📎로 선택해 주세요.');
+    }
   }, [attachments.length]);
+
+  const applyClipboardPaste = useCallback((dt: DataTransfer | null) => {
+    const files = extractImageFilesFromClipboard(dt);
+    if (!files.length) return false;
+    void addImageFiles(files);
+    return true;
+  }, [addImageFiles]);
+
+  const handlePaste = useCallback((e: ReactClipboardEvent<HTMLElement>) => {
+    if (applyClipboardPaste(e.clipboardData)) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, [applyClipboardPaste]);
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      const files: File[] = [];
-      for (const item of items) {
-        if (item.type.startsWith('image/')) {
-          const f = item.getAsFile();
-          if (f) files.push(f);
-        }
-      }
-      if (files.length) {
+      if (!panelRef.current) return;
+      if (applyClipboardPaste(e.clipboardData)) {
         e.preventDefault();
-        addImageFiles(files);
+        e.stopPropagation();
       }
     };
-    window.addEventListener('paste', onPaste);
-    return () => window.removeEventListener('paste', onPaste);
-  }, [addImageFiles]);
+    document.addEventListener('paste', onPaste, true);
+    return () => document.removeEventListener('paste', onPaste, true);
+  }, [applyClipboardPaste]);
 
   const onDragEnter = (e: DragEvent) => {
     e.preventDefault();
@@ -299,6 +318,7 @@ export default function PublicOrderAIChat({
 
   return (
     <div
+      ref={panelRef}
       className={`flex flex-col h-full bg-slate-900 border-l border-slate-800 relative ${
         isDragging ? 'ring-2 ring-teal-500/50 ring-inset' : ''
       }`}
@@ -306,6 +326,7 @@ export default function PublicOrderAIChat({
       onDragLeave={onDragLeave}
       onDragOver={onDragOver}
       onDrop={onDrop}
+      onPaste={handlePaste}
     >
       {isDragging && (
         <div className="absolute inset-0 z-10 bg-teal-950/80 flex items-center justify-center pointer-events-none">
@@ -396,6 +417,9 @@ export default function PublicOrderAIChat({
       </div>
 
       <div className="px-3 py-2 border-t border-slate-800 shrink-0">
+        {pasteHint && (
+          <p className="text-[10px] text-amber-400/90 mb-2">{pasteHint}</p>
+        )}
         {attachments.length > 0 && (
           <div className="flex gap-1.5 flex-wrap mb-2">
             {attachments.map(a => (
@@ -451,13 +475,14 @@ export default function PublicOrderAIChat({
           <input
             value={input}
             onChange={e => setInput(e.target.value)}
+            onPaste={handlePaste}
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 send(input);
               }
             }}
-            placeholder={busy ? '계속 입력·사진 추가 가능' : '말로 입력하거나 📎로 사진 첨부'}
+            placeholder={busy ? '계속 입력·사진 추가 가능' : '말로 입력 · 📎첨부 · 사진 붙여넣기(Ctrl+V)'}
             className="flex-1 bg-slate-800 border border-slate-700/60 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-teal-500/50"
           />
           <button
