@@ -37,6 +37,7 @@ export async function ensureSessionForPhotos(
     status: 'draft',
     publicToken: generatePublicToken(),
     orderDeadline: null,
+    visitorCount: 0,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });

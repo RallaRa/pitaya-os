@@ -8,6 +8,29 @@ import {
 import type { PublicOrderLine } from '@/lib/publicOrders';
 
 const ORDERER_STORAGE_PREFIX = 'pitaya_orderer_';
+const VISITOR_STORAGE_KEY = 'pitaya_po_visitor';
+
+function getOrCreateVisitorId(): string {
+  if (typeof window === 'undefined') return '';
+  let id = localStorage.getItem(VISITOR_STORAGE_KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(VISITOR_STORAGE_KEY, id);
+  }
+  return id;
+}
+
+async function recordVisit(token: string) {
+  const visitorId = getOrCreateVisitorId();
+  if (!visitorId) return;
+  try {
+    await fetch(`/api/public/orders/${encodeURIComponent(token)}/visit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visitorId }),
+    });
+  } catch { /* ignore */ }
+}
 
 interface SessionInfo {
   id: string;
@@ -50,6 +73,7 @@ export default function PublicOrderPage() {
       setSession(data.session);
       setLines(data.lines || []);
       setIsOpen(data.isOpen === true);
+      void recordVisit(token);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '오류가 발생했습니다');
     } finally {

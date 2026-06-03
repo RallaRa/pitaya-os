@@ -31,6 +31,7 @@ interface SessionSummary {
   publicToken: string;
   orderDeadline: string | null;
   createdAt: string | null;
+  visitorCount: number;
 }
 
 export default function PublicOrdersAdminPage() {
@@ -54,6 +55,7 @@ export default function PublicOrdersAdminPage() {
   }>>([]);
   const [sessionMeta, setSessionMeta] = useState({
     title: '', description: '', status: 'draft', orderDeadline: '', publicToken: '',
+    visitorCount: 0,
   });
   const [loading, setLoading] = useState(false);
   const [aiOpen, setAiOpen] = useState(true);
@@ -85,6 +87,7 @@ export default function PublicOrdersAdminPage() {
         status: data.session.status,
         orderDeadline: data.session.orderDeadline || '',
         publicToken: data.session.publicToken,
+        visitorCount: Number(data.session.visitorCount) || 0,
       });
       setLines(data.lines || []);
       setEntries(data.entries || []);
@@ -107,9 +110,12 @@ export default function PublicOrdersAdminPage() {
   }, [selectedId, loadDetail]);
   useEffect(() => {
     if (!selectedId) return;
-    const timer = setInterval(() => loadDetail(selectedId), 30000);
+    const timer = setInterval(() => {
+      loadDetail(selectedId);
+      loadSessions();
+    }, 30000);
     return () => clearInterval(timer);
-  }, [selectedId, loadDetail]);
+  }, [selectedId, loadDetail, loadSessions]);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -213,13 +219,32 @@ export default function PublicOrdersAdminPage() {
                   className="flex-1 text-left px-2.5 py-2 min-w-0"
                 >
                   <p className="text-xs font-medium truncate text-slate-200">{s.title}</p>
-                  <p className={`text-[9px] mt-0.5 ${
-                    s.status === 'open' ? 'text-emerald-400'
-                      : s.status === 'closed' ? 'text-red-400' : 'text-slate-500'
-                  }`}>
-                    {statusLabel(s.status)}
-                  </p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <p className={`text-[9px] ${
+                      s.status === 'open' ? 'text-emerald-400'
+                        : s.status === 'closed' ? 'text-red-400' : 'text-slate-500'
+                    }`}>
+                      {statusLabel(s.status)}
+                    </p>
+                  </div>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = `${window.location.origin}/order/${s.publicToken}`;
+                    navigator.clipboard.writeText(url);
+                  }}
+                  className="p-1.5 text-slate-600 hover:text-teal-400 shrink-0"
+                  title="주문 링크 복사"
+                >
+                  <Link2 className="w-3 h-3" />
+                </button>
+                <span
+                  className="text-[9px] text-teal-400/90 tabular-nums shrink-0 min-w-[2rem] text-right pr-1"
+                  title="주문 링크 방문"
+                >
+                  {s.visitorCount ?? 0}명
+                </span>
                 <button
                   type="button"
                   onClick={() => deleteSession(s.id)}
@@ -278,6 +303,9 @@ export default function PublicOrdersAdminPage() {
                 <div className="flex flex-wrap gap-2 items-center mt-3 pt-3 border-t border-slate-800">
                   <Link2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                   <code className="text-[10px] text-slate-400 flex-1 truncate">{publicUrl}</code>
+                  <span className="text-[10px] text-teal-400/90 tabular-nums shrink-0" title="주문 링크 방문">
+                    {sessionMeta.visitorCount}명
+                  </span>
                   <button type="button" onClick={copyPublicLink} className="p-1 text-slate-400 hover:text-white">
                     <Copy className="w-3.5 h-3.5" />
                   </button>

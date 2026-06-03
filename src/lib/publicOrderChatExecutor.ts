@@ -83,6 +83,7 @@ export async function executePublicOrderActions(
               : 'draft',
             publicToken: generatePublicToken(),
             orderDeadline: action.orderDeadline || null,
+            visitorCount: 0,
             createdAt: FieldValue.serverTimestamp(),
             updatedAt: FieldValue.serverTimestamp(),
           });

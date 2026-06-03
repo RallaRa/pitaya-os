@@ -29,6 +29,7 @@ export async function GET(req: Request) {
           orderDeadline: data.orderDeadline || null,
           createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? null,
           updatedAt: data.updatedAt?.toDate?.()?.toISOString?.() ?? null,
+          visitorCount: Number(data.visitorCount) || 0,
           _sortMs: data.createdAt?.toMillis?.() ?? 0,
         };
       })
@@ -69,6 +70,7 @@ export async function POST(req: Request) {
       status: 'draft',
       publicToken,
       orderDeadline: body.orderDeadline || null,
+      visitorCount: 0,
       createdBy: authUser.uid,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),

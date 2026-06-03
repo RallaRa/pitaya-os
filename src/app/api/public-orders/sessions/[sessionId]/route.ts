@@ -64,6 +64,7 @@ export async function GET(
         status: data.status,
         publicToken: data.publicToken,
         orderDeadline: data.orderDeadline || null,
+        visitorCount: Number(data.visitorCount) || 0,
         createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? null,
       },
       lines,
