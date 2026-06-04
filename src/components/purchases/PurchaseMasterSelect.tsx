@@ -8,6 +8,8 @@ import { ALL_ITEM_CATEGORIES } from '@/lib/purchaseCategories';
 export interface ScaleCodeOption {
   id: string;
   code: number;
+  scaleCode3?: string;
+  posBarCode?: string;
   name: string;
   category?: string;
 }
@@ -27,7 +29,9 @@ function supplierLabel(s: SupplierOption) {
 }
 
 function itemLabel(c: ScaleCodeOption) {
-  return `${c.code} · ${c.name}`;
+  const sc = c.scaleCode3 || String(c.code).padStart(3, '0');
+  const pos = c.posBarCode ? ` [${c.posBarCode}]` : '';
+  return `${sc} · ${c.name}${pos}`;
 }
 
 export function usePurchaseMasterData(storeId: string) {
@@ -125,7 +129,12 @@ export function ItemCodePicker({
     const q = search.trim().toLowerCase();
     if (!q) return scaleCodes.slice(0, 80);
     return scaleCodes
-      .filter(c => String(c.code).includes(q) || c.name.toLowerCase().includes(q))
+      .filter(c =>
+        String(c.code).includes(q)
+        || (c.scaleCode3 || '').includes(q)
+        || (c.posBarCode || '').includes(q)
+        || c.name.toLowerCase().includes(q),
+      )
       .slice(0, 80);
   }, [scaleCodes, search]);
 

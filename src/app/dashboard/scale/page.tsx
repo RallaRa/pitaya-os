@@ -18,9 +18,24 @@ import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 interface ScaleCode {
   id: string;
   code: number;
+  scaleCode3?: string;
+  posBarCode?: string;
+  prefix3?: string;
   name: string;
   category: string;
   storeId?: string;
+  source?: string;
+}
+
+interface PendingGroup {
+  scaleCode3: string;
+  items: Array<{
+    posBarCode: string;
+    prefix3?: string;
+    code?: number;
+    name: string;
+    categoryName?: string;
+  }>;
 }
 
 interface ChatMsg {
@@ -176,6 +191,8 @@ export default function ScaleCodePage() {
 
   /* ── 상태 ── */
   const [items,       setItems]       = useState<ScaleCode[]>([]);
+  const [pending,     setPending]     = useState<PendingGroup[]>([]);
+  const [pendingCount, setPendingCount] = useState(0);
   const [loading,     setLoading]     = useState(true);
   const [chatHistory, setChatHistory] = useState<ChatMsg[]>([]);
   const [chatInput,   setChatInput]   = useState('');
@@ -200,10 +217,17 @@ export default function ScaleCodePage() {
     if (!storeId) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/scale/codes?storeId=${storeId}`);
-      const d   = await res.json();
+      const headers = await getAuthJsonHeaders();
+      const [codesRes, pendingRes] = await Promise.all([
+        fetch(`/api/scale/codes?storeId=${encodeURIComponent(storeId)}`, { headers }),
+        fetch(`/api/scale/pending?storeId=${encodeURIComponent(storeId)}`, { headers }),
+      ]);
+      const d = await codesRes.json();
+      const p = await pendingRes.json();
       if (d.error) throw new Error(d.error);
       setItems(d.items || []);
+      setPending(p.groups || []);
+      setPendingCount(p.itemCount ?? 0);
     } catch (e: any) {
       showToast(e.message || '로드 실패', false);
     } finally {
@@ -222,7 +246,10 @@ export default function ScaleCodePage() {
     const q = filter.trim().toLowerCase();
     if (!q) return items;
     return items.filter(i =>
-      i.name.toLowerCase().includes(q) || String(i.code).includes(q)
+      i.name.toLowerCase().includes(q)
+      || String(i.code).includes(q)
+      || (i.scaleCode3 || '').includes(q)
+      || (i.posBarCode || '').includes(q)
     );
   }, [items, filter]);
 
@@ -235,7 +262,11 @@ export default function ScaleCodePage() {
       if (!g[c]) g[c] = [];
       g[c].push(item);
     });
-    CATEGORY_ORDER.forEach(c => g[c].sort((a, b) => a.code - b.code));
+    CATEGORY_ORDER.forEach(c => g[c].sort((a, b) =>
+      (a.scaleCode3 || String(a.code).padStart(3, '0')).localeCompare(
+        b.scaleCode3 || String(b.code).padStart(3, '0'),
+      ),
+    ));
     return g;
   }, [filteredItems]);
 
@@ -398,7 +429,10 @@ export default function ScaleCodePage() {
             <Scale className="w-5 h-5 text-teal-400" />
             <div>
               <h1 className="text-slate-100 font-bold text-lg">저울 코드 관리</h1>
-              <p className="text-slate-500 text-xs">총 {totalCount}개 품목 · AI 자연어 입력 지원</p>
+              <p className="text-slate-500 text-xs">
+                총 {totalCount}개 · POS 6자리 연동 · 저울번호=뒤3자리
+                {pendingCount > 0 ? ` · 확인대기 ${pendingCount}건` : ''}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -556,7 +590,7 @@ export default function ScaleCodePage() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600" />
                   <input
                     type="text"
-                    placeholder="코드 또는 품목명 검색..."
+                    placeholder="저울번호·POS코드·품목명 검색..."
                     value={filter}
                     onChange={e => setFilter(e.target.value)}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-teal-500"
@@ -581,6 +615,33 @@ export default function ScaleCodePage() {
                 </div>
               ) : (
                 <div className="space-y-4">
+                  {pending.length > 0 && (
+                    <div className="rounded-xl border border-amber-700/50 bg-amber-950/40 p-3">
+                      <p className="text-amber-200 text-sm font-semibold mb-2">
+                        확인 대기 — 저울번호(뒤3자리) 중복 {pending.length}그룹 · {pendingCount}건
+                      </p>
+                      <p className="text-amber-200/70 text-xs mb-3">
+                        아래 품목은 POS에서 원인 확인 후 피드백 주시면 반영합니다. (자동 등록 안 함)
+                      </p>
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {pending.map(g => (
+                          <div key={g.scaleCode3} className="text-xs bg-slate-900/60 rounded-lg px-2 py-2">
+                            <span className="text-amber-300 font-mono font-bold">저울 {g.scaleCode3}</span>
+                            <ul className="mt-1 space-y-0.5 text-slate-300">
+                              {g.items.map(it => (
+                                <li key={it.posBarCode}>
+                                  <span className="font-mono text-teal-400/90">{it.posBarCode}</span>
+                                  {' '}{it.prefix3 && <span className="text-slate-500">({it.prefix3})</span>}{' '}
+                                  {it.name}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {CATEGORY_ORDER.filter(c => (grouped[c] || []).length > 0).map(cat => (
                     <div key={cat}>
                       {/* 카테고리 헤더 */}
@@ -594,7 +655,8 @@ export default function ScaleCodePage() {
                         <table className="w-full">
                           <thead>
                             <tr className="bg-slate-800/60">
-                              <th className="px-3 py-1.5 text-left text-[10px] text-slate-500 w-20">코드</th>
+                              <th className="px-3 py-1.5 text-left text-[10px] text-slate-500 w-16">저울</th>
+                              <th className="px-3 py-1.5 text-left text-[10px] text-slate-500 w-24">POS코드</th>
                               <th className="px-3 py-1.5 text-left text-[10px] text-slate-500">품목명</th>
                               <th className="px-3 py-1.5 w-16" />
                             </tr>
@@ -641,8 +703,11 @@ export default function ScaleCodePage() {
                                   </>
                                 ) : (
                                   <>
-                                    <td className="px-3 py-2 font-mono font-bold text-sm text-slate-300">
-                                      {item.code}
+                                    <td className="px-3 py-2 font-mono font-bold text-sm text-teal-300">
+                                      {item.scaleCode3 || String(item.code).padStart(3, '0')}
+                                    </td>
+                                    <td className="px-3 py-2 font-mono text-[11px] text-slate-500">
+                                      {item.posBarCode || '—'}
                                     </td>
                                     <td
                                       className="px-3 py-2 text-sm text-slate-200 cursor-pointer"

@@ -11,7 +11,9 @@
  *   node bridge.js customers            # Cus_Mst 고객 마스터 (레거시)
  *   node bridge.js sync-employees       # 사원정보만 동기화
  *   node bridge.js sync-customers       # Customer_Info 고객 동기화
+ *   node bridge.js sync-goods          # Goods 품목→Pitaya 저울코드 동기화
  *   node bridge.js probe-customer-phones # DB 전화 컬럼 원본 확인
+ *   node bridge.js probe-unmasked-phones # 마스킹 안 된 전화 컬럼 전체 스캔
  *   node bridge.js probe-member-use     # 사용중 회원 조회 조건 탐색
  *   node bridge.js check-tables         # DB 테이블 확인
  *   node bridge.js --dry-run            # 조회만
@@ -36,6 +38,7 @@ const API_BASE = (process.env.PITAYA_API_URL || 'https://pitaya-osv1.vercel.app/
 const API_URL  = `${API_BASE}/api/pos/sync`;
 const CUSTOMERS_API_URL  = `${API_BASE}/api/pos/sync-customers`;
 const EMPLOYEES_API_URL  = `${API_BASE}/api/pos/sync-employees`;
+const GOODS_API_URL      = `${API_BASE}/api/pos/sync-goods`;
 const API_KEY  = process.env.POS_BRIDGE_KEY || '';
 const STORE_ID = process.env.STORE_ID       || '';
 
@@ -516,6 +519,75 @@ async function sendCustomersToApi(customers) {
   return { total, failed };
 }
 
+// ── POS Goods 품목 마스터 ─────────────────────────────────────────
+function digitsOnlyBar(s) {
+  return String(s || '').replace(/\D/g, '');
+}
+
+function isSixDigitBar(bar) {
+  const d = digitsOnlyBar(bar);
+  return d.length === 6 && /^[0-9]+$/.test(d);
+}
+
+async function fetchGoodsMaster(pool) {
+  const result = await pool.request().query(`
+    SELECT BarCode, G_Name, S_Code, S_Name, Scale_Use, Sell_Pri, Goods_Use
+    FROM Goods
+    WHERE (Goods_Use = '1' OR Goods_Use IS NULL)
+    ORDER BY BarCode
+  `);
+  return result.recordset
+    .map(r => ({
+      posBarCode:   digitsOnlyBar(r.BarCode).padStart(6, '0').slice(-6),
+      name:         String(r.G_Name || '').trim(),
+      categoryCode: String(r.S_Code || '').trim(),
+      categoryName: String(r.S_Name || '').trim(),
+      scaleUse:     String(r.Scale_Use || '').trim(),
+      sellPri:      toInt(r.Sell_Pri),
+    }))
+    .filter(g => isSixDigitBar(g.posBarCode))
+    .map(g => ({ ...g, name: g.name || g.posBarCode }));
+}
+
+async function sendGoodsToApi(goodsList) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await axios.post(GOODS_API_URL, {
+        storeId: STORE_ID,
+        goods: goodsList,
+        syncedAt: new Date().toISOString(),
+      }, {
+        headers: { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
+        timeout: 180000,
+      });
+      if (res.data?.success) {
+        return {
+          synced: res.data.synced || 0,
+          pendingGroups: res.data.pendingGroups || 0,
+          pendingItems: res.data.pendingItems || 0,
+        };
+      }
+      if (attempt === 3) throw new Error(JSON.stringify(res.data));
+    } catch (e) {
+      if (attempt < 3) await sleep(5000);
+      else throw e;
+    }
+  }
+  return { synced: 0, pendingGroups: 0, pendingItems: 0 };
+}
+
+async function syncGoods(pool) {
+  log('━━━ POS 품목(Goods) → Pitaya 저울코드 동기화 ━━━');
+  const goods = await fetchGoodsMaster(pool);
+  log(`6자리 품목코드 ${goods.length}건 조회`);
+  if (!goods.length) {
+    warn('동기화할 6자리 BarCode 없음');
+    return;
+  }
+  const { synced, pendingGroups, pendingItems } = await sendGoodsToApi(goods);
+  log(`✅ 저울코드 반영 ${synced}건 | 펜딩(뒤3자리 중복) ${pendingGroups}그룹 ${pendingItems}건`);
+}
+
 // ── 사원 정보 동기화 ──────────────────────────────────────────────
 async function syncEmployees(pool) {
   log('━━━ 사원 정보 동기화 시작 ━━━');
@@ -783,6 +855,167 @@ async function probeMemberUse(pool) {
   out(`Saved: ${MEMBER_PROBE_OUT}`);
 
   fs.writeFileSync(MEMBER_PROBE_OUT, lines.join('\n'), 'utf8');
+}
+
+// ── 마스킹되지 않은 전화번호 DB 전역 탐색 ─────────────────────────
+async function probeUnmaskedPhones(pool) {
+  log('======== 마스킹되지 않은 전화번호 탐색 ========');
+
+  log('--- Customer_Info 요약 (Cus_Use=1) ---');
+  try {
+    const ci = await pool.request().query(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN Cus_Mobile NOT LIKE '%*%' AND Cus_Mobile NOT LIKE '%x%'
+          AND LEN(REPLACE(REPLACE(REPLACE(RTRIM(Cus_Mobile),'-',''),' ',''),'.','')) BETWEEN 10 AND 11
+          THEN 1 ELSE 0 END) AS mobile_plain,
+        SUM(CASE WHEN Cus_Tel NOT LIKE '%*%' AND Cus_Tel NOT LIKE '%x%'
+          AND LEN(REPLACE(REPLACE(REPLACE(RTRIM(Cus_Tel),'-',''),' ',''),'.','')) BETWEEN 9 AND 11
+          THEN 1 ELSE 0 END) AS tel_plain,
+        SUM(CASE WHEN Cus_Mobile LIKE '%*%' OR Cus_Mobile LIKE '%x%' THEN 1 ELSE 0 END) AS mobile_masked,
+        SUM(CASE WHEN en_uKey2 IS NOT NULL AND RTRIM(en_uKey2) <> '' THEN 1 ELSE 0 END) AS has_ukey2
+      FROM Customer_Info
+      WHERE Cus_Use = '1'
+    `);
+    const c = ci.recordset[0];
+    log(`  사용고객 ${c.total}명 | Cus_Mobile 원본 ${c.mobile_plain}명 | Cus_Tel 원본 ${c.tel_plain}명 | 마스킹 ${c.mobile_masked}명 | en_uKey2 ${c.has_ukey2}명`);
+  } catch (e) {
+    warn(`Customer_Info 요약 실패: ${e.message}`);
+  }
+
+  log('');
+  log('--- Cus_Mobile 원본 샘플 (최대 20명) ---');
+  try {
+    const samples = await pool.request().query(`
+      SELECT TOP 20 Cus_Code, Cus_Name, Cus_Mobile, Cus_Tel
+      FROM Customer_Info
+      WHERE Cus_Use = '1'
+        AND Cus_Mobile NOT LIKE '%*%' AND Cus_Mobile NOT LIKE '%x%'
+        AND LEN(REPLACE(REPLACE(REPLACE(RTRIM(Cus_Mobile),'-',''),' ',''),'.','')) BETWEEN 10 AND 11
+      ORDER BY Cus_Code
+    `);
+    if (!samples.recordset.length) {
+      warn('  Cus_Mobile 원본 없음 — 전부 마스킹이거나 en_uKey2만 있음');
+    } else {
+      samples.recordset.forEach(r => {
+        log(`  ${r.Cus_Code} | ${r.Cus_Name} | mobile=${r.Cus_Mobile} tel=${r.Cus_Tel || '-'}`);
+      });
+    }
+  } catch (e) {
+    warn(`샘플 조회 실패: ${e.message}`);
+  }
+
+  log('');
+  log('--- en_uKey2 샘플 (암호화 전화, 복호화 필요) ---');
+  try {
+    const ukeys = await pool.request().query(`
+      SELECT TOP 8 Cus_Code, Cus_Name, Cus_Mobile, en_uKey2
+      FROM Customer_Info
+      WHERE en_uKey2 IS NOT NULL AND RTRIM(en_uKey2) <> ''
+      ORDER BY Cus_Code
+    `);
+    log(`  en_uKey2 보유 (전체는 probe-en-ukey 참고)`);
+    ukeys.recordset.forEach(r => {
+      const u2 = String(r.en_uKey2 || '');
+      log(`  ${r.Cus_Code} | mask=${r.Cus_Mobile} | en_uKey2=${u2.length > 36 ? u2.slice(0, 36) + '...' : u2}`);
+    });
+  } catch (e) {
+    warn(`en_uKey2 샘플 실패: ${e.message}`);
+  }
+
+  log('');
+  log('--- 전화 관련 컬럼 전 테이블 스캔 ---');
+  const hits = [];
+  try {
+    const cols = await pool.request().query(`
+      SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = 'dbo'
+        AND DATA_TYPE IN ('varchar','nvarchar','char','nchar','text','ntext')
+        AND (
+          COLUMN_NAME LIKE '%HP%'
+          OR COLUMN_NAME LIKE '%Mobile%'
+          OR COLUMN_NAME LIKE '%Tel%'
+          OR COLUMN_NAME LIKE '%Phone%'
+          OR COLUMN_NAME LIKE '%uKey%'
+        )
+      ORDER BY TABLE_NAME, COLUMN_NAME
+    `);
+
+    for (const col of cols.recordset) {
+      const table = col.TABLE_NAME;
+      const column = col.COLUMN_NAME;
+      try {
+        const r = await pool.request().query(`
+          SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN [${column}] IS NOT NULL AND RTRIM(CAST([${column}] AS NVARCHAR(100))) <> ''
+              AND CAST([${column}] AS NVARCHAR(100)) NOT LIKE '%*%'
+              AND CAST([${column}] AS NVARCHAR(100)) NOT LIKE '%x%'
+              AND LEN(REPLACE(REPLACE(REPLACE(RTRIM(CAST([${column}] AS NVARCHAR(50))),'-',''),' ',''),'.','')) BETWEEN 10 AND 11
+              THEN 1 ELSE 0 END) AS plain_cnt
+          FROM [${table}]
+        `);
+        const total = Number(r.recordset[0].total ?? 0);
+        const plain = Number(r.recordset[0].plain_cnt ?? 0);
+        if (plain > 0) {
+          log(`  ✅ ${table}.${column}: 원본 ${plain}건 / 전체 ${total}건`);
+          hits.push({ table, column, plain, total });
+        }
+      } catch (e) {
+        log(`  · ${table}.${column}: 스킵 (${e.message})`);
+      }
+    }
+  } catch (e) {
+    warn(`컬럼 스캔 실패: ${e.message}`);
+  }
+
+  log('');
+  log('--- Cus / Customer 테이블 ---');
+  try {
+    const tables = await pool.request().query(`
+      SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_TYPE = 'BASE TABLE'
+        AND (TABLE_NAME LIKE '%Cus%' OR TABLE_NAME LIKE '%Customer%' OR TABLE_NAME LIKE '%Member%')
+      ORDER BY TABLE_NAME
+    `);
+    tables.recordset.forEach(t => log(`  ${t.TABLE_NAME}`));
+  } catch (e) {
+    warn(`테이블 목록 실패: ${e.message}`);
+  }
+
+  for (const tname of ['Cus_Mst', 'Cus_MST', 'Customer_Mst', 'CUS_MST', 'Member_Mst']) {
+    try {
+      const r = await pool.request().query(`SELECT COUNT(*) AS cnt FROM [${tname}]`);
+      log(`  ✅ 테이블 ${tname}: ${r.recordset[0].cnt}건`);
+      try {
+        const hp = await pool.request().query(`
+          SELECT TOP 5 Cus_Code, Cus_HP, Cus_Name
+          FROM [${tname}]
+          WHERE Cus_HP IS NOT NULL AND RTRIM(Cus_HP) <> ''
+            AND Cus_HP NOT LIKE '%*%'
+            AND LEN(REPLACE(REPLACE(RTRIM(Cus_HP),'-',''),' ','')) BETWEEN 10 AND 11
+        `);
+        hp.recordset.forEach(row => log(`      ${row.Cus_Code} | ${row.Cus_Name || ''} | HP=${row.Cus_HP}`));
+      } catch (hpErr) {
+        log(`      Cus_HP 컬럼 없음 또는 조회 실패: ${hpErr.message}`);
+      }
+    } catch {
+      /* table missing */
+    }
+  }
+
+  log('');
+  const list = await fetchCustomerInfo(pool);
+  auditCustomerPhones(list);
+
+  if (hits.length) {
+    log(`결론: SQL 원본 전화 ${hits.length}개 컬럼 발견 → bridge Cus_HP/해당 컬럼 조인 검토`);
+    hits.slice(0, 5).forEach(h => log(`  → ${h.table}.${h.column} (${h.plain}건)`));
+  } else {
+    warn('결론: SQL에 10~11자리 원본 전화 없음 → en_uKey2 COM 복호화(find-ukey2-phase9.ps1) 경로');
+  }
+  log('======== 탐색 완료 ========');
 }
 
 // ── DB 테이블 확인 ────────────────────────────────────────────────
@@ -1178,6 +1411,21 @@ async function main() {
         break;
       }
 
+      case 'sync-goods': {
+        const p = await getPool();
+        if (dryRun) {
+          const list = await fetchGoodsMaster(p);
+          log(`[DRY-RUN] 6자리 품목 ${list.length}건. 샘플 10건:`);
+          list.slice(0, 10).forEach(g => {
+            const sc3 = g.posBarCode.slice(-3);
+            console.log(`  ${g.posBarCode} → 저울3=${sc3} | ${g.name}`);
+          });
+        } else {
+          await syncGoods(p);
+        }
+        break;
+      }
+
       case 'probe-customer-phones': {
         const p = await getPool();
         const list = await fetchCustomerInfo(p);
@@ -1193,6 +1441,12 @@ async function main() {
             syncDigits: digits || null,
           }));
         });
+        break;
+      }
+
+      case 'probe-unmasked-phones': {
+        const p = await getPool();
+        await probeUnmaskedPhones(p);
         break;
       }
 
@@ -1244,7 +1498,7 @@ async function main() {
           success = await runDate(mode, dryRun);
         } else {
           err(`알 수 없는 모드: ${mode}`);
-          console.log('사용법: node bridge.js [today|realtime|date YYYY-MM-DD|migrate START END|customers|sync-employees|sync-customers|probe-customer-phones|probe-member-use|probe-en-ukey|check-tables] [--dry-run]');
+          console.log('사용법: node bridge.js [today|realtime|date YYYY-MM-DD|migrate START END|customers|sync-employees|sync-customers|sync-goods|probe-customer-phones|probe-unmasked-phones|probe-member-use|probe-en-ukey|check-tables] [--dry-run]');
           process.exit(1);
         }
     }

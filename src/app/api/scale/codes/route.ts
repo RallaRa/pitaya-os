@@ -53,8 +53,11 @@ export async function GET(req: Request) {
       .limit(2000)
       .get();
 
-    if (snap.empty) {
-      // 샘플 데이터 자동 삽입
+    const metaSnap = await adminDb.collection('pos_sync_meta').doc(storeId).get();
+    const hasPosSync = metaSnap.exists && !!metaSnap.data()?.lastGoodsSyncAt;
+
+    if (snap.empty && !hasPosSync) {
+      // 샘플 데이터 자동 삽입 (POS 동기화 전만)
       const batch = adminDb.batch();
       SAMPLE_DATA.forEach(item => {
         const ref = adminDb.collection('scale_codes').doc();
