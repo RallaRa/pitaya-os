@@ -46,6 +46,8 @@ const PACKAGES: Record<Pkg, { dir: string; files: Set<string> }> = {
       'install-realtime-task.bat',
       'probe-goods-info.js',
       'RUN-PROBE-GOODS.bat',
+      'probe-goods-table.js',
+      'RUN-PROBE-GOODS-TABLE.bat',
     ]),
   },
   scraper: {
