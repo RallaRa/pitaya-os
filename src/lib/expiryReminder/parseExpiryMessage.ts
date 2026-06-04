@@ -87,15 +87,22 @@ const AI_PARSE_SYSTEM = `정육점 유통기한 등록 문장에서 품목명과
 - expiryDate는 KST 기준, 연도 없으면 올해·이미 지났으면 내년
 - 유통기한/소비기한/유효기한/만료일 관련이 아니면 null`;
 
+type ExpiryAiJson = { itemName?: string | null; expiryDate?: string | null };
+
+function isExpiryAiJson(parsed: unknown): parsed is ExpiryAiJson {
+  return typeof parsed === 'object' && parsed !== null;
+}
+
 export async function parseExpiryByAi(message: string): Promise<ParsedExpiryInput | null> {
   const today = getKSTTodayYMD();
   try {
-    const { data } = await generateJsonWithFallback<{ itemName?: string | null; expiryDate?: string | null }>({
+    const { data } = await generateJsonWithFallback<ExpiryAiJson>({
       system: AI_PARSE_SYSTEM,
       prompt: `오늘(KST): ${today}\n문장: ${message.slice(0, 500)}`,
       json: true,
       temperature: 0,
       useCase: 'fast',
+      validate: isExpiryAiJson,
     });
     const itemName = (data.itemName || '').trim();
     const expiryDate = (data.expiryDate || '').trim();
