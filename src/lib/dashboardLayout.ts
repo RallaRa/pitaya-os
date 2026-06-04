@@ -1,7 +1,7 @@
 import type { LayoutItem } from 'react-grid-layout';
 
 export const GRID_COLS = 12;
-export const DASHBOARD_LAYOUT_VERSION = 3;
+export const DASHBOARD_LAYOUT_VERSION = 4;
 
 export interface WidgetMeta {
   id: string;
@@ -10,7 +10,10 @@ export interface WidgetMeta {
   permKey: string;
 }
 
-/** 12열 그리드 — 겹침 없는 기본 배치 (rowHeight 80px 기준) */
+/**
+ * 12열 그리드 — 겹침 없는 기본 배치 (rowHeight 80px, margin 16px)
+ * AI 예측(0~10행) 아래에 KPI 3열 → 분석 3열 → 뉴스 → AI 2블록
+ */
 export const WIDGET_META: WidgetMeta[] = [
   {
     id: 'sales_prediction',
@@ -21,55 +24,55 @@ export const WIDGET_META: WidgetMeta[] = [
   {
     id: 'today_sales',
     title: '당일 매출 현황',
-    defaultItem: { i: 'today_sales', x: 0, y: 9, w: 3, h: 3, minW: 3, minH: 3, maxW: 6, maxH: 8 },
+    defaultItem: { i: 'today_sales', x: 0, y: 11, w: 3, h: 3, minW: 3, minH: 3, maxW: 6, maxH: 8 },
     permKey: 'today_sales',
   },
   {
     id: 'sales_compare',
     title: '매출 목표',
-    defaultItem: { i: 'sales_compare', x: 3, y: 9, w: 5, h: 3, minW: 3, minH: 3, maxW: 8, maxH: 8 },
+    defaultItem: { i: 'sales_compare', x: 3, y: 11, w: 5, h: 3, minW: 3, minH: 3, maxW: 8, maxH: 8 },
     permKey: 'sales_compare',
   },
   {
     id: 'weather',
     title: '오늘 날씨',
-    defaultItem: { i: 'weather', x: 8, y: 9, w: 4, h: 3, minW: 4, minH: 2, maxW: 12, maxH: 5 },
+    defaultItem: { i: 'weather', x: 8, y: 11, w: 4, h: 3, minW: 3, minH: 2, maxW: 12, maxH: 5 },
     permKey: 'weather',
   },
   {
     id: 'quick_menu',
     title: '빠른 메뉴',
-    defaultItem: { i: 'quick_menu', x: 0, y: 12, w: 3, h: 3, minW: 2, minH: 2, maxW: 6, maxH: 6 },
+    defaultItem: { i: 'quick_menu', x: 0, y: 14, w: 3, h: 3, minW: 2, minH: 2, maxW: 6, maxH: 6 },
     permKey: 'quick_menu',
   },
   {
     id: 'weekly_analysis',
     title: 'AI 주간 분석',
-    defaultItem: { i: 'weekly_analysis', x: 3, y: 12, w: 4, h: 4, minW: 3, minH: 3, maxW: 12, maxH: 6 },
+    defaultItem: { i: 'weekly_analysis', x: 3, y: 14, w: 4, h: 4, minW: 3, minH: 3, maxW: 12, maxH: 6 },
     permKey: 'weekly_analysis',
   },
   {
     id: 'yesterday_analysis',
     title: '전일 판매 분석',
-    defaultItem: { i: 'yesterday_analysis', x: 7, y: 12, w: 5, h: 4, minW: 3, minH: 3, maxW: 12, maxH: 6 },
+    defaultItem: { i: 'yesterday_analysis', x: 7, y: 14, w: 5, h: 4, minW: 3, minH: 3, maxW: 12, maxH: 6 },
     permKey: 'yesterday_analysis',
   },
   {
     id: 'news',
     title: '정육 최신 뉴스',
-    defaultItem: { i: 'news', x: 0, y: 16, w: 12, h: 4, minW: 3, minH: 2, maxW: 12, maxH: 6 },
+    defaultItem: { i: 'news', x: 0, y: 18, w: 12, h: 4, minW: 3, minH: 2, maxW: 12, maxH: 6 },
     permKey: 'news',
   },
   {
     id: 'ai_insight',
     title: 'AI 종합 운영의견',
-    defaultItem: { i: 'ai_insight', x: 0, y: 20, w: 12, h: 6, minW: 8, minH: 5, maxW: 12, maxH: 10 },
+    defaultItem: { i: 'ai_insight', x: 0, y: 22, w: 12, h: 6, minW: 6, minH: 5, maxW: 12, maxH: 10 },
     permKey: 'ai_insight',
   },
   {
     id: 'total_partner',
     title: 'AI 토탈 운영파트너',
-    defaultItem: { i: 'total_partner', x: 0, y: 26, w: 12, h: 6, minW: 8, minH: 5, maxW: 12, maxH: 10 },
+    defaultItem: { i: 'total_partner', x: 0, y: 28, w: 12, h: 6, minW: 6, minH: 5, maxW: 12, maxH: 10 },
     permKey: 'total_partner',
   },
 ];
@@ -91,10 +94,11 @@ export const PRIORITY_WIDGET_ID = 'sales_prediction';
 
 const META_BY_ID = new Map(WIDGET_META.map(m => [m.id, m]));
 
-function clampItem(item: LayoutItem, meta: WidgetMeta): LayoutItem {
-  const w = Math.min(Math.max(item.w ?? meta.defaultItem.w ?? 3, meta.defaultItem.minW ?? 1), GRID_COLS);
+function clampItem(item: LayoutItem, meta: WidgetMeta, cols = GRID_COLS): LayoutItem {
+  const minW = meta.defaultItem.minW ?? 1;
+  const w = Math.min(Math.max(item.w ?? meta.defaultItem.w ?? 3, minW), cols);
   const h = Math.max(item.h ?? meta.defaultItem.h ?? 3, meta.defaultItem.minH ?? 1);
-  const x = Math.min(Math.max(item.x ?? 0, 0), GRID_COLS - w);
+  const x = Math.min(Math.max(item.x ?? 0, 0), Math.max(0, cols - w));
   const y = Math.max(item.y ?? 0, 0);
   return { ...meta.defaultItem, ...item, x, y, w, h };
 }
@@ -142,32 +146,49 @@ export function hasLayoutOverlap(layout: LayoutItem[]): boolean {
   return false;
 }
 
-export function isLayoutInBounds(layout: LayoutItem[]): boolean {
+export function isLayoutInBounds(layout: LayoutItem[], cols = GRID_COLS): boolean {
   return layout.every(item => {
     const w = item.w ?? 1;
     const h = item.h ?? 1;
-    return item.x >= 0 && item.y >= 0 && item.x + w <= GRID_COLS && w > 0 && h > 0;
+    return item.x >= 0 && item.y >= 0 && item.x + w <= cols && w > 0 && h > 0;
   });
 }
 
 /** 겹치거나 범위를 벗어난 항목을 위→아래 순서로 재배치 */
-export function compactDashboardLayout(widgets: string[], layout: LayoutItem[]): LayoutItem[] {
+export function compactDashboardLayout(
+  widgets: string[],
+  layout: LayoutItem[],
+  cols = GRID_COLS,
+): LayoutItem[] {
   const placed: LayoutItem[] = [];
 
   for (const id of sortWidgetsForDisplay(widgets)) {
     const meta = META_BY_ID.get(id);
     if (!meta) continue;
     const source = layout.find(l => l.i === id);
-    const base = clampItem(source ?? meta.defaultItem, meta);
+    const base = clampItem(source ?? meta.defaultItem, meta, cols);
 
     let candidate: LayoutItem | null = null;
 
-    if (source && isLayoutInBounds([base]) && !placed.some(p => rectsOverlap(base, p))) {
-      candidate = base;
-    } else {
+    const preferred = clampItem(meta.defaultItem, meta, cols);
+    const tryOrder = [
+      base,
+      preferred,
+      { ...base, x: 0 },
+      { ...preferred, x: 0 },
+    ];
+
+    for (const trial of tryOrder) {
+      if (isLayoutInBounds([trial], cols) && !placed.some(p => rectsOverlap(trial, p))) {
+        candidate = trial;
+        break;
+      }
+    }
+
+    if (!candidate) {
       outer:
       for (let y = 0; y < 500; y++) {
-        for (let x = 0; x <= GRID_COLS - base.w; x++) {
+        for (let x = 0; x <= cols - base.w; x++) {
           const next = { ...base, x, y };
           if (!placed.some(p => rectsOverlap(next, p))) {
             candidate = next;
@@ -177,7 +198,7 @@ export function compactDashboardLayout(widgets: string[], layout: LayoutItem[]):
       }
     }
 
-    placed.push(candidate ?? { ...meta.defaultItem });
+    placed.push(candidate ?? clampItem(meta.defaultItem, meta, cols));
   }
 
   return placed;
@@ -201,7 +222,8 @@ export function resolveDashboardLayout(
     return { layout: compacted, repaired: true };
   }
 
-  return { layout: makeDefaultLayout(widgets), repaired: true };
+  const defaults = compactDashboardLayout(widgets, makeDefaultLayout(widgets));
+  return { layout: defaults, repaired: true };
 }
 
 export function mergeLayoutChange(

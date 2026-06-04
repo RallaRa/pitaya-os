@@ -31,6 +31,7 @@ import {
   makeDefaultLayout,
   resolveDashboardLayout,
   mergeLayoutChange,
+  compactDashboardLayout,
   type WidgetMeta,
 } from '@/lib/dashboardLayout';
 import DashboardGridItem from '@/components/dashboard/DashboardGridItem';
@@ -173,7 +174,7 @@ export default function DashboardPage() {
           );
           setLayouts({ lg: layout as GridLayout });
           setActiveWidgets(widgets);
-          if (repaired && isSuperuserEmail(user?.email)) {
+          if (repaired) {
             getAuthJsonHeaders().then(headers =>
               fetch('/api/dashboard/layout', {
                 method: 'PUT',
@@ -256,9 +257,10 @@ export default function DashboardPage() {
   /* onLayoutChange 핸들러 */
   const onLayoutChange = useCallback((newLayout: GridLayout) => {
     const merged = mergeLayoutChange(visibleActive, [...newLayout]);
-    const next = { ...layouts, lg: merged as GridLayout };
+    const compacted = compactDashboardLayout(visibleActive, merged) as GridLayout;
+    const next = { ...layouts, lg: compacted };
     setLayouts(next);
-    persistLayout(merged as GridLayout, activeWidgets);
+    persistLayout(compacted, activeWidgets);
   }, [visibleActive, layouts, activeWidgets, persistLayout]);
 
   /* 위젯 추가 */
@@ -422,7 +424,7 @@ export default function DashboardPage() {
             width={containerW}
             layouts={{ lg: currentLayout, md: currentLayout, sm: currentLayout }}
             breakpoints={{ lg: 1200, md: 996, sm: 768 }}
-            cols={{ lg: 12, md: 10, sm: 6 }}
+            cols={{ lg: 12, md: 12, sm: 12 }}
             rowHeight={80}
             margin={[16, 16]}
             compactor={verticalCompactor}
