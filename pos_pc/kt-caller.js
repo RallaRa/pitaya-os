@@ -13,7 +13,25 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const https = require('https');
 
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+function log(msg) {
+  console.log(`[${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}] ${msg}`);
+}
+
+const ENV_PATHS = [
+  path.join(__dirname, '.env'),
+  path.join(__dirname, '..', 'pitaya-bridge', '.env'),
+  'C:\\pitaya-bridge\\.env',
+  'C:\\pitaya-os\\.env',
+];
+for (const envPath of ENV_PATHS) {
+  if (fs.existsSync(envPath)) {
+    const r = require('dotenv').config({ path: envPath });
+    if (r.parsed && Object.keys(r.parsed).length) {
+      log(`env 로드: ${envPath} (${Object.keys(r.parsed).length}항목)`);
+      break;
+    }
+  }
+}
 
 const NOTIFIER = (() => {
   try {
@@ -41,10 +59,6 @@ const APP_URL = (process.env.PITAYA_APP_URL || 'https://pitaya-osv1.vercel.app')
 const ALGORITHM = 'aes-256-gcm';
 
 // ── 유틸 ──────────────────────────────────────────────────────────
-function log(msg) {
-  console.log(`[${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}] ${msg}`);
-}
-
 function normalizePhoneDigits(phone) {
   if (!phone) return '';
   const d = String(phone).replace(/\D/g, '');
@@ -361,6 +375,7 @@ async function runSelfTest() {
 
 async function main() {
   if (process.argv.includes('--test')) {
+    log('Pitaya KT Caller (--test)');
     await runSelfTest();
     return;
   }
