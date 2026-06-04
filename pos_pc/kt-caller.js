@@ -18,20 +18,17 @@ function log(msg) {
 }
 
 const ENV_PATHS = [
-  path.join(__dirname, '.env'),
-  path.join(__dirname, '..', 'pitaya-bridge', '.env'),
   'C:\\pitaya-bridge\\.env',
+  path.join(__dirname, '.env'),
   'C:\\pitaya-os\\.env',
 ];
+let envCount = 0;
 for (const envPath of ENV_PATHS) {
-  if (fs.existsSync(envPath)) {
-    const r = require('dotenv').config({ path: envPath });
-    if (r.parsed && Object.keys(r.parsed).length) {
-      log(`env 로드: ${envPath} (${Object.keys(r.parsed).length}항목)`);
-      break;
-    }
-  }
+  if (!fs.existsSync(envPath)) continue;
+  const r = require('dotenv').config({ path: envPath, override: true });
+  if (r.parsed) envCount += Object.keys(r.parsed).length;
 }
+if (envCount) log(`env 로드 완료 (${envCount}항목)`);
 
 const NOTIFIER = (() => {
   try {
