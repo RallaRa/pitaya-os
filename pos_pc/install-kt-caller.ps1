@@ -1,12 +1,10 @@
-# Pitaya KT Caller 설치 (POS PC — 관리자 PowerShell)
-# 사용: powershell -ExecutionPolicy Bypass -File C:\pitaya-os\install-kt-caller.ps1
-
+# Pitaya KT Caller 설치 (POS PC)
 $ErrorActionPreference = 'Stop'
 $Dir = 'C:\pitaya-os'
 Set-Location $Dir
 
-Write-Host '=== node-notifier 설치 ==='
-npm install node-notifier --save 2>&1
+Write-Host '=== npm 패키지 ==='
+npm install node-notifier dotenv firebase-admin --save 2>&1 | Out-Host
 
 Write-Host '=== DB 경로 확인 ==='
 $kpd = 'C:\Program Files\통화매니저\KPD.dat'
@@ -17,10 +15,16 @@ if (-not (Test-Path $kpd)) {
 }
 
 Write-Host '=== Python 폴링 테스트 ==='
-python "$Dir\kt-caller-poll.py"
-if ($LASTEXITCODE -ne 0) { throw 'kt-caller-poll.py 실패' }
+$pyOk = $false
+foreach ($py in @('python', 'py', 'python3')) {
+  try {
+    & $py "$Dir\kt-caller-poll.py" 2>&1 | Out-Host
+    if ($LASTEXITCODE -eq 0) { $pyOk = $true; Write-Host "Python OK: $py"; break }
+  } catch {}
+}
+if (-not $pyOk) { Write-Warning 'kt-caller-poll.py 실패 (통화매니저 DB 확인)' }
 
-Write-Host '=== .env SYSTEM 읽기 권한 (부팅 자동실행용) ==='
+Write-Host '=== .env SYSTEM 읽기 권한 ==='
 $envFile = Join-Path $Dir '.env'
 if (Test-Path $envFile) {
   icacls $envFile /grant 'SYSTEM:(R)' 2>&1 | Out-Null
@@ -30,9 +34,21 @@ Write-Host '=== schtasks 등록 ==='
 $node = (Get-Command node -ErrorAction SilentlyContinue).Source
 if (-not $node) { throw 'node.exe PATH 없음' }
 $tr = "`"$node`" `"$Dir\kt-caller.js`""
-schtasks /create /tn "PitayaKTCaller" /tr $tr /sc onstart /ru SYSTEM /f
-schtasks /query /tn "PitayaKTCaller"
+$created = $false
+foreach ($args in @(
+  @('/create', '/tn', 'PitayaKTCaller', '/tr', $tr, '/sc', 'onlogon', '/ru', $env:USERNAME, '/f'),
+  @('/create', '/tn', 'PitayaKTCaller', '/tr', $tr, '/sc', 'onstart', '/ru', 'SYSTEM', '/f')
+)) {
+  $out = schtasks @args 2>&1
+  $out | Out-Host
+  if ($LASTEXITCODE -eq 0) { $created = $true; break }
+}
+if ($created) {
+  schtasks /query /tn 'PitayaKTCaller' /fo LIST | Select-Object -First 6
+} else {
+  Write-Warning 'schtasks 등록 실패 — 수동: node C:\pitaya-os\kt-caller.js'
+}
 
 Write-Host ''
 Write-Host '수동 실행: node C:\pitaya-os\kt-caller.js'
-Write-Host '.env 확인: FIREBASE_SERVICE_ACCOUNT_KEY, ENCRYPTION_KEY, KAKAO_ACCESS_TOKEN'
+Write-Host '.env: FIREBASE_SERVICE_ACCOUNT_KEY, ENCRYPTION_KEY, KAKAO_ACCESS_TOKEN'
