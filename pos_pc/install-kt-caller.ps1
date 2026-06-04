@@ -34,10 +34,11 @@ if (Test-Path $envFile) {
 Write-Host '=== schtasks 등록 ==='
 $node = (Get-Command node -ErrorAction SilentlyContinue).Source
 if (-not $node) { throw 'node.exe PATH 없음' }
-$tr = "`"$node`" `"$Dir\kt-caller.js`""
+# schtasks /tr: 공백 경로 회피 — cmd 래퍼 사용
+$tr = "cmd.exe /c `"cd /d $Dir && node kt-caller.js`""
 $created = $false
 foreach ($args in @(
-  @('/create', '/tn', 'PitayaKTCaller', '/tr', $tr, '/sc', 'onlogon', '/ru', $env:USERNAME, '/f'),
+  @('/create', '/tn', 'PitayaKTCaller', '/tr', $tr, '/sc', 'onlogon', '/f'),
   @('/create', '/tn', 'PitayaKTCaller', '/tr', $tr, '/sc', 'onstart', '/ru', 'SYSTEM', '/f')
 )) {
   $out = schtasks @args 2>&1
