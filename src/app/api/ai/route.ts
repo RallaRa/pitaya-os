@@ -62,20 +62,18 @@ const TRACE_NO_RE = /\b(\d{12,15})\b/g;
 
 async function fetchMeatHistory(traceNo: string): Promise<string | null> {
   try {
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9000';
-    const res = await fetch(`${baseUrl}/api/external/meat-history?traceNo=${traceNo}`, {
-      signal: AbortSignal.timeout(6000),
-    });
-    const d = await res.json();
+    const { fetchMeatTraceByNo } = await import('@/lib/meatTrace/fetchMeatTrace');
+    const d = await fetchMeatTraceByNo(traceNo);
     if (!d.found) return null;
     const parts = [
       d.cattleType && `축종: ${d.cattleType}`,
-      d.origin     && `원산지: ${d.origin}`,
-      d.farmName   && `농장: ${d.farmName}`,
+      d.origin && `원산지: ${d.origin}`,
+      d.farmName && `농장: ${d.farmName}`,
       d.slaughterDate && `도축일: ${d.slaughterDate}`,
       d.slaughterPlace && `도축장: ${d.slaughterPlace}`,
       (d.qgrade || d.ygrade) && `등급: 육질 ${d.qgrade || '-'} / 육량 ${d.ygrade || '-'}`,
       d.weight && `도체중: ${d.weight}kg`,
+      d.expiryDate && `유통기한: ${d.expiryDate}`,
     ].filter(Boolean);
     return `[이력번호 ${traceNo} 조회결과]\n${parts.join('\n')}`;
   } catch {

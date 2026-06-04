@@ -9,3 +9,4 @@ export * from '@/lib/expiryReminder/parseExpiryMessage';
 export * from '@/lib/expiryReminder/createExpiryReminder';
 export * from '@/lib/expiryReminder/processDueReminders';
 export * from '@/lib/expiryReminder/fromAiChat';
+export * from '@/lib/expiryReminder/fromPurchaseTrace';

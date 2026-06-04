@@ -24,6 +24,8 @@ export async function createExpiryReminder(opts: {
   expiryDate: string;
   source: ExpiryReminderSource;
   reminderOffsetsDays?: number[];
+  traceNo?: string;
+  purchaseRecordId?: string;
 }): Promise<CreateExpiryReminderResult> {
   const {
     storeId,
@@ -32,6 +34,8 @@ export async function createExpiryReminder(opts: {
     expiryDate,
     source,
     reminderOffsetsDays = [...DEFAULT_EXPIRY_REMINDER_OFFSETS_DAYS],
+    traceNo = '',
+    purchaseRecordId = '',
   } = opts;
 
   const offsets = [...new Set(reminderOffsetsDays.filter(d => d > 0 && d <= 60))].sort((a, b) => b - a);
@@ -44,9 +48,12 @@ export async function createExpiryReminder(opts: {
     .limit(200)
     .get();
 
+  const traceKey = traceNo.replace(/\D/g, '');
   const existingDoc = existingSnap.docs.find(d => {
     const x = d.data();
-    return x.status === 'active' && x.itemName === itemName && x.expiryDate === expiryDate;
+    if (x.status !== 'active') return false;
+    if (traceKey && String(x.traceNo || '').replace(/\D/g, '') === traceKey) return true;
+    return x.itemName === itemName && x.expiryDate === expiryDate;
   });
 
   if (existingDoc) {
@@ -97,6 +104,8 @@ export async function createExpiryReminder(opts: {
     expiryDate,
     calendarEventId: calRef.id,
     source,
+    traceNo: traceKey || null,
+    purchaseRecordId: purchaseRecordId || null,
     reminderOffsetsDays: offsets,
     notificationsSent: emptySentMap(offsets),
     status: 'active',

@@ -1,6 +1,6 @@
 /** 유통기한 알림 — 별도 기능으로 분리 가능한 독립 도메인 */
 
-export type ExpiryReminderSource = 'ai_chat' | 'manual' | 'api';
+export type ExpiryReminderSource = 'ai_chat' | 'manual' | 'api' | 'purchase_trace';
 
 export type ExpiryReminderStatus = 'active' | 'cancelled';
 
@@ -17,6 +17,8 @@ export interface ExpiryReminderRecord {
   /** offset 일수 → 발송 완료 여부 (키: "7", "3", "1") */
   notificationsSent: Record<string, boolean>;
   status: ExpiryReminderStatus;
+  traceNo?: string;
+  purchaseRecordId?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
 }

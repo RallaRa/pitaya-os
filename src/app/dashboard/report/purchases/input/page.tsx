@@ -42,6 +42,7 @@ interface TraceInfo {
   qgrade?: string;
   ygrade?: string;
   slaughterDate?: string;
+  expiryDate?: string | null;
   farmName?: string;
   weight?: string;
   message?: string;
@@ -55,6 +56,7 @@ export default function PurchaseInputPage() {
   const [savingGroupIds, setSavingGroupIds] = useState<Set<string>>(new Set());
   const [isSavingAll, setIsSavingAll] = useState(false);
   const [savedCount, setSavedCount] = useState(0);
+  const [expiryNotice, setExpiryNotice] = useState('');
   const [error, setError] = useState('');
 
   // 이력번호 조회
@@ -158,6 +160,17 @@ export default function PurchaseInputPage() {
           : g
       ));
       setSavedCount(c => c + 1);
+
+      const er = data.expiryReminders as { registered?: number; skipped?: number } | undefined;
+      if (er?.registered && er.registered > 0) {
+        setExpiryNotice(
+          `유통기한 캘린더 등록 ${er.registered}건 (7·3·1일 전 알림 예정)`,
+        );
+      } else if (er?.processed && er.processed > 0 && !er?.registered) {
+        setExpiryNotice('이력번호는 있으나 API 유통기한 미제공 — 수동 등록은 AI 대화에서 가능');
+      } else {
+        setExpiryNotice('');
+      }
     } catch (e: any) {
       setError(e.message || '저장 중 오류가 발생했습니다.');
     } finally {
@@ -364,6 +377,7 @@ export default function PurchaseInputPage() {
                     ['원산지', traceInfo.origin],
                     ['육질등급', traceInfo.qgrade],
                     ['도축일', traceInfo.slaughterDate],
+                    ['유통기한', traceInfo.expiryDate?.replace(/-/g, '.')],
                     ['농장명', traceInfo.farmName],
                     ['도체중', traceInfo.weight ? `${traceInfo.weight}kg` : undefined],
                   ] as [string, string | undefined][]).filter(([, v]) => v).map(([l, v]) => (
@@ -383,7 +397,7 @@ export default function PurchaseInputPage() {
 
         {/* 알림 영역 */}
         <div className={mobileTab === 'ai' ? 'hidden md:block' : ''}>
-        {(error || savedCount > 0) && (
+        {(error || savedCount > 0 || expiryNotice) && (
           <div className="px-5 py-2 space-y-1 shrink-0">
             {error && (
               <div className="flex items-center gap-2 bg-red-900/20 border border-red-500/30 rounded-lg px-3 py-2 text-xs text-red-300">
@@ -398,7 +412,16 @@ export default function PurchaseInputPage() {
               <div className="flex items-center gap-2 bg-teal-900/20 border border-teal-500/30 rounded-lg px-3 py-2 text-xs text-teal-300">
                 <CheckCircle className="w-3.5 h-3.5 shrink-0" />
                 {savedCount}건 저장 완료
-                <button onClick={() => setSavedCount(0)} className="ml-auto text-slate-500 hover:text-slate-300">
+                <button onClick={() => { setSavedCount(0); setExpiryNotice(''); }} className="ml-auto text-slate-500 hover:text-slate-300">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+            {expiryNotice && !error && (
+              <div className="flex items-center gap-2 bg-amber-900/20 border border-amber-500/30 rounded-lg px-3 py-2 text-xs text-amber-200">
+                <CheckCircle className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+                <span className="flex-1">{expiryNotice}</span>
+                <button onClick={() => setExpiryNotice('')} className="text-slate-500 hover:text-slate-300">
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
