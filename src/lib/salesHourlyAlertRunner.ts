@@ -3,6 +3,10 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { getKSTTodayYMD } from '@/lib/dateUtils';
 import { notifyUser } from '@/lib/notifications/notifyUser';
 import {
+  buildSalesHourlyHubMessage,
+  buildSalesHourlyKakaoListItems,
+} from '@/lib/kakao/salesAlertKakao';
+import {
   analyzeSalesHourlyDrop,
   analyzeSalesHourlyRise,
   getKSTHour,
@@ -18,7 +22,9 @@ async function sendHourlyAlert(opts: {
   collection: string;
   title: string;
   message: string;
-  type: string;
+  type: 'sales_hourly_drop' | 'sales_hourly_rise';
+  listHeader: string;
+  listItems: { title: string; description: string }[];
   extra: Record<string, unknown>;
 }): Promise<boolean> {
   const dedupeId = `${opts.storeId}_${opts.todayStr}_${opts.kstHour}_${opts.uid}`;
@@ -31,6 +37,9 @@ async function sendHourlyAlert(opts: {
     message: opts.message,
     link: '/dashboard/report/view',
     type: opts.type,
+    listHeader: opts.listHeader,
+    listItems: opts.listItems,
+    buttonTitle: '매출 보고서',
   });
 
   await sentRef.set({
@@ -61,6 +70,20 @@ export async function runSalesHourlyAlertsForStore(storeId: string, storeName?: 
   let riseSent = 0;
 
   if (dropResult?.triggered) {
+    const listItems = buildSalesHourlyKakaoListItems({
+      direction: 'down',
+      hour: kstHour,
+      todayTotal: dropResult.todayTotal,
+      benchmarks: dropResult.drops,
+      focusItems: dropResult.focusItems,
+    });
+    const hubMessage = buildSalesHourlyHubMessage({
+      direction: 'down',
+      hour: kstHour,
+      todayTotal: dropResult.todayTotal,
+      benchmarks: dropResult.drops,
+      focusItems: dropResult.focusItems,
+    });
     for (const uid of userIds) {
       const ok = await sendHourlyAlert({
         storeId,
@@ -68,9 +91,11 @@ export async function runSalesHourlyAlertsForStore(storeId: string, storeName?: 
         kstHour,
         uid,
         collection: 'sales_hourly_alert_sent',
-        title: `📉 ${kstHour}시 매출 하락 알림 (${name})`,
-        message: dropResult.message,
+        title: `📉 ${kstHour}시 매출 하락 (${name})`,
+        message: hubMessage,
         type: 'sales_hourly_drop',
+        listHeader: `📉 ${kstHour}시 순매출 하락`,
+        listItems,
         extra: {
           todayTotal: dropResult.todayTotal,
           drops: dropResult.drops,
@@ -82,6 +107,20 @@ export async function runSalesHourlyAlertsForStore(storeId: string, storeName?: 
   }
 
   if (riseResult?.triggered) {
+    const listItems = buildSalesHourlyKakaoListItems({
+      direction: 'up',
+      hour: kstHour,
+      todayTotal: riseResult.todayTotal,
+      benchmarks: riseResult.rises,
+      focusItems: riseResult.focusItems,
+    });
+    const hubMessage = buildSalesHourlyHubMessage({
+      direction: 'up',
+      hour: kstHour,
+      todayTotal: riseResult.todayTotal,
+      benchmarks: riseResult.rises,
+      focusItems: riseResult.focusItems,
+    });
     for (const uid of userIds) {
       const ok = await sendHourlyAlert({
         storeId,
@@ -89,9 +128,11 @@ export async function runSalesHourlyAlertsForStore(storeId: string, storeName?: 
         kstHour,
         uid,
         collection: 'sales_hourly_rise_alert_sent',
-        title: `📈 ${kstHour}시 매출 상승 알림 (${name})`,
-        message: riseResult.message,
+        title: `📈 ${kstHour}시 매출 상승 (${name})`,
+        message: hubMessage,
         type: 'sales_hourly_rise',
+        listHeader: `📈 ${kstHour}시 순매출 상승`,
+        listItems,
         extra: {
           todayTotal: riseResult.todayTotal,
           rises: riseResult.rises,

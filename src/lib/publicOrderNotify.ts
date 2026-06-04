@@ -70,7 +70,13 @@ export async function notifyPublicOrderReceived(opts: {
 
   await Promise.all(
     userIds.map(uid =>
-      notifyUser(uid, { title, message, link, type: 'public_order' }).catch(() => {}),
+      notifyUser(uid, {
+        title,
+        message,
+        link,
+        type: 'public_order',
+        storeId,
+      }).catch(() => {}),
     ),
   );
 

@@ -1,53 +1,24 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { normalizeGroupId, normalizeRole } from '@/lib/roleMapping';
 import { getValidKakaoToken } from './tokenManager';
-import { KAKAO_APP_BASE_URL } from './config';
-import { getDefaultKakaoNotifyImageUrl, getKakaoNotifyImageUrl } from './notifyImage';
+import {
+  buildKakaoTemplateObject,
+  type BuildKakaoTemplateInput,
+  type KakaoMemoTemplate,
+} from './templateObject';
+import type { KakaoListItem } from './salesAlertKakao';
 
-interface KakaoNotifyOptions {
+export interface KakaoNotifyOptions extends BuildKakaoTemplateInput {
   userId: string;
-  title: string;
-  message: string;
-  link?: string;
-  imageUrl?: string;
-  /** 알림 유형 — 기본 피드 이미지 선택용 */
-  notifyType?: string;
+  template?: KakaoMemoTemplate;
+  listItems?: KakaoListItem[];
 }
 
-export async function sendKakaoNotify({
-  userId,
-  title,
-  message,
-  link,
-  imageUrl,
-  notifyType,
-}: KakaoNotifyOptions): Promise<{ success: boolean; error?: string }> {
-  const token = await getValidKakaoToken(userId);
+export async function sendKakaoNotify(opts: KakaoNotifyOptions): Promise<{ success: boolean; error?: string }> {
+  const token = await getValidKakaoToken(opts.userId);
   if (!token) return { success: false, error: '카카오 로그인 필요' };
 
-  const webUrl = link || `${KAKAO_APP_BASE_URL}/dashboard`;
-  const feedImage = imageUrl || getKakaoNotifyImageUrl(notifyType) || getDefaultKakaoNotifyImageUrl();
-  const templateObject = {
-    object_type: 'feed',
-    content: {
-      title,
-      description: message,
-      image_url: feedImage,
-      image_width: 800,
-      image_height: 400,
-      link: {
-        web_url: webUrl,
-        mobile_web_url: webUrl,
-      },
-    },
-    buttons: [{
-      title: 'Pitaya OS 열기',
-      link: {
-        web_url: webUrl,
-        mobile_web_url: webUrl,
-      },
-    }],
-  };
+  const templateObject = buildKakaoTemplateObject(opts);
 
   const res = await fetch('https://kapi.kakao.com/v2/api/talk/memo/default/send', {
     method: 'POST',
@@ -63,7 +34,7 @@ export async function sendKakaoNotify({
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.result_code !== 0) {
     const errMsg = data.msg || data.message || `HTTP ${res.status}`;
-    console.error('[kakao notify] send failed', { userId, status: res.status, data });
+    console.error('[kakao notify] send failed', { userId: opts.userId, status: res.status, data });
     return { success: false, error: errMsg };
   }
   return { success: true };

@@ -1,5 +1,6 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { sendKakaoNotifyToStore } from '@/lib/kakao/sendNotify';
+import { getStoreLogoKakaoImageUrl } from '@/lib/kakao/storeLogo';
 import { formatPublicOrderNotifyMessage } from '@/lib/publicOrders';
 
 /** 안드로이드가 「나에게 보내기」 알림 → 오픈채팅방 전달에 쓸 설정 */
@@ -98,10 +99,16 @@ export async function sendPublicOrderKakaoMemo(opts: {
   link?: string;
 }): Promise<void> {
   const text = formatPublicOrderKakaoText(opts);
+  const imageUrl = await getStoreLogoKakaoImageUrl(opts.storeId);
+  const link = opts.link || '/dashboard/public-orders';
   await sendKakaoNotifyToStore(opts.storeId, {
     title: '🛒 공개 주문',
     message: text.slice(0, 200),
-    link: opts.link || '/dashboard/public-orders',
+    link,
+    template: 'feed',
+    imageUrl,
+    buttonTitle: '주문 확인',
+    notifyType: 'public_order',
   });
 }
 
