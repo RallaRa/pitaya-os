@@ -10,6 +10,7 @@ import {
   DEFAULT_SYSTEM_GROUP_MENUS,
   DEFAULT_SYSTEM_GROUP_NAMES,
   mergeMenuAccess,
+  menuAccessForGroup,
   MENU_ACCESS_KEYS,
   SYSTEM_GROUP_IDS,
   type MenuAccess,
@@ -167,6 +168,27 @@ async function ensureSystemGroups() {
   if (hasChanges) await batch.commit();
 }
 
+/** 점장·직원: AI 예측 변수 메뉴 기본 ON (구버전 false 마이그레이션) */
+async function migratePredictionVariablesMenuForSystemGroups() {
+  const metaRef = adminDb.collection('system_meta').doc('permissions');
+  const metaSnap = await metaRef.get();
+  if (metaSnap.data()?.predictionVariablesStaffV1) return;
+
+  const batch = adminDb.batch();
+  for (const groupId of ['admin', 'staff'] as const) {
+    const ref = adminDb.collection('permission_groups').doc(groupId);
+    const snap = await ref.get();
+    if (snap.exists) {
+      batch.update(ref, {
+        'menuAccess.predictionVariables': true,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+  }
+  await batch.commit();
+  await metaRef.set({ predictionVariablesStaffV1: true, adminPredictionVariablesV1: true }, { merge: true });
+}
+
 async function getStoreAccessContext(uid: string, storeId?: string | null) {
   if (!storeId) {
     return { isStoreMember: false, hasPosBridge: false };
@@ -191,6 +213,7 @@ export async function GET(req: Request) {
       }
       const uid = verified.uid;
       await ensureSystemGroups();
+      await migratePredictionVariablesMenuForSystemGroups();
 
       const userDoc = await adminDb.collection('users').doc(uid).get();
       const userData = userDoc.exists ? userDoc.data() : null;
@@ -198,7 +221,7 @@ export async function GET(req: Request) {
       if (await isPlatformSuperuser(uid, userData?.email)) {
         const suDoc = await adminDb.collection('permission_groups').doc('superuser').get();
         const suStored = suDoc.exists ? suDoc.data()?.menuAccess : {};
-        const suAccess = mergeMenuAccess(suStored, DEFAULT_SYSTEM_GROUP_MENUS.superuser);
+        const suAccess = menuAccessForGroup('superuser', suStored);
         const storeContext = await getStoreAccessContext(uid, storeId);
         return NextResponse.json({
           groupId: 'superuser',
@@ -242,7 +265,7 @@ export async function GET(req: Request) {
         return NextResponse.json({
           groupId,
           role: groupId,
-          menuAccess: mergeMenuAccess(stored),
+          menuAccess: menuAccessForGroup(groupId, stored),
           ...storeContext,
         });
       }
@@ -250,7 +273,7 @@ export async function GET(req: Request) {
       return NextResponse.json({
         groupId: 'staff',
         role: 'staff',
-        menuAccess: mergeMenuAccess(STAFF_ACCESS),
+        menuAccess: menuAccessForGroup('staff', STAFF_ACCESS),
         ...storeContext,
       });
     }

@@ -41,6 +41,7 @@ import {
   createAllFalseMenuAccess,
   createAllTrueMenuAccess,
   type MenuAccess,
+  menuAccessForGroup,
 } from '@/lib/menuAccessKeys';
 
 const ALL_FALSE = createAllFalseMenuAccess();
@@ -120,7 +121,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
       snap => {
         if (snap.exists()) {
           const stored = snap.data()?.menuAccess || {};
-          setMenuAccess({ ...ALL_FALSE, ...stored });
+          setMenuAccess(menuAccessForGroup(groupId, stored));
         }
       },
       () => { /* 권한 없으면 무시 */ },

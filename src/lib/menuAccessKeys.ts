@@ -48,6 +48,17 @@ export function mergeMenuAccess(
   return { ...allFalse, ...fallback, ...(base || {}) };
 }
 
+/** Firestore 저장값 + 시스템 그룹 기본값 병합 (누락 키 보정) */
+export function menuAccessForGroup(
+  groupId: string,
+  stored: Partial<MenuAccess> | null | undefined,
+): MenuAccess {
+  const fallback = isSystemGroupId(groupId)
+    ? DEFAULT_SYSTEM_GROUP_MENUS[groupId as SystemGroupId]
+    : {};
+  return mergeMenuAccess(stored, fallback);
+}
+
 export function isSystemGroupId(groupId: string): boolean {
   return (SYSTEM_GROUP_IDS as readonly string[]).includes(groupId);
 }
@@ -59,13 +70,14 @@ export const DEFAULT_SYSTEM_GROUP_MENUS: Record<SystemGroupId, MenuAccess> = {
     members: true, store: true, hygiene: true, hrCalendar: true, scaleCode: true,
     salesForecast: true, suppliers: true, customers: true, predictionHistory: true,
     items: true, dashboard: true, keywords: true, settings: true,
-    permissionGroup: false, memberGroup: false, predictionVariables: false,
+    predictionVariables: true,
+    permissionGroup: false, memberGroup: false,
   }),
   staff: mergeMenuAccess(null, {
     ai: true, sales: true, purchase: true, report: true, messenger: true,
     hygiene: true, hrCalendar: true, items: true, dashboard: true, settings: true,
     members: false, store: false, permissionGroup: false, memberGroup: false,
-    scaleCode: false, salesForecast: true, suppliers: false, predictionVariables: false,
+    scaleCode: false, salesForecast: true, suppliers: false, predictionVariables: true,
     customers: false, predictionHistory: false, keywords: false,
   }),
 };

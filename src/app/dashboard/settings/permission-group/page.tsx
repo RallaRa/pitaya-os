@@ -11,6 +11,7 @@ import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import {
   MENU_ACCESS_DEFINITIONS,
   createAllFalseMenuAccess,
+  menuAccessForGroup,
   type MenuAccess,
   type MenuAccessKey,
 } from '@/lib/menuAccessKeys';
@@ -100,7 +101,10 @@ export default function PermissionGroupPage() {
       const headers = await getAuthJsonHeaders();
       const res = await fetch(`/api/permissions?type=groups&storeId=${currentStore.storeId}`, { headers });
       const data = await res.json();
-      setGroups(data.groups || []);
+      setGroups((data.groups || []).map((g: PermissionGroup) => ({
+        ...g,
+        menuAccess: menuAccessForGroup(g.groupId, g.menuAccess),
+      })));
     } catch {
       setError('그룹 목록을 불러오지 못했습니다.');
     } finally {
