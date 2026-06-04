@@ -14,6 +14,11 @@ import {
 import { aiMetaJson } from '@/lib/aiProviderMeta';
 import { sendKakaoNotifySafe, sendKakaoNotifyToStore } from '@/lib/kakao/sendNotify';
 import { registerExpiryRemindersFromPurchase } from '@/lib/expiryReminder/fromPurchaseTrace';
+import {
+  extFromMime,
+  mimeFromFileType,
+  type PurchaseAttachment,
+} from '@/lib/purchaseAttachments';
 
 const SYSTEM_INSTRUCTION = `당신은 매입/구매 문서 전문 분석 AI입니다.
 거래명세서, 세금계산서, 매입전표, 영수증 이미지 또는 데이터를 분석하여 정확한 JSON을 반환합니다.
@@ -127,20 +132,23 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
       }
 
-      // Firebase Storage에 원본 이미지 업로드
-      const imageUrls: string[] = [];
+      // Firebase Storage에 원본 문서(이미지·PDF) 업로드 — 장기 보관
+      const purchaseAttachments: PurchaseAttachment[] = [];
       if (Array.isArray(images) && images.length > 0) {
         try {
           const bucket = adminStorage.bucket();
           for (const img of images) {
             if (!img.content) continue;
-            // dataURL → buffer
             const base64 = img.content.includes(',') ? img.content.split(',')[1] : img.content;
             if (!base64) continue;
             const buffer = Buffer.from(base64, 'base64');
-            const mimeType = img.mimeType ||
-              (img.content.includes('data:') ? img.content.slice(5, img.content.indexOf(';')) : 'image/jpeg');
-            const ext = mimeType.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg';
+            const mimeType = img.mimeType
+              || (img.content.includes('data:')
+                ? img.content.slice(5, img.content.indexOf(';'))
+                : mimeFromFileType(
+                  String(img.name || '').toLowerCase().endsWith('.pdf') ? 'pdf' : 'image',
+                ));
+            const ext = extFromMime(mimeType, img.name);
             const token = uuidv4();
             const filePath = `purchase_images/${storeId}/${uid}/${Date.now()}_${token.slice(0, 8)}.${ext}`;
             const storageFile = bucket.file(filePath);
@@ -151,21 +159,27 @@ export async function POST(req: Request) {
               },
             });
             const bucketName = bucket.name;
-            imageUrls.push(
-              `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(filePath)}?alt=media&token=${token}`
-            );
+            const url = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(filePath)}?alt=media&token=${token}`;
+            purchaseAttachments.push({
+              url,
+              name: String(img.name || `원본.${ext}`).slice(0, 120),
+              mimeType,
+            });
           }
-        } catch (uploadErr: any) {
-          console.error('이미지 업로드 실패:', uploadErr.message);
-          // 이미지 업로드 실패해도 데이터는 저장
+        } catch (uploadErr: unknown) {
+          const msg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
+          console.error('원본 문서 업로드 실패:', msg);
         }
       }
+
+      const imageUrls = purchaseAttachments.map(a => a.url);
 
       const docRef = await adminDb.collection('purchase_records').add({
         ...extractedData,
         uid,
         storeId,
-        imageUrls: imageUrls.length > 0 ? imageUrls : [],
+        imageUrls,
+        purchaseAttachments,
         createdAt: FieldValue.serverTimestamp(),
       });
 
@@ -198,6 +212,7 @@ export async function POST(req: Request) {
         success: true,
         id: docRef.id,
         imageUrls,
+        purchaseAttachments,
         expiryReminders,
       });
     }

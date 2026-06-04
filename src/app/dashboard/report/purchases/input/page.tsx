@@ -11,6 +11,7 @@ import {
   FileSpreadsheet, MessageSquare,
 } from 'lucide-react';
 import type { Invoice, InvoiceGroup, AttachedFile } from '@/components/purchases/PurchaseSheet';
+import { mimeFromFileType } from '@/lib/purchaseAttachments';
 
 const PurchaseAIChat = dynamic(() => import('@/components/purchases/PurchaseAIChat'), { ssr: false });
 const PurchaseSheet = dynamic(() => import('@/components/purchases/PurchaseSheet'), { ssr: false });
@@ -125,7 +126,11 @@ export default function PurchaseInputPage() {
       // 이미지 파일만 추출 (PDF 포함)
       const imagesToUpload = (group.attachedFiles || [])
         .filter(f => f.type === 'image' || f.type === 'pdf')
-        .map(f => ({ name: f.name, content: f.content }));
+        .map(f => ({
+          name: f.name,
+          content: f.content,
+          mimeType: mimeFromFileType(f.type),
+        }));
 
       const res = await fetch('/api/purchases', {
         method: 'POST',
@@ -156,7 +161,15 @@ export default function PurchaseInputPage() {
 
       setGroups(prev => prev.map(g =>
         g.id === groupId
-          ? { ...g, isSaved: true, savedImageUrls: data.imageUrls || [] }
+          ? {
+              ...g,
+              isSaved: true,
+              purchaseRecordId: data.id,
+              savedImageUrls: data.imageUrls || [],
+              savedAttachments: data.purchaseAttachments?.length
+                ? data.purchaseAttachments
+                : undefined,
+            }
           : g
       ));
       setSavedCount(c => c + 1);
