@@ -123,6 +123,20 @@ function isIncomingToStore(row) {
   return callee === STORE_CALLEE || callee.endsWith(STORE_CALLEE.slice(-8));
 }
 
+function normalizeRole(role) {
+  const r = String(role || '').toLowerCase().trim();
+  if (r === 'master' || r === 'owner') return 'superuser';
+  if (r === 'user') return 'staff';
+  return r;
+}
+
+function normalizeGroupId(groupId) {
+  const g = String(groupId || '').toLowerCase().trim();
+  if (g === 'master' || g === 'owner') return 'superuser';
+  if (g === 'user') return 'staff';
+  return g;
+}
+
 // ── Firebase ──────────────────────────────────────────────────────
 let db;
 const phoneIndex = new Map();
@@ -137,6 +151,95 @@ function initFirebase() {
   const sa = JSON.parse(raw);
   admin.initializeApp({ credential: admin.credential.cert(sa) });
   db = admin.firestore();
+}
+
+/** Pitaya 웹과 동일: user_store_map → users.kakaoAccessToken */
+async function findKakaoNotifyUserForStore(storeId) {
+  const mapSnap = await db.collection('user_store_map')
+    .where('storeId', '==', storeId)
+    .where('status', '==', 'active')
+    .get();
+
+  for (const doc of mapSnap.docs) {
+    const { uid, role, groupId } = doc.data();
+    const isManager = ['superuser', 'admin'].includes(normalizeRole(role)) ||
+      ['superuser', 'admin'].includes(normalizeGroupId(groupId));
+    if (!isManager) continue;
+    const userDoc = await db.collection('users').doc(uid).get();
+    if (userDoc.exists && userDoc.data()?.kakaoAccessToken) return uid;
+  }
+
+  for (const doc of mapSnap.docs) {
+    const uid = doc.data().uid;
+    if (!uid) continue;
+    const userDoc = await db.collection('users').doc(uid).get();
+    if (userDoc.exists && userDoc.data()?.kakaoAccessToken) return uid;
+  }
+  return null;
+}
+
+const KAKAO_REFRESH_BUFFER_MS = 30 * 60 * 1000;
+let cachedKakaoUid = null;
+
+async function getValidKakaoToken(userId) {
+  const restKey = process.env.KAKAO_REST_API_KEY;
+  if (!restKey) return null;
+
+  const userRef = db.collection('users').doc(userId);
+  const userSnap = await userRef.get();
+  if (!userSnap.exists) return null;
+
+  const user = userSnap.data();
+  if (!user.kakaoAccessToken) return null;
+
+  const now = Date.now();
+  const expiry = typeof user.kakaoTokenExpiry === 'number' ? user.kakaoTokenExpiry : 0;
+
+  if (now <= expiry - KAKAO_REFRESH_BUFFER_MS) {
+    return user.kakaoAccessToken;
+  }
+  if (!user.kakaoRefreshToken) return user.kakaoAccessToken;
+
+  const params = new URLSearchParams({
+    grant_type: 'refresh_token',
+    client_id: restKey,
+    refresh_token: String(user.kakaoRefreshToken),
+  });
+  const secret = process.env.KAKAO_CLIENT_SECRET;
+  if (secret) params.set('client_secret', secret);
+
+  const res = await fetch('https://kauth.kakao.com/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.access_token) {
+    return user.kakaoAccessToken;
+  }
+
+  const updates = {
+    kakaoAccessToken: data.access_token,
+    kakaoTokenExpiry: Date.now() + (data.expires_in || 21600) * 1000,
+  };
+  if (data.refresh_token) updates.kakaoRefreshToken = data.refresh_token;
+  await userRef.update(updates);
+  return data.access_token;
+}
+
+async function resolveKakaoAccessToken() {
+  if (!process.env.KAKAO_REST_API_KEY) {
+    log('KAKAO_REST_API_KEY 없음 (.env 확인)');
+    return null;
+  }
+  if (!cachedKakaoUid) {
+    cachedKakaoUid = await findKakaoNotifyUserForStore(STORE_ID);
+  }
+  if (!cachedKakaoUid) {
+    log('카카오 연동 계정 없음 (앱에서 카카오 로그인 필요)');
+    return null;
+  }
+  return getValidKakaoToken(cachedKakaoUid);
 }
 
 function indexCustomerDoc(data) {
@@ -263,12 +366,8 @@ function showToast(body) {
   });
 }
 
-function postKakaoMemo(templateObject) {
-  const token = process.env.KAKAO_ACCESS_TOKEN;
-  if (!token) {
-    log('KAKAO_ACCESS_TOKEN 없음 — 카카오 알림 스킵');
-    return Promise.resolve();
-  }
+function postKakaoMemo(token, templateObject) {
+  if (!token) return Promise.resolve();
   const body = new URLSearchParams({
     template_object: JSON.stringify(templateObject),
   }).toString();
@@ -309,8 +408,11 @@ function postKakaoMemo(templateObject) {
 }
 
 async function sendKakao(text) {
+  const token = await resolveKakaoAccessToken();
+  if (!token) return;
+
   const link = { web_url: APP_URL, mobile_web_url: APP_URL };
-  await postKakaoMemo({
+  await postKakaoMemo(token, {
     object_type: 'text',
     text: text.slice(0, 200),
     link,
@@ -366,7 +468,15 @@ async function runSelfTest() {
   initFirebase();
   await refreshCustomerIndex();
   log('Firebase OK');
-  if (!process.env.KAKAO_ACCESS_TOKEN) log('KAKAO_ACCESS_TOKEN 없음 (카카오 스킵)');
+  const kakaoUid = await findKakaoNotifyUserForStore(STORE_ID);
+  if (kakaoUid) {
+    cachedKakaoUid = kakaoUid;
+    const token = await getValidKakaoToken(kakaoUid);
+    const nick = (await db.collection('users').doc(kakaoUid).get()).data()?.kakaoNickname || kakaoUid;
+    log(token ? `카카오 나에게보내기 OK (${nick})` : '카카오 토큰 없음');
+  } else {
+    log('카카오 연동 사용자 없음 — Pitaya 앱에서 카카오 연동 확인');
+  }
   log('=== 테스트 완료 ===');
 }
 

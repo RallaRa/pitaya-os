@@ -53,4 +53,4 @@ if ($created) {
 
 Write-Host ''
 Write-Host '수동 실행: node C:\pitaya-os\kt-caller.js'
-Write-Host '.env: FIREBASE_SERVICE_ACCOUNT_KEY, ENCRYPTION_KEY, KAKAO_ACCESS_TOKEN'
+Write-Host '.env: FIREBASE_SERVICE_ACCOUNT_KEY, ENCRYPTION_KEY, KAKAO_REST_API_KEY, KAKAO_CLIENT_SECRET'

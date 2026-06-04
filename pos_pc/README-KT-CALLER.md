@@ -11,8 +11,10 @@
 STORE_ID=STR-1779194754785
 FIREBASE_SERVICE_ACCOUNT_KEY={...JSON...}
 ENCRYPTION_KEY=64자리hex
-KAKAO_ACCESS_TOKEN=...
-KAKAO_REST_API_KEY=...   # 토큰 갱신 시 참고
+KAKAO_REST_API_KEY=...
+KAKAO_CLIENT_SECRET=...   # 토큰 갱신용 (앱 연동과 동일)
+
+카카오 토큰은 `.env`가 아니라 Firestore `users` 문서의 `kakaoAccessToken`(Pitaya 앱 카카오 연동)을 사용합니다.
 KT_STORE_PHONE=0226629592
 ```
 
