@@ -12,6 +12,14 @@
     },
     "src/app/api/customers/message/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/dashboard/comprehensive-opinion/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "src/app/api/dashboard/total-partner/route.ts": {
+      "maxDuration": 120,
+      "memory": 1024
     }
   },
   "crons": [

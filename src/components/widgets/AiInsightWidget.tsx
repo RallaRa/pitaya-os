@@ -35,6 +35,7 @@ interface ComprehensiveData {
   emptyReason?: string;
   cached?: boolean;
   error?: string;
+  aiError?: boolean;
   ai?: AiMetaDisplay;
 }
 
@@ -121,15 +122,20 @@ export default function AiInsightWidget({
       error={error}
     >
       <div className="flex flex-col h-full overflow-hidden">
-        {data?.noData ? (
+        {data?.noData && !data?.summary && !data?.opinion && !(data?.trends?.length) ? (
           <div className="p-3">
             <WidgetEmptyReason
-              reason={data.emptyReason || data.summary || '분석할 데이터가 없습니다.'}
+              reason={data.emptyReason || '분석할 데이터가 없습니다.'}
               hints={['POS 브릿지 동기화', '네이버 키워드·AI API 키 설정', '일마감 입력']}
             />
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
+            {(data?.aiError || data?.error) && (
+              <div className="bg-amber-900/30 border border-amber-700/40 rounded-xl px-3 py-2 text-xs text-amber-200">
+                {data.error || data.summary || 'AI 분석에 실패했습니다. 새로고침을 눌러 다시 시도해 주세요.'}
+              </div>
+            )}
             {/* 한줄 요약 */}
             {data?.summary && (
               <div className="bg-teal-900/30 border border-teal-700/40 rounded-xl px-3 py-2">

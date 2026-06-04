@@ -15,6 +15,8 @@ import {
   fetchNaverNewsHeadlines,
 } from '@/lib/areaContext';
 
+export const maxDuration = 60;
+
 function midnightMs() {
   const d = new Date();
   d.setHours(23, 59, 59, 999);
@@ -38,7 +40,10 @@ export async function GET(req: Request) {
       if (cacheDoc.exists) {
         const d = cacheDoc.data()!;
         const result = d.result || {};
-        const isEmptyCache = result.noData || (!result.opinion && !result.summary?.includes('데이터'));
+        const isEmptyCache =
+          result.noData
+          || result.aiError
+          || (!result.opinion?.trim() && !result.summary?.trim());
         if (Date.now() < midnightMs() && !isEmptyCache) {
           return NextResponse.json({ ...result, cached: true });
         }
@@ -104,7 +109,10 @@ export async function GET(req: Request) {
     뉴스: { status: news.length > 0 ? 'ok' : 'empty', detail: `${news.length}건` },
   };
 
-  const hasAnyData = Object.values(dataSourceStatus).some(s => s.status === 'ok' || s.status === 'estimate');
+  const hasSalesSignal = todaySale > 0 || yesterdaySale > 0 || topItems.length > 0;
+  const hasAnyData =
+    hasSalesSignal
+    || Object.values(dataSourceStatus).some(s => s.status === 'ok' || s.status === 'estimate');
 
   if (!hasAnyData) {
     const missing = Object.entries(dataSourceStatus)
@@ -124,15 +132,20 @@ export async function GET(req: Request) {
   }
 
   if (!hasAnyAiProvider()) {
+    const noAiMsg = 'AI API 키(Gemini/Anthropic/GROQ 등)가 서버에 설정되지 않았습니다. Vercel 환경변수를 확인하세요.';
     return NextResponse.json({
-      summary: 'AI API 키 미설정',
-      opinion: '',
+      summary: noAiMsg,
+      opinion: noAiMsg,
       highlights: [],
+      actions: [],
       trends: trendResult.trends,
       news,
+      footTraffic,
+      commercial,
+      sales: { today: todaySale, yesterday: yesterdaySale, change: saleChange },
       dataSourceStatus,
-      noData: true,
-      emptyReason: 'AI API 키(Gemini/OpenAI 등)가 설정되지 않아 종합 의견을 생성할 수 없습니다. .env.local을 확인하세요.',
+      aiError: true,
+      error: noAiMsg,
       cached: false,
     });
   }
@@ -187,19 +200,26 @@ highlights 4~6개, actions 3개`;
       cached: false,
     };
 
-    await cacheRef.set({ result: payload, cachedAt: FieldValue.serverTimestamp() }).catch(() => {});
+    if (payload.opinion?.trim()) {
+      await cacheRef.set({ result: payload, cachedAt: FieldValue.serverTimestamp() }).catch(() => {});
+    }
     return NextResponse.json(payload);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({
       error: msg,
-      summary: 'AI 분석 실패',
+      aiError: true,
+      summary: 'AI 분석 실패 — 새로고침을 눌러 다시 시도해 주세요.',
       opinion: '',
       highlights: [],
+      actions: [],
       trends: trendResult.trends,
       news,
+      footTraffic,
+      commercial,
+      sales: { today: todaySale, yesterday: yesterdaySale, change: saleChange },
       dataSourceStatus,
       cached: false,
-    }, { status: 500 });
+    });
   }
 }
