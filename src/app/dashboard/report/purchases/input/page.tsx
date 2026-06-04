@@ -161,7 +161,11 @@ export default function PurchaseInputPage() {
       ));
       setSavedCount(c => c + 1);
 
-      const er = data.expiryReminders as { registered?: number; skipped?: number } | undefined;
+      const er = data.expiryReminders as {
+        registered?: number;
+        skipped?: number;
+        processed?: number;
+      } | undefined;
       if (er?.registered && er.registered > 0) {
         setExpiryNotice(
           `유통기한 캘린더 등록 ${er.registered}건 (7·3·1일 전 알림 예정)`,
