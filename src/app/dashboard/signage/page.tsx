@@ -492,7 +492,9 @@ export default function SignagePage() {
                   disabled={generating || !createForm.title || (createForm.type !== 'video' && !createForm.prompt) || (createForm.type === 'video' && !videoFile)}
                   className={`w-full py-3 rounded-xl font-semibold flex items-center justify-center gap-2 ${generating ? 'bg-gray-700 text-gray-500' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}
                 >
-                  {generating ? '생성 중...' : <><Wand2 size={16} />{createForm.type === 'video' ? '영상 등록하기' : 'AI로 생성하기'}</>}
+                  {generating
+                    ? (createForm.type === 'image' ? '이미지 생성 중… (30초~2분)' : '생성 중…')
+                    : <><Wand2 size={16} />{createForm.type === 'video' ? '영상 등록하기' : 'AI로 생성하기'}</>}
                 </button>
               </div>
             </div>
