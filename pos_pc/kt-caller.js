@@ -191,6 +191,23 @@ function pollCallsWithPython(pythonCmd, since) {
   });
 }
 
+let resolvedPython = '';
+
+async function pollCalls(since) {
+  const tries = resolvedPython ? [resolvedPython] : PYTHON_CANDIDATES;
+  let lastErr;
+  for (const cmd of tries) {
+    try {
+      const rows = await pollCallsWithPython(cmd, since);
+      resolvedPython = cmd;
+      return rows;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error('Python 실행 실패');
+}
+
 // ── 알림 ──────────────────────────────────────────────────────────
 function buildMessages(row, customer) {
   const absence = Number(row.cl_absence) === 1;

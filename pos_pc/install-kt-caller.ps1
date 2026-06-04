@@ -1,10 +1,11 @@
 # Pitaya KT Caller 설치 (POS PC)
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 $Dir = 'C:\pitaya-os'
 Set-Location $Dir
 
 Write-Host '=== npm 패키지 ==='
-npm install node-notifier dotenv firebase-admin --save 2>&1 | Out-Host
+npm install node-notifier dotenv firebase-admin --save
+if ($LASTEXITCODE -ne 0) { Write-Warning 'npm install 경고 (계속 진행)' }
 
 Write-Host '=== DB 경로 확인 ==='
 $kpd = 'C:\Program Files\통화매니저\KPD.dat'
