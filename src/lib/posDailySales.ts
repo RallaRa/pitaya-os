@@ -3,10 +3,11 @@
 export interface SalesDocData {
   isClosed?: boolean;
   headers?: Array<{ totalSale?: number; totalSales?: number }>;
-  finish?: { totalSale?: number; netSale?: number };
+  finish?: { totalSale?: number; netSale?: number; returnSale?: number };
   totalSales?: number;
   netSales?: number;
   netSale?: number;
+  returnAmount?: number;
 }
 
 export function getDisplayTotalSale(data: SalesDocData | null | undefined): number {
@@ -30,6 +31,17 @@ export function getDisplayNetSales(data: SalesDocData | null | undefined): numbe
   const net = data.netSales ?? data.netSale;
   if (net != null && net !== 0) return Number(net) || 0;
   return getDisplayTotalSale(data);
+}
+
+/** 반품금액 (마감 finish.returnSale / returnAmount, 없으면 총매출−순매출) */
+export function getDisplayReturnAmount(data: SalesDocData | null | undefined): number {
+  if (!data) return 0;
+  const explicit = data.returnAmount ?? data.finish?.returnSale;
+  if (explicit != null && Number(explicit) > 0) return Number(explicit) || 0;
+  const total = getDisplayTotalSale(data);
+  const net = getDisplayNetSales(data);
+  if (total > net) return total - net;
+  return 0;
 }
 
 export function posDailySalesDocId(storeId: string, date: string) {

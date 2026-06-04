@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import WidgetWrapper from './WidgetWrapper';
 import { getKSTTodayYMD } from '@/lib/dateUtils';
-import { getDisplayTotalSale, getDisplayNetSales, type SalesDocData } from '@/lib/posDailySales';
+import { getDisplayNetSales, getDisplayReturnAmount, type SalesDocData } from '@/lib/posDailySales';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { RefreshCw } from 'lucide-react';
 import WidgetEmptyReason from './WidgetEmptyReason';
@@ -54,9 +54,9 @@ export default function TodaySalesWidget({
   }, [fetchData]);
 
   const fmt = (n: number) => (n || 0).toLocaleString('ko-KR');
-  const todayTotal = getDisplayTotalSale(todayDoc);
-  const todayNet   = getDisplayNetSales(todayDoc);
-  const yesterdayTotal = getDisplayTotalSale(yesterdayDoc);
+  const todayNet = getDisplayNetSales(todayDoc);
+  const todayReturn = getDisplayReturnAmount(todayDoc);
+  const yesterdayNet = getDisplayNetSales(yesterdayDoc);
   const isClosed = todayDoc?.isClosed ?? false;
   const todayStr = getKSTTodayYMD();
   const syncedAt = (todayDoc as { syncedAt?: string } | null)?.syncedAt;
@@ -90,15 +90,20 @@ export default function TodaySalesWidget({
           </div>
 
           <div className="text-center">
-            <p className="text-slate-500 text-[10px] mb-1">오늘 매출</p>
+            <p className="text-slate-500 text-[10px] mb-1">오늘 순매출</p>
             <p className="text-3xl font-bold text-teal-300">
-              ₩ {fmt(todayTotal)}
+              ₩ {fmt(todayNet)}
             </p>
-            <p className="text-slate-500 text-[10px] mt-0.5">순매출 {fmt(todayNet)}원</p>
+            <p className="text-[10px] mt-0.5">
+              반품{' '}
+              <span className={todayReturn > 0 ? 'text-red-400' : 'text-slate-600'}>
+                {fmt(todayReturn)}원
+              </span>
+            </p>
           </div>
 
           <p className="text-center text-sm text-slate-400 scale-[0.85] origin-center">
-            어제 ₩ {fmt(yesterdayTotal)}
+            어제 순매출 ₩ {fmt(yesterdayNet)}
           </p>
 
           {syncedAt && (

@@ -2,7 +2,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { getKSTTodayYMD, getKSTYesterdayYMD } from '@/lib/dateUtils';
 import { dailyReportDocId } from '@/lib/reportCompare';
 import {
-  getDisplayTotalSale,
+  getDisplayNetSales,
   posDailySalesDocId,
   type SalesDocData,
 } from '@/lib/posDailySales';
@@ -136,8 +136,8 @@ export function buildStoreContextPrompt(basePrompt: string, context: AiStoreCont
 데이터 수정·삭제·추가 요청은 정중히 거절하세요.`;
   }
 
-  const todaySale = getDisplayTotalSale(context.todaySales);
-  const yesterdaySale = getDisplayTotalSale(context.yesterdaySales);
+  const todaySale = getDisplayNetSales(context.todaySales);
+  const yesterdaySale = getDisplayNetSales(context.yesterdaySales);
   const pctChange = yesterdaySale > 0
     ? Math.round(((todaySale - yesterdaySale) / yesterdaySale) * 100)
     : null;
@@ -148,8 +148,8 @@ export function buildStoreContextPrompt(basePrompt: string, context: AiStoreCont
   let prompt = `${basePrompt}
 
 === 현재 매장 데이터 (조회 전용 — 수정 불가) ===
-오늘(${context.today}) 매출: ${todaySale > 0 ? `${todaySale.toLocaleString()}원` : '데이터없음'}${pctChange !== null ? ` (어제 대비 ${pctChange > 0 ? '+' : ''}${pctChange}%)` : ''}
-어제(${context.yesterday}) 매출: ${yesterdaySale > 0 ? `${yesterdaySale.toLocaleString()}원` : '데이터없음'}
+오늘(${context.today}) 순매출: ${todaySale > 0 ? `${todaySale.toLocaleString()}원` : '데이터없음'}${pctChange !== null ? ` (어제 대비 ${pctChange > 0 ? '+' : ''}${pctChange}%)` : ''}
+어제(${context.yesterday}) 순매출: ${yesterdaySale > 0 ? `${yesterdaySale.toLocaleString()}원` : '데이터없음'}
 영업상태: ${bizStatus}`;
 
   if (finish) {

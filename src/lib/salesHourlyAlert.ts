@@ -3,6 +3,7 @@ import {
   dailyReportDocId,
   getCompareDates,
   mapDailyReportDoc,
+  netSalesFromDailyReport,
   topItems,
   type ReportSnapshot,
 } from '@/lib/reportCompare';
@@ -83,6 +84,20 @@ function parseHour(raw: string | number | undefined): number | null {
   return Number.isNaN(h) ? null : h;
 }
 
+/** 시간대별 totalSale(총매출) → 순매출 환산 비율 (일별 net/total) */
+function hourlyNetSalesRatio(snapshot: ReportSnapshot | null): number {
+  if (!snapshot) return 1;
+  const total = Number(snapshot.totalSales ?? 0);
+  if (total <= 0) return 1;
+  const net = Number(
+    snapshot.netSales
+    ?? netSalesFromDailyReport(snapshot as Record<string, unknown>)
+    ?? 0,
+  );
+  if (net <= 0) return 1;
+  return Math.min(1, net / total);
+}
+
 export function cumulativeSalesBetweenHours(
   snapshot: ReportSnapshot | null,
   fromHour: number,
@@ -90,13 +105,16 @@ export function cumulativeSalesBetweenHours(
 ): number {
   if (!snapshot) return 0;
 
+  const netRatio = hourlyNetSalesRatio(snapshot);
   const slots = snapshot.timeSlots || [];
   if (slots.length > 0) {
     let total = 0;
     for (const s of slots) {
       const h = parseHour(s.hour);
       if (h == null) continue;
-      if (h >= fromHour && h <= toHour) total += Number(s.totalSale || 0);
+      if (h >= fromHour && h <= toHour) {
+        total += Math.round(Number(s.totalSale || 0) * netRatio);
+      }
     }
     if (total > 0) return total;
   }
@@ -327,7 +345,7 @@ export async function analyzeSalesHourlyDrop(
     : '데이터 부족 — 전일 인기 품목 위주로 진열·프로모션 점검';
 
   const message = [
-    `${SALES_ALERT_START_HOUR}~${hour}시 누적 ${todayTotal.toLocaleString()}원`,
+    `${SALES_ALERT_START_HOUR}~${hour}시 순매출 누적 ${todayTotal.toLocaleString()}원`,
     `기준 대비 하락: ${dropLines}`,
     '',
     '주력 추천 품목:',
@@ -413,7 +431,7 @@ export async function analyzeSalesHourlyRise(
     : '데이터 부족 — 당일 인기 품목 위주로 재고·진열을 유지하세요';
 
   const message = [
-    `${SALES_ALERT_START_HOUR}~${hour}시 누적 ${todayTotal.toLocaleString()}원`,
+    `${SALES_ALERT_START_HOUR}~${hour}시 순매출 누적 ${todayTotal.toLocaleString()}원`,
     `기준 대비 상승: ${riseLines}`,
     '',
     '잘 팔린 품목:',

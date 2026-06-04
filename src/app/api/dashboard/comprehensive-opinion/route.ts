@@ -6,7 +6,7 @@ import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@
 import { aiMetaJson } from '@/lib/aiProviderMeta';
 import { getKSTTodayYMD, getKSTYesterdayYMD } from '@/lib/dateUtils';
 import { fetchStoreItemSales } from '@/lib/dashboardSalesData';
-import { getDisplayTotalSale } from '@/lib/posDailySales';
+import { getDisplayNetSales } from '@/lib/posDailySales';
 import { loadSystemContext } from '@/lib/aiStoreContext';
 import { fetchNaverTrendData } from '@/lib/naverTrendServer';
 import {
@@ -67,8 +67,8 @@ export async function GET(req: Request) {
 
   const footTraffic = estimateFootTraffic(regionSido, regionSigungu);
 
-  const todaySale = getDisplayTotalSale(storeContext?.todaySales ?? null);
-  const yesterdaySale = getDisplayTotalSale(storeContext?.yesterdaySales ?? null);
+  const todaySale = getDisplayNetSales(storeContext?.todaySales ?? null);
+  const yesterdaySale = getDisplayNetSales(storeContext?.yesterdaySales ?? null);
   const saleChange = yesterdaySale > 0
     ? Math.round(((todaySale - yesterdaySale) / yesterdaySale) * 100)
     : null;

@@ -5,6 +5,7 @@ import { getKSTTodayYMD, getKSTYesterdayYMD } from '@/lib/dateUtils';
 import {
   getDisplayTotalSale,
   getDisplayNetSales,
+  getDisplayReturnAmount,
   posDailySalesDocId,
   type SalesDocData,
 } from '@/lib/posDailySales';
@@ -57,13 +58,14 @@ export async function GET(req: Request) {
 
     const totalSales = getDisplayTotalSale(todayDoc);
     const netSales = getDisplayNetSales(todayDoc);
+    const returnAmount = getDisplayReturnAmount(todayDoc);
     const yesterdayTotal = getDisplayTotalSale(yesterdayDoc);
     const yesterdayNet = getDisplayNetSales(yesterdayDoc);
 
     const emptyReason = buildTodaySalesEmptyReason({
       hasTodayDoc: !!todayDoc,
       hasYesterdayDoc: !!yesterdayDoc,
-      todayTotal: totalSales,
+      todayTotal: netSales,
       isClosed: todayDoc?.isClosed ?? false,
     });
 
@@ -74,6 +76,7 @@ export async function GET(req: Request) {
       yesterday: yesterdayDoc,
       totalSales,
       netSales,
+      returnAmount,
       yesterdayTotal,
       yesterdayNet,
       isClosed: todayDoc?.isClosed ?? false,
