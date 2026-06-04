@@ -1,0 +1,36 @@
+---
+description: 한국시간(KST) 기준으로 날짜·로그·POS 동기화 해석
+alwaysApply: true
+---
+
+# 시간대: 한국 표준시(KST) 필수
+
+Pitaya OS·강서정육점 운영·POS 브릿지 관련 작업은 **항상 Asia/Seoul (KST, UTC+9)** 기준으로 생각하고 설명한다.
+
+## 절대 하지 말 것
+
+- 포스 PC `bridge.js` 로그나 `toISOString()` 값을 **한국 현지 시각**으로 가정하지 않는다 (과거 버전은 UTC였음).
+- Firestore `syncedAt`·API `syncedAt` ISO 문자열을 KST로 읽지 않고 “새벽 4시” 등으로 해석하지 않는다.
+
+## 변환 규칙
+
+| 출처 | 실제 의미 | KST로 볼 때 |
+|------|-----------|-------------|
+| `syncedAt` / `toISOString()` (서버·API) | UTC | **+9시간** |
+| `bridge.js` 로그 (수정 후) | `[YYYY-MM-DD HH:mm:ss KST]` | 그대로 KST |
+| `getKSTTodayYMD()` / `dateUtils.ts` | KST | 그대로 |
+| 영업일 `reportDate` / POS `Sale_Date` | 달력 날짜 (KST 기준 일자) | 날짜 문자열만 사용 |
+
+예: `2026-06-02T04:09:39Z` → **2026-06-02 13:09 KST** (오후 1시대, 새벽 아님)
+
+## POS 브릿지·일마감
+
+- 일마감 화면 데이터: Firestore `daily_reports` (`source: pos_bridge`).
+- **끊긴 시점(2026-06 기준)**: 마지막 정상 반영 **5/30 23:28 KST** 전후, 빠진 영업일 **5/31·6/1**, **6/2**는 마감 전이면 `미마감`·금액 작을 수 있음.
+- 빈 날 채우기: 포스 PC `node bridge.js migrate YYYY-MM-DD YYYY-MM-DD` (먼저 `--dry-run`).
+- 상시: `node bridge.js realtime` (창 유지).
+
+## 코드
+
+- Next.js: `@/lib/dateUtils` (`getKSTTodayYMD`, `getKSTParts`).
+- `pos_bridge/bridge.js`: `getKSTTodayYMD()`, 로그 `now()` — KST.

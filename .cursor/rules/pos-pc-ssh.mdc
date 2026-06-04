@@ -1,0 +1,56 @@
+---
+description: POS PC 원격 작업 시 SSH 접속·경로·PowerShell 규칙 (포트 2223)
+alwaysApply: true
+---
+
+# POS PC SSH (Cursor 전용)
+
+POS PC에서 `bridge.js`, 마이그레이션, DB 확인 등이 필요하면 **에이전트가 직접 SSH로 접속해 실행**한다. 사용자에게 “포스 PC에서 직접 해주세요”만 하지 말고, 아래 정보로 원격 실행을 시도한다.
+
+## 접속
+
+```bash
+ssh -p 2223 -i ~/.ssh/pitaya_pos User@pitayaos.iptime.org
+```
+
+| 항목 | 값 |
+|------|-----|
+| 포트 | **2223** (Cursor 전용) |
+| 금지 | **2222** — 다른 작업용, 사용·변경하지 않음 |
+| OS | Windows 10 v1607 |
+| 쉘 | PowerShell (SSH 접속 시 자동) |
+| 작업 경로 | `C:\pitaya-os` |
+
+## 실행 규칙
+
+- Windows 명령은 **PowerShell 문법**으로 작성 (`;` 체인, `cd` 후 명령 등).
+- **긴 작업은 한 줄씩** 실행하고 출력 확인 후 다음 단계.
+- 경로에 **한글 포함 시 반드시 따옴표** (`"C:\Program Files\..."`).
+- Node: **v18.20.4** — `node bridge.js ...`
+- Python: **3.14** — `python` 명령 (통화매니저 SQLite 등).
+
+## 환경 (POS PC)
+
+| 항목 | 값 |
+|------|-----|
+| pitaya-os / bridge | `C:\pitaya-os` |
+| Firebase | `C:\pitaya-os\.env` (`FIREBASE_SERVICE_ACCOUNT_KEY`) |
+| storeId | `STR-1779194754785` |
+| POS DB | `localhost:18973`, DB=`tips`, user=`sa`, pass=`tips` |
+| 통화매니저 DB | `C:\Program Files\통화매니저\KPD.dat` (SQLite, Python) |
+
+## 자주 쓰는 명령 (PowerShell)
+
+```powershell
+cd C:\pitaya-os
+node bridge.js check-tables
+node bridge.js today
+node bridge.js migrate 2026-01-01 2026-05-28
+node bridge.js --dry-run
+```
+
+## 문서
+
+- `docs/modules/pos-bridge.md`
+- `pos_bridge/작업순서_*.txt`
+- `AGENTS.md` — POS·KST

@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pitaya OS
 
-## Getting Started
+정육·식자재 매장 운영 플랫폼 — **AI 매입·일마감·공개 주문·POS 연동·인사·위생** 등을 하나의 Next.js 앱으로 제공합니다.
 
-First, run the development server:
+| | |
+|--|--|
+| **프로덕션** | https://pitaya-osv1.vercel.app |
+| **스택** | Next.js 16 · Firebase (Auth, Firestore, Storage) · Vercel |
+| **POS 연동** | `pos_bridge/bridge.js` (매장 PC) |
+
+## 문서 (구조·이해용)
+
+| 문서 | 설명 |
+|------|------|
+| **[ARCHITECTURE.md](ARCHITECTURE.md)** | 전체 구조도·모듈 맵·다이어그램 |
+| **[docs/README.md](docs/README.md)** | 문서 목차·모듈별 가이드 |
+| [docs/data/firestore-collections.md](docs/data/firestore-collections.md) | DB 컬렉션 표 |
+| [docs/ops/deploy.md](docs/ops/deploy.md) | 배포 |
+| [docs/ops/cron.md](docs/ops/cron.md) | 크론 스케줄 |
+| [AGENTS.md](AGENTS.md) | AI 코딩 에이전트 규칙 (KST, POS, 카카오) |
+
+### 모듈 가이드
+
+- [AI 매입](docs/modules/purchases.md)
+- [공개 주문](docs/modules/public-orders.md)
+- [POS 브릿지](docs/modules/pos-bridge.md)
+- [매출·일마감](docs/modules/sales-and-reports.md)
+- [유통기한 알림](docs/modules/expiry-reminder.md)
+
+## 로컬 실행
 
 ```bash
+npm install
+# .env.local — Firebase·AI·카카오 키 (팀 내부 설정 참고)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+http://localhost:3000 — Google 로그인 후 매장 선택.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 배포
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+git push origin main    # GitHub Actions → Vercel production
+# 또는
+npx vercel deploy --prod --yes
+```
 
-## Learn More
+## 디렉터리 요약
 
-To learn more about Next.js, take a look at the following resources:
+```
+src/app/dashboard/   관리 UI
+src/app/api/         REST + cron
+src/lib/             비즈니스 로직
+pos_bridge/          POS PC 동기화 스크립트
+docs/                프로젝트 문서
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 기타
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md)
+- [SECURITY.md](SECURITY.md)
+- `PITAYA_평가요약.txt` — 기능 평가 메모
