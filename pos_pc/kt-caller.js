@@ -30,7 +30,12 @@ const STORE_CALLEE = normalizePhoneDigits(process.env.KT_STORE_PHONE || '0226629
 const POLL_MS = parseInt(process.env.KT_POLL_MS || '3000', 10);
 const STATE_FILE = path.join(__dirname, 'kt-caller-state.json');
 const POLL_SCRIPT = path.join(__dirname, 'kt-caller-poll.py');
-const PYTHON = process.env.PYTHON_CMD || 'python';
+const PYTHON_CANDIDATES = [
+  process.env.PYTHON_CMD,
+  'python',
+  'py',
+  'python3',
+].filter(Boolean);
 const APP_URL = (process.env.PITAYA_APP_URL || 'https://pitaya-osv1.vercel.app').replace(/\/$/, '');
 
 const ALGORITHM = 'aes-256-gcm';
@@ -123,26 +128,35 @@ function initFirebase() {
   db = admin.firestore();
 }
 
+function indexCustomerDoc(data) {
+  let digits = '';
+  if (data.phone) digits = normalizePhoneDigits(data.phone);
+  if (!digits && data.phoneEncrypted) {
+    digits = normalizePhoneDigits(decryptText(String(data.phoneEncrypted)));
+  }
+  if (!digits && data.mobile) digits = normalizePhoneDigits(data.mobile);
+  if (!digits) return;
+  let name = '';
+  if (data.name) name = String(data.name);
+  else if (data.nameEncrypted) name = decryptText(String(data.nameEncrypted));
+  if (!name && data.cusName) name = String(data.cusName);
+  const label = name || '고객';
+  phoneIndex.set(digits, label);
+  if (digits.length === 11) phoneIndex.set(digits.slice(1), label);
+}
+
 async function refreshCustomerIndex() {
   phoneIndex.clear();
   const snap = await db.collection('pos_customers').where('storeId', '==', STORE_ID).get();
-  for (const doc of snap.docs) {
-    const data = doc.data();
-    let digits = '';
-    if (data.phone) {
-      digits = normalizePhoneDigits(data.phone);
-    }
-    if (!digits && data.phoneEncrypted) {
-      digits = normalizePhoneDigits(decryptText(String(data.phoneEncrypted)));
-    }
-    if (!digits) continue;
-    let name = '';
-    if (data.name) name = String(data.name);
-    else if (data.nameEncrypted) name = decryptText(String(data.nameEncrypted));
-    if (!name && data.cusName) name = String(data.cusName);
-    phoneIndex.set(digits, name || '고객');
-    if (digits.length === 11) phoneIndex.set(digits.slice(1), name || '고객');
+  for (const doc of snap.docs) indexCustomerDoc(doc.data());
+
+  try {
+    const legacy = await db.collection('customers').where('storeId', '==', STORE_ID).get();
+    for (const doc of legacy.docs) indexCustomerDoc(doc.data());
+  } catch {
+    /* customers 컬렉션 없으면 무시 */
   }
+
   log(`고객 전화 인덱스 갱신: ${phoneIndex.size}건`);
 }
 
@@ -157,11 +171,11 @@ function lookupCustomer(callerRaw) {
 }
 
 // ── Python SQLite 폴링 ────────────────────────────────────────────
-function pollCalls(since) {
+function pollCallsWithPython(pythonCmd, since) {
   return new Promise((resolve, reject) => {
     const args = [POLL_SCRIPT];
     if (since) args.push(since);
-    const proc = spawn(PYTHON, args, { windowsHide: true });
+    const proc = spawn(pythonCmd, args, { windowsHide: true });
     let out = '';
     let err = '';
     proc.stdout.on('data', d => { out += d.toString(); });
@@ -317,7 +331,23 @@ async function tick(state) {
   }
 }
 
+async function runSelfTest() {
+  log('=== 자가 테스트 ===');
+  const rows = await pollCalls('');
+  log(`KPD.dat 최근 통화: ${rows.length ? JSON.stringify(rows[0]) : '없음'}`);
+  initFirebase();
+  await refreshCustomerIndex();
+  log('Firebase OK');
+  if (!process.env.KAKAO_ACCESS_TOKEN) log('KAKAO_ACCESS_TOKEN 없음 (카카오 스킵)');
+  log('=== 테스트 완료 ===');
+}
+
 async function main() {
+  if (process.argv.includes('--test')) {
+    await runSelfTest();
+    return;
+  }
+
   log('Pitaya KT Caller 시작');
   log(`매장 ${STORE_ID} / 수신번호 ${STORE_CALLEE}`);
 
