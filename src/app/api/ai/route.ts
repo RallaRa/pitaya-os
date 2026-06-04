@@ -35,6 +35,10 @@ import {
   providerIdToModelKeyForExclusion,
   type ChatRouteModel,
 } from '@/lib/aiRouter';
+import {
+  buildExpiryChatAppendix,
+  tryCreateExpiryFromAiChat,
+} from '@/lib/expiryReminder/fromAiChat';
 
 export type { DebateEntry, DebateRoundResult };
 
@@ -358,6 +362,25 @@ export async function POST(req: Request) {
       }
     }
 
+    // ── 유통기한 등록 (독립 모듈, AI 대화 채널) ──
+    let expiryReminder: Awaited<ReturnType<typeof tryCreateExpiryFromAiChat>> | undefined;
+    if (
+      chatMode !== 'debate'
+      && (modelChoice as string) !== 'debate'
+      && storeId
+      && authUser.uid
+    ) {
+      try {
+        expiryReminder = await tryCreateExpiryFromAiChat({
+          storeId,
+          createdBy: authUser.uid,
+          message: message.trim(),
+        });
+      } catch (err) {
+        console.error('[AI] expiry reminder:', err);
+      }
+    }
+
     // ── 4AI 협업 토론 (model=debate 또는 chatMode=debate) ──
     if ((modelChoice as string) === 'debate' || chatMode === 'debate') {
       const topic = msgs.find(m => m.role === 'user')?.content || message;
@@ -506,6 +529,10 @@ export async function POST(req: Request) {
     }
 
     let responseText = result.text;
+    const expiryAppendix = expiryReminder ? buildExpiryChatAppendix(expiryReminder) : '';
+    if (expiryAppendix) {
+      responseText = `${responseText.trim()}${expiryAppendix}`;
+    }
     if (aiExclusions.length > 0) {
       responseText += `\n\n---\n⛔ **제외된 AI**\n${aiExclusions.map(e => `• ${e}`).join('\n')}\n✅ **응답 AI:** ${MODEL_NAMES[finalModel] || finalModel}`;
     }
@@ -518,6 +545,7 @@ export async function POST(req: Request) {
       chatRoute:       chatRouteLabel,
       aiExclusions:    aiExclusions.length ? aiExclusions : undefined,
       chatMode,
+      expiryReminder: expiryReminder?.created ? expiryReminder.result : undefined,
     });
 
   } catch (error: any) {

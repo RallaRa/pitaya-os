@@ -17,6 +17,7 @@
   "crons": [
     { "path": "/api/cron/update-keywords",        "schedule": "0 5 * * 1" },
     { "path": "/api/cron/calendar-notifications", "schedule": "0 0 * * *" },
+    { "path": "/api/cron/expiry-reminder-notifications", "schedule": "0 0 * * *" },
     { "path": "/api/cron/holiday-notification",    "schedule": "0 0 * * *" },
     { "path": "/api/cron/sales-hourly-alert",      "schedule": "0 4 * * *" },
     { "path": "/api/cron/prediction-today-actual", "schedule": "0 6 * * *" },

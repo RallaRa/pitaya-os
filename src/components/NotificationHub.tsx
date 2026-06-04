@@ -30,6 +30,7 @@ const TYPE_ICON: Record<string, string> = {
   sales_hourly_drop: '📉',
   sales_hourly_rise: '📈',
   public_order:      '🛒',
+  expiry_reminder:   '📅',
   order_alert:       '📦',
   member_request:  '👤',
   member_approved: '✅',
