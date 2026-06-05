@@ -8,6 +8,7 @@ import {
   type SignageContentType,
   type SignageScreenKind,
 } from '@/lib/signage/types';
+import { normalizeStoragePublicUrl } from '@/lib/firebase/storageBucket';
 
 const VALID_TYPES = new Set(SIGNAGE_CONTENT_TYPES.map(t => t.id));
 const VALID_KINDS = new Set(SIGNAGE_SCREEN_KINDS.map(k => k.id));
@@ -62,7 +63,14 @@ export async function GET(req: Request) {
     : { storeId, defaultContentType: 'text' };
 
   const contents = contentsSnap.docs
-    .map(d => ({ id: d.id, ...d.data() } as Record<string, unknown> & { id: string }))
+    .map(d => {
+      const row = { id: d.id, ...d.data() } as Record<string, unknown> & { id: string };
+      if (typeof row.url === 'string') row.url = normalizeStoragePublicUrl(row.url);
+      if (typeof row.thumbnailUrl === 'string') {
+        row.thumbnailUrl = normalizeStoragePublicUrl(row.thumbnailUrl);
+      }
+      return row;
+    })
     .sort((a, b) => {
       const aSec = (a.createdAt as { seconds?: number } | undefined)?.seconds ?? 0;
       const bSec = (b.createdAt as { seconds?: number } | undefined)?.seconds ?? 0;

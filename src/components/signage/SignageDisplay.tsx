@@ -5,10 +5,16 @@ import {
   doc, onSnapshot, collection, query, where, getDocs, getDoc,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { normalizeStoragePublicUrl } from '@/lib/firebase/storageBucket';
 import SignageContentPlayer, { type SignageContent } from './SignageContentPlayer';
 
 interface Props {
   slug: string;
+}
+
+function normalizeSignageContent<T extends SignageContent>(item: T): T {
+  if (!item.url || (item.type !== 'image' && item.type !== 'video')) return item;
+  return { ...item, url: normalizeStoragePublicUrl(item.url) };
 }
 
 export default function SignageDisplay({ slug }: Props) {
@@ -38,7 +44,7 @@ export default function SignageDisplay({ slug }: Props) {
         for (const id of ids) {
           const cDoc = await getDoc(doc(db, 'signage_content', id));
           if (cDoc.exists() && cDoc.data().status === 'approved') {
-            items.push({ id: cDoc.id, ...cDoc.data() } as SignageContent & { order?: number });
+            items.push(normalizeSignageContent({ id: cDoc.id, ...cDoc.data() } as SignageContent & { order?: number }));
           }
         }
         items.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -51,7 +57,7 @@ export default function SignageDisplay({ slug }: Props) {
         );
         const snap = await getDocs(q);
         const items = snap.docs
-          .map(d => ({ id: d.id, ...d.data() } as SignageContent & { order?: number }))
+          .map(d => normalizeSignageContent({ id: d.id, ...d.data() } as SignageContent & { order?: number }))
           .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
         setContents(items);
       }

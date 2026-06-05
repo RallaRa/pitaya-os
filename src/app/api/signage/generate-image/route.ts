@@ -4,7 +4,7 @@ import type { ImageGenerateParamsNonStreaming } from 'openai/resources/images';
 import { v4 as uuidv4 } from 'uuid';
 import { verifyToken } from '@/lib/authVerify';
 import { getAdminStorageBucket } from '@/lib/firebase/admin';
-import { formatStorageError } from '@/lib/firebase/storageBucket';
+import { buildStoredFileUrl, formatStorageError } from '@/lib/firebase/storageBucket';
 
 /** GPT Image 생성 + Firebase 업로드 (보통 30초~2분) */
 export const maxDuration = 120;
@@ -73,8 +73,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const url =
-      `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(storagePath)}?alt=media&token=${token}`;
+    const url = buildStoredFileUrl(bucket.name, storagePath, token);
 
     return NextResponse.json({ url, thumbnailUrl: url, success: true, title });
   } catch (e: unknown) {

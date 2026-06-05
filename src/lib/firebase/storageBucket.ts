@@ -5,6 +5,50 @@ export const PROJECT_MEDIA_BUCKET: Record<string, string> = {
   'pitaya-osv1': 'pitaya-osv1-media',
 };
 
+export function isFirebaseNativeStorageBucket(bucketName: string): boolean {
+  return bucketName.endsWith('.firebasestorage.app') || bucketName.endsWith('.appspot.com');
+}
+
+export function appBaseUrl(): string {
+  return (process.env.NEXT_PUBLIC_APP_URL || 'https://pitaya-osv1.vercel.app').replace(/\/$/, '');
+}
+
+/** 업로드 후 브라우저에서 열 수 있는 URL (Firebase 버킷 / GCS 커스텀 버킷 공통) */
+export function buildStoredFileUrl(
+  bucketName: string,
+  filePath: string,
+  downloadToken: string,
+): string {
+  if (isFirebaseNativeStorageBucket(bucketName)) {
+    return `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(filePath)}?alt=media&token=${downloadToken}`;
+  }
+  return `${appBaseUrl()}/api/storage/file?path=${encodeURIComponent(filePath)}&token=${downloadToken}`;
+}
+
+/** firebasestorage URL → 커스텀 버킷이면 앱 프록시 URL로 변환 (412 방지) */
+export function normalizeStoragePublicUrl(url: string | undefined | null): string {
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    if (u.pathname.startsWith('/api/storage/file')) return url;
+
+    if (u.hostname === appBaseUrl().replace(/^https?:\/\//, '')) return url;
+
+    if (u.hostname !== 'firebasestorage.googleapis.com') return url;
+
+    const m = u.pathname.match(/\/b\/([^/]+)\/o\/(.+)$/);
+    if (!m) return url;
+    const bucket = decodeURIComponent(m[1]);
+    const path = decodeURIComponent(m[2]);
+    const token = u.searchParams.get('token');
+    if (!token) return url;
+    if (isFirebaseNativeStorageBucket(bucket)) return url;
+    return buildStoredFileUrl(bucket, path, token);
+  } catch {
+    return url;
+  }
+}
+
 export function resolveStorageBucket(projectId?: string | null): string | undefined {
   const fromEnv =
     process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim()
