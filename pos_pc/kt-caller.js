@@ -124,20 +124,6 @@ function isIncomingToStore(row) {
   return callee === STORE_CALLEE || callee.endsWith(STORE_CALLEE.slice(-8));
 }
 
-function normalizeRole(role) {
-  const r = String(role || '').toLowerCase().trim();
-  if (r === 'master' || r === 'owner') return 'superuser';
-  if (r === 'user') return 'staff';
-  return r;
-}
-
-function normalizeGroupId(groupId) {
-  const g = String(groupId || '').toLowerCase().trim();
-  if (g === 'master' || g === 'owner') return 'superuser';
-  if (g === 'user') return 'staff';
-  return g;
-}
-
 // ── Firebase ──────────────────────────────────────────────────────
 let db;
 const phoneIndex = new Map();
@@ -154,33 +140,32 @@ function initFirebase() {
   db = admin.firestore();
 }
 
-/** Pitaya 웹과 동일: user_store_map → users.kakaoAccessToken */
-async function findKakaoNotifyUserForStore(storeId) {
+/** 매장 active 사용자 중 카카오 연동된 계정 전원 (웹 알림과 동일 범위) */
+async function findKakaoNotifyUsersForStore(storeId) {
   const mapSnap = await db.collection('user_store_map')
     .where('storeId', '==', storeId)
     .where('status', '==', 'active')
     .get();
 
-  for (const doc of mapSnap.docs) {
-    const { uid, role, groupId } = doc.data();
-    const isManager = ['superuser', 'admin'].includes(normalizeRole(role)) ||
-      ['superuser', 'admin'].includes(normalizeGroupId(groupId));
-    if (!isManager) continue;
-    const userDoc = await db.collection('users').doc(uid).get();
-    if (userDoc.exists && userDoc.data()?.kakaoAccessToken) return uid;
-  }
+  const users = [];
+  const seen = new Set();
 
   for (const doc of mapSnap.docs) {
     const uid = doc.data().uid;
-    if (!uid) continue;
+    if (!uid || seen.has(uid)) continue;
     const userDoc = await db.collection('users').doc(uid).get();
-    if (userDoc.exists && userDoc.data()?.kakaoAccessToken) return uid;
+    if (!userDoc.exists || !userDoc.data()?.kakaoAccessToken) continue;
+    seen.add(uid);
+    users.push({
+      uid,
+      nick: userDoc.data()?.kakaoNickname || userDoc.data()?.displayName || uid,
+    });
   }
-  return null;
+
+  return users;
 }
 
 const KAKAO_REFRESH_BUFFER_MS = 30 * 60 * 1000;
-let cachedKakaoUid = null;
 
 async function getValidKakaoToken(userId) {
   const restKey = process.env.KAKAO_REST_API_KEY;
@@ -226,21 +211,6 @@ async function getValidKakaoToken(userId) {
   if (data.refresh_token) updates.kakaoRefreshToken = data.refresh_token;
   await userRef.update(updates);
   return data.access_token;
-}
-
-async function resolveKakaoAccessToken() {
-  if (!process.env.KAKAO_REST_API_KEY) {
-    log('KAKAO_REST_API_KEY 없음 (.env 확인)');
-    return null;
-  }
-  if (!cachedKakaoUid) {
-    cachedKakaoUid = await findKakaoNotifyUserForStore(STORE_ID);
-  }
-  if (!cachedKakaoUid) {
-    log('카카오 연동 계정 없음 (앱에서 카카오 로그인 필요)');
-    return null;
-  }
-  return getValidKakaoToken(cachedKakaoUid);
 }
 
 function indexCustomerDoc(data) {
@@ -448,16 +418,38 @@ async function notifyStoreWeb(title, message) {
 }
 
 async function sendKakao(text) {
-  const token = await resolveKakaoAccessToken();
-  if (!token) return;
+  if (!process.env.KAKAO_REST_API_KEY) {
+    log('카카오: KAKAO_REST_API_KEY 없음 (.env 확인)');
+    return;
+  }
+
+  const users = await findKakaoNotifyUsersForStore(STORE_ID);
+  if (!users.length) {
+    log('카카오: 연동된 매장 사용자 없음 (Pitaya 설정에서 카카오 연동)');
+    return;
+  }
 
   const link = { web_url: APP_URL, mobile_web_url: APP_URL };
-  await postKakaoMemo(token, {
+  const template = {
     object_type: 'text',
     text: text.slice(0, 200),
     link,
     buttons: [{ title: 'Pitaya OS', link }],
-  });
+  };
+
+  for (const { uid, nick } of users) {
+    try {
+      const token = await getValidKakaoToken(uid);
+      if (!token) {
+        log(`카카오 스킵 (${nick}): 토큰 없음`);
+        continue;
+      }
+      await postKakaoMemo(token, template);
+      log(`카카오 전송 OK (${nick})`);
+    } catch (e) {
+      log(`카카오 실패 (${nick}): ${e.message}`);
+    }
+  }
 }
 
 async function handleRow(row, state) {
@@ -514,14 +506,17 @@ async function runSelfTest() {
   initFirebase();
   await refreshCustomerIndex();
   log('Firebase OK');
-  const kakaoUid = await findKakaoNotifyUserForStore(STORE_ID);
-  if (kakaoUid) {
-    cachedKakaoUid = kakaoUid;
-    const token = await getValidKakaoToken(kakaoUid);
-    const nick = (await db.collection('users').doc(kakaoUid).get()).data()?.kakaoNickname || kakaoUid;
-    log(token ? `카카오 나에게보내기 OK (${nick})` : '카카오 토큰 없음');
+  const kakaoUsers = await findKakaoNotifyUsersForStore(STORE_ID);
+  if (!kakaoUsers.length) {
+    log('카카오 연동 사용자 없음 — Pitaya 설정에서 카카오 연동');
   } else {
-    log('카카오 연동 사용자 없음 — Pitaya 앱에서 카카오 연동 확인');
+    log(`카카오 연동 ${kakaoUsers.length}명: ${kakaoUsers.map(u => u.nick).join(', ')}`);
+    try {
+      await sendKakao('[Pitaya 테스트] 통화매니저 전화 알림 카카오 연동 확인');
+      log('카카오 테스트 발송 완료 (각 계정 「나와의 채팅」 확인)');
+    } catch (e) {
+      log(`카카오 테스트 실패: ${e.message}`);
+    }
   }
   try {
     await notifyStoreWeb('테스트', '통화매니저 웹 알림 연동 테스트');
@@ -565,7 +560,9 @@ async function main() {
   setInterval(() => tick(loadState()).catch(e => log(`폴링 오류: ${e.message}`)), POLL_MS);
 }
 
-main().catch(e => {
-  console.error(e);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(e => {
+    console.error(e);
+    process.exit(1);
+  });
+}

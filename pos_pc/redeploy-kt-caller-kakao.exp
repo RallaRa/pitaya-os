@@ -1,0 +1,38 @@
+#!/usr/bin/expect -f
+set timeout 180
+if {[info exists env(PITAYA_SSH_PASS)] && $env(PITAYA_SSH_PASS) ne ""} {
+  set pass $env(PITAYA_SSH_PASS)
+} else {
+  set pass "pitaya1234"
+}
+set base "https://raw.githubusercontent.com/RallaRa/pitaya-os/main/pos_pc"
+
+spawn ssh -p 2223 -o StrictHostKeyChecking=accept-new User@pitayaos.iptime.org
+expect "password:" { send "$pass\r" }
+expect "PS "
+
+send "cd C:\\pitaya-os\r"
+expect "PS "
+
+send "wmic process where \"name='node.exe' and commandline like '%kt-caller%'\" call terminate 2>&1\r"
+expect "PS "
+
+send {[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/RallaRa/pitaya-os/main/pos_pc/kt-caller.js' -OutFile 'C:\pitaya-os\kt-caller.js' -UseBasicParsing}
+send "\r"
+expect "PS "
+
+send "Get-Item kt-caller.js | Select-Object Length\r"
+expect "PS "
+
+send "node C:\\pitaya-os\\kt-caller.js --test 2>&1\r"
+expect {
+  -timeout 120
+  "테스트 완료" {}
+}
+expect "PS "
+
+send "schtasks /run /tn PitayaKTCaller 2>&1\r"
+expect "PS "
+
+send "exit\r"
+expect eof
