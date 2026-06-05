@@ -1,7 +1,7 @@
 # KT 통화매니저 → Pitaya 전화 알림 (POS PC)
 
 ## 파일 (C:\pitaya-os)
-- `kt-caller.js` — 메인 (3초 폴링, Firebase, 토스트, 카카오)
+- `kt-caller.js` — 메인 (3초 폴링, Firebase, 토스트, 웹 알림, 카카오)
 - `kt-caller-poll.py` — KPD.dat SQLite 읽기 (Python)
 - `install-kt-caller.ps1` — npm + schtasks 설치
 - `bootstrap-kt-caller.ps1` — 위 3개 파일 일괄 생성 (SSH 키 없을 때)
@@ -37,6 +37,12 @@ node kt-caller.js
 ## Firebase
 - 컬렉션: `pos_customers` (storeId + phoneEncrypted/nameEncrypted 복호화)
 - `customers` 평문 phone도 문서에 있으면 함께 매칭
+- **웹/모바일 알림**: `notifications` 컬렉션 (`type: phone_call`) → Pitaya 앱 🔔 알림 허브
+
+## 문제 해결
+- 전화 와도 알림 없음 → POS에서 `node kt-caller.js --test` 실행
+- watermark 초기화(테스트용): `node kt-caller.js --reset-watermark` 후 재시작
+- schtasks는 **SYSTEM 계정 금지** (토스트 안 뜸) — `install-kt-caller.ps1` 재실행
 
 ## SSH 키 등록 (한 번만, POS 관리자 PowerShell)
 ```powershell

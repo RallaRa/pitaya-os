@@ -39,6 +39,7 @@ const NOTIFIER = (() => {
 })();
 
 const admin = require('firebase-admin');
+const { FieldValue } = require('firebase-admin/firestore');
 
 const STORE_ID = process.env.STORE_ID || 'STR-1779194754785';
 const STORE_CALLEE = normalizePhoneDigits(process.env.KT_STORE_PHONE || '0226629592');
@@ -407,6 +408,45 @@ function postKakaoMemo(token, templateObject) {
   });
 }
 
+async function notifyStoreWeb(title, message) {
+  const mapSnap = await db.collection('user_store_map')
+    .where('storeId', '==', STORE_ID)
+    .where('status', '==', 'active')
+    .get();
+
+  if (mapSnap.empty) {
+    log('웹 알림: 활성 매장 사용자 없음');
+    return;
+  }
+
+  const batch = db.batch();
+  const seen = new Set();
+  let count = 0;
+
+  for (const doc of mapSnap.docs) {
+    const uid = doc.data().uid;
+    if (!uid || seen.has(uid)) continue;
+    seen.add(uid);
+    batch.set(db.collection('notifications').doc(), {
+      targetUid: uid,
+      senderUid: '',
+      senderName: 'Pitaya OS',
+      type: 'phone_call',
+      title,
+      message,
+      link: '/dashboard/customers',
+      isRead: false,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    count += 1;
+  }
+
+  if (count > 0) {
+    await batch.commit();
+    log(`웹 알림 ${count}명 전송`);
+  }
+}
+
 async function sendKakao(text) {
   const token = await resolveKakaoAccessToken();
   if (!token) return;
@@ -427,9 +467,15 @@ async function handleRow(row, state) {
 
   const customer = lookupCustomer(row.cl_caller);
   const { toastBody, kakaoText } = buildMessages(row, customer);
+  const webTitle = Number(row.cl_absence) === 1 ? '부재중 전화' : '전화 수신';
 
   log(`알림: ${toastBody}`);
   showToast(toastBody);
+  try {
+    await notifyStoreWeb(webTitle, toastBody.replace(/^📞 |^📵 /, ''));
+  } catch (e) {
+    log(`웹 알림 실패: ${e.message}`);
+  }
   try {
     await sendKakao(kakaoText);
   } catch (e) {
@@ -477,6 +523,12 @@ async function runSelfTest() {
   } else {
     log('카카오 연동 사용자 없음 — Pitaya 앱에서 카카오 연동 확인');
   }
+  try {
+    await notifyStoreWeb('테스트', '통화매니저 웹 알림 연동 테스트');
+    log('웹 알림 테스트 OK');
+  } catch (e) {
+    log(`웹 알림 테스트 실패: ${e.message}`);
+  }
   log('=== 테스트 완료 ===');
 }
 
@@ -485,6 +537,10 @@ async function main() {
     log('Pitaya KT Caller (--test)');
     await runSelfTest();
     return;
+  }
+
+  if (process.argv.includes('--reset-watermark')) {
+    try { fs.unlinkSync(STATE_FILE); log('watermark 초기화됨'); } catch { /* 없음 */ }
   }
 
   log('Pitaya KT Caller 시작');

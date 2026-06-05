@@ -31,15 +31,15 @@ if (Test-Path $envFile) {
   icacls $envFile /grant 'SYSTEM:(R)' 2>&1 | Out-Null
 }
 
-Write-Host '=== schtasks 등록 ==='
+Write-Host '=== schtasks 등록 (로그인 사용자 — 토스트 표시용) ==='
 $node = (Get-Command node -ErrorAction SilentlyContinue).Source
 if (-not $node) { throw 'node.exe PATH 없음' }
 # schtasks /tr: 공백 경로 회피 — cmd 래퍼 사용
 $tr = "cmd.exe /c cd /d $Dir `& node kt-caller.js"
 $created = $false
 foreach ($args in @(
-  @('/create', '/tn', 'PitayaKTCaller', '/tr', $tr, '/sc', 'onlogon', '/f'),
-  @('/create', '/tn', 'PitayaKTCaller', '/tr', $tr, '/sc', 'onstart', '/ru', 'SYSTEM', '/f')
+  @('/create', '/tn', 'PitayaKTCaller', '/tr', $tr, '/sc', 'onlogon', '/rl', 'HIGHEST', '/f'),
+  @('/create', '/tn', 'PitayaKTCaller', '/tr', $tr, '/sc', 'onstart', '/delay', '0001:00', '/f')
 )) {
   $out = schtasks @args 2>&1
   $out | Out-Host

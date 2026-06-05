@@ -15,6 +15,7 @@ interface Notification {
   senderUid: string;
   senderName: string;
   type: string;
+  title?: string;
   message: string;
   link: string;
   isRead: boolean;
@@ -35,6 +36,7 @@ const TYPE_ICON: Record<string, string> = {
   member_request:  '👤',
   member_approved: '✅',
   member_rejected: '❌',
+  phone_call:      '📞',
   system:          '🔔',
   message:         '💬',
 };
@@ -203,6 +205,9 @@ export default function NotificationHub({ label, buttonClassName }: Notification
                       {TYPE_ICON[n.type] ?? '🔔'}
                     </span>
                     <div className="flex-1 min-w-0">
+                      {n.title && (
+                        <p className="text-xs font-semibold text-teal-400/90 mb-0.5 truncate">{n.title}</p>
+                      )}
                       <p className="text-sm text-slate-200 leading-snug line-clamp-2">
                         {n.message}
                       </p>
