@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
 
     if (type === 'slide') {
       return NextResponse.json(
-        { error: '슬라이드는 Imagen+Canvas 생성을 사용합니다. signage 페이지에서 다시 생성해 주세요.' },
+        { error: '슬라이드는 FLUX+Canvas 생성을 사용합니다. signage 페이지에서 다시 생성해 주세요.' },
         { status: 400 },
       );
     }

@@ -7,6 +7,7 @@ Never commit `.env.local`. Required secrets:
 - `FIREBASE_SERVICE_ACCOUNT_KEY` — Admin SDK (server only)
 - `ENCRYPTION_KEY` — AES-256 for PII (64-char hex)
 - `GEMINI_API_KEY`, `GROQ_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`
+- `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` — 사이니지 배경 이미지 (Workers AI FLUX, 무료). [dash.cloudflare.com](https://dash.cloudflare.com) → Workers AI → Use REST API
 - `MESSAGE_PROVIDER` — (선택) `solapi` (기본) 또는 `dhn`
 - `SOLAPI_API_KEY` — solapi.com API Key
 - `SOLAPI_API_SECRET` — solapi.com API Secret

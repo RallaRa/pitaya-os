@@ -7,10 +7,10 @@ export const SIGNAGE_CONTENT_TYPES: {
   label: string;
   desc: string;
 }[] = [
-  { id: 'image', label: '🖼️ 이미지', desc: 'Imagen+Canvas' },
+  { id: 'image', label: '🖼️ 이미지', desc: 'FLUX+Canvas' },
   { id: 'text', label: '📝 텍스트', desc: 'Groq' },
-  { id: 'slide', label: '🎨 슬라이드', desc: 'Imagen+Canvas' },
-  { id: 'video', label: '📹 영상', desc: 'Imagen+Canvas' },
+  { id: 'slide', label: '🎨 슬라이드', desc: 'FLUX+Canvas' },
+  { id: 'video', label: '📹 영상', desc: 'FLUX+Canvas' },
 ];
 
 export const SIGNAGE_SCREEN_KINDS: { id: SignageScreenKind; label: string }[] = [

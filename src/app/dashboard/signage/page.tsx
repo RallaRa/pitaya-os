@@ -172,7 +172,7 @@ export default function SignagePage() {
         if (!res.ok) throw new Error(data.error);
         url = data.content;
       } else if (createForm.type === 'image' || createForm.type === 'slide' || createForm.type === 'video') {
-        setGeneratingStep('Imagen 배경 이미지 생성 중…');
+        setGeneratingStep('배경 이미지 생성 중… (Cloudflare FLUX)');
         const imgRes = await fetch('/api/signage/generate-image', {
           method: 'POST',
           headers,
@@ -488,13 +488,14 @@ export default function SignagePage() {
                 <div>
                   <label className="text-xs text-gray-400 mb-1 block">
                     {createForm.type === 'text'
-                      ? '내용 설명'
-                      : '배경 이미지 프롬프트 (한글은 제목·내용으로 Canvas 오버레이)'}
+                      ? '내용 설명 (한글)'
+                      : '배경 이미지 설명 (한글 · 가격·문구는 제목·내용에 입력)'}
                   </label>
                   <textarea
                     value={createForm.prompt}
                     onChange={e => setCreateForm(f => ({ ...f, prompt: e.target.value }))}
                     rows={3}
+                    placeholder={createForm.type === 'text' ? '예: 오늘 한우 등심 특가 안내' : '예: 신선한 삼겹살 클로즈업, 따뜻한 조명, 나무 도마'}
                     className="w-full bg-gray-800 rounded-xl px-4 py-3 text-sm outline-none resize-none focus:ring-1 focus:ring-blue-500"
                   />
                 </div>
