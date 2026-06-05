@@ -31,6 +31,7 @@
     "@hello-pangea/dnd": "^18.0.1",
     "@supabase/supabase-js": "^2.105.4",
     "@types/recharts": "^1.8.29",
+    "bwip-js": "^4.11.1",
     "dotenv": "^17.4.2",
     "emoji-picker-react": "^4.19.1",
     "firebase": "^12.13.0",
@@ -45,11 +46,13 @@
     "react-dom": "^18",
     "react-grid-layout": "^2.2.3",
     "recharts": "^3.8.1",
+    "sharp": "^0.34.5",
     "tailwindcss-animate": "^1.0.7",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@kr-yeon/kisa-seed": "^1.0.5",
+    "@types/bwip-js": "^3.2.3",
     "@types/node": "^20",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^18",

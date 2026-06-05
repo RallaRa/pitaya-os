@@ -28,7 +28,12 @@ export async function POST(req: Request) {
   if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json();
-  const { storeId, code, type, value, minAmount = 0, maxDiscount = 0, maxUse = 0, startDate, endDate } = body;
+  const {
+    storeId, code, type, value,
+    minAmount = 0, maxDiscount = 0, maxUse = 0,
+    startDate, endDate,
+    title, description, imageUrl, imagePrompt, barcodeValue,
+  } = body;
 
   if (!storeId || !code || !type || !value) {
     return NextResponse.json({ error: '필수 필드 누락' }, { status: 400 });
@@ -50,6 +55,11 @@ export async function POST(req: Request) {
     storeId, code: upperCode, type, value: Number(value),
     minAmount: Number(minAmount), maxDiscount: Number(maxDiscount),
     maxUse: Number(maxUse), startDate: startDate || null, endDate: endDate || null,
+    title: title ? String(title).trim() : '',
+    description: description ? String(description).trim() : '',
+    imageUrl: imageUrl ? String(imageUrl).trim() : '',
+    imagePrompt: imagePrompt ? String(imagePrompt).trim() : '',
+    barcodeValue: barcodeValue ? String(barcodeValue).trim().toUpperCase() : upperCode,
     isActive: true, usedCount: 0,
     createdBy: authUser.uid,
     createdAt: FieldValue.serverTimestamp(),
@@ -69,7 +79,11 @@ export async function PUT(req: Request) {
   const groupId = await getActualGroupId(authUser.uid, storeId);
   if (!isAdminGroup(groupId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-  const allowed = ['type','value','minAmount','maxDiscount','maxUse','startDate','endDate','isActive'];
+  const allowed = [
+    'type', 'value', 'minAmount', 'maxDiscount', 'maxUse',
+    'startDate', 'endDate', 'isActive',
+    'title', 'description', 'imageUrl', 'imagePrompt', 'barcodeValue',
+  ];
   const patch: Record<string, unknown> = {};
   for (const k of allowed) {
     if (k in updates) patch[k] = updates[k];
