@@ -17,6 +17,7 @@ import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import * as XLSX from 'xlsx';
 import type { CustomerSortField } from '@/lib/customerQuery';
 import type { VisitCycleStatus } from '@/lib/customerVisitCycle';
+import type { VisitTrendSegment } from '@/lib/customerVisitTrend';
 import {
   clearCustomerPiiSession,
   loadCustomerPiiSession,
@@ -64,6 +65,11 @@ interface Customer {
   expectedNextVisit: string | null;
   cycleStatus: VisitCycleStatus;
   cycleStatusLabel: string;
+  visitTrend: VisitTrendSegment;
+  visitTrendLabel: string;
+  recentAvgDays: number | null;
+  historicalAvgDays: number | null;
+  trendRatio: number | null;
 }
 
 interface Stats {
@@ -74,6 +80,9 @@ interface Stats {
   overdueCount?: number;
   dueSoonCount?: number;
   withCycleData?: number;
+  churnedCount?: number;
+  increasingCount?: number;
+  decreasingCount?: number;
 }
 
 interface AnalysisData {
@@ -86,6 +95,10 @@ interface AnalysisData {
   overdueCount?: number;
   dueSoonCount?: number;
   withCycleData?: number;
+  churnedCount?: number;
+  increasingCount?: number;
+  decreasingCount?: number;
+  stableCount?: number;
   salesHistoryDays?: number;
   totalCustomers:    number;
 }
@@ -148,11 +161,12 @@ export default function CustomersPage() {
   const [visitToDraft, setVisitToDraft] = useState('');
   const [exporting,    setExporting]    = useState(false);
   const [cycleFilter,  setCycleFilter]  = useState<VisitCycleStatus | ''>('');
+  const [trendFilter,  setTrendFilter]  = useState<VisitTrendSegment | ''>('');
   const [requestPanel, setRequestPanel] = useState<{ cusCode: string; label: string } | null>(null);
   const [messagePanelOpen, setMessagePanelOpen] = useState(false);
 
   const LIMIT = 50;
-  const COL_COUNT = 14;
+  const COL_COUNT = 16;
   const LOGS_LIMIT = 30;
 
   const clearPii = useCallback(() => {
@@ -282,9 +296,10 @@ export default function CustomersPage() {
     if (visitFrom) params.set('visitFrom', visitFrom);
     if (visitTo) params.set('visitTo', visitTo);
     if (cycleFilter) params.set('cycleStatus', cycleFilter);
+    if (trendFilter) params.set('visitTrend', trendFilter);
     if (opts?.exportAll) params.set('exportAll', '1');
     return params;
-  }, [storeId, page, sortBy, sortOrder, gradeFilter, search, joinFrom, joinTo, visitFrom, visitTo, cycleFilter]);
+  }, [storeId, page, sortBy, sortOrder, gradeFilter, search, joinFrom, joinTo, visitFrom, visitTo, cycleFilter, trendFilter]);
 
   const buildFilterBody = useCallback(() => ({
     storeId,
@@ -295,9 +310,10 @@ export default function CustomersPage() {
     visitFrom,
     visitTo,
     cycleStatus: cycleFilter,
+    visitTrend: trendFilter,
     sortBy,
     sortOrder,
-  }), [storeId, gradeFilter, search, joinFrom, joinTo, visitFrom, visitTo, cycleFilter, sortBy, sortOrder]);
+  }), [storeId, gradeFilter, search, joinFrom, joinTo, visitFrom, visitTo, cycleFilter, trendFilter, sortBy, sortOrder]);
 
   const mapApiRow = (r: Record<string, unknown>): Customer => ({
     id: String(r.cusCode || ''),
@@ -318,6 +334,11 @@ export default function CustomersPage() {
     expectedNextVisit: r.expectedNextVisit ? String(r.expectedNextVisit) : null,
     cycleStatus: (r.cycleStatus as VisitCycleStatus) || 'unknown',
     cycleStatusLabel: String(r.cycleStatusLabel || ''),
+    visitTrend: (r.visitTrend as VisitTrendSegment) || 'unknown',
+    visitTrendLabel: String(r.visitTrendLabel || ''),
+    recentAvgDays: r.recentAvgDays != null ? Number(r.recentAvgDays) : null,
+    historicalAvgDays: r.historicalAvgDays != null ? Number(r.historicalAvgDays) : null,
+    trendRatio: r.trendRatio != null ? Number(r.trendRatio) : null,
   });
 
   /* ── 고객 목록 (API) ── */
@@ -405,6 +426,9 @@ export default function CustomersPage() {
         마지막방문후일수: r.daysSinceLastVisit != null ? Number(r.daysSinceLastVisit) : '',
         예상재방문일: String(r.expectedNextVisit || '').slice(0, 10),
         방문상태: String(r.cycleStatusLabel || r.cycleStatus || ''),
+        방문패턴: String(r.visitTrendLabel || r.visitTrend || ''),
+        최근평균주기일: r.recentAvgDays != null ? Number(r.recentAvgDays) : '',
+        과거평균주기일: r.historicalAvgDays != null ? Number(r.historicalAvgDays) : '',
       }));
 
       const ws = XLSX.utils.json_to_sheet(rows);
@@ -488,6 +512,7 @@ export default function CustomersPage() {
         마지막방문후일수: r.daysSinceLastVisit != null ? Number(r.daysSinceLastVisit) : '',
         예상재방문일: String(r.expectedNextVisit || '').slice(0, 10),
         방문상태: String(r.cycleStatusLabel || r.cycleStatus || ''),
+        방문패턴: String(r.visitTrendLabel || r.visitTrend || ''),
       }));
 
       const ws = XLSX.utils.json_to_sheet(rows);
@@ -522,6 +547,29 @@ export default function CustomersPage() {
         {label}
       </span>
     );
+  };
+
+  const TrendBadge = ({ trend, label }: { trend: VisitTrendSegment; label: string }) => {
+    const cls: Record<VisitTrendSegment, string> = {
+      churned: 'bg-rose-950/50 text-rose-400 border-rose-500/30',
+      increasing: 'bg-teal-900/40 text-teal-300 border-teal-500/30',
+      decreasing: 'bg-orange-900/40 text-orange-400 border-orange-500/30',
+      stable: 'bg-slate-800 text-slate-400 border-slate-600/30',
+      new: 'bg-blue-900/40 text-blue-400 border-blue-500/30',
+      unknown: 'bg-slate-800 text-slate-500 border-slate-600/30',
+    };
+    return (
+      <span className={`inline-block px-1.5 py-0.5 rounded-full text-[10px] border whitespace-nowrap ${cls[trend]}`}>
+        {label}
+      </span>
+    );
+  };
+
+  const openTrendList = (trend: VisitTrendSegment) => {
+    setTab('고객 목록');
+    setTrendFilter(trend);
+    setCycleFilter('');
+    setPage(1);
   };
 
   /* ── 통계/등급 (API) ── */
@@ -628,7 +676,7 @@ export default function CustomersPage() {
 
       {/* 통계 카드 */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 gap-3">
           <StatCard icon={<Users className="w-4 h-4 text-teal-400" />}
             label="전체 고객" value={stats.totalCustomers.toLocaleString()} unit="명" />
           <StatCard icon={<TrendingUp className="w-4 h-4 text-orange-400" />}
@@ -639,10 +687,19 @@ export default function CustomersPage() {
             label="평균 객단가" value={stats.avgSpend.toLocaleString()} unit="원" />
           <StatCard icon={<BarChart2 className="w-4 h-4 text-amber-400" />}
             label="재방문 임박" value={(stats.dueSoonCount ?? 0).toLocaleString()} unit="명"
-            onClick={() => { setTab('고객 목록'); setCycleFilter('due_soon'); setPage(1); }} />
+            onClick={() => { setTab('고객 목록'); setCycleFilter('due_soon'); setTrendFilter(''); setPage(1); }} />
           <StatCard icon={<BarChart2 className="w-4 h-4 text-red-400" />}
             label="이탈 위험" value={(stats.overdueCount ?? 0).toLocaleString()} unit="명"
-            onClick={() => { setTab('고객 목록'); setCycleFilter('overdue'); setPage(1); }} />
+            onClick={() => { setTab('고객 목록'); setCycleFilter('overdue'); setTrendFilter(''); setPage(1); }} />
+          <StatCard icon={<Users className="w-4 h-4 text-rose-400" />}
+            label="방문 끊김" value={(stats.churnedCount ?? 0).toLocaleString()} unit="명"
+            onClick={() => openTrendList('churned')} />
+          <StatCard icon={<TrendingUp className="w-4 h-4 text-teal-300" />}
+            label="방문 증가" value={(stats.increasingCount ?? 0).toLocaleString()} unit="명"
+            onClick={() => openTrendList('increasing')} />
+          <StatCard icon={<TrendingUp className="w-4 h-4 text-orange-300 rotate-180" />}
+            label="방문 감소" value={(stats.decreasingCount ?? 0).toLocaleString()} unit="명"
+            onClick={() => openTrendList('decreasing')} />
         </div>
       )}
 
@@ -713,6 +770,17 @@ export default function CustomersPage() {
                 <option value="due_soon">재방문 임박</option>
                 <option value="overdue">이탈 위험</option>
                 <option value="new">신규(1회)</option>
+              </select>
+              <select
+                value={trendFilter}
+                onChange={e => { setTrendFilter(e.target.value as VisitTrendSegment | ''); setPage(1); }}
+                className="px-3 py-2 bg-slate-800/60 border border-slate-700 rounded-lg text-xs text-slate-300 outline-none focus:border-teal-500"
+              >
+                <option value="">전체 패턴</option>
+                <option value="churned">방문 끊김</option>
+                <option value="increasing">방문 증가</option>
+                <option value="decreasing">방문 감소</option>
+                <option value="stable">안정</option>
               </select>
               <select
                 value={gradeFilter}
@@ -856,6 +924,7 @@ export default function CustomersPage() {
                     </button>
                   </th>
                   <th className="text-center px-3 py-2.5 font-medium">상태</th>
+                  <th className="text-center px-3 py-2.5 font-medium">패턴</th>
                   <th className="text-center px-3 py-2.5 font-medium">요청</th>
                 </tr>
               </thead>
@@ -910,6 +979,14 @@ export default function CustomersPage() {
                       <td className="px-3 py-2 text-slate-500">{c.expectedNextVisit?.slice(0, 10) || '-'}</td>
                       <td className="px-3 py-2 text-center">
                         <CycleBadge status={c.cycleStatus} label={c.cycleStatusLabel} />
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <TrendBadge trend={c.visitTrend} label={c.visitTrendLabel} />
+                        {c.recentAvgDays != null && c.historicalAvgDays != null && (
+                          <p className="text-[9px] text-slate-600 mt-0.5">
+                            {c.recentAvgDays}일 / {c.historicalAvgDays}일
+                          </p>
+                        )}
                       </td>
                       <td className="px-3 py-2 text-center">
                         <button
@@ -980,6 +1057,36 @@ export default function CustomersPage() {
                 <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 text-center">
                   <p className="text-2xl font-bold text-teal-400">{analysis.salesHistoryDays ?? 0}</p>
                   <p className="text-[10px] text-slate-500 mt-1">구매이력 일수</p>
+                </div>
+              </div>
+
+              {/* 방문 패턴 변화 */}
+              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
+                <p className="text-xs font-semibold text-slate-400 mb-1">방문 패턴 변화</p>
+                <p className="text-[10px] text-slate-500 mb-3">
+                  최근 90일 vs 과거 평균 방문 간격 비교 · 60일+ 미방문은 방문 끊김
+                </p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <button type="button" onClick={() => openTrendList('churned')}
+                    className="text-center bg-rose-950/30 hover:bg-rose-950/50 border border-rose-800/40 rounded-xl p-4 transition">
+                    <p className="text-2xl font-bold text-rose-400">{analysis.churnedCount ?? 0}</p>
+                    <p className="text-[10px] text-slate-500 mt-1">방문 끊김</p>
+                  </button>
+                  <button type="button" onClick={() => openTrendList('increasing')}
+                    className="text-center bg-teal-950/30 hover:bg-teal-950/50 border border-teal-800/40 rounded-xl p-4 transition">
+                    <p className="text-2xl font-bold text-teal-300">{analysis.increasingCount ?? 0}</p>
+                    <p className="text-[10px] text-slate-500 mt-1">방문 증가</p>
+                  </button>
+                  <button type="button" onClick={() => openTrendList('decreasing')}
+                    className="text-center bg-orange-950/30 hover:bg-orange-950/50 border border-orange-800/40 rounded-xl p-4 transition">
+                    <p className="text-2xl font-bold text-orange-400">{analysis.decreasingCount ?? 0}</p>
+                    <p className="text-[10px] text-slate-500 mt-1">방문 감소</p>
+                  </button>
+                  <button type="button" onClick={() => openTrendList('stable')}
+                    className="text-center bg-slate-800/60 hover:bg-slate-800 border border-slate-700 rounded-xl p-4 transition">
+                    <p className="text-2xl font-bold text-slate-300">{analysis.stableCount ?? 0}</p>
+                    <p className="text-[10px] text-slate-500 mt-1">안정</p>
+                  </button>
                 </div>
               </div>
 

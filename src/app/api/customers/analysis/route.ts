@@ -8,6 +8,7 @@ import {
   cycleDistributionBuckets,
   mergeVisitCycle,
 } from '@/lib/customerVisitCycle';
+import { computeVisitTrend, countByVisitTrend } from '@/lib/customerVisitTrend';
 
 // GET /api/customers/analysis?storeId=X
 export async function GET(req: Request) {
@@ -97,6 +98,21 @@ export async function GET(req: Request) {
 
     const cycleDistribution = cycleDistributionBuckets(cyclesForDist);
 
+    // ── 방문 패턴 변화 (끊김 / 증가 / 감소) ───────────────────────
+    const trendRows: Array<{ visitTrend: ReturnType<typeof computeVisitTrend>['segment'] }> = [];
+    for (const d of customersSnap.docs) {
+      const r = d.data();
+      const code = String(r.cusCode || '');
+      const trend = computeVisitTrend(visitDatesMap.get(code) || []);
+      trendRows.push({ visitTrend: trend.segment });
+    }
+    const {
+      churnedCount,
+      increasingCount,
+      decreasingCount,
+      stableCount,
+    } = countByVisitTrend(trendRows);
+
     // ── 등급별 분포 ──────────────────────────────────────────────
     const gradeMap: Record<string, { count: number; totalSales: number }> = {};
     for (const d of customersSnap.docs) {
@@ -145,6 +161,10 @@ export async function GET(req: Request) {
       overdueCount,
       dueSoonCount,
       withCycleData,
+      churnedCount,
+      increasingCount,
+      decreasingCount,
+      stableCount,
       totalCustomers: customersSnap.size,
       salesHistoryDays: new Set(salesDocs.map(r => normDateYMD(String(r.date || ''))).filter(Boolean)).size,
     });

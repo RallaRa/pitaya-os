@@ -87,6 +87,7 @@ export async function POST(req: Request) {
       visitFrom: filters.visitFrom || '',
       visitTo: filters.visitTo || '',
       cycleStatus: filters.cycleStatus || '',
+      visitTrend: filters.visitTrend || '',
       sortBy: filters.sortBy || 'lastVisitDate',
       sortOrder: filters.sortOrder || 'desc',
     };

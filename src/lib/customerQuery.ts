@@ -8,6 +8,12 @@ import {
   mergeVisitCycle,
   type VisitCycleStatus,
 } from '@/lib/customerVisitCycle';
+import {
+  computeVisitTrend,
+  countByVisitTrend,
+  type VisitTrendSegment,
+  VISIT_TREND_LABELS,
+} from '@/lib/customerVisitTrend';
 
 export type CustomerSortField =
   | 'cusCode'
@@ -44,6 +50,11 @@ export interface CustomerRow {
   expectedNextVisit: string | null;
   cycleStatus: VisitCycleStatus;
   cycleStatusLabel: string;
+  visitTrend: VisitTrendSegment;
+  visitTrendLabel: string;
+  recentAvgDays: number | null;
+  historicalAvgDays: number | null;
+  trendRatio: number | null;
 }
 
 export interface CustomerQueryParams {
@@ -55,6 +66,7 @@ export interface CustomerQueryParams {
   visitFrom?: string;
   visitTo?: string;
   cycleStatus?: VisitCycleStatus | '';
+  visitTrend?: VisitTrendSegment | '';
   sortBy?: CustomerSortField;
   sortOrder?: 'asc' | 'desc';
   page?: number;
@@ -74,6 +86,9 @@ export interface CustomerQueryResult {
     overdueCount: number;
     dueSoonCount: number;
     withCycleData: number;
+    churnedCount: number;
+    increasingCount: number;
+    decreasingCount: number;
   };
   grades: string[];
 }
@@ -155,6 +170,7 @@ export async function queryCustomers(params: CustomerQueryParams): Promise<Custo
     visitFrom = '',
     visitTo = '',
     cycleStatus = '',
+    visitTrend = '',
     sortBy = 'lastVisitDate',
     sortOrder = 'desc',
     page = 1,
@@ -192,8 +208,10 @@ export async function queryCustomers(params: CustomerQueryParams): Promise<Custo
     const posVisitCount = Number(r.visitCount || 0);
     const lastVisit = salesMap[cusCode]?.lastVisit || normDateYMD(lastVisitDate);
 
-    const cycleFromSales = computeVisitCycle(visitDatesMap.get(cusCode) || []);
+    const visitDates = visitDatesMap.get(cusCode) || [];
+    const cycleFromSales = computeVisitCycle(visitDates);
     const cycle = mergeVisitCycle(cycleFromSales, posVisitCount, joinDate, lastVisit);
+    const trend = computeVisitTrend(visitDates);
 
     return {
       cusCode,
@@ -218,6 +236,11 @@ export async function queryCustomers(params: CustomerQueryParams): Promise<Custo
       expectedNextVisit: cycle.expectedNextVisit,
       cycleStatus: cycle.cycleStatus,
       cycleStatusLabel: cycle.cycleStatusLabel,
+      visitTrend: trend.segment,
+      visitTrendLabel: trend.segmentLabel || VISIT_TREND_LABELS[trend.segment],
+      recentAvgDays: trend.recentAvgDays,
+      historicalAvgDays: trend.historicalAvgDays,
+      trendRatio: trend.trendRatio,
     };
   });
 
@@ -238,6 +261,9 @@ export async function queryCustomers(params: CustomerQueryParams): Promise<Custo
   }
   if (cycleStatus) {
     filtered = filtered.filter(c => c.cycleStatus === cycleStatus);
+  }
+  if (visitTrend) {
+    filtered = filtered.filter(c => c.visitTrend === visitTrend);
   }
 
   const sorted = sortCustomers(filtered, sortBy, sortOrder);
@@ -268,6 +294,7 @@ export async function queryCustomers(params: CustomerQueryParams): Promise<Custo
   const overdueCount = allRows.filter(c => c.cycleStatus === 'overdue').length;
   const dueSoonCount = allRows.filter(c => c.cycleStatus === 'due_soon').length;
   const withCycleData = allRows.filter(c => c.avgCycleDays != null).length;
+  const trendCounts = countByVisitTrend(allRows);
 
   return {
     customers,
@@ -281,6 +308,7 @@ export async function queryCustomers(params: CustomerQueryParams): Promise<Custo
       overdueCount,
       dueSoonCount,
       withCycleData,
+      ...trendCounts,
     },
     grades: [...new Set(allRows.map(c => c.grade).filter(Boolean))].sort(),
   };
