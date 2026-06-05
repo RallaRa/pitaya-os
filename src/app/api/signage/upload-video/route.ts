@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { verifyToken } from '@/lib/authVerify';
-import { adminStorage } from '@/lib/firebase/admin';
+import { getAdminStorageBucket } from '@/lib/firebase/admin';
+import { formatStorageError } from '@/lib/firebase/storageBucket';
 
 export async function POST(req: NextRequest) {
   const authUser = await verifyToken(req);
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
     const sid = storeId || 'global';
     const storagePath = `stores/${sid}/signage/videos/${Date.now()}_${token.slice(0, 8)}.${ext}`;
 
-    const bucket = adminStorage.bucket();
+    const bucket = getAdminStorageBucket();
     await bucket.file(storagePath).save(buffer, {
       metadata: {
         contentType: mimeType || 'video/mp4',
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ url, thumbnailUrl: url, success: true });
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = formatStorageError(e);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

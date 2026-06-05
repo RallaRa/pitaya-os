@@ -26,3 +26,16 @@
 .dashboard-grid .react-grid-item > .react-resizable-handle {
   z-index: 5;
 }
+
+/* 메인 대시보드 — 모바일/태블릿 세로 스택 (위젯 겹침 방지) */
+.dashboard-mobile-stack {
+  overflow-x: hidden;
+}
+
+.dashboard-mobile-widget {
+  clear: both;
+}
+
+.dashboard-mobile-widget > * {
+  max-width: 100%;
+}

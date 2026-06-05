@@ -1,7 +1,11 @@
 import { getApps, initializeApp, cert, App, ServiceAccount } from 'firebase-admin/app';
 import { Firestore, getFirestore } from 'firebase-admin/firestore';
-import { Storage, getStorage } from 'firebase-admin/storage';
+import { Storage, getStorage, Bucket } from 'firebase-admin/storage';
 import { Auth, getAuth } from 'firebase-admin/auth';
+import {
+  parseProjectIdFromServiceAccountKey,
+  resolveStorageBucket,
+} from '@/lib/firebase/storageBucket';
 
 const APP_NAME = 'admin';
 
@@ -25,10 +29,18 @@ function getAdminApp(): App {
   if (sa.private_key?.includes('\\n')) {
     sa.private_key = sa.private_key.replace(/\\n/g, '\n');
   }
+  const storageBucket = resolveStorageBucket(
+    (sa.project_id as string | undefined) ?? parseProjectIdFromServiceAccountKey(raw),
+  );
+  if (!storageBucket) {
+    throw new Error(
+      'Firebase Storage bucket 미설정 — NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET 또는 서비스 계정 project_id 필요',
+    );
+  }
   return initializeApp(
     {
       credential: cert(sa as ServiceAccount),
-      storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+      storageBucket,
     },
     APP_NAME,
   );
@@ -58,3 +70,8 @@ export const adminAuth = new Proxy({} as Auth, {
     return typeof val === 'function' ? (val as Function).bind(auth) : val;
   },
 });
+
+/** Storage bucket (env 비어 있어도 project_id 기준 버킷 사용) */
+export function getAdminStorageBucket(): Bucket {
+  return getStorage(getAdminApp()).bucket();
+}

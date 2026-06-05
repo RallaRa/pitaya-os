@@ -8,6 +8,9 @@ const ResponsiveGridLayout = dynamic(
   () => import('react-grid-layout').then(m => ({ default: m.ResponsiveGridLayout })),
   { ssr: false }
 );
+
+/** 모바일·태블릿·가로폰 — 그리드 대신 세로 스택 (Chrome Android/iOS 겹침 방지) */
+const DASHBOARD_STACK_BREAKPOINT = 1024;
 import { Plus, LayoutGrid, Lock, RotateCcw, Crown } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -25,13 +28,13 @@ import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import {
   WIDGET_META,
   DEFAULT_ACTIVE,
-  PRIORITY_WIDGET_ID,
   DASHBOARD_LAYOUT_VERSION,
   sortWidgetsForDisplay,
   makeDefaultLayout,
   resolveDashboardLayout,
   mergeLayoutChange,
   compactDashboardLayout,
+  buildStackedLayout,
   type WidgetMeta,
 } from '@/lib/dashboardLayout';
 import DashboardGridItem from '@/components/dashboard/DashboardGridItem';
@@ -117,7 +120,7 @@ export default function DashboardPage() {
   const [userRole,      setUserRole]      = useState('user');
   const [showAddModal,  setShowAddModal]  = useState(false);
   const [isMobile,      setIsMobile]      = useState(
-    () => (typeof window !== 'undefined' ? window.innerWidth < 768 : false),
+    () => (typeof window !== 'undefined' ? window.innerWidth < DASHBOARD_STACK_BREAKPOINT : false),
   );
   const [layoutLoaded,  setLayoutLoaded]  = useState(false);
   const [containerW,    setContainerW]    = useState(1280);
@@ -128,7 +131,7 @@ export default function DashboardPage() {
   /* 모바일 감지 + 컨테이너 너비 */
   useEffect(() => {
     const update = () => {
-      setIsMobile(window.innerWidth < 768);
+      setIsMobile(window.innerWidth < DASHBOARD_STACK_BREAKPOINT);
       if (containerRef.current) setContainerW(containerRef.current.offsetWidth);
     };
     update();
@@ -327,21 +330,20 @@ export default function DashboardPage() {
     );
   }
 
-  /* 모바일 세로 스택 */
+  /* 모바일·태블릿 세로 스택 (그리드 겹침 없음) */
   if (isMobile) {
     return (
-      <div className="flex flex-col min-h-full bg-slate-950 p-3 space-y-3 touch-pan-y [-webkit-overflow-scrolling:touch]">
-        <div className="flex items-center px-1">
+      <div className="dashboard-mobile-stack flex flex-col min-h-full bg-slate-950 p-3 pb-8 gap-4 w-full max-w-full overflow-x-hidden box-border touch-pan-y [-webkit-overflow-scrolling:touch]">
+        <div className="flex items-center px-1 shrink-0">
           <h1 className="text-slate-300 font-semibold text-sm flex-1">대시보드</h1>
-          <span className="text-slate-600 text-[10px]">모바일 뷰</span>
         </div>
         {visibleActive.map(id => (
-          <div
+          <section
             key={id}
-            className={id === PRIORITY_WIDGET_ID ? 'w-full min-h-0 h-auto overflow-visible touch-pan-y' : 'h-64 shrink-0 overflow-hidden'}
+            className="dashboard-mobile-widget w-full max-w-full shrink-0 relative isolate z-0 overflow-x-hidden box-border"
           >
             {renderWidget(id)}
-          </div>
+          </section>
         ))}
       </div>
     );
@@ -422,7 +424,7 @@ export default function DashboardPage() {
           <ResponsiveGridLayout
             className="dashboard-grid"
             width={containerW}
-            layouts={{ lg: currentLayout, md: currentLayout, sm: currentLayout }}
+            layouts={{ lg: narrowGridLayout, md: narrowGridLayout, sm: narrowGridLayout }}
             breakpoints={{ lg: 1200, md: 996, sm: 768 }}
             cols={{ lg: 12, md: 12, sm: 12 }}
             rowHeight={80}

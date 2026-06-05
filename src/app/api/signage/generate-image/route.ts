@@ -3,7 +3,8 @@ import OpenAI from 'openai';
 import type { ImageGenerateParamsNonStreaming } from 'openai/resources/images';
 import { v4 as uuidv4 } from 'uuid';
 import { verifyToken } from '@/lib/authVerify';
-import { adminStorage } from '@/lib/firebase/admin';
+import { getAdminStorageBucket } from '@/lib/firebase/admin';
+import { formatStorageError } from '@/lib/firebase/storageBucket';
 
 /** GPT Image 생성 + Firebase 업로드 (보통 30초~2분) */
 export const maxDuration = 120;
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
     const sid = storeId || 'global';
     const storagePath = `stores/${sid}/signage/${Date.now()}_${token.slice(0, 8)}.png`;
 
-    const bucket = adminStorage.bucket();
+    const bucket = getAdminStorageBucket();
     await bucket.file(storagePath).save(buffer, {
       metadata: {
         contentType: 'image/png',
@@ -77,8 +78,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ url, thumbnailUrl: url, success: true, title });
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error('[signage generate-image]', msg);
+    const msg = formatStorageError(e);
+    console.error('[signage generate-image]', e);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

@@ -226,6 +226,26 @@ export function resolveDashboardLayout(
   return { layout: defaults, repaired: true };
 }
 
+/** 좁은 화면(태블릿·가로 모바일): 12열 전폭 세로 스택 — 겹침 방지 */
+export function buildStackedLayout(
+  widgets: string[],
+  layout: LayoutItem[],
+  cols = GRID_COLS,
+): LayoutItem[] {
+  let y = 0;
+  const items: LayoutItem[] = [];
+  for (const id of sortWidgetsForDisplay(widgets)) {
+    const meta = META_BY_ID.get(id);
+    if (!meta) continue;
+    const source = layout.find(l => l.i === id);
+    const base = source ? clampItem(source, meta, cols) : clampItem(meta.defaultItem, meta, cols);
+    const h = Math.max(base.h ?? meta.defaultItem.h ?? 3, meta.defaultItem.minH ?? 1);
+    items.push({ ...base, i: id, x: 0, w: cols, y, h });
+    y += h;
+  }
+  return items;
+}
+
 export function mergeLayoutChange(
   visibleIds: string[],
   newLayout: LayoutItem[],
