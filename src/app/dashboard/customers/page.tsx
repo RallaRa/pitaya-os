@@ -39,6 +39,11 @@ const CustomerMessagePanel = dynamic(
   { ssr: false },
 );
 
+const CustomerMessageHistoryTab = dynamic(
+  () => import('@/components/customers/CustomerMessageHistoryTab'),
+  { ssr: false },
+);
+
 /* ── 타입 ── */
 interface Customer {
   id: string;
@@ -98,7 +103,7 @@ interface DecryptLogRow {
 }
 
 const GRADE_COLORS = ['#14b8a6','#f97316','#a78bfa','#fb7185','#34d399','#60a5fa','#fbbf24'];
-const TABS = ['고객 목록', '방문 분석', '등급 현황', '조회 이력'] as const;
+const TABS = ['고객 목록', '방문 분석', '등급 현황', '알림톡', '조회 이력'] as const;
 
 type SortField = CustomerSortField;
 
@@ -643,7 +648,10 @@ export default function CustomersPage() {
 
       {/* 탭 */}
       <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-        {TABS.filter(t => t !== '조회 이력' || canDecrypt).map(t => <TabBtn key={t} label={t} />)}
+        {TABS.filter(t => {
+          if (t === '조회 이력' || t === '알림톡') return canDecrypt;
+          return true;
+        }).map(t => <TabBtn key={t} label={t} />)}
       </div>
 
       {/* ── 탭 콘텐츠 ── */}
@@ -1152,6 +1160,13 @@ export default function CustomersPage() {
             <p className="text-center py-16 text-slate-600 text-sm">등급 데이터가 없습니다</p>
           )}
         </div>
+      )}
+
+      {tab === '알림톡' && canDecrypt && storeId && (
+        <CustomerMessageHistoryTab
+          storeId={storeId}
+          onOpenSend={() => setTab('고객 목록')}
+        />
       )}
 
       {/* 조회 이력 탭 */}

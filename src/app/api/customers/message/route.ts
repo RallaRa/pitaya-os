@@ -61,11 +61,13 @@ export async function GET(req: Request) {
         campaignKey: d.campaignKey || '',
         requestedByEmail: d.requestedByEmail || '',
         totalMatched: d.totalMatched || 0,
+        attempted: d.attempted || 0,
         sent: d.sent || 0,
         failed: d.failed || 0,
         skipped: d.skipped || 0,
         skipReasons: d.skipReasons || {},
         filters: d.filters || null,
+        variables: d.variables || {},
         createdAt,
       };
     });
