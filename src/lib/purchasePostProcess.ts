@@ -1,4 +1,5 @@
 import { isMeatCategory, isRawMaterialCategory, normalizePurchaseItem } from '@/lib/purchaseCategories';
+import { normalizePurchaseQty } from '@/lib/purchaseQtyFormat';
 
 const JUNK_ITEM_RE = /^(={2,}|[\-*]{2,}|소\s*계|합\s*계|이하\s*여백|이하여백|비\s*고|\*\*\*|total|subtotal)/i;
 const POULTRY_RE = /계육|개체|비립|닭|치킨|육\d+호|하림|후레쉬|후레시|fresh/i;
@@ -47,7 +48,8 @@ export function inferUnitFromItem(name: string, category: string): string {
 }
 
 function enrichItemAmounts(item: Record<string, unknown>): Record<string, unknown> {
-  const qty = Number(item.qty || 0);
+  const unit = String(item.unit || '').trim();
+  const qty = normalizePurchaseQty(Number(item.qty || 0), unit);
   const unitPrice = Number(item.unitPrice || 0);
   let supplyAmount = Number(item.supplyAmount || 0);
   let taxAmount = Number(item.taxAmount || 0);

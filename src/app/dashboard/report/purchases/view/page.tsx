@@ -7,6 +7,7 @@ import {
   ShoppingCart, ChevronDown, ChevronUp, Trash2,
   Loader2, Search, Calendar,
 } from 'lucide-react';
+import { formatPurchaseQty } from '@/lib/purchaseQtyFormat';
 
 interface PurchaseItem {
   name: string;
@@ -240,7 +241,9 @@ export default function PurchaseViewPage() {
                               <tr key={i} className="border-b border-slate-800">
                                 <td className="py-1.5 pr-3 text-slate-400">{item.category || '-'}</td>
                                 <td className="py-1.5 pr-3 text-slate-200">{item.name}</td>
-                                <td className="py-1.5 pr-3 text-right text-slate-300">{item.qty}{item.unit}</td>
+                                <td className="py-1.5 pr-3 text-right text-slate-300 tabular-nums">
+                                  {formatPurchaseQty(item.qty, item.unit)}{item.unit}
+                                </td>
                                 <td className="py-1.5 pr-3 text-right text-slate-300">{fmt(item.unitPrice)}원</td>
                                 <td className="py-1.5 text-right text-slate-200">{fmt(item.supplyAmount)}원</td>
                               </tr>

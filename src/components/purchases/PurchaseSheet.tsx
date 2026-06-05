@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   ChevronRight, ChevronDown, Plus, Trash2, Save, Loader2, Check,
   ShoppingCart, Image as ImageIcon,
@@ -19,11 +19,13 @@ import {
 } from '@/lib/purchaseCategories';
 import { hasInvoiceTotalMismatch } from '@/lib/purchasePostProcess';
 import {
-  ItemCodePicker,
+  formatPurchaseQty,
+  normalizePurchaseQty,
+  parsePurchaseQtyInput,
+} from '@/lib/purchaseQtyFormat';
+import {
   SupplierCodePicker,
   usePurchaseMasterData,
-  mapScaleCategory,
-  type ScaleCodeOption,
   type SupplierOption,
 } from '@/components/purchases/PurchaseMasterSelect';
 
@@ -115,6 +117,45 @@ const DEFAULT_ITEM: PurchaseItem = {
 
 const fmt = (n: number) => (n || 0).toLocaleString('ko-KR');
 
+function PurchaseQtyInput({
+  qty,
+  unit,
+  onChange,
+}: {
+  qty: number;
+  unit: string;
+  onChange: (qty: number) => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [text, setText] = useState('');
+
+  useEffect(() => {
+    if (!focused) setText(formatPurchaseQty(qty, unit));
+  }, [qty, unit, focused]);
+
+  return (
+    <input
+      value={focused ? text : formatPurchaseQty(qty, unit)}
+      inputMode="decimal"
+      onFocus={() => {
+        setFocused(true);
+        setText(qty ? String(qty) : '');
+      }}
+      onChange={e => {
+        setText(e.target.value);
+        onChange(parsePurchaseQtyInput(e.target.value, unit));
+      }}
+      onBlur={() => {
+        const normalized = normalizePurchaseQty(parsePurchaseQtyInput(text, unit), unit);
+        onChange(normalized);
+        setFocused(false);
+        setText(formatPurchaseQty(normalized, unit));
+      }}
+      className="w-full bg-transparent px-1 py-0.5 text-right text-[10px] text-slate-200 focus:outline-none focus:bg-slate-800 rounded tabular-nums"
+    />
+  );
+}
+
 function recalcTotals(invoice: Invoice): Invoice {
   const supply = invoice.items.reduce((s, i) => s + (i.supplyAmount || 0), 0);
   const tax = invoice.items.reduce((s, i) => s + (i.taxAmount || 0), 0);
@@ -127,6 +168,9 @@ function applyItemChange(
   value: string | number,
 ): PurchaseItem {
   const updated = { ...item, [field]: value };
+  if (field === 'unit') {
+    updated.qty = normalizePurchaseQty(updated.qty, String(value));
+  }
   if (field === 'qty' || field === 'unitPrice') {
     updated.supplyAmount = Math.round(updated.qty * updated.unitPrice);
     updated.taxAmount = Math.round(updated.supplyAmount * 0.1);
@@ -141,7 +185,7 @@ export default function PurchaseSheet({
 }: Props) {
   const [visibleCols, setVisibleCols] = useState<Set<OptionalCol>>(new Set());
   const [viewer, setViewer] = useState<{ groupId: string; index: number } | null>(null);
-  const { scaleCodes, suppliers, reload: reloadMaster } = usePurchaseMasterData(storeId);
+  const { suppliers, reload: reloadMaster } = usePurchaseMasterData(storeId);
 
   const hasData = useMemo<Record<OptionalCol, boolean>>(() => {
     const r: Record<OptionalCol, boolean> = { traceNo: false, origin: false, cut: false, grade: false };
@@ -196,32 +240,6 @@ export default function PurchaseSheet({
         supplierName: supplier?.supplierName || '',
       }),
     }));
-  };
-
-  const selectItemCode = (groupId: string, idx: number, opt: ScaleCodeOption | null) => {
-    updateGroup(groupId, g => {
-      const items = g.invoice.items.map((item, i) => {
-        if (i !== idx) return item;
-        if (!opt) {
-          return { ...item, itemCode: undefined, scaleCodeId: undefined };
-        }
-        const cat = mapScaleCategory(opt.category) || item.category;
-        return applyItemChange(
-          {
-            ...item,
-            itemCode: opt.code,
-            scaleCodeId: opt.id,
-            name: opt.name,
-            category: ALL_ITEM_CATEGORIES.includes(cat as typeof ALL_ITEM_CATEGORIES[number])
-              ? cat
-              : item.category,
-          },
-          'name',
-          opt.name,
-        );
-      });
-      return { ...g, invoice: recalcTotals({ ...g.invoice, items }) };
-    });
   };
 
   const updateItem = (groupId: string, idx: number, field: keyof PurchaseItem, value: string | number) => {
@@ -453,8 +471,8 @@ export default function PurchaseSheet({
                     <tr className="border-b border-slate-700/60 bg-slate-800/30">
                       <th className="text-left text-slate-500 px-1.5 py-1 font-medium w-6">#</th>
                       <th className="text-left text-slate-400 px-1 py-1 font-medium w-16">구분</th>
-                      <th className="text-left text-slate-400 px-1 py-1 font-medium w-[22%]">품목코드·품명</th>
-                      <th className="text-right text-slate-400 px-1 py-1 font-medium w-12">수량</th>
+                      <th className="text-left text-slate-400 px-1 py-1 font-medium w-[22%]">품명</th>
+                      <th className="text-right text-slate-400 px-1 py-1 font-medium w-12">거래량</th>
                       <th className="text-left text-slate-400 px-1 py-1 font-medium w-10">단위</th>
                       <th className="text-right text-slate-400 px-1 py-1 font-medium w-16">단가</th>
                       <th className="text-right text-slate-400 px-1 py-1 font-medium w-16">공급가</th>
@@ -501,35 +519,22 @@ export default function PurchaseSheet({
                           </select>
                         </td>
 
-                        {/* 품목코드·품명 */}
-                        <td className="px-0.5 py-0">
-                          {storeId ? (
-                            <ItemCodePicker
-                              storeId={storeId}
-                              itemCode={item.itemCode}
-                              itemName={item.name}
-                              scaleCodes={scaleCodes}
-                              onReload={reloadMaster}
-                              onSelect={opt => selectItemCode(group.id, idx, opt)}
-                            />
-                          ) : (
-                            <input
-                              value={item.name}
-                              onChange={e => updateItem(group.id, idx, 'name', e.target.value)}
-                              className="w-full bg-transparent px-1 py-0.5 text-[10px] text-slate-200 focus:outline-none focus:bg-slate-800 rounded truncate"
-                            />
-                          )}
-                        </td>
-
-                        {/* 수량 */}
+                        {/* 품명 */}
                         <td className="px-0.5 py-0">
                           <input
-                            value={item.qty || ''}
-                            type="number"
-                            min={0}
-                            step="0.01"
-                            onChange={e => updateItem(group.id, idx, 'qty', parseFloat(e.target.value) || 0)}
-                            className="w-full bg-transparent px-1 py-0.5 text-right text-[10px] text-slate-200 focus:outline-none focus:bg-slate-800 rounded tabular-nums"
+                            value={item.name}
+                            onChange={e => updateItem(group.id, idx, 'name', e.target.value)}
+                            className="w-full bg-transparent px-1 py-0.5 text-[10px] text-slate-200 focus:outline-none focus:bg-slate-800 rounded truncate"
+                            placeholder="품명"
+                          />
+                        </td>
+
+                        {/* 거래량 */}
+                        <td className="px-0.5 py-0">
+                          <PurchaseQtyInput
+                            qty={item.qty}
+                            unit={item.unit}
+                            onChange={v => updateItem(group.id, idx, 'qty', v)}
                           />
                         </td>
 
