@@ -8,6 +8,7 @@ import { fetchDailyReportsSince, storeHasSalesData, fetchPosSalesHeaderSince, fe
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
 import { getKSTTodayYMD, addDaysYMD, isKstTodayTimestamp } from '@/lib/dateUtils';
+import { sourceStatus, stripUndefinedDeep } from '@/lib/firestoreSanitize';
 
 export const maxDuration = 120;
 
@@ -242,6 +243,7 @@ export async function GET(req: Request) {
   const authUser = await verifyToken(req);
   if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  try {
   const { searchParams } = new URL(req.url);
   const storeId = searchParams.get('storeId') || '';
   const refresh = searchParams.get('refresh') === '1';
@@ -548,15 +550,22 @@ topItems/bottomItems badge는: HOT(+30%↑) | UP(+10~30%) | 주의(-10%↓) | �
     || result.today.opinion.includes('AI 분석 일시 오류')
     || result.today.opinion.includes('AI 분석 오류');
 
-  const finalResult = {
+  const finalResult = stripUndefinedDeep({
     ...result,
     dataSourceStatus: dataStatus,
     cached: false,
     ...(aiFailed ? { aiError: true, error: result.today.opinion } : {}),
-  };
+  });
 
   if (result?.today?.opinion?.trim() && !aiFailed) {
-    await cacheRef.set({ ...finalResult, generatedAt: FieldValue.serverTimestamp() }).catch(() => {});
+    try {
+      await cacheRef.set({
+        ...finalResult,
+        generatedAt: FieldValue.serverTimestamp(),
+      });
+    } catch (cacheErr) {
+      console.error('[total-partner] cache write failed:', cacheErr);
+    }
   }
 
   // 정합성 추적 - 오늘 예측 저장 (today/tomorrow)
@@ -605,4 +614,20 @@ topItems/bottomItems badge는: HOT(+30%↑) | UP(+10~30%) | 주의(-10%↓) | �
   } catch {}
 
   return NextResponse.json({ ...finalResult, cached: false });
+  } catch (fatal: unknown) {
+    const msg = fatal instanceof Error ? fatal.message : String(fatal);
+    console.error('[total-partner] fatal:', msg);
+    const today = getKSTTodayYMD();
+    return NextResponse.json({
+      error: msg,
+      aiError: true,
+      generatedAt: new Date().toISOString(),
+      today: { period: `오늘 ${today}`, opinion: '**일시 오류** — 새로고침을 눌러 주세요.', topItems: [], bottomItems: [], keyAlert: '오류', confidence: 0 },
+      tomorrow: null,
+      thisWeek: null,
+      thisMonth: null,
+      orderAdvice: null,
+      cached: false,
+    }, { status: 200 });
+  }
 }

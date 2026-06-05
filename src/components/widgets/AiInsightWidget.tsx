@@ -113,8 +113,16 @@ export default function AiInsightWidget({
       if (force) q.set('force', '1');
       const headers = await getAuthHeaders();
       const res = await fetch(`/api/dashboard/comprehensive-opinion?${q}`, { headers });
-      const d = await res.json();
+      let d: ComprehensiveData;
+      try {
+        d = await res.json();
+      } catch {
+        setError(res.ok ? '응답 파싱 실패' : `서버 오류 (HTTP ${res.status})`);
+        setLoading(false);
+        return;
+      }
       if (!res.ok && d.error) setError(d.error);
+      else if (d.error && d.aiError) setError(d.error);
       setData(d);
       setUpdatedAt(new Date());
     } catch {

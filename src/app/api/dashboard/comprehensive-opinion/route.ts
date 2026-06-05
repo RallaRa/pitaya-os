@@ -13,6 +13,7 @@ import {
   fetchCommercialArea,
   fetchNaverNewsHeadlines,
 } from '@/lib/areaContext';
+import { sourceStatus, stripUndefinedDeep } from '@/lib/firestoreSanitize';
 
 export const maxDuration = 60;
 
@@ -94,12 +95,18 @@ export async function GET(req: Request) {
     : '뉴스 없음';
 
   const dataSourceStatus: Record<string, { status: string; detail?: string }> = {
-    유동인구: { status: footTraffic.source === 'api' ? 'ok' : 'estimate', detail: `지수 ${footTraffic.index}` },
-    상권: { status: commercial.source === 'api' ? 'ok' : 'estimate', detail: commercial.competitiveLevel },
-    네이버트렌드: { status: trendResult.trends.length > 0 ? 'ok' : 'empty', detail: trendResult.error },
-    매출: { status: todaySale > 0 || yesterdaySale > 0 ? 'ok' : 'empty', detail: todaySale > 0 ? `${todaySale.toLocaleString()}원` : undefined },
-    고객: { status: (storeContext?.topCustomers?.length || 0) > 0 ? 'ok' : 'empty' },
-    뉴스: { status: news.length > 0 ? 'ok' : 'empty', detail: `${news.length}건` },
+    유동인구: sourceStatus(footTraffic.source === 'api' ? 'ok' : 'estimate', `지수 ${footTraffic.index}`),
+    상권: sourceStatus(commercial.source === 'api' ? 'ok' : 'estimate', commercial.competitiveLevel),
+    네이버트렌드: sourceStatus(
+      trendResult.trends.length > 0 ? 'ok' : 'empty',
+      trendResult.error || (trendResult.trends.length > 0 ? `${trendResult.trends.length}그룹` : '키워드 미설정'),
+    ),
+    매출: sourceStatus(
+      todaySale > 0 || yesterdaySale > 0 ? 'ok' : 'empty',
+      todaySale > 0 ? `${todaySale.toLocaleString()}원` : yesterdaySale > 0 ? `${yesterdaySale.toLocaleString()}원(어제)` : undefined,
+    ),
+    고객: sourceStatus((storeContext?.topCustomers?.length || 0) > 0 ? 'ok' : 'empty'),
+    뉴스: sourceStatus(news.length > 0 ? 'ok' : 'empty', news.length > 0 ? `${news.length}건` : undefined),
   };
 
   const hasSalesSignal = todaySale > 0 || yesterdaySale > 0;
@@ -211,7 +218,8 @@ highlights 4~6개(품목 태그 금지), actions 3개(구체적·즉시 실행)`
     return NextResponse.json(payload);
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({
+    console.error('[briefing] AI pipeline:', msg);
+    return NextResponse.json(stripUndefinedDeep({
       error: msg,
       aiError: true,
       summary: 'AI 분석 실패 — 새로고침을 눌러 다시 시도해 주세요.',
@@ -225,6 +233,6 @@ highlights 4~6개(품목 태그 금지), actions 3개(구체적·즉시 실행)`
       sales: { today: todaySale, yesterday: yesterdaySale, change: saleChange },
       dataSourceStatus,
       cached: false,
-    });
+    }));
   }
 }

@@ -198,12 +198,19 @@ export default function TotalPartnerWidget({ editMode, onRemove, storeId, mobile
     try {
       const headers = await getAuthHeaders();
       const res = await fetch(`/api/dashboard/total-partner${q}${force ? (q ? '&' : '?') + 'refresh=1' : ''}`, { headers });
-      const d = await res.json();
+      let d: PartnerData & { error?: string };
+      try {
+        d = await res.json();
+      } catch {
+        setError(res.ok ? '응답 파싱 실패' : `서버 오류 (HTTP ${res.status})`);
+        setLoading(false);
+        return;
+      }
       setData(d);
       setUpdatedAt(new Date());
-      if (d.error) setError(d.error);
-    } catch {
-      setError('데이터 로드 실패');
+      if (!res.ok || d.error) setError(d.error || `요청 실패 (HTTP ${res.status})`);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '데이터 로드 실패');
     } finally {
       setLoading(false);
     }

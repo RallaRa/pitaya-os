@@ -46,10 +46,21 @@ function getAdminApp(): App {
   );
 }
 
+let firestoreSettingsApplied = false;
+
+function getAdminFirestore(): Firestore {
+  const db = getFirestore(getAdminApp());
+  if (!firestoreSettingsApplied) {
+    db.settings({ ignoreUndefinedProperties: true });
+    firestoreSettingsApplied = true;
+  }
+  return db;
+}
+
 // Proxy: 빌드 타임이 아닌 첫 API 호출 시 초기화
 export const adminDb = new Proxy({} as Firestore, {
   get(_, prop: string | symbol) {
-    const db = getFirestore(getAdminApp());
+    const db = getAdminFirestore();
     const val = db[prop as keyof Firestore];
     return typeof val === 'function' ? (val as Function).bind(db) : val;
   },
