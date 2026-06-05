@@ -154,40 +154,23 @@ export default function DashboardPage() {
     return () => ro.disconnect();
   }, []);
 
-  /* 권한 조회 */
-  useEffect(() => {
-    if (!uid) return;
-    getAuthHeaders()
-      .then(headers => fetch(`/api/permissions?type=myAccess${storeId ? `&storeId=${storeId}` : ''}`, { headers }))
-      .then(r => r.json())
-      .then(d => { if (d.role) setUserRole(d.role); })
-      .catch(() => {});
-  }, [uid, storeId]);
-
-  /* 위젯 권한 조회 */
-  useEffect(() => {
-    const q = storeId ? `?storeId=${storeId}` : '';
-    getAuthHeaders()
-      .then(headers => fetch(`/api/dashboard/widget-permissions${q}`, { headers }))
-      .then(r => r.json())
-      .then(d => setWidgetPerms(d.widgets || {}))
-      .catch(() => {});
-  }, [storeId]);
-
-  /* 저장된 레이아웃 불러오기 */
+  /* 대시보드 초기 데이터 (권한·위젯권한·레이아웃) */
   useEffect(() => {
     if (!uid) return;
     const params = new URLSearchParams({ uid });
     if (storeId) params.set('storeId', storeId);
     getAuthHeaders()
-      .then(headers => fetch(`/api/dashboard/layout?${params}`, { headers }))
+      .then(headers => fetch(`/api/dashboard/bootstrap?${params}`, { headers }))
       .then(r => r.json())
       .then(d => {
-        if (d.layout && d.activeWidgets) {
+        if (d.myAccess?.role) setUserRole(d.myAccess.role);
+        setWidgetPerms(d.widgetPermissions?.widgets || {});
+        const layoutData = d.layout;
+        if (layoutData?.layout && layoutData?.activeWidgets) {
           const { widgets, layout, repaired } = applyResolvedLayout(
-            d.activeWidgets,
-            d.layout as LayoutItem[],
-            d.layoutVersion,
+            layoutData.activeWidgets,
+            layoutData.layout as LayoutItem[],
+            layoutData.layoutVersion,
           );
           setLayouts({ lg: layout as GridLayout });
           setActiveWidgets(widgets);

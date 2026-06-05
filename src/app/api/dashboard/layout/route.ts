@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
+import { getDashboardLayoutData } from '@/lib/dashboardLayoutServer';
 
 const SUPERUSER_EMAIL = process.env.SUPERUSER_EMAIL || 'hipona00@gmail.com';
 
@@ -15,32 +16,8 @@ export async function GET(req: Request) {
 
   if (!uid) return NextResponse.json({ layout: null });
 
-  try {
-    // 마스터 레이아웃 우선 조회 (storeId 있으면)
-    if (storeId) {
-      const masterDoc = await adminDb.collection('dashboard_layouts').doc(`${storeId}_master`).get();
-      if (masterDoc.exists) {
-        return NextResponse.json({
-          layout: masterDoc.data()?.layout || null,
-          activeWidgets: masterDoc.data()?.activeWidgets || null,
-          layoutVersion: masterDoc.data()?.layoutVersion ?? null,
-          isMaster: true,
-        });
-      }
-    }
-
-    // 마스터 없으면 개인 레이아웃
-    const doc = await adminDb.collection('dashboard_layouts').doc(uid).get();
-    if (!doc.exists) return NextResponse.json({ layout: null });
-    return NextResponse.json({
-      layout: doc.data()?.layout || null,
-      activeWidgets: doc.data()?.activeWidgets || null,
-      layoutVersion: doc.data()?.layoutVersion ?? null,
-      isMaster: false,
-    });
-  } catch {
-    return NextResponse.json({ layout: null });
-  }
+  const data = await getDashboardLayoutData(uid, storeId);
+  return NextResponse.json(data);
 }
 
 export async function PUT(req: Request) {
@@ -59,7 +36,6 @@ export async function PUT(req: Request) {
       updatedAt: FieldValue.serverTimestamp(),
     };
 
-    // 슈퍼유저 + storeId → 마스터 레이아웃 저장
     if (isSuperuser && storeId) {
       await adminDb.collection('dashboard_layouts').doc(`${storeId}_master`).set({
         ...payload,
@@ -69,13 +45,13 @@ export async function PUT(req: Request) {
       return NextResponse.json({ success: true, saved: 'master' });
     }
 
-    // 일반 유저 → 개인 레이아웃 저장
     await adminDb.collection('dashboard_layouts').doc(uid).set({
       ...payload,
     });
 
     return NextResponse.json({ success: true, saved: 'personal' });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

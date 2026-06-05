@@ -2,19 +2,9 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
-
-const DEFAULT_PERMISSIONS = {
-  news:               { master: true, admin: true,  user: true,  staff: false },
-  weather:            { master: true, admin: true,  user: true,  staff: true  },
-  weekly_analysis:    { master: true, admin: true,  user: false, staff: false },
-  yesterday_analysis: { master: true, admin: true,  user: true,  staff: false },
-  quick_menu:         { master: true, admin: true,  user: true,  staff: true  },
-  ai_insight:         { master: true, admin: true,  user: true,  staff: false },
-  total_partner:      { master: true, admin: true,  user: true,  staff: false },
-  sales_prediction:   { master: true, admin: true,  user: true,  staff: false },
-  today_sales:        { master: true, admin: true,  user: true,  staff: true  },
-  sales_compare:      { master: true, admin: true,  user: true,  staff: false },
-};
+import {
+  getDashboardWidgetPermissions,
+} from '@/lib/dashboardWidgetPermissionsServer';
 
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
@@ -23,13 +13,8 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const storeId = searchParams.get('storeId') || 'global';
 
-  try {
-    const doc = await adminDb.collection('dashboard_widget_permissions').doc(storeId).get();
-    const widgets = doc.exists ? { ...DEFAULT_PERMISSIONS, ...doc.data()?.widgets } : DEFAULT_PERMISSIONS;
-    return NextResponse.json({ widgets });
-  } catch (e: any) {
-    return NextResponse.json({ widgets: DEFAULT_PERMISSIONS });
-  }
+  const data = await getDashboardWidgetPermissions(storeId);
+  return NextResponse.json(data);
 }
 
 export async function POST(req: Request) {
@@ -40,9 +25,8 @@ export async function POST(req: Request) {
     const body    = await req.json();
     const { storeId = 'global', widgets } = body;
 
-    // master는 항상 true
-    const sanitized: any = {};
-    for (const [key, perms] of Object.entries(widgets as Record<string, any>)) {
+    const sanitized: Record<string, Record<string, boolean>> = {};
+    for (const [key, perms] of Object.entries(widgets as Record<string, Record<string, boolean>>)) {
       sanitized[key] = { ...perms, master: true };
     }
 
@@ -52,7 +36,8 @@ export async function POST(req: Request) {
     );
 
     return NextResponse.json({ success: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
