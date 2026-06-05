@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '@/context/StoreContext';
+import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import {
   SlidersHorizontal, Save, RotateCcw, ChevronDown, ChevronUp,
   Loader2, Check, AlertTriangle, Plus, X, ToggleLeft, ToggleRight,
@@ -238,7 +239,9 @@ export default function PredictionVariablesPage() {
   const load = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const res = await fetch(`/api/weather-variables?storeId=${storeId}`);
+      const res = await fetch(`/api/weather-variables?storeId=${storeId}`, {
+        headers: await getAuthHeaders(),
+      });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setVariables(data.variables || []);
@@ -260,7 +263,7 @@ export default function PredictionVariablesPage() {
     try {
       const res = await fetch('/api/weather-variables', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ storeId, variables }),
       });
       const data = await res.json();
@@ -286,7 +289,7 @@ export default function PredictionVariablesPage() {
     try {
       const res = await fetch('/api/weather-variables/calibrate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await getAuthJsonHeaders(),
         body: JSON.stringify({ storeId, force: true }),
       });
       const data = await res.json();

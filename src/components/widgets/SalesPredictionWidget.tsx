@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, ChevronDown, ChevronUp, Target, HelpCircle } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
 import WidgetEmptyReason from './WidgetEmptyReason';
@@ -91,6 +92,68 @@ function boldify(text: string) {
     p.startsWith('**') && p.endsWith('**')
       ? <strong key={i} className="font-bold text-slate-100">{p.slice(2, -2)}</strong>
       : <span key={i}>{p}</span>,
+  );
+}
+
+const PREDICTION_SECTION_TIPS = {
+  spotlight:
+    '평소 대비 오늘 더 팔릴 가능성이 큰 품목입니다. 어제·전주 동요일 판매 신호, 전주 추세, 날씨·공휴일·기념일을 합산한 상승 점수로 순위를 매깁니다. 오늘 진열 강화·추가 진열 후보입니다.',
+  base:
+    '평소 매출·발주 기준 메인에 상주하는 품목입니다. 90일 일평균과 요일별 실적으로 오늘 예상 매출 점수를 계산합니다. 오늘 주목 목록과 겹치지 않으며, 기본 진열을 유지할 상주 베스트셀러입니다.',
+  bottom:
+    '오늘 판매가 평소보다 줄어들 가능성이 큰 품목입니다. 상승 점수가 낮은 순으로 표시하며, 진열 축소·재고 조정 참고용입니다.',
+} as const;
+
+function PredictionSectionTitle({
+  label,
+  tip,
+  className,
+}: {
+  label: string;
+  tip: string;
+  className: string;
+}) {
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const [tipOpen, setTipOpen] = useState(false);
+  const [tipPos, setTipPos] = useState({ left: 0, top: 0 });
+
+  const showTip = useCallback(() => {
+    const el = anchorRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const maxW = Math.min(300, window.innerWidth - 16);
+    const left = Math.min(rect.left, window.innerWidth - maxW - 8);
+    setTipPos({ left: Math.max(8, left), top: rect.bottom + 6 });
+    setTipOpen(true);
+  }, []);
+
+  return (
+    <>
+      <span
+        ref={anchorRef}
+        role="button"
+        tabIndex={0}
+        className={`inline-flex items-center gap-1 cursor-help select-none ${className}`}
+        onMouseEnter={showTip}
+        onMouseLeave={() => setTipOpen(false)}
+        onFocus={showTip}
+        onBlur={() => setTipOpen(false)}
+        aria-label={tip}
+      >
+        {label}
+        <HelpCircle className="w-3 h-3 opacity-60 shrink-0" aria-hidden />
+      </span>
+      {tipOpen && typeof document !== 'undefined' && createPortal(
+        <div
+          role="tooltip"
+          style={{ position: 'fixed', left: tipPos.left, top: tipPos.top, maxWidth: Math.min(300, window.innerWidth - 16), zIndex: 9999 }}
+          className="rounded-lg border border-slate-600/70 bg-slate-800 px-2.5 py-2 text-[10px] leading-snug text-slate-200 shadow-xl pointer-events-none"
+        >
+          {tip}
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 
@@ -472,8 +535,12 @@ export default function SalesPredictionWidget({
               </p>
             )}
             <div className="min-w-0">
-              <p className="text-[10px] text-emerald-400 font-semibold mb-0.5 py-0.5 sticky top-0 bg-slate-900/95 z-[1]">
-                ✨ 오늘 주목 TOP10
+              <p className="text-[10px] font-semibold mb-0.5 py-0.5 sticky top-0 bg-slate-900/95 z-[1]">
+                <PredictionSectionTitle
+                  label="✨ 오늘 주목 TOP10"
+                  tip={PREDICTION_SECTION_TIPS.spotlight}
+                  className="text-emerald-400"
+                />
               </p>
               <p className="text-[9px] text-slate-500 mb-1 px-0.5 flex justify-between gap-2">
                 <span>평소 대비 상승·날씨·공휴일·기념일</span>
@@ -493,8 +560,12 @@ export default function SalesPredictionWidget({
             </div>
             {(data?.baseTopItems || []).length > 0 && (
               <div className="min-w-0">
-                <p className="text-[10px] text-green-400/80 font-semibold mb-0.5 py-0.5 sticky top-0 bg-slate-900/95 z-[1]">
-                  📈 기본 메인 진열 TOP10
+                <p className="text-[10px] font-semibold mb-0.5 py-0.5 sticky top-0 bg-slate-900/95 z-[1]">
+                  <PredictionSectionTitle
+                    label="📈 기본 메인 진열 TOP10"
+                    tip={PREDICTION_SECTION_TIPS.base}
+                    className="text-green-400/80"
+                  />
                 </p>
                 <p className="text-[9px] text-slate-500 mb-1 px-0.5">평소 매출·발주 기준 상주 품목 · 우측 예상·실제차</p>
                 <div className="rounded-lg bg-slate-800/20 px-2">
@@ -505,8 +576,12 @@ export default function SalesPredictionWidget({
               </div>
             )}
             <div className="min-w-0">
-              <p className="text-[10px] text-red-400 font-semibold mb-1 py-0.5 sticky top-0 bg-slate-900/95 z-[1]">
-                📉 오늘 감소·축소 예상
+              <p className="text-[10px] font-semibold mb-1 py-0.5 sticky top-0 bg-slate-900/95 z-[1]">
+                <PredictionSectionTitle
+                  label="📉 오늘 감소·축소 예상"
+                  tip={PREDICTION_SECTION_TIPS.bottom}
+                  className="text-red-400"
+                />
               </p>
               <div className="rounded-lg bg-slate-800/30 px-2">
                 {(data?.bottomItems || []).length === 0 ? (
