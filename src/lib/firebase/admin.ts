@@ -1,6 +1,6 @@
 import { getApps, initializeApp, cert, App, ServiceAccount } from 'firebase-admin/app';
 import { Firestore, getFirestore } from 'firebase-admin/firestore';
-import { Storage, getStorage, Bucket } from 'firebase-admin/storage';
+import { Storage, getStorage } from 'firebase-admin/storage';
 import { Auth, getAuth } from 'firebase-admin/auth';
 import {
   parseProjectIdFromServiceAccountKey,
@@ -72,6 +72,6 @@ export const adminAuth = new Proxy({} as Auth, {
 });
 
 /** Storage bucket (env 비어 있어도 project_id 기준 버킷 사용) */
-export function getAdminStorageBucket(): Bucket {
+export function getAdminStorageBucket() {
   return getStorage(getAdminApp()).bucket();
 }
