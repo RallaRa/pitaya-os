@@ -202,19 +202,6 @@ export default function PurchaseAIChat({ onInvoicesFound, storeId = '', onAnalys
     }
   }, [addFiles]);
 
-  useEffect(() => {
-    const handler = (e: ClipboardEvent) => {
-      const imageFiles = extractImageFilesFromClipboard(e.clipboardData);
-      if (imageFiles.length > 0) {
-        e.preventDefault();
-        e.stopPropagation();
-        void addFiles(imageFiles);
-      }
-    };
-    document.addEventListener('paste', handler, true);
-    return () => document.removeEventListener('paste', handler, true);
-  }, [addFiles]);
-
   const removeAttachment = (id: string) => {
     setAttachments(prev => prev.filter(a => a.id !== id));
   };
@@ -634,7 +621,6 @@ export default function PurchaseAIChat({ onInvoicesFound, storeId = '', onAnalys
           <input
             value={input}
             onChange={e => setInput(e.target.value)}
-            onPaste={handlePaste}
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();

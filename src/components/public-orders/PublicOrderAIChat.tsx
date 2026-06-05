@@ -193,18 +193,6 @@ export default function PublicOrderAIChat({
     }
   }, [applyClipboardPaste]);
 
-  useEffect(() => {
-    const onPaste = (e: ClipboardEvent) => {
-      if (!panelRef.current) return;
-      if (applyClipboardPaste(e.clipboardData)) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    };
-    document.addEventListener('paste', onPaste, true);
-    return () => document.removeEventListener('paste', onPaste, true);
-  }, [applyClipboardPaste]);
-
   const onDragEnter = (e: DragEvent) => {
     e.preventDefault();
     dragCounter.current += 1;
@@ -475,7 +463,6 @@ export default function PublicOrderAIChat({
           <input
             value={input}
             onChange={e => setInput(e.target.value)}
-            onPaste={handlePaste}
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();

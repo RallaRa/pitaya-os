@@ -27,6 +27,9 @@ export function extractImageFilesFromClipboard(
     }
   }
 
+  // files에 이미지가 있으면 items는 같은 데이터를 다시 넣는 경우가 많음 → 스kip
+  if (out.length > 0) return out;
+
   for (const item of Array.from(dt.items || [])) {
     if (item.kind === 'file' || item.type.startsWith('image/')) {
       push(item.getAsFile());
