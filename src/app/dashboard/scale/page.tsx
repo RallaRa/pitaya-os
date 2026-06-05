@@ -13,6 +13,13 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
+import PosBarCodeBreakdownView from '@/components/scale/PosBarCodeBreakdownView';
+import {
+  breakdownPosBarCode,
+  labelPrefix3,
+  POS_BARCODE_STRUCTURE_HINT,
+  scaleCodeNumberFromBarCode,
+} from '@/lib/posBarCode';
 
 /* ── 타입 ── */
 interface ScaleCode {
@@ -204,6 +211,9 @@ export default function ScaleCodePage() {
   const [editName,    setEditName]    = useState('');
   const [toast,       setToast]       = useState<{ msg: string; ok: boolean } | null>(null);
   const [mobileTab,   setMobileTab]   = useState<'chat' | 'table'>('chat');
+  const [manualPos,   setManualPos]   = useState('');
+  const [manualName,  setManualName]  = useState('');
+  const [manualSaving, setManualSaving] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -236,6 +246,49 @@ export default function ScaleCodePage() {
   }, [storeId, showToast]);
 
   useEffect(() => { loadItems(); }, [loadItems]);
+
+  const manualBreakdown = useMemo(
+    () => (manualPos.trim() ? breakdownPosBarCode(manualPos) : null),
+    [manualPos],
+  );
+
+  const registerManualCode = async () => {
+    const b = breakdownPosBarCode(manualPos);
+    const name = manualName.trim();
+    if (!b || !name) {
+      showToast('POS 6자리 코드와 품목명을 입력하세요', false);
+      return;
+    }
+    setManualSaving(true);
+    try {
+      const res = await fetch('/api/scale/codes', {
+        method: 'POST',
+        headers: await getAuthJsonHeaders(),
+        body: JSON.stringify({
+          storeId,
+          createdBy: uid,
+          items: [{
+            code: scaleCodeNumberFromBarCode(b.pos6),
+            name,
+            posBarCode: b.pos6,
+            scaleCode3: b.scaleCode3,
+            prefix3: b.prefix3,
+            source: 'manual',
+          }],
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      showToast(`등록: ${b.pos6} → 저울 ${b.scaleCode3}`);
+      setManualPos('');
+      setManualName('');
+      await loadItems();
+    } catch (e: unknown) {
+      showToast(e instanceof Error ? e.message : '등록 실패', false);
+    } finally {
+      setManualSaving(false);
+    }
+  };
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -430,7 +483,7 @@ export default function ScaleCodePage() {
             <div>
               <h1 className="text-slate-100 font-bold text-lg">저울 코드 관리</h1>
               <p className="text-slate-500 text-xs">
-                총 {totalCount}개 · POS 6자리 연동 · 저울번호=뒤3자리
+                총 {totalCount}개 · POS 6자리 = 앞3(계열)+뒤3(저울) · 7자리(앞0) 4번째=계열구분
                 {pendingCount > 0 ? ` · 확인대기 ${pendingCount}건` : ''}
               </p>
             </div>
@@ -615,13 +668,50 @@ export default function ScaleCodePage() {
                 </div>
               ) : (
                 <div className="space-y-4">
+                  {/* POS 코드 구조 안내 + 수동 등록 */}
+                  <div className="rounded-xl border border-slate-700/60 bg-slate-900/40 p-3 space-y-3">
+                    <p className="text-slate-400 text-xs leading-relaxed">{POS_BARCODE_STRUCTURE_HINT}</p>
+                    <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-start">
+                      <div>
+                        <label className="text-[10px] text-slate-500 block mb-1">POS 6자리 코드</label>
+                        <input
+                          value={manualPos}
+                          onChange={e => setManualPos(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          placeholder="예: 201036"
+                          className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-teal-200 focus:outline-none focus:border-teal-500/50"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-500 block mb-1">품목명</label>
+                        <input
+                          value={manualName}
+                          onChange={e => setManualName(e.target.value)}
+                          placeholder="예: 한돈 삼겹살"
+                          className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-teal-500/50"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={registerManualCode}
+                        disabled={manualSaving || !manualBreakdown || !manualName.trim()}
+                        className="sm:mt-5 flex items-center justify-center gap-1.5 px-4 py-2 bg-teal-700 hover:bg-teal-600 disabled:opacity-40 text-white rounded-lg text-sm"
+                      >
+                        {manualSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                        등록
+                      </button>
+                    </div>
+                    {manualBreakdown && (
+                      <PosBarCodeBreakdownView barCode={manualPos} />
+                    )}
+                  </div>
+
                   {pending.length > 0 && (
                     <div className="rounded-xl border border-amber-700/50 bg-amber-950/40 p-3">
                       <p className="text-amber-200 text-sm font-semibold mb-2">
                         확인 대기 — 저울번호(뒤3자리) 중복 {pending.length}그룹 · {pendingCount}건
                       </p>
                       <p className="text-amber-200/70 text-xs mb-3">
-                        아래 품목은 POS에서 원인 확인 후 피드백 주시면 반영합니다. (자동 등록 안 함)
+                        뒤3자리(저울번호)만 같을 때 발생합니다. <strong className="text-amber-100">앞3자리·3번째 자리(7자리 기준 4번째)</strong>를 비교하세요.
                       </p>
                       <div className="space-y-2 max-h-48 overflow-y-auto">
                         {pending.map(g => (
@@ -629,10 +719,13 @@ export default function ScaleCodePage() {
                             <span className="text-amber-300 font-mono font-bold">저울 {g.scaleCode3}</span>
                             <ul className="mt-1 space-y-0.5 text-slate-300">
                               {g.items.map(it => (
-                                <li key={it.posBarCode}>
-                                  <span className="font-mono text-teal-400/90">{it.posBarCode}</span>
-                                  {' '}{it.prefix3 && <span className="text-slate-500">({it.prefix3})</span>}{' '}
-                                  {it.name}
+                                <li key={it.posBarCode} className="space-y-1">
+                                  <div>
+                                    <span className="font-mono text-teal-400/90">{it.posBarCode}</span>
+                                    {' '}
+                                    {it.name}
+                                  </div>
+                                  <PosBarCodeBreakdownView barCode={it.posBarCode} compact />
                                 </li>
                               ))}
                             </ul>
@@ -656,7 +749,9 @@ export default function ScaleCodePage() {
                           <thead>
                             <tr className="bg-slate-800/60">
                               <th className="px-3 py-1.5 text-left text-[10px] text-slate-500 w-16">저울</th>
-                              <th className="px-3 py-1.5 text-left text-[10px] text-slate-500 w-24">POS코드</th>
+                              <th className="px-3 py-1.5 text-left text-[10px] text-slate-500 w-24">POS 6자리</th>
+                              <th className="px-3 py-1.5 text-left text-[10px] text-slate-500 w-20">계열(앞3)</th>
+                              <th className="px-3 py-1.5 text-left text-[10px] text-slate-500 w-16" title="7자리(앞0) 기준 4번째 = 6자리 3번째">4·7자리</th>
                               <th className="px-3 py-1.5 text-left text-[10px] text-slate-500">품목명</th>
                               <th className="px-3 py-1.5 w-16" />
                             </tr>
@@ -674,6 +769,15 @@ export default function ScaleCodePage() {
                                         onChange={e => setEditCode(e.target.value)}
                                         className="w-16 bg-slate-700 border border-teal-500 rounded px-1.5 py-0.5 text-sm text-slate-200 focus:outline-none"
                                       />
+                                    </td>
+                                    <td className="px-3 py-1.5 font-mono text-[11px] text-slate-500" colSpan={2}>
+                                      {item.posBarCode || '—'}
+                                    </td>
+                                    <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500">
+                                      {item.posBarCode ? (() => {
+                                        const b = breakdownPosBarCode(item.posBarCode);
+                                        return b ? `${b.digit4InPadded7}·${b.digit7InPadded7}` : '—';
+                                      })() : '—'}
                                     </td>
                                     <td className="px-3 py-1.5">
                                       <input
@@ -706,8 +810,32 @@ export default function ScaleCodePage() {
                                     <td className="px-3 py-2 font-mono font-bold text-sm text-teal-300">
                                       {item.scaleCode3 || String(item.code).padStart(3, '0')}
                                     </td>
-                                    <td className="px-3 py-2 font-mono text-[11px] text-slate-500">
-                                      {item.posBarCode || '—'}
+                                    <td className="px-3 py-2 font-mono text-[11px] text-slate-400">
+                                      {item.posBarCode ? (
+                                        <span>
+                                          <span className="text-blue-300/80">{item.prefix3 || item.posBarCode.slice(0, 3)}</span>
+                                          <span className="text-teal-300/90">{item.scaleCode3 || item.posBarCode.slice(-3)}</span>
+                                        </span>
+                                      ) : '—'}
+                                    </td>
+                                    <td className="px-3 py-1.5 text-[10px] text-slate-400">
+                                      {item.prefix3 ? (
+                                        <span title={labelPrefix3(item.prefix3)}>
+                                          {item.prefix3}
+                                          <span className="block text-[9px] text-slate-600">{labelPrefix3(item.prefix3)}</span>
+                                        </span>
+                                      ) : '—'}
+                                    </td>
+                                    <td className="px-3 py-1.5 font-mono text-[10px]">
+                                      {item.posBarCode ? (() => {
+                                        const b = breakdownPosBarCode(item.posBarCode);
+                                        if (!b) return '—';
+                                        return (
+                                          <span className="text-amber-300/90" title="4번째=계열구분 · 7번째=저울 끝자리">
+                                            {b.digit4InPadded7}·{b.digit7InPadded7}
+                                          </span>
+                                        );
+                                      })() : '—'}
                                     </td>
                                     <td
                                       className="px-3 py-2 text-sm text-slate-200 cursor-pointer"

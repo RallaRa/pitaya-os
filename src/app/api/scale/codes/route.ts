@@ -143,6 +143,9 @@ export async function POST(req: Request) {
         batch.update(ref, {
           name:      item.name,
           category:  getCategory(item.name),
+          ...(item.posBarCode ? { posBarCode: String(item.posBarCode) } : {}),
+          ...(item.scaleCode3 ? { scaleCode3: String(item.scaleCode3) } : {}),
+          ...(item.prefix3 ? { prefix3: String(item.prefix3) } : {}),
           updatedAt: FieldValue.serverTimestamp(),
         });
         results.push(existing.docs[0].id);
@@ -153,6 +156,10 @@ export async function POST(req: Request) {
           code:      Number(item.code),
           name:      item.name,
           category:  getCategory(item.name),
+          ...(item.posBarCode ? { posBarCode: String(item.posBarCode) } : {}),
+          ...(item.scaleCode3 ? { scaleCode3: String(item.scaleCode3) } : {}),
+          ...(item.prefix3 ? { prefix3: String(item.prefix3) } : {}),
+          ...(item.source ? { source: String(item.source) } : {}),
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
           createdBy: createdBy || '',
