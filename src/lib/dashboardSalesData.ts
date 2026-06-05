@@ -1,8 +1,13 @@
 import { adminDb } from '@/lib/firebase/admin';
 import type { QueryDocumentSnapshot, QuerySnapshot } from 'firebase-admin/firestore';
-import { addDaysYMD } from '@/lib/dateUtils';
+import { addDaysYMD, getKSTTodayYMD } from '@/lib/dateUtils';
 import { pickBestReportByDate } from '@/lib/reportDedup';
 import { getDisplayNetSales, getDisplayTotalSale, type SalesDocData } from '@/lib/posDailySales';
+import {
+  fetchStoreDailyItemStatsSince,
+  rollupPredictionItemStatsFromDays,
+  rollupWeeklyItemAggregatesFromDays,
+} from '@/lib/storeDailyItemStats';
 
 export interface PeriodTotals {
   label: string;
@@ -64,6 +69,12 @@ export async function fetchPredictionItemStats(
   todayYmd: string,
   limit = 20,
 ): Promise<PredictionItemStat[]> {
+  const aggDays = await fetchStoreDailyItemStatsSince(storeId, sinceYmd, todayYmd);
+  if (aggDays.length > 0) {
+    const fromAgg = rollupPredictionItemStatsFromDays(aggDays, sinceYmd, todayYmd, limit);
+    if (fromAgg.length > 0) return fromAgg;
+  }
+
   const last7Start = addDaysYMD(todayYmd, -6);
   const prev7Start = addDaysYMD(todayYmd, -13);
   const prev7End = addDaysYMD(todayYmd, -7);
@@ -429,6 +440,13 @@ export async function fetchWeeklyItemAggregates(
   sinceYmd: string,
   midYmd: string,
 ): Promise<{ itemMap: Record<string, ItemAggregate>; prevItemMap: Record<string, { qty: number }> }> {
+  const endYmd = getKSTTodayYMD();
+  const aggDays = await fetchStoreDailyItemStatsSince(storeId, sinceYmd, endYmd);
+  if (aggDays.length > 0) {
+    const rolled = rollupWeeklyItemAggregatesFromDays(aggDays, midYmd);
+    if (Object.keys(rolled.itemMap).length > 0) return rolled;
+  }
+
   const itemMap: Record<string, ItemAggregate> = {};
   const prevItemMap: Record<string, { qty: number }> = {};
 

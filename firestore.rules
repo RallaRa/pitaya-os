@@ -173,6 +173,14 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if false;
     }
+    match /store_daily_item_stats/{storeId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+      match /days/{dayId} {
+        allow read: if request.auth != null;
+        allow write: if false;
+      }
+    }
     match /pos_sync_log/{docId} {
       allow read: if request.auth != null;
       allow write: if false;

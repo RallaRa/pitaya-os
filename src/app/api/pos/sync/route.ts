@@ -3,6 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { fetchWeather, getStoreCoords } from '@/lib/weather';
 import { runSalesHourlyAlertsForStore } from '@/lib/salesHourlyAlertRunner';
+import { upsertStoreDailyItemStats } from '@/lib/storeDailyItemStats';
 
 // ── 타입 ──────────────────────────────────────────────────────────
 interface CustomerSale {
@@ -268,6 +269,12 @@ async function syncToDailyReports(params: {
     source: 'pos_bridge',
     updatedAt: FieldValue.serverTimestamp(),
   }, { merge: true });
+
+  try {
+    await upsertStoreDailyItemStats(storeId, date, items, syncedAt);
+  } catch (err) {
+    console.error('[pos/sync] store_daily_item_stats 저장 실패:', err);
+  }
 }
 
 // ── POST /api/pos/sync ────────────────────────────────────────────

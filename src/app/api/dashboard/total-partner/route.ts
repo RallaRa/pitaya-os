@@ -6,6 +6,7 @@ import { verifyToken } from '@/lib/authVerify';
 import { isCronAuthorized } from '@/lib/cronAuth';
 import { fetchNaverTrendData } from '@/lib/naverTrendServer';
 import { fetchDailyReportsSince, storeHasSalesData, fetchPosSalesHeaderSince, fetchPosSalesDetailSince, fetchPosFinishTotalSince, fetchPosDailySalesInRange } from '@/lib/dashboardSalesData';
+import { fetchStoreDailyItemStatsSince, rollupTopItems90FromDays } from '@/lib/storeDailyItemStats';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
 import { getKSTTodayYMD, addDaysYMD, isKstTodayTimestamp } from '@/lib/dateUtils';
@@ -131,13 +132,14 @@ async function collectFirestoreData(storeId: string) {
   const since365 = toYMD(new Date(Date.now() - 365 * 86400000));
   const since90Compact = since90.replace(/-/g, '');
   const since365Compact = since365.replace(/-/g, '');
+  const todayYmd = toYMD(new Date());
 
-  const [headerSnap, detailSnap, finishSnap, custSnap, varSnap] = await Promise.all([
+  const [headerSnap, finishSnap, custSnap, varSnap, aggDays] = await Promise.all([
     fetchPosSalesHeaderSince(storeId, since365Compact, 365),
-    fetchPosSalesDetailSince(storeId, since90Compact, 2000),
     fetchPosFinishTotalSince(storeId, since90Compact, 90),
     fetchPosCustomers(storeId),
     adminDb.collection('weather_impact_variables').doc(storeId || 'global').get(),
+    fetchStoreDailyItemStatsSince(storeId, since90, todayYmd),
   ]);
   // 365일 일별 매출 추이
   const dailyTotals: {date:string;totalSale:number;transCount:number}[] = [];
@@ -146,20 +148,26 @@ async function collectFirestoreData(storeId: string) {
     dailyTotals.push({ date: r.date, totalSale: r.totalSale||0, transCount: r.transCount||0 });
   });
 
-  // 90일 품목별 집계
-  const itemMap: Record<string, {qty:number;amount:number;days:Set<string>}> = {};
-  detailSnap?.docs.forEach(d => {
-    const r = d.data();
-    const name = r.goodsName || '';
-    if (!name) return;
-    if (!itemMap[name]) itemMap[name] = { qty:0, amount:0, days: new Set() };
-    itemMap[name].qty += Number(r.saleCount||0);
-    itemMap[name].amount += Number(r.totalPrice||0);
-    itemMap[name].days.add(r.date||'');
-  });
-  let topItems90 = Object.entries(itemMap)
-    .map(([name,v]) => ({ name, qty: v.qty, amount: v.amount, days: v.days.size }))
-    .sort((a,b) => b.qty - a.qty).slice(0, 30);
+  // 90일 품목별 집계 — materialized stats 우선
+  let topItems90 = rollupTopItems90FromDays(aggDays, 30);
+  let detailSnap = null as Awaited<ReturnType<typeof fetchPosSalesDetailSince>> | null;
+
+  if (topItems90.length === 0) {
+    detailSnap = await fetchPosSalesDetailSince(storeId, since90Compact, 2000);
+    const itemMap: Record<string, {qty:number;amount:number;days:Set<string>}> = {};
+    detailSnap?.docs.forEach(d => {
+      const r = d.data();
+      const name = r.goodsName || '';
+      if (!name) return;
+      if (!itemMap[name]) itemMap[name] = { qty:0, amount:0, days: new Set() };
+      itemMap[name].qty += Number(r.saleCount||0);
+      itemMap[name].amount += Number(r.totalPrice||0);
+      itemMap[name].days.add(r.date||'');
+    });
+    topItems90 = Object.entries(itemMap)
+      .map(([name,v]) => ({ name, qty: v.qty, amount: v.amount, days: v.days.size }))
+      .sort((a,b) => b.qty - a.qty).slice(0, 30);
+  }
 
   // daily_reports fallback (POS 미동기화 매장)
   if (topItems90.length === 0 || dailyTotals.length === 0) {
