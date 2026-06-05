@@ -37,6 +37,7 @@ export default function CouponAiCreator({ storeId, storeName, onPublished, onClo
   const [chatLoading, setChatLoading] = useState(false);
   const [imageLoading, setImageLoading] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
+  const [includeBarcode, setIncludeBarcode] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -100,6 +101,7 @@ export default function CouponAiCreator({ storeId, storeName, onPublished, onClo
           type: draft.type,
           value: draft.value,
           imagePrompt: draft.imagePrompt,
+          includeBarcode,
         }),
       });
       const data = await res.json();
@@ -141,6 +143,7 @@ export default function CouponAiCreator({ storeId, storeName, onPublished, onClo
           fileContent: b64,
           fileName: file.name,
           mimeType: file.type,
+          includeBarcode,
         }),
       });
       const data = await res.json();
@@ -180,7 +183,8 @@ export default function CouponAiCreator({ storeId, storeName, onPublished, onClo
           description: draft.description,
           imageUrl,
           imagePrompt: draft.imagePrompt,
-          barcodeValue: code,
+          barcodeValue: includeBarcode ? code : '',
+          includeBarcode,
         }),
       });
       const data = await res.json();
@@ -261,7 +265,8 @@ export default function CouponAiCreator({ storeId, storeName, onPublished, onClo
               ) : (
                 <div className="text-center p-4 text-slate-600 text-xs">
                   <ImagePlus className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                  AI 이미지 생성 또는<br />직접 업로드하면<br />바코드가 합성됩니다
+                  AI 이미지 생성 또는<br />직접 업로드<br />
+                  {includeBarcode ? '(바코드 포함)' : '(바코드 없음)'}
                 </div>
               )}
             </div>
@@ -318,6 +323,16 @@ export default function CouponAiCreator({ storeId, storeName, onPublished, onClo
               </p>
             )}
 
+            <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeBarcode}
+                onChange={e => setIncludeBarcode(e.target.checked)}
+                className="rounded border-slate-600"
+              />
+              바코드(Code128) 포함
+            </label>
+
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -326,7 +341,7 @@ export default function CouponAiCreator({ storeId, storeName, onPublished, onClo
                 className="flex items-center gap-1.5 px-3 py-2 bg-violet-800/60 hover:bg-violet-700/60 border border-violet-600/40 rounded-lg text-xs text-violet-200 disabled:opacity-50"
               >
                 {imageLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-                AI 이미지+바코드
+                AI 이미지 생성
               </button>
               <button
                 type="button"

@@ -23,6 +23,7 @@ export async function POST(req: Request) {
     imagePrompt?: string;
     backgroundUrl?: string;
     backgroundBase64?: string;
+    includeBarcode?: boolean;
   };
   try {
     body = await req.json();
@@ -64,6 +65,8 @@ export async function POST(req: Request) {
       background = generated.buffer;
     }
 
+    const includeBarcode = body.includeBarcode === true;
+
     const cardBuffer = await renderCouponCard({
       background,
       code,
@@ -72,6 +75,7 @@ export async function POST(req: Request) {
         body.type === 'fixed' ? 'fixed' : 'percent',
         Number(body.value) || 0,
       ),
+      includeBarcode,
     });
 
     const token = uuidv4();
@@ -89,7 +93,8 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       imageUrl: url,
-      barcodeValue: code,
+      barcodeValue: includeBarcode ? code : '',
+      includeBarcode,
     });
   } catch (e: unknown) {
     const msg = formatStorageError(e);

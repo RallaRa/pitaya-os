@@ -62,6 +62,7 @@ function normalizeDraft(partial: Partial<CouponDraft> | undefined, prev: CouponD
     startDate: String(d.startDate ?? prev.startDate).trim(),
     endDate: String(d.endDate ?? prev.endDate).trim(),
     imagePrompt: String(d.imagePrompt ?? prev.imagePrompt).trim(),
+    includeBarcode: typeof d.includeBarcode === 'boolean' ? d.includeBarcode : prev.includeBarcode,
   };
 }
 

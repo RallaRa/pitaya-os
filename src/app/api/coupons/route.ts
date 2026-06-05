@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     storeId, code, type, value,
     minAmount = 0, maxDiscount = 0, maxUse = 0,
     startDate, endDate,
-    title, description, imageUrl, imagePrompt, barcodeValue,
+    title, description, imageUrl, imagePrompt, barcodeValue, includeBarcode,
   } = body;
 
   if (!storeId || !code || !type || !value) {
@@ -59,7 +59,8 @@ export async function POST(req: Request) {
     description: description ? String(description).trim() : '',
     imageUrl: imageUrl ? String(imageUrl).trim() : '',
     imagePrompt: imagePrompt ? String(imagePrompt).trim() : '',
-    barcodeValue: barcodeValue ? String(barcodeValue).trim().toUpperCase() : upperCode,
+    barcodeValue: includeBarcode === true ? (barcodeValue ? String(barcodeValue).trim().toUpperCase() : upperCode) : '',
+    includeBarcode: includeBarcode === true,
     isActive: true, usedCount: 0,
     createdBy: authUser.uid,
     createdAt: FieldValue.serverTimestamp(),
@@ -82,7 +83,7 @@ export async function PUT(req: Request) {
   const allowed = [
     'type', 'value', 'minAmount', 'maxDiscount', 'maxUse',
     'startDate', 'endDate', 'isActive',
-    'title', 'description', 'imageUrl', 'imagePrompt', 'barcodeValue',
+    'title', 'description', 'imageUrl', 'imagePrompt', 'barcodeValue', 'includeBarcode',
   ];
   const patch: Record<string, unknown> = {};
   for (const k of allowed) {

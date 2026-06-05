@@ -12,6 +12,7 @@ export interface CouponDraft {
   startDate: string;
   endDate: string;
   imagePrompt: string;
+  includeBarcode: boolean;
 }
 
 export interface CouponDoc {
@@ -32,6 +33,7 @@ export interface CouponDoc {
   imageUrl?: string;
   imagePrompt?: string;
   barcodeValue?: string;
+  includeBarcode?: boolean;
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -54,6 +56,7 @@ export const EMPTY_COUPON_DRAFT: CouponDraft = {
   startDate: '',
   endDate: '',
   imagePrompt: '',
+  includeBarcode: false,
 };
 
 export function discountLabel(type: CouponDiscountType, value: number): string {

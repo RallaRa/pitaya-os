@@ -22,6 +22,7 @@ export async function POST(req: Request) {
     fileName?: string;
     mimeType?: string;
     skipBarcode?: boolean;
+    includeBarcode?: boolean;
   };
   try {
     body = await req.json();
@@ -47,8 +48,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: '파일 크기는 15MB 이하여야 합니다' }, { status: 400 });
     }
 
+    const includeBarcode = body.includeBarcode === true && body.skipBarcode !== true;
+
     let finalBuffer: Buffer = uploadBuffer;
-    if (!body.skipBarcode) {
+    if (includeBarcode) {
       finalBuffer = Buffer.from(await renderCouponCard({
         background: uploadBuffer,
         code,
@@ -57,6 +60,7 @@ export async function POST(req: Request) {
           body.type === 'fixed' ? 'fixed' : 'percent',
           Number(body.value) || 0,
         ),
+        includeBarcode: true,
       }));
     }
 
@@ -79,7 +83,8 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       imageUrl: url,
-      barcodeValue: code,
+      barcodeValue: includeBarcode ? code : '',
+      includeBarcode,
     });
   } catch (e: unknown) {
     const msg = formatStorageError(e);
