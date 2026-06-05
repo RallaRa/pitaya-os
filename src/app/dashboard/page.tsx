@@ -9,6 +9,23 @@ const ResponsiveGridLayout = dynamic(
   { ssr: false }
 );
 
+const AiInsightWidget = dynamic(
+  () => import('@/components/widgets/AiInsightWidget'),
+  { ssr: false, loading: () => <div className="h-full min-h-[8rem] bg-slate-800/40 rounded-2xl animate-pulse" /> },
+);
+const SalesPredictionWidget = dynamic(
+  () => import('@/components/widgets/SalesPredictionWidget'),
+  { ssr: false, loading: () => <div className="h-full min-h-[8rem] bg-slate-800/40 rounded-2xl animate-pulse" /> },
+);
+const TotalPartnerWidget = dynamic(
+  () => import('@/components/widgets/TotalPartnerWidget'),
+  { ssr: false, loading: () => <div className="h-full min-h-[8rem] bg-slate-800/40 rounded-2xl animate-pulse" /> },
+);
+const WeeklyAnalysisWidget = dynamic(
+  () => import('@/components/widgets/WeeklyAnalysisWidget'),
+  { ssr: false, loading: () => <div className="h-full min-h-[8rem] bg-slate-800/40 rounded-2xl animate-pulse" /> },
+);
+
 /** 모바일·태블릿·가로폰 — 그리드 대신 세로 스택 (Chrome Android/iOS 겹침 방지) */
 const DASHBOARD_STACK_BREAKPOINT = 1024;
 import { Plus, LayoutGrid, Lock, RotateCcw, Crown } from 'lucide-react';
@@ -16,14 +33,11 @@ import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import NewsWidget           from '@/components/widgets/NewsWidget';
 import WeatherWidget        from '@/components/widgets/WeatherWidget';
-import WeeklyAnalysisWidget from '@/components/widgets/WeeklyAnalysisWidget';
 import YesterdayWidget      from '@/components/widgets/YesterdayWidget';
 import QuickMenuWidget      from '@/components/widgets/QuickMenuWidget';
-import AiInsightWidget        from '@/components/widgets/AiInsightWidget';
-import SalesPredictionWidget  from '@/components/widgets/SalesPredictionWidget';
-import TotalPartnerWidget     from '@/components/widgets/TotalPartnerWidget';
 import TodaySalesWidget       from '@/components/widgets/TodaySalesWidget';
 import SalesCompareWidget     from '@/components/widgets/SalesCompareWidget';
+import LazyWidgetMount from '@/components/dashboard/LazyWidgetMount';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import {
   WIDGET_META,
@@ -305,19 +319,24 @@ export default function DashboardPage() {
     m => allowedIds.includes(m.id) && !visibleActive.includes(m.id)
   );
 
+  const LAZY_WIDGET_IDS = new Set(['ai_insight', 'sales_prediction', 'total_partner', 'weekly_analysis']);
+
+  const wrapLazyWidget = (id: string, node: React.ReactNode) =>
+    LAZY_WIDGET_IDS.has(id) ? <LazyWidgetMount>{node}</LazyWidgetMount> : node;
+
   /* 위젯 렌더 */
   const renderWidget = (id: string) => {
     switch (id) {
-      case 'news':               return <NewsWidget           editMode={editMode} onRemove={() => removeWidget(id)} />;
-      case 'weather':            return <WeatherWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
-      case 'weekly_analysis':    return <WeeklyAnalysisWidget editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
-      case 'yesterday_analysis': return <YesterdayWidget      editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
-      case 'quick_menu':         return <QuickMenuWidget      editMode={editMode} onRemove={() => removeWidget(id)} />;
-      case 'ai_insight':         return <AiInsightWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} mobileLayout={isMobile} />;
-      case 'sales_prediction':   return <SalesPredictionWidget  editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} mobileLayout={isMobile} />;
-      case 'total_partner':      return <TotalPartnerWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} mobileLayout={isMobile} />;
-      case 'today_sales':        return <TodaySalesWidget       editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
-      case 'sales_compare':      return <SalesCompareWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
+      case 'news':               return wrapLazyWidget(id, <NewsWidget           editMode={editMode} onRemove={() => removeWidget(id)} />);
+      case 'weather':            return wrapLazyWidget(id, <WeatherWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'weekly_analysis':    return wrapLazyWidget(id, <WeeklyAnalysisWidget editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'yesterday_analysis': return wrapLazyWidget(id, <YesterdayWidget      editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'quick_menu':         return wrapLazyWidget(id, <QuickMenuWidget      editMode={editMode} onRemove={() => removeWidget(id)} />);
+      case 'ai_insight':         return wrapLazyWidget(id, <AiInsightWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} mobileLayout={isMobile} />);
+      case 'sales_prediction':   return wrapLazyWidget(id, <SalesPredictionWidget  editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} mobileLayout={isMobile} />);
+      case 'total_partner':      return wrapLazyWidget(id, <TotalPartnerWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} mobileLayout={isMobile} />);
+      case 'today_sales':        return wrapLazyWidget(id, <TodaySalesWidget       editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'sales_compare':      return wrapLazyWidget(id, <SalesCompareWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       default:                   return null;
     }
   };

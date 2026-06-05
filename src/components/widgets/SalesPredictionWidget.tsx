@@ -291,7 +291,6 @@ export default function SalesPredictionWidget({
   const [showSource, setShowSource] = useState(false);
   const [orderInfo,  setOrderInfo]  = useState<{ dDayType?: string; gaps?: { start: string; end: string }[] } | null>(null);
   const [posRefreshing, setPosRefreshing] = useState(false);
-  const autoRefreshAttempted = useRef(false);
   const mqMobile = useIsMobileView();
   const isMobileView = mobileLayout ?? mqMobile;
   const widgetRootRef = useRef<HTMLDivElement>(null);
@@ -341,13 +340,6 @@ export default function SalesPredictionWidget({
       if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
       if (d.error) throw new Error(d.error);
 
-      const needsSummary = !d.noData && !String(d.slotChangeSummary || '').trim();
-      if (needsSummary && !autoRefreshAttempted.current) {
-        autoRefreshAttempted.current = true;
-        setLoading(false);
-        return load(true);
-      }
-
       setData(d);
       setUpdatedAt(new Date());
     } catch (e: unknown) {
@@ -355,10 +347,6 @@ export default function SalesPredictionWidget({
     } finally {
       setLoading(false);
     }
-  }, [storeId]);
-
-  useEffect(() => {
-    autoRefreshAttempted.current = false;
   }, [storeId]);
 
   const loadOrderInfo = useCallback(async () => {

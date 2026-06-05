@@ -51,7 +51,6 @@ import { PREDICTION_POS_REFRESH_LABEL } from '@/lib/predictionRefreshConfig';
 import {
   enrichPredictionItemsWithTodayActual,
   isTodayActualCacheFresh,
-  refreshStoreTodayActualSales,
 } from '@/lib/predictionTodayActual';
 
 function toYMD(d: Date) {
@@ -147,24 +146,15 @@ export async function GET(req: Request) {
             hasTodaySalesData: Boolean(d.hasTodaySalesData),
             todayActualUpdatedAt: d.todayActualUpdatedAt,
           };
-        } else if (storeId) {
-          await refreshStoreTodayActualSales(storeId, today);
-          const refreshed = await cacheRef.get();
-          const r = refreshed.data()!;
-          cachedBody = {
-            topItems: (r.topItems as Array<Record<string, unknown>>) || [],
-            baseTopItems: (r.baseTopItems as Array<Record<string, unknown>>) || [],
-            bottomItems: (r.bottomItems as Array<Record<string, unknown>>) || [],
-            todaySalesAsOf: String(r.todaySalesAsOf || today),
-            hasTodaySalesData: Boolean(r.hasTodaySalesData),
-            todayActualUpdatedAt: r.todayActualUpdatedAt,
-          };
         } else {
-          cachedBody = await enrichPredictionItemsWithTodayActual(storeId, today, {
+          cachedBody = {
             topItems: (d.topItems as Array<Record<string, unknown>>) || [],
             baseTopItems: (d.baseTopItems as Array<Record<string, unknown>>) || [],
             bottomItems: (d.bottomItems as Array<Record<string, unknown>>) || [],
-          });
+            todaySalesAsOf: String(d.todaySalesAsOf || today),
+            hasTodaySalesData: Boolean(d.hasTodaySalesData),
+            todayActualUpdatedAt: d.todayActualUpdatedAt,
+          };
         }
         return NextResponse.json({
           ...serializePredictionDoc(d as Record<string, unknown>),

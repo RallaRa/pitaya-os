@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { cronUnauthorizedResponse, getCronSecret, isCronAuthorized } from '@/lib/cronAuth';
 
+/** KST 05:30 전후 — AI 오늘 브리핑 캐시 사전 생성 */
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) return cronUnauthorizedResponse();
 
@@ -14,9 +15,9 @@ export async function GET(req: Request) {
 
     const results = await Promise.allSettled(
       storeIds.map(sid =>
-        fetch(`${base}/api/dashboard/total-partner?storeId=${sid}&refresh=1`, {
+        fetch(`${base}/api/dashboard/comprehensive-opinion?storeId=${sid}&force=1`, {
           headers: cronSecret ? { 'x-cron-secret': cronSecret } : {},
-          signal: AbortSignal.timeout(120000),
+          signal: AbortSignal.timeout(90000),
         }).then(r => r.json()),
       ),
     );
@@ -24,7 +25,8 @@ export async function GET(req: Request) {
     const summary = results.map((r, i) => ({
       storeId: storeIds[i],
       status: r.status,
-      ok: r.status === 'fulfilled' && !(r.value as { error?: string })?.error,
+      ok: r.status === 'fulfilled' && !(r.value as { error?: string; aiError?: boolean })?.error
+        && !(r.value as { aiError?: boolean })?.aiError,
     }));
 
     return NextResponse.json({ ok: true, generated: summary.length, summary });

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
+import { isCronAuthorized } from '@/lib/cronAuth';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
 import { getKSTTodayYMD, getKSTYesterdayYMD, getKSTEndOfTodayMs } from '@/lib/dateUtils';
@@ -29,7 +30,8 @@ function isBriefingCacheUsable(result: Record<string, unknown>): boolean {
 
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
-  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const cronOk = isCronAuthorized(req);
+  if (!authUser && !cronOk) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
   const storeId = searchParams.get('storeId') || '';
