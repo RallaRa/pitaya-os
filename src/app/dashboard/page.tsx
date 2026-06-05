@@ -257,6 +257,10 @@ export default function DashboardPage() {
   /* 현재 레이아웃 아이템들 (표시 중인 위젯만) */
   const currentLayout = (layouts.lg || []).filter((item: LayoutItem) => visibleActive.includes(item.i));
 
+  const narrowGridLayout: GridLayout = containerW < DASHBOARD_STACK_BREAKPOINT
+    ? buildStackedLayout(visibleActive, currentLayout)
+    : currentLayout;
+
   /* onLayoutChange 핸들러 */
   const onLayoutChange = useCallback((newLayout: GridLayout) => {
     const merged = mergeLayoutChange(visibleActive, [...newLayout]);
