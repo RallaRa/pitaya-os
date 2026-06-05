@@ -8,19 +8,19 @@ export async function POST(req: NextRequest) {
   if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const { prompt, type, bgColor, textColor } = await req.json();
+    const { prompt, type } = await req.json();
     if (!prompt?.trim()) {
       return NextResponse.json({ error: 'prompt required' }, { status: 400 });
     }
 
-    const systemPrompt = type === 'slide'
-      ? `정육점 사이니지용 HTML 슬라이드를 만들어줘.
-반드시 아래 형식의 완전한 HTML만 반환해. 다른 텍스트 없이.
-배경색: ${bgColor || '#1a1a2e'}, 텍스트색: ${textColor || '#ffffff'}
-전체화면(100vw, 100vh)에 맞게 만들고, 큰 글씨, 임팩트 있게.
-폰트는 'Noto Sans KR' 구글폰트 사용.
-애니메이션 CSS 추가해서 시선을 끌게.`
-      : `정육점 사이니지용 텍스트 슬라이드 JSON을 만들어줘.
+    if (type === 'slide') {
+      return NextResponse.json(
+        { error: '슬라이드는 Imagen+Canvas 생성을 사용합니다. signage 페이지에서 다시 생성해 주세요.' },
+        { status: 400 },
+      );
+    }
+
+    const systemPrompt = `정육점 사이니지용 텍스트 슬라이드 JSON을 만들어줘.
 반드시 아래 JSON 형식만 반환해:
 {"title": "메인 제목", "body": "부제목 또는 설명", "footer": "하단 문구(매장명 등)"}
 임팩트 있고 식욕을 자극하는 문구로.`;
@@ -46,11 +46,6 @@ export async function POST(req: NextRequest) {
         useCase: 'fast',
       });
       content = result.text;
-    }
-
-    if (type === 'slide') {
-      const html = content.replace(/```html|```/g, '').trim();
-      return NextResponse.json({ content: html, success: true });
     }
 
     try {

@@ -4,6 +4,13 @@ import { verifyToken } from '@/lib/authVerify';
 import { getAdminStorageBucket } from '@/lib/firebase/admin';
 import { buildStoredFileUrl, formatStorageError } from '@/lib/firebase/storageBucket';
 
+const MIME_EXT: Record<string, string> = {
+  'video/webm': 'webm',
+  'video/mp4': 'mp4',
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+};
+
 export async function POST(req: NextRequest) {
   const authUser = await verifyToken(req);
   if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -17,7 +24,7 @@ export async function POST(req: NextRequest) {
       mimeType?: string;
     };
 
-    if (!fileContent || !fileName) {
+    if (!fileContent) {
       return NextResponse.json({ error: '파일이 필요합니다' }, { status: 400 });
     }
 
@@ -28,14 +35,16 @@ export async function POST(req: NextRequest) {
     }
 
     const token = uuidv4();
-    const ext = fileName.split('.').pop()?.toLowerCase() || 'mp4';
     const sid = storeId || 'global';
-    const storagePath = `stores/${sid}/signage/videos/${Date.now()}_${token.slice(0, 8)}.${ext}`;
+    const contentType = mimeType || 'video/webm';
+    const extFromName = fileName?.split('.').pop()?.toLowerCase();
+    const ext = extFromName || MIME_EXT[contentType] || 'webm';
+    const storagePath = `signage/${sid}/${Date.now()}.${ext}`;
 
     const bucket = getAdminStorageBucket();
     await bucket.file(storagePath).save(buffer, {
       metadata: {
-        contentType: mimeType || 'video/mp4',
+        contentType,
         metadata: { firebaseStorageDownloadTokens: token },
       },
     });

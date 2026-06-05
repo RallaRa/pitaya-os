@@ -27,7 +27,10 @@ export default function SignageContentPlayer({ content, preview = false }: Props
     }
   }, [content]);
 
-  if (content.type === 'image' && content.url) {
+  const isImageUrl = (url: string) =>
+    !url.trim().startsWith('<') && !url.trim().startsWith('{');
+
+  if ((content.type === 'image' || content.type === 'slide') && content.url && isImageUrl(content.url)) {
     return (
       <div className="w-full h-full">
         {/* eslint-disable-next-line @next/next/no-img-element */}

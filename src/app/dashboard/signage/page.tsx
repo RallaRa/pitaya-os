@@ -4,10 +4,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '@/context/StoreContext';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import {
-  Plus, Play, Eye, Check, X, Tv, Trash2, ExternalLink, Wand2, Upload, RefreshCw, Pencil,
+  Plus, Play, Eye, Check, X, Tv, Trash2, ExternalLink, Wand2, RefreshCw, Pencil,
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
 import SignageContentPlayer from '@/components/signage/SignageContentPlayer';
+import { renderSignageSlideImage, renderSignageVideo } from '@/lib/signage/renderSignageMedia';
 import {
   SIGNAGE_CONTENT_TYPES,
   SIGNAGE_SCREEN_KINDS,
@@ -52,7 +53,7 @@ export default function SignagePage() {
   const [error, setError] = useState('');
   const [previewContent, setPreviewContent] = useState<SignageContentDoc | null>(null);
   const [generating, setGenerating] = useState(false);
-  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [generatingStep, setGeneratingStep] = useState('');
 
   const [showScreenModal, setShowScreenModal] = useState(false);
   const [editingScreen, setEditingScreen] = useState<SignageScreenDoc | null>(null);
@@ -118,28 +119,45 @@ export default function SignagePage() {
     .filter(c => c.status === 'approved')
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
+  const uploadSignageMedia = async (
+    blob: Blob,
+    fileName: string,
+    headers: Record<string, string>,
+  ) => {
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+    const res = await fetch('/api/signage/upload-video', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        storeId,
+        fileName,
+        fileContent: base64,
+        mimeType: blob.type,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data as { url: string; thumbnailUrl?: string };
+  };
+
   const generateContent = async () => {
-    if (!createForm.title || !storeId) return;
-    if (createForm.type !== 'video' && !createForm.prompt) return;
+    if (!createForm.title || !storeId || !createForm.prompt) return;
 
     setGenerating(true);
+    setGeneratingStep('');
     setError('');
     try {
       const headers = await getAuthJsonHeaders();
       let url = '';
       let thumbnailUrl = '';
 
-      if (createForm.type === 'image') {
-        const res = await fetch('/api/signage/generate-image', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ prompt: createForm.prompt, title: createForm.title, storeId }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        url = data.url;
-        thumbnailUrl = data.thumbnailUrl || data.url;
-      } else if (createForm.type === 'text' || createForm.type === 'slide') {
+      if (createForm.type === 'text') {
+        setGeneratingStep('텍스트 생성 중…');
         const res = await fetch('/api/signage/generate-text', {
           method: 'POST',
           headers,
@@ -153,28 +171,50 @@ export default function SignagePage() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
         url = data.content;
-      } else if (createForm.type === 'video') {
-        if (!videoFile) throw new Error('영상 파일을 선택해 주세요');
-        const reader = new FileReader();
-        const base64 = await new Promise<string>((resolve, reject) => {
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(videoFile);
-        });
-        const res = await fetch('/api/signage/upload-video', {
+      } else if (createForm.type === 'image' || createForm.type === 'slide' || createForm.type === 'video') {
+        setGeneratingStep('Imagen 배경 이미지 생성 중…');
+        const imgRes = await fetch('/api/signage/generate-image', {
           method: 'POST',
           headers,
           body: JSON.stringify({
+            prompt: createForm.prompt,
+            title: createForm.title,
             storeId,
-            fileName: videoFile.name,
-            fileContent: base64,
-            mimeType: videoFile.type,
+            includeBase64: true,
           }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        url = data.url;
-        thumbnailUrl = data.thumbnailUrl || data.url;
+        const imgData = await imgRes.json();
+        if (!imgRes.ok) throw new Error(imgData.error);
+
+        const backgroundSrc = imgData.backgroundDataUrl as string;
+        if (!backgroundSrc) throw new Error('배경 이미지 데이터를 받지 못했습니다');
+
+        if (createForm.type === 'video') {
+          const videoBlob = await renderSignageVideo({
+            backgroundSrc,
+            title: createForm.title,
+            bodyText: createForm.prompt,
+            durationSec: createForm.duration,
+            onProgress: setGeneratingStep,
+          });
+          const ext = videoBlob.type.includes('mp4') ? 'mp4' : 'webm';
+          setGeneratingStep('영상 업로드 중…');
+          const uploaded = await uploadSignageMedia(videoBlob, `${Date.now()}.${ext}`, headers);
+          url = uploaded.url;
+          thumbnailUrl = uploaded.thumbnailUrl || uploaded.url;
+        } else {
+          setGeneratingStep('Canvas 한글 합성 중…');
+          const imageBlob = await renderSignageSlideImage({
+            backgroundSrc,
+            title: createForm.title,
+            bodyText: createForm.prompt,
+            onProgress: setGeneratingStep,
+          });
+          setGeneratingStep('이미지 업로드 중…');
+          const uploaded = await uploadSignageMedia(imageBlob, `${Date.now()}.png`, headers);
+          url = uploaded.url;
+          thumbnailUrl = uploaded.thumbnailUrl || uploaded.url;
+        }
       }
 
       await signageApi('POST', {
@@ -194,7 +234,6 @@ export default function SignagePage() {
       });
 
       setCreateForm(f => ({ ...f, title: '', prompt: '' }));
-      setVideoFile(null);
       await loadAll();
       setTab('pending');
     } catch (e: unknown) {
@@ -203,6 +242,7 @@ export default function SignagePage() {
       alert(`생성 실패: ${msg}`);
     } finally {
       setGenerating(false);
+      setGeneratingStep('');
     }
   };
 
@@ -445,30 +485,21 @@ export default function SignagePage() {
                   />
                 </div>
 
-                {createForm.type === 'video' ? (
-                  <div>
-                    <label className="text-xs text-gray-400 mb-1 block">영상 파일</label>
-                    <label className="flex items-center gap-2 px-4 py-3 bg-gray-800 rounded-xl cursor-pointer text-sm">
-                      <Upload size={16} />
-                      {videoFile ? videoFile.name : 'MP4 등 영상 선택'}
-                      <input type="file" accept="video/*" className="hidden" onChange={e => setVideoFile(e.target.files?.[0] || null)} />
-                    </label>
-                  </div>
-                ) : (
-                  <div>
-                    <label className="text-xs text-gray-400 mb-1 block">
-                      {createForm.type === 'image' ? 'AI 이미지 프롬프트' : '내용 설명'}
-                    </label>
-                    <textarea
-                      value={createForm.prompt}
-                      onChange={e => setCreateForm(f => ({ ...f, prompt: e.target.value }))}
-                      rows={3}
-                      className="w-full bg-gray-800 rounded-xl px-4 py-3 text-sm outline-none resize-none focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
-                )}
+                <div>
+                  <label className="text-xs text-gray-400 mb-1 block">
+                    {createForm.type === 'text'
+                      ? '내용 설명'
+                      : '배경 이미지 프롬프트 (한글은 제목·내용으로 Canvas 오버레이)'}
+                  </label>
+                  <textarea
+                    value={createForm.prompt}
+                    onChange={e => setCreateForm(f => ({ ...f, prompt: e.target.value }))}
+                    rows={3}
+                    className="w-full bg-gray-800 rounded-xl px-4 py-3 text-sm outline-none resize-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
 
-                {(createForm.type === 'text' || createForm.type === 'slide') && (
+                {createForm.type === 'text' && (
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs text-gray-400 mb-1 block">배경색</label>
@@ -489,12 +520,12 @@ export default function SignagePage() {
                 <button
                   type="button"
                   onClick={generateContent}
-                  disabled={generating || !createForm.title || (createForm.type !== 'video' && !createForm.prompt) || (createForm.type === 'video' && !videoFile)}
+                  disabled={generating || !createForm.title || !createForm.prompt}
                   className={`w-full py-3 rounded-xl font-semibold flex items-center justify-center gap-2 ${generating ? 'bg-gray-700 text-gray-500' : 'bg-blue-600 hover:bg-blue-500 text-white'}`}
                 >
                   {generating
-                    ? (createForm.type === 'image' ? '이미지 생성 중… (30초~2분)' : '생성 중…')
-                    : <><Wand2 size={16} />{createForm.type === 'video' ? '영상 등록하기' : 'AI로 생성하기'}</>}
+                    ? (generatingStep || '생성 중…')
+                    : <><Wand2 size={16} />AI로 생성하기</>}
                 </button>
               </div>
             </div>
@@ -629,8 +660,19 @@ export default function SignagePage() {
 }
 
 function Thumb({ content }: { content: SignageContentDoc }) {
-  if (content.type === 'image' && content.url) {
-    return <img src={content.url} alt="" className="w-20 h-12 rounded-lg object-cover flex-shrink-0" />;
+  const previewUrl = content.thumbnailUrl || content.url;
+  if ((content.type === 'image' || content.type === 'slide' || content.type === 'video') && previewUrl) {
+    if (content.type === 'video') {
+      return (
+        <video
+          src={previewUrl}
+          muted
+          playsInline
+          className="w-20 h-12 rounded-lg object-cover flex-shrink-0"
+        />
+      );
+    }
+    return <img src={previewUrl} alt="" className="w-20 h-12 rounded-lg object-cover flex-shrink-0" />;
   }
   return (
     <div className="w-20 h-12 rounded-lg flex items-center justify-center text-xs flex-shrink-0" style={{ background: content.bgColor || '#1a1a2e', color: content.textColor || '#fff' }}>
@@ -649,8 +691,10 @@ function ContentRow({ content, onPreview, onApprove, onReject, onDelete }: {
   return (
     <div className="bg-gray-900 rounded-2xl p-4 flex items-start gap-4">
       <button type="button" className="w-32 h-20 rounded-xl overflow-hidden flex-shrink-0 border border-gray-700" onClick={() => onPreview(content)}>
-        {content.type === 'image' && content.url ? (
+        {(content.type === 'image' || content.type === 'slide') && content.url ? (
           <img src={content.url} alt={content.title} className="w-full h-full object-cover" />
+        ) : content.type === 'video' && content.url ? (
+          <video src={content.url} muted playsInline className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-xs p-2 text-center" style={{ background: content.bgColor || '#1a1a2e', color: content.textColor || '#fff' }}>{content.title}</div>
         )}
