@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { verifyToken, getActualGroupId, isAdminGroup } from '@/lib/authVerify';
 import { todayKST } from '@/lib/coupons/couponRules';
+import {
+  buildCampaignStats,
+  campaignSummary,
+  parseMessageLogs,
+  parseRedemptionLogs,
+} from '@/lib/coupons/campaignAnalytics';
 
 function daysAgoKST(n: number): string {
   const d = new Date(Date.now() + 9 * 60 * 60 * 1000 - n * 86400000);
@@ -26,13 +32,18 @@ export async function GET(req: Request) {
   const sinceYmd = daysAgoKST(days - 1);
   const today = todayKST();
 
-  const [logsSnap, couponsSnap] = await Promise.all([
+  const [logsSnap, couponsSnap, msgSnap] = await Promise.all([
     adminDb.collection('coupon_redemption_logs')
       .where('storeId', '==', storeId)
       .orderBy('appliedAt', 'desc')
       .limit(3000)
       .get(),
     adminDb.collection('coupons').where('storeId', '==', storeId).get(),
+    adminDb.collection('customer_message_logs')
+      .where('storeId', '==', storeId)
+      .orderBy('createdAt', 'desc')
+      .limit(500)
+      .get(),
   ]);
 
   const couponMeta = new Map<string, {
@@ -122,6 +133,11 @@ export async function GET(req: Request) {
     })
     .sort((a, b) => b.totalDiscount - a.totalDiscount);
 
+  const messageLogs = parseMessageLogs(msgSnap.docs);
+  const redemptionRows = parseRedemptionLogs(logsSnap.docs);
+  const byCampaign = buildCampaignStats(messageLogs, redemptionRows, sinceYmd);
+  const campaignStats = campaignSummary(byCampaign);
+
   return NextResponse.json({
     periodDays: days,
     sinceYmd,
@@ -135,5 +151,7 @@ export async function GET(req: Request) {
     },
     dailyTrend: [...daily.values()],
     byCoupon: couponStats,
+    byCampaign,
+    campaignSummary: campaignStats,
   });
 }

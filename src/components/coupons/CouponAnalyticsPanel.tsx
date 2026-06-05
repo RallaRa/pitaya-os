@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, TrendingUp, BarChart3 } from 'lucide-react';
+import { Loader2, TrendingUp, BarChart3, Send } from 'lucide-react';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 
 interface Props {
@@ -30,6 +30,23 @@ interface AnalyticsData {
     isActive: boolean;
     endDate: string | null;
   }[];
+  byCampaign?: {
+    campaignKey: string;
+    couponCode: string;
+    sent: number;
+    applied: number;
+    applyRate: number | null;
+    totalDiscount: number;
+    lastSentAt: string;
+    requestedByEmail: string;
+  }[];
+  campaignSummary?: {
+    campaignCount: number;
+    totalSent: number;
+    totalApplied: number;
+    overallApplyRate: number | null;
+    totalDiscount: number;
+  };
 }
 
 interface RedemptionLog {
@@ -45,7 +62,7 @@ interface RedemptionLog {
 }
 
 export default function CouponAnalyticsPanel({ storeId }: Props) {
-  const [tab, setTab] = useState<'analytics' | 'logs'>('analytics');
+  const [tab, setTab] = useState<'analytics' | 'campaigns' | 'logs'>('analytics');
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [logs, setLogs] = useState<RedemptionLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,6 +101,14 @@ export default function CouponAnalyticsPanel({ storeId }: Props) {
         >
           <BarChart3 className="w-3.5 h-3.5 inline mr-1" />
           효과 분석
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('campaigns')}
+          className={`px-3 py-1.5 text-xs rounded-lg ${tab === 'campaigns' ? 'bg-teal-700/40 text-teal-300 border border-teal-600/40' : 'text-slate-500'}`}
+        >
+          <Send className="w-3.5 h-3.5 inline mr-1" />
+          알림톡 전환
         </button>
         <button
           type="button"
@@ -155,7 +180,60 @@ export default function CouponAnalyticsPanel({ storeId }: Props) {
             </table>
           </div>
         </div>
-      ) : (
+      ) : tab === 'campaigns' && analytics ? (
+        <div className="space-y-4">
+          <p className="text-[11px] text-slate-500">
+            알림톡 발송 시 <strong className="text-slate-400">캠페인 키</strong> + 추가정보1(쿠폰코드)를 넣으면 발송 대비 적용률을 집계합니다.
+          </p>
+          {analytics.campaignSummary && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Stat label="캠페인" value={`${analytics.campaignSummary.campaignCount}건`} />
+              <Stat label="알림톡 발송" value={`${analytics.campaignSummary.totalSent.toLocaleString()}명`} />
+              <Stat label="쿠폰 적용" value={`${analytics.campaignSummary.totalApplied}건`} />
+              <Stat
+                label="전환율(적용/발송)"
+                value={analytics.campaignSummary.overallApplyRate != null
+                  ? `${analytics.campaignSummary.overallApplyRate}%`
+                  : '-'}
+              />
+            </div>
+          )}
+          <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-500">
+                  <th className="text-left px-3 py-2">캠페인</th>
+                  <th className="text-left px-3 py-2">쿠폰</th>
+                  <th className="text-right px-3 py-2">발송</th>
+                  <th className="text-right px-3 py-2">적용</th>
+                  <th className="text-right px-3 py-2">전환율</th>
+                  <th className="text-right px-3 py-2">할인액</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(analytics.byCampaign || []).length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="text-center py-8 text-slate-600">
+                      캠페인 키가 있는 알림톡 발송 이력이 없습니다
+                    </td>
+                  </tr>
+                ) : (analytics.byCampaign || []).map(c => (
+                  <tr key={c.campaignKey} className="border-b border-slate-800/50">
+                    <td className="px-3 py-2 text-slate-200">{c.campaignKey}</td>
+                    <td className="px-3 py-2 font-mono text-teal-300/90">{c.couponCode || '-'}</td>
+                    <td className="px-3 py-2 text-right">{c.sent.toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right text-teal-300">{c.applied}</td>
+                    <td className="px-3 py-2 text-right text-amber-300/90">
+                      {c.applyRate != null ? `${c.applyRate}%` : '-'}
+                    </td>
+                    <td className="px-3 py-2 text-right">{c.totalDiscount.toLocaleString()}원</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : tab === 'logs' ? (
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
@@ -188,7 +266,7 @@ export default function CouponAnalyticsPanel({ storeId }: Props) {
             </tbody>
           </table>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

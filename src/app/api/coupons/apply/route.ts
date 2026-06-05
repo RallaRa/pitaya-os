@@ -8,6 +8,10 @@ import {
   validateCouponRules,
 } from '@/lib/coupons/couponRules';
 import { discountLabel } from '@/lib/coupons/types';
+import {
+  inferCampaignKey,
+  parseMessageLogs,
+} from '@/lib/coupons/campaignAnalytics';
 
 /** POST — 직원이 수동으로 쿠폰 적용 (사용 카운트·이력 기록) */
 export async function POST(req: Request) {
@@ -58,6 +62,14 @@ export async function POST(req: Request) {
   const discount = calculateCouponDiscount(data, orderAmount);
   const ymd = todayKST();
 
+  const msgSnap = await adminDb.collection('customer_message_logs')
+    .where('storeId', '==', storeId)
+    .orderBy('createdAt', 'desc')
+    .limit(300)
+    .get();
+  const messageLogs = parseMessageLogs(msgSnap.docs);
+  const campaignKey = inferCampaignKey(String(data.code || ''), Date.now(), messageLogs);
+
   const logRef = adminDb.collection('coupon_redemption_logs').doc();
   await adminDb.runTransaction(async tx => {
     const fresh = await tx.get(ref);
@@ -86,6 +98,7 @@ export async function POST(req: Request) {
       appliedByEmail: authUser.email || '',
       note: body.note ? String(body.note).trim().slice(0, 200) : '',
       customerCusCode: body.customerCusCode ? String(body.customerCusCode).trim().slice(0, 32) : '',
+      campaignKey,
       ymd,
       appliedAt: FieldValue.serverTimestamp(),
     });
@@ -99,5 +112,6 @@ export async function POST(req: Request) {
     orderAmount,
     netAfterDiscount: Math.max(0, orderAmount - discount),
     message: `${discountLabel(data.type, data.value)} · ${discount.toLocaleString('ko-KR')}원 적용 기록`,
+    campaignKey: campaignKey || null,
   });
 }
