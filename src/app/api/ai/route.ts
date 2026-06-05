@@ -39,6 +39,11 @@ import {
   buildExpiryChatAppendix,
   tryCreateExpiryFromAiChat,
 } from '@/lib/expiryReminder/fromAiChat';
+import {
+  buildWikiAiAppendix,
+  listWikiDocs,
+  wikiIndexFromDocs,
+} from '@/lib/wiki/wikiStore';
 
 export type { DebateEntry, DebateRoundResult };
 
@@ -321,6 +326,7 @@ export async function POST(req: Request) {
       model: modelChoice = 'auto',
       storeId,
       chatMode = 'chat',
+      wikiMode = false,
     } = await req.json() as {
       message: string;
       persona?: string;
@@ -328,6 +334,7 @@ export async function POST(req: Request) {
       model?: ModelChoice;
       storeId?: string;
       chatMode?: ChatMode;
+      wikiMode?: boolean;
     };
 
     if (!message?.trim()) {
@@ -349,6 +356,15 @@ export async function POST(req: Request) {
       : (persona || 'default');
     const baseSystem = SYSTEM_INSTRUCTIONS[basePersona] ?? SYSTEM_INSTRUCTIONS.default;
     let system = buildStoreContextPrompt(baseSystem, storeContext);
+
+    if (wikiMode && storeId) {
+      try {
+        const wikiDocs = await listWikiDocs(storeId);
+        system += buildWikiAiAppendix(wikiIndexFromDocs(wikiDocs));
+      } catch (err) {
+        console.error('[AI] wiki appendix:', err);
+      }
+    }
 
     // ── 이력번호 자동 감지 → 정보 주입 ──
     const traceMatches = [...new Set(Array.from(message.matchAll(TRACE_NO_RE), m => m[1]))];

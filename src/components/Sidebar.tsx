@@ -400,6 +400,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
   const mainMenus = [
     { key: 'ai' as const,        href: '/dashboard/ai',                    icon: <Sparkles className="w-4 h-4" />,       label: 'AI 대화모드' },
+    { key: 'ai' as const,        href: '/dashboard/manual',                icon: <BookOpen className="w-4 h-4" />,       label: 'AI 매장 백과' },
     { key: 'messenger' as const, href: '/dashboard/messenger',             icon: <MessageCircle className="w-4 h-4" />,  label: '메신저',      badge: unreadCount },
     { key: 'hygiene' as const,   href: '/dashboard/hygiene',               icon: <ClipboardCheck className="w-4 h-4" />, label: '위생 점검일지' },
     { key: 'report' as const,      href: '/dashboard/report/view',           icon: <BarChart2 className="w-4 h-4" />,      label: '일마감내역' },
