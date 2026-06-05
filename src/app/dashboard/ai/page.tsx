@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import {
   Bot, User, Send, Plus, Trash2,
-  Loader2, MessageSquare, ChevronLeft,
-  Edit2, Check, X, AlertCircle, Home, Swords,
+  Loader2, MessageSquare,
+  Edit2, Check, X, AlertCircle, Swords,
+  PanelLeftOpen, PanelLeftClose,
 } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import type { DebateEntry, DebateRoundResult } from '@/app/api/ai/route';
@@ -232,7 +232,8 @@ export default function AiChatPage() {
   const [isLoading,      setIsLoading]      = useState(false);
   const [isDebating,     setIsDebating]     = useState(false);
   const [isLoadingList,  setIsLoadingList]  = useState(true);
-  const [showSidebar,    setShowSidebar]    = useState(true);
+  const [showSidebar,    setShowSidebar]    = useState(false);
+  const [isMobileLayout, setIsMobileLayout] = useState(false);
   const [editingId,      setEditingId]      = useState<string | null>(null);
   const [editTitle,      setEditTitle]      = useState('');
   const [selectedModel,  setSelectedModel]  = useState<ModelId>('auto');
@@ -242,6 +243,18 @@ export default function AiChatPage() {
   const [sendError,      setSendError]      = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const apply = () => {
+      const mobile = mq.matches;
+      setIsMobileLayout(mobile);
+      setShowSidebar(!mobile);
+    };
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
 
   useEffect(() => {
     getAuthHeaders()
@@ -523,18 +536,44 @@ export default function AiChatPage() {
         : '메시지를 입력하세요... (Enter 전송, Shift+Enter 줄바꿈)';
 
   return (
-    <div className="flex h-[calc(100vh-2rem)] bg-slate-950 rounded-xl overflow-hidden border border-slate-800">
+    <div className="flex flex-1 min-h-0 bg-slate-950 md:rounded-xl overflow-hidden md:border md:border-slate-800 relative">
+
+      {/* 모바일: 목록 열릴 때 배경 딤 */}
+      {isMobileLayout && showSidebar && (
+        <button
+          type="button"
+          aria-label="대화 목록 닫기"
+          className="absolute inset-0 z-40 bg-black/60 md:hidden"
+          onClick={() => setShowSidebar(false)}
+        />
+      )}
 
       {/* ── 대화 목록 사이드바 ── */}
-      <div className={`
-        ${showSidebar ? 'w-72' : 'w-0 md:w-72'}
-        flex-shrink-0 bg-slate-900 border-r border-slate-700
-        flex flex-col transition-all duration-200 overflow-hidden
-      `}>
-        <div className="p-3 border-b border-slate-700">
+      <div
+        className={`
+          flex-shrink-0 bg-slate-900 border-r border-slate-700
+          flex flex-col overflow-hidden z-50
+          transition-all duration-200 ease-out
+          ${isMobileLayout
+            ? `absolute inset-y-0 left-0 w-[min(20rem,88vw)] shadow-2xl ${showSidebar ? 'translate-x-0' : '-translate-x-full'}`
+            : `${showSidebar ? 'w-72' : 'w-0'}`
+          }
+        `}
+      >
+        <div className="p-3 border-b border-slate-700 flex items-center gap-2">
+          {isMobileLayout && (
+            <button
+              type="button"
+              onClick={() => setShowSidebar(false)}
+              className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 shrink-0"
+              aria-label="대화 목록 닫기"
+            >
+              <PanelLeftClose className="w-5 h-5" />
+            </button>
+          )}
           <button
             onClick={handleNewChat}
-            className="w-full flex items-center gap-2 bg-teal-600 hover:bg-teal-500 text-white px-4 py-2.5 rounded-xl font-medium text-sm transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-500 text-white px-4 py-2.5 rounded-xl font-medium text-sm transition-colors"
           >
             <Plus className="w-4 h-4" />새 대화
           </button>
@@ -611,22 +650,25 @@ export default function AiChatPage() {
       <div className="flex-1 flex flex-col min-w-0">
 
         {/* 헤더 */}
-        <div className="bg-slate-900 border-b border-slate-700 px-4 py-3 flex items-center gap-3">
+        <div className="bg-slate-900 border-b border-slate-700 px-3 sm:px-4 py-3 flex items-center gap-2 sm:gap-3 shrink-0">
           <button
-            onClick={() => setShowSidebar(!showSidebar)}
-            className="md:hidden text-slate-400 hover:text-white transition-colors"
+            type="button"
+            onClick={() => setShowSidebar(v => !v)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
+            aria-label={showSidebar ? '대화 목록 접기' : '대화 목록 펼치기'}
+            title={showSidebar ? '대화 목록 접기' : '대화 목록 펼치기'}
           >
-            <ChevronLeft className="w-5 h-5" />
+            {showSidebar
+              ? <PanelLeftClose className="w-5 h-5" />
+              : <PanelLeftOpen className="w-5 h-5" />}
+            <span className="text-xs font-medium md:hidden">목록</span>
           </button>
-          <Link href="/dashboard" className="p-1 text-slate-500 hover:text-teal-400 transition-colors rounded-lg hover:bg-slate-800 shrink-0" title="홈으로">
-            <Home className="w-4 h-4" />
-          </Link>
-          <Bot className="w-5 h-5 text-teal-400" />
-          <div>
-            <h1 className="text-white font-bold text-sm">
+          <Bot className="w-5 h-5 text-teal-400 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <h1 className="text-white font-bold text-sm truncate">
               {currentId ? (conversations.find(c => c.id === currentId)?.title || 'AI 대화') : '새 대화'}
             </h1>
-            <p className="text-slate-500 text-xs">Pitaya OS AI Assistant</p>
+            <p className="text-slate-500 text-xs truncate">Pitaya OS AI Assistant</p>
           </div>
         </div>
 
@@ -688,7 +730,7 @@ export default function AiChatPage() {
 
           {messages.map((msg, idx) => (
             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`flex gap-3 ${(msg.debateRounds?.length || msg.debate?.length) ? 'w-full max-w-4xl' : 'max-w-[75%]'} ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+              <div className={`flex gap-2 sm:gap-3 w-full ${msg.role === 'user' ? 'flex-row-reverse justify-end' : ''}`}>
                 <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
                   msg.role === 'user' ? 'bg-blue-600' : 'bg-teal-600'
                 }`}>
@@ -698,7 +740,7 @@ export default function AiChatPage() {
                   }
                 </div>
 
-                <div className="flex flex-col gap-1 min-w-0 flex-1">
+                <div className={`flex flex-col gap-1 min-w-0 flex-1 ${(msg.debateRounds?.length || msg.debate?.length) ? 'max-w-full' : 'max-w-[min(100%,42rem)]'}`}>
                   {/* 말풍선 (토론은 헤더만, 개별 카드는 DebateCards에서) */}
                   {(!msg.debateRounds?.length && (!msg.debate || msg.debate.length === 0)) && (
                     <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
