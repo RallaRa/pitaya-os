@@ -4,7 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
-import { getKSTTodayYMD, getKSTYesterdayYMD } from '@/lib/dateUtils';
+import { getKSTTodayYMD, getKSTYesterdayYMD, getKSTEndOfTodayMs } from '@/lib/dateUtils';
 import { getDisplayNetSales } from '@/lib/posDailySales';
 import { loadSystemContext } from '@/lib/aiStoreContext';
 import { fetchNaverTrendData } from '@/lib/naverTrendServer';
@@ -16,10 +16,14 @@ import {
 
 export const maxDuration = 60;
 
-function midnightMs() {
-  const d = new Date();
-  d.setHours(23, 59, 59, 999);
-  return d.getTime();
+function isBriefingCacheUsable(result: Record<string, unknown>): boolean {
+  if (result.noData || result.aiError) return false;
+  const summary = typeof result.summary === 'string' ? result.summary.trim() : '';
+  const opinion = typeof result.opinion === 'string' ? result.opinion.trim() : '';
+  const actions = Array.isArray(result.actions) ? result.actions.length : 0;
+  const highlights = Array.isArray(result.highlights) ? result.highlights.length : 0;
+  const trends = Array.isArray(result.trends) ? result.trends.length : 0;
+  return !!(summary || opinion || actions || highlights || trends);
 }
 
 export async function GET(req: Request) {
@@ -39,11 +43,7 @@ export async function GET(req: Request) {
       if (cacheDoc.exists) {
         const d = cacheDoc.data()!;
         const result = d.result || {};
-        const isEmptyCache =
-          result.noData
-          || result.aiError
-          || (!result.opinion?.trim() && !result.summary?.trim());
-        if (Date.now() < midnightMs() && !isEmptyCache) {
+        if (Date.now() < getKSTEndOfTodayMs() && isBriefingCacheUsable(result)) {
           return NextResponse.json({ ...result, cached: true });
         }
       }
@@ -172,12 +172,20 @@ highlights 4~6개(품목 태그 금지), actions 3개(구체적·즉시 실행)`
 
   try {
     const aiResult = await generateTextWithFallback({ prompt, json: true, useCase: 'insight' });
-    const result: {
-      summary: string;
-      opinion: string;
-      highlights: { tag: string; text: string }[];
-      actions: string[];
-    } = JSON.parse(stripJsonMarkdown(aiResult.text));
+    const parsed = JSON.parse(stripJsonMarkdown(aiResult.text)) as Record<string, unknown>;
+    const result = {
+      summary: String(parsed.summary ?? '').trim(),
+      opinion: String(parsed.opinion ?? '').trim(),
+      highlights: Array.isArray(parsed.highlights)
+        ? (parsed.highlights as { tag?: string; text?: string }[])
+            .filter(h => h && typeof h === 'object')
+            .map(h => ({ tag: String(h.tag ?? ''), text: String(h.text ?? '') }))
+            .filter(h => h.text)
+        : [],
+      actions: Array.isArray(parsed.actions)
+        ? parsed.actions.map(a => String(a)).filter(Boolean).slice(0, 5)
+        : [],
+    };
 
     const payload = {
       ...result,
@@ -192,7 +200,12 @@ highlights 4~6개(품목 태그 금지), actions 3개(구체적·즉시 실행)`
       cached: false,
     };
 
-    if (payload.opinion?.trim()) {
+    const cacheable =
+      result.summary
+      || result.opinion
+      || result.highlights.length > 0
+      || result.actions.length > 0;
+    if (cacheable) {
       await cacheRef.set({ result: payload, cachedAt: FieldValue.serverTimestamp() }).catch(() => {});
     }
     return NextResponse.json(payload);

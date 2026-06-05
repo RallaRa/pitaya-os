@@ -20,6 +20,22 @@ export function getKSTTodayYMD(): string {
   return toYMDFromDate(new Date());
 }
 
+/** KST 당일 23:59:59.999 — 대시보드 AI 캐시 만료용 */
+export function getKSTEndOfTodayMs(): number {
+  const today = getKSTTodayYMD();
+  return new Date(`${today}T23:59:59.999+09:00`).getTime();
+}
+
+/** Firestore/API 타임스탬프가 KST 기준 오늘인지 */
+export function isKstTodayTimestamp(ts: unknown): boolean {
+  if (!ts) return false;
+  const d =
+    typeof ts === 'object' && ts !== null && 'toDate' in ts && typeof (ts as { toDate: () => Date }).toDate === 'function'
+      ? (ts as { toDate: () => Date }).toDate()
+      : new Date(ts as string | number);
+  return toYMDFromDate(d) === getKSTTodayYMD();
+}
+
 export function getKSTYesterdayYMD(): string {
   return addDaysYMD(getKSTTodayYMD(), -1);
 }

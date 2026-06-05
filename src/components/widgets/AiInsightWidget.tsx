@@ -66,6 +66,21 @@ function Sparkline({ data }: { data: { period: string; ratio: number }[] }) {
   );
 }
 
+function hasBriefingContent(data: ComprehensiveData | null | undefined): boolean {
+  if (!data) return false;
+  return !!(
+    data.summary?.trim()
+    || data.opinion?.trim()
+    || data.actions?.length
+    || data.highlights?.length
+    || data.trends?.length
+    || data.news?.length
+    || data.footTraffic
+    || data.commercial
+    || (data.sales && (data.sales.today > 0 || data.sales.yesterday > 0))
+  );
+}
+
 function boldify(text: string) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return parts.map((p, i) =>
@@ -134,7 +149,7 @@ export default function AiInsightWidget({
             />
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          <div className={`p-3 space-y-3 ${mobileLayout ? '' : 'flex-1 overflow-y-auto min-h-0'}`}>
             {(data?.aiError || data?.error) && (
               <div className="bg-amber-900/30 border border-amber-700/40 rounded-xl px-3 py-2 text-xs text-amber-200">
                 {data.error || data.summary || 'AI 분석에 실패했습니다. 새로고침을 눌러 다시 시도해 주세요.'}

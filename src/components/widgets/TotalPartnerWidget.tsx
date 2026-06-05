@@ -169,6 +169,14 @@ function PeriodTab({ data, isWeek, isMonth }: { data: PeriodData; isWeek?: boole
   );
 }
 
+function partnerHasContent(data: PartnerData | null | undefined): boolean {
+  if (!data) return false;
+  const periods = [data.today, data.tomorrow, data.thisWeek, data.thisMonth];
+  return periods.some(
+    p => !!(p?.opinion?.trim() || p?.topItems?.length || p?.bottomItems?.length || p?.keyAlert?.trim()),
+  );
+}
+
 interface Props {
   editMode: boolean;
   onRemove: () => void;
@@ -252,7 +260,7 @@ export default function TotalPartnerWidget({ editMode, onRemove, storeId, mobile
         )}
 
         {/* noData 상태 */}
-        {data?.noData && !data?.today?.opinion?.trim() ? (
+        {data?.noData && !partnerHasContent(data) ? (
           <div className="p-3">
             <WidgetEmptyReason
               reason={data.emptyReason || 'POS·일마감 매출 이력이 없어 AI 운영 분석을 생성할 수 없습니다.'}
@@ -279,7 +287,7 @@ export default function TotalPartnerWidget({ editMode, onRemove, storeId, mobile
             </div>
 
             {/* 탭 콘텐츠 */}
-            <div className="flex-1 overflow-y-auto p-3">
+            <div className={`p-3 ${mobileLayout ? '' : 'flex-1 overflow-y-auto min-h-0'}`}>
               {(data?.aiError || data?.error) && (
                 <div className="mb-3 bg-amber-900/30 border border-amber-700/40 rounded-xl px-3 py-2 text-xs text-amber-200">
                   {data.error || 'AI 분석에 실패했습니다. 새로고침을 눌러 다시 시도해 주세요.'}

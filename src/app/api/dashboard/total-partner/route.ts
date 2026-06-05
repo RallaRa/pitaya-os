@@ -7,6 +7,7 @@ import { fetchNaverTrendData } from '@/lib/naverTrendServer';
 import { fetchDailyReportsSince, storeHasSalesData, fetchPosSalesHeaderSince, fetchPosSalesDetailSince, fetchPosFinishTotalSince, fetchPosDailySalesInRange } from '@/lib/dashboardSalesData';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
+import { getKSTTodayYMD, addDaysYMD, isKstTodayTimestamp } from '@/lib/dateUtils';
 
 export const maxDuration = 120;
 
@@ -102,13 +103,6 @@ async function fetchMeatData(base: string) {
 
 async function fetchNaverTrend(_base: string, storeId: string) {
   return fetchNaverTrendData(storeId);
-}
-
-function isMidnightFresh(ts: any) {
-  if (!ts) return false;
-  const d = ts.toDate ? ts.toDate() : new Date(ts);
-  const now = new Date();
-  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
 }
 
 async function fetchPosCustomers(storeId: string) {
@@ -251,7 +245,7 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const storeId = searchParams.get('storeId') || '';
   const refresh = searchParams.get('refresh') === '1';
-  const today   = toYMD(new Date());
+  const today   = getKSTTodayYMD();
   const cacheRef = adminDb.collection('ai_partner_predictions').doc(`${storeId||'global'}_${today}`);
 
   // 캐시 확인 (당일 자정까지 유효, noData/빈 응답은 제외)
@@ -260,25 +254,31 @@ export async function GET(req: Request) {
       const cached = await cacheRef.get();
       if (cached.exists) {
         const d = cached.data()!;
+        const hasPeriodContent = (p: GeminiPeriodData | null | undefined) =>
+          !!(p?.opinion?.trim() || p?.topItems?.length || p?.bottomItems?.length);
         const usable =
           !d.noData
           && !d.aiError
-          && !!(d.today?.opinion?.trim() || d.thisWeek?.opinion?.trim());
-        if (isMidnightFresh(d.generatedAt) && usable) {
+          && (hasPeriodContent(d.today) || hasPeriodContent(d.thisWeek) || hasPeriodContent(d.tomorrow));
+        if (isKstTodayTimestamp(d.generatedAt) && usable) {
           return NextResponse.json({ ...d, cached: true });
         }
       }
     } catch {}
   }
 
-  const base    = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:9000';
+  const base    = (process.env.NEXT_PUBLIC_APP_URL || 'https://pitaya-osv1.vercel.app').replace(/\/$/, '');
   const apiKey  = process.env.PUBLIC_DATA_API_KEY || '';
   const now     = new Date();
   const todayNum = today.replace(/-/g,'');
+  const tomorrowStr = addDaysYMD(today, 1);
   const thisYM   = today.slice(0,7).replace('-','');
   const nextYM   = (() => {
-    const d = new Date(now.getFullYear(), now.getMonth()+1, 1);
-    return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}`;
+    const [y, m] = today.split('-').map(Number);
+    let ty = y;
+    let tm = m + 1;
+    if (tm > 12) { tm = 1; ty += 1; }
+    return `${ty}${String(tm).padStart(2,'0')}`;
   })();
 
   const coords = storeId ? await (async () => {
@@ -309,9 +309,8 @@ export async function GET(req: Request) {
   };
 
   // 날짜 컨텍스트
-  const todayDow     = now.getDay();
-  const tomorrowDate = new Date(now.getTime() + 86400000);
-  const tomorrowStr  = toYMD(tomorrowDate);
+  const todayDow     = new Date(`${today}T12:00:00+09:00`).getDay();
+  const tomorrowDate = new Date(`${tomorrowStr}T12:00:00+09:00`);
   const isHoliday    = holidays.includes(todayNum);
   const isTmrHoliday = holidays.includes(tomorrowStr.replace(/-/g,''));
   const isPayDay     = (d: number) => d >= 23 && d <= 28;
@@ -587,7 +586,7 @@ topItems/bottomItems badge는: HOT(+30%↑) | UP(+10~30%) | 주의(-10%↓) | �
   }));
 
   // 어제 정합성 자동 검증 (실제 데이터 있으면)
-  const yesterday = toYMD(new Date(Date.now() - 86400000));
+  const yesterday = addDaysYMD(today, -1);
   try {
     const yesterdayNum = yesterday.replace(/-/g,'');
     const actualSnap = await adminDb.collection('pos_sales_detail')
