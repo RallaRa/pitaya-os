@@ -5,7 +5,6 @@ import { verifyToken } from '@/lib/authVerify';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
 import { getKSTTodayYMD, getKSTYesterdayYMD } from '@/lib/dateUtils';
-import { fetchStoreItemSales } from '@/lib/dashboardSalesData';
 import { getDisplayNetSales } from '@/lib/posDailySales';
 import { loadSystemContext } from '@/lib/aiStoreContext';
 import { fetchNaverTrendData } from '@/lib/naverTrendServer';
@@ -31,7 +30,7 @@ export async function GET(req: Request) {
   const storeId = searchParams.get('storeId') || '';
   const forceGen = searchParams.get('force') === '1';
   const today = getKSTTodayYMD();
-  const cacheId = `comprehensive_${storeId || 'global'}_${today}`;
+  const cacheId = `market_briefing_${storeId || 'global'}_${today}`;
   const cacheRef = adminDb.collection('dashboard_cache').doc(cacheId);
 
   if (!forceGen) {
@@ -62,12 +61,11 @@ export async function GET(req: Request) {
   const regionSido = storeData.regionSido || '서울';
   const regionSigungu = storeData.regionSigungu || '';
 
-  const [storeContext, trendResult, commercial, news, topItems] = await Promise.all([
+  const [storeContext, trendResult, commercial, news] = await Promise.all([
     storeId ? loadSystemContext(storeId).catch(() => null) : Promise.resolve(null),
     fetchNaverTrendData(storeId),
     fetchCommercialArea(regionSido, regionSigungu),
     fetchNaverNewsHeadlines(6),
-    storeId ? fetchStoreItemSales(storeId, 30, 10) : Promise.resolve([]),
   ]);
 
   const footTraffic = estimateFootTraffic(regionSido, regionSigungu);
@@ -91,10 +89,6 @@ export async function GET(req: Request) {
     `${i + 1}. ${c.name} 포인트${c.point} 방문${c.visitCount}회`,
   ).join('\n') || '고객 데이터 없음';
 
-  const itemText = topItems.length > 0
-    ? topItems.map(i => `${i.name}: ${i.qty}개/${i.amount.toLocaleString()}원`).join('\n')
-    : '품목 판매 데이터 없음';
-
   const newsText = news.length > 0
     ? news.map(n => `[${n.keyword}] ${n.title}`).join('\n')
     : '뉴스 없음';
@@ -105,11 +99,10 @@ export async function GET(req: Request) {
     네이버트렌드: { status: trendResult.trends.length > 0 ? 'ok' : 'empty', detail: trendResult.error },
     매출: { status: todaySale > 0 || yesterdaySale > 0 ? 'ok' : 'empty', detail: todaySale > 0 ? `${todaySale.toLocaleString()}원` : undefined },
     고객: { status: (storeContext?.topCustomers?.length || 0) > 0 ? 'ok' : 'empty' },
-    품목판매: { status: topItems.length > 0 ? 'ok' : 'empty', detail: `${topItems.length}품목` },
     뉴스: { status: news.length > 0 ? 'ok' : 'empty', detail: `${news.length}건` },
   };
 
-  const hasSalesSignal = todaySale > 0 || yesterdaySale > 0 || topItems.length > 0;
+  const hasSalesSignal = todaySale > 0 || yesterdaySale > 0;
   const hasAnyData =
     hasSalesSignal
     || Object.values(dataSourceStatus).some(s => s.status === 'ok' || s.status === 'estimate');
@@ -119,14 +112,14 @@ export async function GET(req: Request) {
       .filter(([, s]) => s.status === 'empty')
       .map(([k]) => k);
     return NextResponse.json({
-      summary: '분석할 데이터가 없습니다. POS 연동·일마감·키워드 설정 후 다시 확인해주세요.',
+      summary: '브리핑할 데이터가 없습니다. 매장 지역·네이버 키워드·매출 연동을 확인해주세요.',
       opinion: '',
       highlights: [],
       trends: [],
       news: [],
       dataSourceStatus,
       noData: true,
-      emptyReason: `연동된 데이터 소스가 없습니다. 미수집: ${missing.join(', ') || '전체'}. POS 브릿지·일마감·네이버 키워드를 확인하세요.`,
+      emptyReason: `브리핑 소스가 없습니다. 미수집: ${missing.join(', ') || '전체'}. 매장 지역·키워드·POS(매출 분위기)를 확인하세요.`,
       cached: false,
     });
   }
@@ -150,18 +143,17 @@ export async function GET(req: Request) {
     });
   }
 
-  const prompt = `너는 정육점 ${storeData.storeName || '매장'} AI 운영 컨설턴트야.
-아래 유동·상권·매출·고객·품목·트렌드·뉴스를 종합해 **오늘 당장 실행할 운영 의견**을 JSON으로만 반환해.
+  const prompt = `너는 정육점 ${storeData.storeName || '매장'} **AI 오늘 브리핑** 애널리스트야.
+유동·상권·시장 트렌드·뉴스·오늘 매출 분위기만 보고 **오늘 매장 분위기 브리핑**을 JSON으로만 반환해.
+
+금지: 품목별 발주·재고·90일 판매랭킹·월간 계획 (→ 운영 파트너 위젯 담당)
 
 [유동인구] ${footTraffic.summary}
 [상권] ${commercial.businessSummary} (경쟁 ${commercial.competitiveLevel})
 [오늘 매출] ${todaySale > 0 ? todaySale.toLocaleString() + '원' : '없음'}${saleChange != null ? ` (어제 대비 ${saleChange > 0 ? '+' : ''}${saleChange}%)` : ''}
 [어제 매출] ${yesterdaySale > 0 ? yesterdaySale.toLocaleString() + '원' : '없음'}
 [영업상태] ${storeContext?.todaySales?.isClosed ? '마감완료' : '영업중'}
-[상위 고객]
-${customerText}
-[품목별 판매 TOP10]
-${itemText}
+[단골 참고] ${customerText}
 [네이버 검색 트렌드]
 ${trendText}
 [관련 뉴스]
@@ -169,14 +161,14 @@ ${newsText}
 
 JSON 형식:
 {
-  "summary": "한줄 핵심 (40자 이내)",
-  "opinion": "300자 이내 종합 운영의견. **볼드** 사용. 유동·상권·매출·트렌드·뉴스를 모두 반영",
+  "summary": "한줄 핵심 (40자 이내, 상권·시장 중심)",
+  "opinion": "150자 이내 보조 메모. **볼드** 사용. 유동·상권·트렌드·뉴스·매출분위기만",
   "highlights": [
-    {"tag":"매출|고객|품목|트렌드|상권|뉴스","text":"핵심 포인트"}
+    {"tag":"상권|트렌드|뉴스|매출|고객","text":"핵심 포인트"}
   ],
-  "actions": ["오늘 할 일 1", "오늘 할 일 2", "오늘 할 일 3"]
+  "actions": ["오늘 할 일(진열·홍보·점검) 1", "오늘 할 일 2", "오늘 할 일 3"]
 }
-highlights 4~6개, actions 3개`;
+highlights 4~6개(품목 태그 금지), actions 3개(구체적·즉시 실행)`;
 
   try {
     const aiResult = await generateTextWithFallback({ prompt, json: true, useCase: 'insight' });

@@ -447,7 +447,9 @@ export async function GET(req: Request) {
     return NextResponse.json(fallback);
   }
 
-  const prompt = `너는 정육점 AI 토탈 운영파트너야. 아래 데이터를 종합 분석해서 4개 기간별 운영 의견을 JSON으로만 반환해. 순수 JSON만 반환. 마크다운 없음.
+  const prompt = `너는 정육점 **AI 운영 파트너**야. POS·품목·기간·발주 중심으로 4개 기간별 실행안을 JSON으로만 반환해. 순수 JSON만 반환. 마크다운 없음.
+
+금지: 유동인구·상권 상세 해설, 뉴스 목록 나열 (품목·매입·매출에 직접 영향 있을 때만 opinion에 1문장)
 
 [날짜정보]
 오늘: ${today}(${DOW_KO[todayDow]}) ${isHoliday?'공휴일':''}${isPayDay(monthDay)?'급여일인근':''}
@@ -471,10 +473,10 @@ ${priceText}
 [소도체 도매경매가]
 ${auctionText}
 
-[소비자 검색트렌드]
+[검색트렌드 — 품목·프로모션 참고만]
 ${trendText}
 
-[관련 뉴스]
+[뉴스 — 품목·시세 연관만 요약]
 ${newsText}
 
 [고객 현황]
@@ -485,7 +487,7 @@ ${newsText}
   "generatedAt": "${new Date().toISOString()}",
   "today": {
     "period": "오늘 ${today}(${DOW_KO[todayDow]})",
-    "opinion": "300자이내. 오늘 당장 할 것 중심. **볼드** 사용.",
+    "opinion": "250자이내. 오늘 판매·품목·발주 실행 중심. **볼드** 사용.",
     "topItems": [{"rank":1,"item":"품목명","action":"진열늘리기","expectedSales":"예상판매량","reason":"근거","badge":"HOT"}],
     "bottomItems": [{"rank":1,"item":"품목명","action":"재고최소화","expectedSales":"예상판매량","reason":"근거","badge":"주의"}],
     "keyAlert": "오늘 가장 중요한 한가지",

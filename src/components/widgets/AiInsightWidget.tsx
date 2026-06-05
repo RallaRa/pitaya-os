@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   TrendingUp, TrendingDown, Minus, RefreshCw,
-  ChevronDown, ChevronUp, MapPin, Users, Newspaper,
+  ChevronDown, ChevronUp, Newspaper, CheckCircle2,
 } from 'lucide-react';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
@@ -76,9 +76,12 @@ function boldify(text: string) {
 }
 
 export default function AiInsightWidget({
-  editMode, onRemove, storeId,
+  editMode, onRemove, storeId, mobileLayout = false,
 }: {
-  editMode: boolean; onRemove: () => void; storeId?: string;
+  editMode: boolean;
+  onRemove: () => void;
+  storeId?: string;
+  mobileLayout?: boolean;
 }) {
   const [data, setData] = useState<ComprehensiveData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -100,7 +103,7 @@ export default function AiInsightWidget({
       setData(d);
       setUpdatedAt(new Date());
     } catch {
-      setError('종합 의견을 불러오지 못했습니다');
+      setError('오늘 브리핑을 불러오지 못했습니다');
     } finally {
       setLoading(false);
     }
@@ -113,20 +116,21 @@ export default function AiInsightWidget({
 
   return (
     <WidgetWrapper
-      title="AI 종합 운영의견"
+      title="AI 오늘 브리핑"
       editMode={editMode}
       onRemove={onRemove}
       onRefresh={() => load(true)}
       updatedAt={updatedAt}
       loading={loading}
       error={error}
+      autoHeight={mobileLayout}
     >
-      <div className="flex flex-col h-full overflow-hidden">
+      <div className={`flex flex-col ${mobileLayout ? 'min-h-[20rem]' : 'h-full overflow-hidden'}`}>
         {data?.noData && !data?.summary && !data?.opinion && !(data?.trends?.length) ? (
           <div className="p-3">
             <WidgetEmptyReason
               reason={data.emptyReason || '분석할 데이터가 없습니다.'}
-              hints={['POS 브릿지 동기화', '네이버 키워드·AI API 키 설정', '일마감 입력']}
+              hints={['매장 지역(시·구) 설정', '네이버 키워드 설정', 'POS·일마감(매출 분위기)']}
             />
           </div>
         ) : (
@@ -143,16 +147,8 @@ export default function AiInsightWidget({
               </div>
             )}
 
-            {/* 종합 의견 */}
-            {data?.opinion && (
-              <div className="bg-slate-800/50 rounded-xl p-3">
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">종합 운영의견</p>
-                <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{boldify(data.opinion)}</p>
-              </div>
-            )}
-
             {/* 유동·상권·매출 스냅샷 */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className={`grid gap-2 ${mobileLayout ? 'grid-cols-1' : 'grid-cols-3'}`}>
               {data?.footTraffic && (
                 <div className="bg-slate-800/40 rounded-lg p-2 border border-slate-700/40">
                   <p className="text-[9px] text-slate-500">유동</p>
@@ -181,6 +177,22 @@ export default function AiInsightWidget({
                 </div>
               )}
             </div>
+
+            {/* 오늘 실행 (메인) */}
+            {data?.actions && data.actions.length > 0 && (
+              <div className="bg-blue-900/25 border border-blue-700/35 rounded-xl p-3">
+                <p className="text-[10px] font-semibold text-blue-300 mb-1.5 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> 오늘 실행
+                </p>
+                <ul className="space-y-1">
+                  {data.actions.map((a, i) => (
+                    <li key={i} className="text-[11px] text-blue-100/90 flex gap-1.5">
+                      <span className="text-blue-400 shrink-0">{i + 1}.</span>{a}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             {/* 핵심 포인트 */}
             {data?.highlights && data.highlights.length > 0 && (
@@ -218,22 +230,6 @@ export default function AiInsightWidget({
               </div>
             )}
 
-            {/* 오늘 할 일 */}
-            {data?.actions && data.actions.length > 0 && (
-              <div className="bg-blue-900/20 border border-blue-700/30 rounded-xl p-3">
-                <p className="text-[10px] font-semibold text-blue-300 mb-1.5 flex items-center gap-1">
-                  <Users className="w-3 h-3" /> 오늘 실행
-                </p>
-                <ul className="space-y-1">
-                  {data.actions.map((a, i) => (
-                    <li key={i} className="text-[11px] text-blue-100/90 flex gap-1.5">
-                      <span className="text-blue-400 shrink-0">{i + 1}.</span>{a}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
             {/* 뉴스 */}
             {data?.news && data.news.length > 0 && (
               <div>
@@ -249,6 +245,14 @@ export default function AiInsightWidget({
                 </div>
               </div>
             )}
+
+            {/* 브리핑 메모 (보조) */}
+            {data?.opinion && (
+              <div className="bg-slate-800/40 rounded-xl p-3 border border-slate-700/30">
+                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">브리핑 메모</p>
+                <p className="text-[11px] text-slate-400 leading-relaxed whitespace-pre-wrap">{boldify(data.opinion)}</p>
+              </div>
+            )}
           </div>
         )}
 
@@ -256,7 +260,7 @@ export default function AiInsightWidget({
         <div className="shrink-0 border-t border-slate-800 px-3 py-1.5">
           <div className="flex items-center gap-2 text-[10px] text-slate-500">
             {data?.cached && <span className="bg-slate-700 px-1.5 py-0.5 rounded">캐시</span>}
-            <span className="flex-1">참조 {okCount}/7 소스</span>
+            <span className="flex-1">참조 {okCount}/{Object.keys(srcStatus).length} 소스</span>
             <button onClick={() => setShowSources(v => !v)} className="flex items-center gap-0.5 hover:text-slate-300">
               출처 {showSources ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
             </button>

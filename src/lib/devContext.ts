@@ -31,7 +31,7 @@ export const DEFAULT_DEV_CONTEXT: DevContext = {
     { id: 'u6', title: '캘린더 연차/휴무 로직', status: 'open', priority: 'urgent' },
     { id: 'p1', title: 'Groq AI 대화 추가', status: 'open', priority: 'in_progress' },
     { id: 'p2', title: '슈퍼유저 권한 전체 반영', status: 'open', priority: 'in_progress' },
-    { id: 'p3', title: 'AI 토탈 운영파트너', status: 'open', priority: 'in_progress' },
+    { id: 'p3', title: 'AI 운영 파트너·오늘 브리핑 분리', status: 'open', priority: 'in_progress' },
     { id: 'p4', title: '위생점검일지 자동화', status: 'open', priority: 'in_progress' },
     { id: 'p5', title: 'HR 사원정보', status: 'open', priority: 'in_progress' },
     { id: 'p6', title: 'AI 매입관리 전체', status: 'open', priority: 'in_progress' },

@@ -49,7 +49,7 @@ type ResponsiveLayouts = Partial<Record<string, GridLayout>>;
 
 function ensureRequiredWidgets(widgets: string[]): string[] {
   let next = [...widgets];
-  for (const id of ['total_partner', 'ai_insight'] as const) {
+  for (const id of ['ai_insight', 'total_partner'] as const) {
     if (!next.includes(id)) next = [...next, id];
   }
   return next;
@@ -313,9 +313,9 @@ export default function DashboardPage() {
       case 'weekly_analysis':    return <WeeklyAnalysisWidget editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
       case 'yesterday_analysis': return <YesterdayWidget      editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
       case 'quick_menu':         return <QuickMenuWidget      editMode={editMode} onRemove={() => removeWidget(id)} />;
-      case 'ai_insight':         return <AiInsightWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
+      case 'ai_insight':         return <AiInsightWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} mobileLayout={isMobile} />;
       case 'sales_prediction':   return <SalesPredictionWidget  editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} mobileLayout={isMobile} />;
-      case 'total_partner':      return <TotalPartnerWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
+      case 'total_partner':      return <TotalPartnerWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} mobileLayout={isMobile} />;
       case 'today_sales':        return <TodaySalesWidget       editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
       case 'sales_compare':      return <SalesCompareWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />;
       default:                   return null;

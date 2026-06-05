@@ -204,7 +204,7 @@ export default function PredictionHistoryPage() {
           <div className="text-center py-16 text-slate-600">
             <History className="w-10 h-10 mx-auto mb-3 opacity-30" />
             <p className="text-sm">예측 기록이 없습니다</p>
-            <p className="text-xs mt-1">AI 토탈 운영파트너 위젯을 활성화하면 자동으로 기록됩니다</p>
+            <p className="text-xs mt-1">AI 운영 파트너 위젯을 활성화하면 자동으로 기록됩니다</p>
           </div>
         ) : (
           <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">

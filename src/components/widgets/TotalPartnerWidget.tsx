@@ -128,14 +128,14 @@ function PeriodTab({ data, isWeek, isMonth }: { data: PeriodData; isWeek?: boole
       {/* AI 운영의견 */}
       <div className="bg-slate-800/50 rounded-xl p-3">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">AI 운영의견</span>
+          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">기간별 실행</span>
           <span className="text-[10px] text-slate-500">신뢰도 {data.confidence}%</span>
         </div>
         <p className="text-xs text-slate-300 leading-relaxed">{boldify(data.opinion)}</p>
       </div>
 
       {/* 품목 예측 */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <div className="flex items-center gap-1 mb-2">
             <TrendingUp className="w-3 h-3 text-teal-400" />
@@ -169,9 +169,14 @@ function PeriodTab({ data, isWeek, isMonth }: { data: PeriodData; isWeek?: boole
   );
 }
 
-interface Props { editMode: boolean; onRemove: () => void; storeId: string; }
+interface Props {
+  editMode: boolean;
+  onRemove: () => void;
+  storeId: string;
+  mobileLayout?: boolean;
+}
 
-export default function TotalPartnerWidget({ editMode, onRemove, storeId }: Props) {
+export default function TotalPartnerWidget({ editMode, onRemove, storeId, mobileLayout = false }: Props) {
   const [data,     setData]     = useState<PartnerData | null>(null);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState<string | null>(null);
@@ -220,15 +225,16 @@ export default function TotalPartnerWidget({ editMode, onRemove, storeId }: Prop
 
   return (
     <WidgetWrapper
-      title="AI 토탈 운영파트너"
+      title="AI 운영 파트너"
       editMode={editMode}
       onRemove={onRemove}
       onRefresh={() => load(true)}
       updatedAt={updatedAt}
       loading={loading}
       error={error}
+      autoHeight={mobileLayout}
     >
-      <div className="flex flex-col h-full overflow-hidden">
+      <div className={`flex flex-col ${mobileLayout ? 'min-h-[24rem]' : 'h-full overflow-hidden'}`}>
         {/* 경고 배너 (고정) */}
         <div className="shrink-0 bg-amber-950/60 border-b border-amber-800/40 px-3 py-1.5 flex items-center gap-2">
           <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
