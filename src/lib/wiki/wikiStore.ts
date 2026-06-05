@@ -24,15 +24,24 @@ function docFromSnap(id: string, data: DocumentData): WikiDoc {
   };
 }
 
+/** 신규 시드 문서만 추가 (기존 편집본은 덮어쓰지 않음) */
 export async function ensureGlobalWikiSeeds(): Promise<void> {
   const globalSnap = await adminDb.collection(COL)
     .where('storeId', '==', 'global')
-    .limit(1)
     .get();
-  if (!globalSnap.empty) return;
+
+  const existingSlugs = new Set(
+    globalSnap.docs.map(d => String(d.data().slug || '')),
+  );
+
+  const toInsert = globalSnap.empty
+    ? GLOBAL_WIKI_SEEDS
+    : GLOBAL_WIKI_SEEDS.filter(s => !existingSlugs.has(s.slug));
+
+  if (toInsert.length === 0) return;
 
   const batch = adminDb.batch();
-  for (const seed of GLOBAL_WIKI_SEEDS) {
+  for (const seed of toInsert) {
     const ref = adminDb.collection(COL).doc(`global_${seed.slug}`);
     batch.set(ref, {
       ...seed,
