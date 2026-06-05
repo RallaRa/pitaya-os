@@ -5,7 +5,7 @@ import { getAdminStorageBucket } from '@/lib/firebase/admin';
 import { buildStoredFileUrl, formatStorageError } from '@/lib/firebase/storageBucket';
 import { generateImagenImageBuffer } from '@/lib/signage/imagen';
 
-/** Gemini Imagen 3.0 생성 + Firebase 업로드 */
+/** Gemini Imagen 4 / Native Image 생성 + Firebase 업로드 */
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
