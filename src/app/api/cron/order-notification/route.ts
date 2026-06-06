@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { HOLIDAY_ORDER_ALERT_TYPE } from '@/lib/kakao/holidays';
 
 export async function POST(req: Request) {
   const secret = req.headers.get('x-cron-secret');
@@ -27,12 +28,15 @@ export async function POST(req: Request) {
         const membersSnap = await adminDb.collection('user_store_map')
           .where('storeId', '==', storeId).get();
 
-        const notifMsg = {
-          'D-2': '📦 발주 마감이 이틀 남았습니다.',
-          'D-1': '📦 발주 마감이 내일입니다! 확인해주세요.',
-          '당일': '🚨 오늘이 발주 마감일입니다!',
-          '배송불가': '🚨 배송 불가 구간입니다. 긴급 발주가 필요합니다.',
-        }[data.dDayType as string] || '';
+        const isHolidayOrderAlert = data.dDayType === HOLIDAY_ORDER_ALERT_TYPE;
+        const notifMsg = isHolidayOrderAlert
+          ? (data.holidayOrderAlert?.message as string)
+            || '📅 모레 휴일입니다. 오늘 발주 시 내일 수령 가능 — 발주 추가점검해주세요.'
+          : ({
+            'D-2': '📦 발주 마감이 이틀 남았습니다.',
+            'D-1': '📦 발주 마감이 내일입니다! 확인해주세요.',
+            '당일': '🚨 오늘이 발주 마감일입니다!',
+          }[data.dDayType as string] || '');
 
         if (!notifMsg) continue;
 
@@ -41,7 +45,7 @@ export async function POST(req: Request) {
           try {
             const { generateTextWithFallback } = await import('@/lib/aiProviderFallback');
             const { text } = await generateTextWithFallback({
-              prompt: `정육점 발주 알림: ${data.dDayType}. ${notifMsg} 1문장 발주 조언만.`,
+              prompt: `정육점 ${isHolidayOrderAlert ? '휴일발주알림' : '발주 알림'}: ${data.dDayType}. ${notifMsg} 1문장 발주 조언만.`,
               useCase: 'fast',
             });
             aiTip = text.trim().slice(0, 120);
@@ -53,17 +57,18 @@ export async function POST(req: Request) {
           const uid = memberDoc.data().uid;
           const ref = adminDb.collection('notifications').doc();
           batch.set(ref, {
-            targetUid:  uid,
-            senderUid:  '',
+            targetUid: uid,
+            senderUid: '',
             senderName: 'Pitaya OS',
-            type:       'order_alert',
-            title:      '발주 알림',
-            message:    aiTip ? `${notifMsg}\n💡 ${aiTip}` : notifMsg,
-            link:       '/dashboard/suppliers',
-            dDayType:   data.dDayType,
+            type: isHolidayOrderAlert ? 'holiday_order_alert' : 'order_alert',
+            title: isHolidayOrderAlert ? '휴일발주알림' : '발주 알림',
+            message: aiTip ? `${notifMsg}\n💡 ${aiTip}` : notifMsg,
+            link: '/dashboard/suppliers',
+            dDayType: data.dDayType,
+            holidayOrderAlert: data.holidayOrderAlert || null,
             storeId,
-            isRead:     false,
-            createdAt:  FieldValue.serverTimestamp(),
+            isRead: false,
+            createdAt: FieldValue.serverTimestamp(),
           });
           notified++;
         }
@@ -72,7 +77,8 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ ok: true, notified });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'order notification failed';
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

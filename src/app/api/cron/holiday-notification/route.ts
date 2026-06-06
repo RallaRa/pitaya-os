@@ -4,11 +4,13 @@ import { FieldValue } from 'firebase-admin/firestore';
 import {
   getUpcomingHolidayAlerts,
   holidayAlertMessage,
+  HOLIDAY_ORDER_ALERT_DAYS_BEFORE,
+  HOLIDAY_ORDER_ALERT_LEAD_DAYS,
   kstTodayStr,
 } from '@/lib/kakao/holidays';
 import { getKakaoLinkedActiveUserIds, notifyUser } from '@/lib/notifications/notifyUser';
 
-const LEAD_DAYS = [7, 2];
+const LEAD_DAYS = [...HOLIDAY_ORDER_ALERT_LEAD_DAYS];
 const LINK = '/dashboard/hr/calendar';
 
 function isAuthorized(req: Request) {
@@ -39,7 +41,7 @@ async function runHolidayNotifications() {
 
       const title =
         alert.daysBefore === 7 ? '📅 휴일 1주일 전 알림' :
-        alert.daysBefore === 2 ? '📅 휴일 2일 전 알림' :
+        alert.daysBefore === HOLIDAY_ORDER_ALERT_DAYS_BEFORE ? '📅 휴일발주알림' :
         '📅 휴일 알림';
       const message = holidayAlertMessage(alert.period, alert.daysBefore);
 

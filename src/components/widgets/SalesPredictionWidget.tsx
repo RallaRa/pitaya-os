@@ -289,7 +289,11 @@ export default function SalesPredictionWidget({
   const [error,      setError]      = useState<string | null>(null);
   const [updatedAt,  setUpdatedAt]  = useState<Date | null>(null);
   const [showSource, setShowSource] = useState(false);
-  const [orderInfo,  setOrderInfo]  = useState<{ dDayType?: string; gaps?: { start: string; end: string }[] } | null>(null);
+  const [orderInfo,  setOrderInfo]  = useState<{
+    dDayType?: string;
+    gaps?: { start: string; end: string }[];
+    holidayOrderAlert?: { message?: string; holidayDate?: string };
+  } | null>(null);
   const [posRefreshing, setPosRefreshing] = useState(false);
   const mqMobile = useIsMobileView();
   const isMobileView = mobileLayout ?? mqMobile;
@@ -372,7 +376,12 @@ export default function SalesPredictionWidget({
     'D-2':    { bg: 'bg-amber-900/30 border-amber-500/40', text: 'text-amber-300', msg: '📦 발주 마감 D-2 — 발주 준비를 시작하세요' },
     'D-1':    { bg: 'bg-orange-900/30 border-orange-500/40', text: 'text-orange-300', msg: '📦 발주 마감 D-1 ⚠️ — 오늘 중 발주하세요!' },
     '당일':   { bg: 'bg-red-900/30 border-red-500/40', text: 'text-red-300 font-bold', msg: '🚨 오늘이 발주 마감일입니다!' },
-    '배송불가': { bg: 'bg-red-900/40 border-red-500/50', text: 'text-red-200 font-bold animate-pulse', msg: `🚨 긴급 발주 필요 — 배송 불가 구간 (${orderInfo?.gaps?.[0]?.start}~${orderInfo?.gaps?.[0]?.end})` },
+    '휴일발주알림': {
+      bg: 'bg-red-900/40 border-red-500/50',
+      text: 'text-red-200 font-bold animate-pulse',
+      msg: orderInfo?.holidayOrderAlert?.message
+        || '📅 모레 휴일입니다. 오늘 발주 시 내일 수령 가능 — 발주 추가점검해주세요.',
+    },
   }[dDayType] : null;
 
   const hasValidComment = Boolean(data?.supporterComment?.trim()) && !isPlaceholderSupporterComment(data?.supporterComment || '');
