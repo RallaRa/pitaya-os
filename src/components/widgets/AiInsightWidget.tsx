@@ -55,6 +55,7 @@ const TAG_COLORS: Record<string, string> = {
   트렌드: 'bg-yellow-500/20 text-yellow-300',
   상권: 'bg-orange-500/20 text-orange-300',
   뉴스: 'bg-red-500/20 text-red-300',
+  가축질병: 'bg-rose-500/20 text-rose-300',
 };
 
 function Sparkline({ data }: { data: { period: string; ratio: number }[] }) {

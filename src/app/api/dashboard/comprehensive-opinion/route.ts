@@ -14,6 +14,11 @@ import {
   fetchCommercialArea,
   fetchNaverNewsHeadlines,
 } from '@/lib/areaContext';
+import {
+  fetchRecentLivestockDisease,
+  summarizeLivestockDiseaseForAi,
+  type LivestockDiseaseRow,
+} from '@/lib/mafra/fetchLivestockDisease';
 import { sourceStatus, stripUndefinedDeep } from '@/lib/firestoreSanitize';
 
 export const maxDuration = 60;
@@ -64,11 +69,15 @@ export async function GET(req: Request) {
   const regionSido = storeData.regionSido || '서울';
   const regionSigungu = storeData.regionSigungu || '';
 
-  const [storeContext, trendResult, commercial, news] = await Promise.all([
+  const regionKeyword = regionSigungu || regionSido;
+
+  const [storeContext, trendResult, commercial, news, livestockDisease] = await Promise.all([
     storeId ? loadSystemContext(storeId).catch(() => null) : Promise.resolve(null),
     fetchNaverTrendData(storeId),
     fetchCommercialArea(regionSido, regionSigungu),
     fetchNaverNewsHeadlines(6),
+    fetchRecentLivestockDisease({ limit: 15, daysBack: 180, regionKeyword })
+      .catch(() => ({ rows: [] as LivestockDiseaseRow[], totalCount: 0, fetchedAt: '', source: 'mafra' as const })),
   ]);
 
   const footTraffic = estimateFootTrafficWithComparisons(regionSido, regionSigungu);
@@ -96,6 +105,10 @@ export async function GET(req: Request) {
     ? news.map(n => `[${n.keyword}] ${n.title}`).join('\n')
     : '뉴스 없음';
 
+  const diseaseText = livestockDisease.rows.length > 0
+    ? summarizeLivestockDiseaseForAi(livestockDisease.rows)
+    : '최근 180일 내 해당 지역 가축질병 발생 정보 없음';
+
   const dataSourceStatus: Record<string, { status: string; detail?: string }> = {
     유동인구: sourceStatus(footTraffic.source === 'api' ? 'ok' : 'estimate', `지수 ${footTraffic.index}`),
     상권: sourceStatus(commercial.source === 'api' ? 'ok' : 'estimate', commercial.competitiveLevel),
@@ -109,6 +122,10 @@ export async function GET(req: Request) {
     ),
     고객: sourceStatus((storeContext?.topCustomers?.length || 0) > 0 ? 'ok' : 'empty'),
     뉴스: sourceStatus(news.length > 0 ? 'ok' : 'empty', news.length > 0 ? `${news.length}건` : undefined),
+    가축질병: sourceStatus(
+      livestockDisease.rows.length > 0 ? 'ok' : 'empty',
+      livestockDisease.rows.length > 0 ? `${livestockDisease.rows.length}건(180일)` : undefined,
+    ),
   };
 
   const hasSalesSignal = todaySale > 0 || yesterdaySale > 0;
@@ -167,13 +184,15 @@ export async function GET(req: Request) {
 ${trendText}
 [관련 뉴스]
 ${newsText}
+[가축질병 발생(MAFRA, ${regionKeyword || '전국'})]
+${diseaseText}
 
 JSON 형식:
 {
   "summary": "한줄 핵심 (40자 이내, 상권·시장 중심)",
   "opinion": "150자 이내 보조 메모. **볼드** 사용. 유동·상권·트렌드·뉴스·매출분위기만",
   "highlights": [
-    {"tag":"상권|트렌드|뉴스|매출|고객","text":"핵심 포인트"}
+    {"tag":"상권|트렌드|뉴스|매출|고객|가축질병","text":"핵심 포인트"}
   ],
   "actions": ["오늘 할 일(진열·홍보·점검) 1", "오늘 할 일 2", "오늘 할 일 3"]
 }
@@ -201,6 +220,7 @@ highlights 4~6개(품목 태그 금지), actions 3개(구체적·즉시 실행)`
       ...aiMetaJson(aiResult),
       trends: trendResult.trends,
       news,
+      livestockDisease: livestockDisease.rows.slice(0, 8),
       footTraffic,
       commercial,
       sales: { today: todaySale, yesterday: yesterdaySale, change: saleChange },
@@ -230,6 +250,7 @@ highlights 4~6개(품목 태그 금지), actions 3개(구체적·즉시 실행)`
       actions: [],
       trends: trendResult.trends,
       news,
+      livestockDisease: livestockDisease.rows.slice(0, 8),
       footTraffic,
       commercial,
       sales: { today: todaySale, yesterday: yesterdaySale, change: saleChange },
