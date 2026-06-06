@@ -40,6 +40,10 @@ import {
   tryCreateExpiryFromAiChat,
 } from '@/lib/expiryReminder/fromAiChat';
 import {
+  buildCalendarChatAppendix,
+  tryCreateCalendarEventFromAiChat,
+} from '@/lib/calendarAi/fromAiChat';
+import {
   buildWikiAiAppendix,
   listWikiDocs,
   wikiIndexFromDocs,
@@ -378,6 +382,7 @@ export async function POST(req: Request) {
 
     // ── 유통기한 등록 (독립 모듈, AI 대화 채널) ──
     let expiryReminder: Awaited<ReturnType<typeof tryCreateExpiryFromAiChat>> | undefined;
+    let calendarEvent: Awaited<ReturnType<typeof tryCreateCalendarEventFromAiChat>> | undefined;
     if (
       chatMode !== 'debate'
       && (modelChoice as string) !== 'debate'
@@ -393,6 +398,27 @@ export async function POST(req: Request) {
       } catch (err) {
         console.error('[AI] expiry reminder:', err);
       }
+      if (!expiryReminder?.created) {
+        try {
+          calendarEvent = await tryCreateCalendarEventFromAiChat({
+            storeId,
+            createdBy: authUser.uid,
+            message: message.trim(),
+          });
+        } catch (err) {
+          console.error('[AI] calendar event:', err);
+        }
+      }
+    }
+
+    if (expiryReminder?.created && expiryReminder.result) {
+      system += `\n\n[시스템] 유통기한이 캘린더에 자동 등록되었습니다 (${expiryReminder.result.itemName}, ${expiryReminder.result.expiryDate}). 등록 방법 안내 없이 짧게 확인만 하세요.`;
+    } else if (calendarEvent?.created && calendarEvent.result) {
+      const t = calendarEvent.result;
+      const when = t.allDay || !t.startTime
+        ? t.startDate
+        : `${t.startDate} ${t.startTime}`;
+      system += `\n\n[시스템] 캘린더 일정이 자동 등록되었습니다 (제목: ${t.title}, ${when}). 등록 방법·메뉴 안내 없이 짧게 확인만 하세요.`;
     }
 
     // ── 4AI 협업 토론 (model=debate 또는 chatMode=debate) ──
@@ -544,8 +570,11 @@ export async function POST(req: Request) {
 
     let responseText = result.text;
     const expiryAppendix = expiryReminder ? buildExpiryChatAppendix(expiryReminder) : '';
+    const calendarAppendix = calendarEvent ? buildCalendarChatAppendix(calendarEvent) : '';
     if (expiryAppendix) {
       responseText = `${responseText.trim()}${expiryAppendix}`;
+    } else if (calendarAppendix) {
+      responseText = `${responseText.trim()}${calendarAppendix}`;
     }
     if (aiExclusions.length > 0) {
       responseText += `\n\n---\n⛔ **제외된 AI**\n${aiExclusions.map(e => `• ${e}`).join('\n')}\n✅ **응답 AI:** ${MODEL_NAMES[finalModel] || finalModel}`;
@@ -560,6 +589,7 @@ export async function POST(req: Request) {
       aiExclusions:    aiExclusions.length ? aiExclusions : undefined,
       chatMode,
       expiryReminder: expiryReminder?.created ? expiryReminder.result : undefined,
+      calendarEvent: calendarEvent?.created ? calendarEvent.result : undefined,
     });
 
   } catch (error: any) {
