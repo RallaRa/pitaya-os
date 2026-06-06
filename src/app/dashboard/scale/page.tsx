@@ -8,7 +8,7 @@ import {
   Send, Download, Printer, Eye, X, Search, Trash2,
   Pencil, Check, AlertCircle, Bot, User, Loader2,
   RefreshCw, Scale, ChevronDown, Plus, Table2,
-  MessageSquare, Home,
+  MessageSquare, Home, Star,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -32,6 +32,7 @@ interface ScaleCode {
   category: string;
   storeId?: string;
   source?: string;
+  starred?: boolean;
 }
 
 interface PendingGroup {
@@ -74,10 +75,22 @@ const CATEGORY_HEADER_COLOR: Record<string, string> = {
   '기타':  'bg-slate-700 text-slate-300',
 };
 
+type ScaleSortMode = 'plu' | 'name';
+
+function sortScaleItems(a: ScaleCode, b: ScaleCode, mode: ScaleSortMode): number {
+  if (mode === 'name') {
+    return a.name.localeCompare(b.name, 'ko');
+  }
+  const codeA = a.code ?? parseInt(a.scaleCode3 || '0', 10);
+  const codeB = b.code ?? parseInt(b.scaleCode3 || '0', 10);
+  if (codeA !== codeB) return codeA - codeB;
+  return a.name.localeCompare(b.name, 'ko');
+}
+
 /* ════════════════ 출력 미리보기 모달 ════════════════ */
 function PrintPreviewModal({
-  items, storeName, onClose,
-}: { items: ScaleCode[]; storeName: string; onClose: () => void }) {
+  items, storeName, sortMode, onClose,
+}: { items: ScaleCode[]; storeName: string; sortMode: ScaleSortMode; onClose: () => void }) {
   const groups: Record<string, ScaleCode[]> = {};
   CATEGORY_ORDER.forEach(c => { groups[c] = []; });
   items.forEach(item => {
@@ -85,7 +98,7 @@ function PrintPreviewModal({
     if (!groups[c]) groups[c] = [];
     groups[c].push(item);
   });
-  CATEGORY_ORDER.forEach(c => groups[c].sort((a, b) => a.code - b.code));
+  CATEGORY_ORDER.forEach(c => groups[c].sort((a, b) => sortScaleItems(a, b, sortMode)));
 
   const handlePrint = () => window.print();
 
@@ -205,6 +218,8 @@ export default function ScaleCodePage() {
   const [chatInput,   setChatInput]   = useState('');
   const [aiLoading,   setAiLoading]   = useState(false);
   const [filter,      setFilter]      = useState('');
+  const [viewMode,    setViewMode]    = useState<'selected' | 'all'>('selected');
+  const [sortMode,    setSortMode]    = useState<ScaleSortMode>('plu');
   const [showPreview, setShowPreview] = useState(false);
   const [editingId,   setEditingId]   = useState<string | null>(null);
   const [editCode,    setEditCode]    = useState('');
@@ -295,16 +310,23 @@ export default function ScaleCodePage() {
   }, [chatHistory, aiLoading]);
 
   /* ── 필터된 아이템 ── */
+  const starredCount = useMemo(() => items.filter(i => i.starred).length, [items]);
+
+  const viewItems = useMemo(() => {
+    if (viewMode === 'selected') return items.filter(i => i.starred);
+    return items;
+  }, [items, viewMode]);
+
   const filteredItems = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(i =>
+    if (!q) return viewItems;
+    return viewItems.filter(i =>
       i.name.toLowerCase().includes(q)
       || String(i.code).includes(q)
       || (i.scaleCode3 || '').includes(q)
       || (i.posBarCode || '').includes(q)
     );
-  }, [items, filter]);
+  }, [viewItems, filter]);
 
   /* ── 카테고리별 그룹 ── */
   const grouped = useMemo(() => {
@@ -315,13 +337,9 @@ export default function ScaleCodePage() {
       if (!g[c]) g[c] = [];
       g[c].push(item);
     });
-    CATEGORY_ORDER.forEach(c => g[c].sort((a, b) =>
-      (a.scaleCode3 || String(a.code).padStart(3, '0')).localeCompare(
-        b.scaleCode3 || String(b.code).padStart(3, '0'),
-      ),
-    ));
+    CATEGORY_ORDER.forEach(c => g[c].sort((a, b) => sortScaleItems(a, b, sortMode)));
     return g;
-  }, [filteredItems]);
+  }, [filteredItems, sortMode]);
 
   /* ── AI 채팅 전송 ── */
   const sendMessage = async () => {
@@ -427,6 +445,21 @@ export default function ScaleCodePage() {
   };
 
   /* ── 삭제 ── */
+  const toggleStar = async (item: ScaleCode) => {
+    const next = !item.starred;
+    setItems(prev => prev.map(i => (i.id === item.id ? { ...i, starred: next } : i)));
+    try {
+      await fetch('/api/scale/codes', {
+        method: 'PUT',
+        headers: await getAuthJsonHeaders(),
+        body: JSON.stringify({ id: item.id, starred: next }),
+      });
+    } catch {
+      setItems(prev => prev.map(i => (i.id === item.id ? { ...i, starred: !next } : i)));
+      showToast('별표 저장 실패', false);
+    }
+  };
+
   const deleteItem = async (id: string, name: string) => {
     if (!confirm(`'${name}' 항목을 삭제하시겠습니까?`)) return;
     try {
@@ -443,7 +476,9 @@ export default function ScaleCodePage() {
     const wb = XLSX.utils.book_new();
 
     // 시트1: 전체
-    const all = items.map(i => ({ 코드: i.code, 품목명: i.name, 카테고리: i.category }));
+    const all = [...items]
+      .sort((a, b) => sortScaleItems(a, b, sortMode))
+      .map(i => ({ 코드: i.code, 품목명: i.name, 카테고리: i.category }));
     const ws1 = XLSX.utils.json_to_sheet(all);
     ws1['!cols'] = [{ wch: 8 }, { wch: 20 }, { wch: 10 }];
     XLSX.utils.book_append_sheet(wb, ws1, '전체목록');
@@ -452,7 +487,7 @@ export default function ScaleCodePage() {
     ['한우', '한돈', '수입육'].forEach(cat => {
       const catItems = items
         .filter(i => (i.category || getCategory(i.name)) === cat)
-        .sort((a, b) => a.code - b.code)
+        .sort((a, b) => sortScaleItems(a, b, sortMode))
         .map(i => ({ 코드: i.code, 품목명: i.name }));
       if (catItems.length > 0) {
         const ws = XLSX.utils.json_to_sheet(catItems);
@@ -491,7 +526,7 @@ export default function ScaleCodePage() {
           <div className="flex items-center gap-2">
             <button onClick={() => setShowPreview(true)}
               className="flex items-center gap-1.5 px-3 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-xl text-sm">
-              <Eye className="w-3.5 h-3.5" /> 출력 미리보기
+              <Eye className="w-3.5 h-3.5" /> {viewMode === 'selected' ? '선택 출력' : '출력 미리보기'}
             </button>
             <button onClick={downloadExcel}
               className="flex items-center gap-1.5 px-3 py-2 bg-green-700/80 hover:bg-green-600 text-white rounded-xl text-sm">
@@ -636,8 +671,64 @@ export default function ScaleCodePage() {
 
           {/* 우측: 코드 테이블 (60%) */}
           <div className={`${mobileTab === 'chat' ? 'hidden' : 'flex'} md:flex flex-col flex-1 overflow-hidden`}>
-            {/* 검색바 */}
-            <div className="px-4 py-3 border-b border-slate-800 shrink-0">
+            {/* 검색바 + 조회 모드 */}
+            <div className="px-4 py-3 border-b border-slate-800 shrink-0 space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-xl border border-slate-700 overflow-hidden shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('selected')}
+                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                      viewMode === 'selected'
+                        ? 'bg-amber-600/90 text-white'
+                        : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <Star className="w-3 h-3 inline mr-1 -mt-0.5" />
+                    선택 조회
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('all')}
+                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                      viewMode === 'all'
+                        ? 'bg-teal-700 text-white'
+                        : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    전체 조회
+                  </button>
+                </div>
+                <div className="flex rounded-xl border border-slate-700 overflow-hidden shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setSortMode('plu')}
+                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                      sortMode === 'plu'
+                        ? 'bg-slate-600 text-white'
+                        : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    PLU순
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSortMode('name')}
+                    className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                      sortMode === 'name'
+                        ? 'bg-slate-600 text-white'
+                        : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    가나다순
+                  </button>
+                </div>
+                <span className="text-[10px] text-slate-500 hidden sm:inline">
+                  {viewMode === 'selected'
+                    ? `자주 쓰는 코드 ${starredCount}개 · 저울 조회용`
+                    : `전체 ${totalCount}개`}
+                </span>
+              </div>
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600" />
@@ -655,7 +746,7 @@ export default function ScaleCodePage() {
                   )}
                 </div>
                 <span className="text-xs text-slate-600 shrink-0">
-                  {filteredItems.length}/{totalCount}
+                  {filteredItems.length}/{viewMode === 'selected' ? starredCount : totalCount}
                 </span>
               </div>
             </div>
@@ -748,6 +839,9 @@ export default function ScaleCodePage() {
                         <table className="w-full">
                           <thead>
                             <tr className="bg-slate-800/60">
+                              <th className="px-2 py-1.5 w-8" title="자주 쓰는 코드">
+                                <Star className="w-3 h-3 text-amber-400/80 mx-auto" />
+                              </th>
                               <th className="px-3 py-1.5 text-left text-[10px] text-slate-500 w-16">저울</th>
                               <th className="px-3 py-1.5 text-left text-[10px] text-slate-500 w-24">POS 6자리</th>
                               <th className="px-3 py-1.5 text-left text-[10px] text-slate-500 w-20">계열(앞3)</th>
@@ -762,6 +856,7 @@ export default function ScaleCodePage() {
                                 className="group hover:bg-slate-800/40 transition-colors">
                                 {editingId === item.id ? (
                                   <>
+                                    <td className="px-2 py-1.5" />
                                     <td className="px-3 py-1.5">
                                       <input
                                         type="number"
@@ -807,6 +902,20 @@ export default function ScaleCodePage() {
                                   </>
                                 ) : (
                                   <>
+                                    <td className="px-2 py-2 text-center">
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleStar(item)}
+                                        title={item.starred ? '선택 목록에서 제외' : '자주 쓰는 코드로 선택'}
+                                        className="p-1 rounded-md hover:bg-slate-700/80 transition-colors"
+                                      >
+                                        <Star className={`w-3.5 h-3.5 ${
+                                          item.starred
+                                            ? 'fill-amber-400 text-amber-400'
+                                            : 'text-slate-600 hover:text-amber-400/70'
+                                        }`} />
+                                      </button>
+                                    </td>
                                     <td className="px-3 py-2 font-mono font-bold text-sm text-teal-300">
                                       {item.scaleCode3 || String(item.code).padStart(3, '0')}
                                     </td>
@@ -868,7 +977,22 @@ export default function ScaleCodePage() {
                   {filteredItems.length === 0 && !loading && (
                     <div className="text-center py-16 text-slate-600">
                       <Scale className="w-10 h-10 mx-auto mb-3 opacity-30" />
-                      {filter ? `'${filter}' 검색 결과가 없습니다` : '등록된 코드가 없습니다'}
+                      {viewMode === 'selected' && starredCount === 0 && !filter ? (
+                        <>
+                          <p className="text-slate-400 text-sm">선택된 코드가 없습니다</p>
+                          <p className="text-xs mt-2 max-w-xs mx-auto text-slate-500">
+                            전체 조회에서 자주 쓰는 품목 옆 별(★)을 누르면
+                            저울 조회용 목록만 볼 수 있습니다
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setViewMode('all')}
+                            className="mt-4 text-xs text-teal-400 hover:text-teal-300 underline"
+                          >
+                            전체 조회로 이동
+                          </button>
+                        </>
+                      ) : filter ? `'${filter}' 검색 결과가 없습니다` : '등록된 코드가 없습니다'}
                     </div>
                   )}
                 </div>
@@ -881,8 +1005,9 @@ export default function ScaleCodePage() {
       {/* 출력 미리보기 모달 */}
       {showPreview && (
         <PrintPreviewModal
-          items={items}
+          items={viewMode === 'selected' ? viewItems : items}
           storeName={storeName}
+          sortMode={sortMode}
           onClose={() => setShowPreview(false)}
         />
       )}

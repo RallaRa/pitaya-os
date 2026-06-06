@@ -187,6 +187,7 @@ export async function PUT(req: Request) {
     const updates: any = { updatedAt: FieldValue.serverTimestamp() };
     if (name !== undefined) { updates.name = name; updates.category = getCategory(name); }
     if (code !== undefined) updates.code = Number(code);
+    if (body.starred !== undefined) updates.starred = Boolean(body.starred);
 
     await adminDb.collection('scale_codes').doc(id).update(updates);
     return NextResponse.json({ ok: true });
