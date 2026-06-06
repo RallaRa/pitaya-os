@@ -45,6 +45,11 @@ const CustomerMessageHistoryTab = dynamic(
   { ssr: false },
 );
 
+const CustomerPurchaseHistoryPanel = dynamic(
+  () => import('@/components/customers/CustomerPurchaseHistoryPanel'),
+  { ssr: false },
+);
+
 /* ── 타입 ── */
 interface Customer {
   id: string;
@@ -163,6 +168,7 @@ export default function CustomersPage() {
   const [cycleFilter,  setCycleFilter]  = useState<VisitCycleStatus | ''>('');
   const [trendFilter,  setTrendFilter]  = useState<VisitTrendSegment | ''>('');
   const [requestPanel, setRequestPanel] = useState<{ cusCode: string; label: string } | null>(null);
+  const [purchasePanel, setPurchasePanel] = useState<{ cusCode: string; label: string } | null>(null);
   const [messagePanelOpen, setMessagePanelOpen] = useState(false);
 
   const LIMIT = 50;
@@ -989,17 +995,30 @@ export default function CustomersPage() {
                         )}
                       </td>
                       <td className="px-3 py-2 text-center">
-                        <button
-                          type="button"
-                          onClick={() => setRequestPanel({
-                            cusCode: c.cusCode,
-                            label: dec?.name || c.name || c.cusCode,
-                          })}
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] text-slate-400 hover:text-teal-400 hover:bg-slate-800 transition"
-                          title="고객 요청 이력"
-                        >
-                          <ClipboardList className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setPurchasePanel({
+                              cusCode: c.cusCode,
+                              label: dec?.name || c.name || c.cusCode,
+                            })}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition"
+                            title="구매 이력"
+                          >
+                            <ShoppingBag className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRequestPanel({
+                              cusCode: c.cusCode,
+                              label: dec?.name || c.name || c.cusCode,
+                            })}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] text-slate-400 hover:text-teal-400 hover:bg-slate-800 transition"
+                            title="고객 요청 이력"
+                          >
+                            <ClipboardList className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1094,6 +1113,7 @@ export default function CustomersPage() {
                 <p className="text-xs text-amber-400/90 bg-amber-950/30 border border-amber-800/40 rounded-lg px-3 py-2">
                   방문 주기 분석을 위해 POS에서 구매 이력 동기화가 필요합니다.
                   POS PC: <code className="text-amber-300">node bridge.js migrate YYYY-MM-DD YYYY-MM-DD</code>
+                  (회원별 품목 이력 포함)
                 </p>
               )}
 
@@ -1352,6 +1372,15 @@ export default function CustomersPage() {
             </>
           )}
         </div>
+      )}
+
+      {purchasePanel && storeId && (
+        <CustomerPurchaseHistoryPanel
+          storeId={storeId}
+          cusCode={purchasePanel.cusCode}
+          cusLabel={purchasePanel.label}
+          onClose={() => setPurchasePanel(null)}
+        />
       )}
 
       {requestPanel && storeId && (

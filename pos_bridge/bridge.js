@@ -303,21 +303,77 @@ function normalizePhoneDigits(phone) {
   return '';
 }
 
-function auditCustomerPhones(customers) {
+const MEMBER_PHONES_CSV = path.join(__dirname, 'member-phones.csv');
+const UI_SCRAPED_CSV    = path.join(__dirname, 'ui-scraped-phones.csv');
+const PHONE_PAIRS_TXT   = path.join(__dirname, 'screenshot-phone-pairs.txt');
+
+/** member-phones.csv / ui-scraped / screenshot pairs → Cus_Code → 11자리 전화 */
+function loadPhoneOverlay() {
+  const map = new Map();
+
+  function add(code, phone) {
+    const c = String(code || '').trim();
+    const p = normalizePhoneDigits(phone);
+    if (c && p && c.length >= 6) map.set(c, p);
+  }
+
+  for (const file of [MEMBER_PHONES_CSV, UI_SCRAPED_CSV]) {
+    if (!fs.existsSync(file)) continue;
+    for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+      const t = line.trim();
+      if (!t || t.startsWith('#')) continue;
+      if (/^cus_code|^scraped_at/i.test(t)) continue;
+      const parts = t.split(',').map(s => s.trim());
+      if (parts.length >= 2 && /^\d{6,10}$/.test(parts[0])) {
+        add(parts[0], parts[parts.length - 1]);
+      } else if (parts.length >= 3 && /^\d{6,10}$/.test(parts[1])) {
+        add(parts[1], parts[2]);
+      }
+    }
+  }
+
+  if (fs.existsSync(PHONE_PAIRS_TXT)) {
+    for (const line of fs.readFileSync(PHONE_PAIRS_TXT, 'utf8').split(/\r?\n/)) {
+      const t = line.trim();
+      if (!t || t.startsWith('#')) continue;
+      const [code, plain] = t.split('|');
+      if (code && plain) add(code, plain);
+    }
+  }
+
+  return map;
+}
+
+function resolveCustomerPhoneFull(c, overlay) {
+  const rawBest = pickBestPhone(c.cusHp, c.tel, c.mobile);
+  let phoneFull = normalizePhoneDigits(rawBest);
+  if (!phoneFull && overlay && overlay.size > 0) {
+    const code = String(c.cusCode || '').trim();
+    if (overlay.has(code)) phoneFull = overlay.get(code);
+  }
+  return phoneFull;
+}
+
+function auditCustomerPhones(customers, overlay) {
   let fullCount = 0;
   let maskedCount = 0;
   let emptyCount = 0;
   let recoverableFromMst = 0;
+  let overlayRecoverable = 0;
+  const ov = overlay || loadPhoneOverlay();
 
   for (const c of customers) {
     const mobile = String(c.mobile || '');
     const tel = String(c.tel || '');
     const cusHp = String(c.cusHp || '');
     const digits = normalizePhoneDigits(pickBestPhone(cusHp, tel, mobile));
+    const withOverlay = digits || resolveCustomerPhoneFull(c, ov);
 
-    if (!digits && !mobile && !tel && !cusHp) { emptyCount++; continue; }
-    if (digits) fullCount++;
-    else {
+    if (!withOverlay && !mobile && !tel && !cusHp) { emptyCount++; continue; }
+    if (withOverlay) {
+      fullCount++;
+      if (!digits && ov.has(String(c.cusCode || '').trim())) overlayRecoverable++;
+    } else {
       maskedCount++;
       if ((isMaskedPhone(mobile) || isMaskedPhone(tel)) && cusHp && !isMaskedPhone(cusHp)) {
         recoverableFromMst++;
@@ -326,6 +382,9 @@ function auditCustomerPhones(customers) {
   }
 
   log(`전화 원본 숫자: ${fullCount}명 | DB 마스킹만: ${maskedCount}명 | 빈값: ${emptyCount}명`);
+  if (overlayRecoverable > 0) {
+    log(`overlay CSV로 복구: ${overlayRecoverable}명 (member-phones/ui-scrape/pairs)`);
+  }
   if (recoverableFromMst > 0) {
     log(`Cus_Mst(Cus_HP)로 복구 가능: ${recoverableFromMst}명`);
   }
@@ -492,6 +551,63 @@ async function fetchCustomerSales(dateStr) {
   }
 }
 
+// ── 회원별 구매 품목 (SaT + SaD JOIN) ─────────────────────────────
+async function fetchCustomerPurchaseLines(dateStr) {
+  const satTable = `SaT_${ym(dateStr)}`;
+  const sadTable = `SaD_${ym(dateStr)}`;
+  const p = await getPool();
+  try {
+    const result = await p.request()
+      .input('date', sql.VarChar(10), dateStr)
+      .query(`
+        SELECT
+          t.Cus_Code,
+          t.Sale_Date,
+          t.Sale_Num,
+          t.Sale_Time,
+          SUBSTRING(t.Sale_Num, 11, 2) AS POS_No,
+          t.TSell_Pri AS receiptTotal,
+          d.Barcode,
+          d.G_Name,
+          d.S_Code,
+          d.S_Name,
+          d.Sale_Count,
+          d.Sell_Pri,
+          d.TSell_Pri,
+          d.Pur_Pri,
+          d.Profit_Pri
+        FROM ${satTable} t
+        INNER JOIN ${sadTable} d
+          ON t.Sale_Num = d.Sale_Num AND t.Sale_Date = d.Sale_Date
+        WHERE t.Sale_Date = @date
+          AND t.Cus_Code IS NOT NULL
+          AND t.Cus_Code <> ''
+          AND d.Sale_YN = 1
+        ORDER BY t.Cus_Code, t.Sale_Num, d.Barcode
+      `);
+    return result.recordset.map(r => ({
+      cusCode:       String(r.Cus_Code || '').trim(),
+      date:          dateStr,
+      saleNum:       String(r.Sale_Num || ''),
+      saleTime:      String(r.Sale_Time || '').trim(),
+      posNo:         String(r.POS_No || '01'),
+      receiptTotal:  toInt(r.receiptTotal),
+      barcode:       String(r.Barcode || ''),
+      goodsName:     String(r.G_Name || ''),
+      categoryCode:  String(r.S_Code || ''),
+      categoryName:  String(r.S_Name || ''),
+      saleCount:     toInt(r.Sale_Count),
+      sellPrice:     toInt(r.Sell_Pri),
+      totalPrice:    toInt(r.TSell_Pri),
+      purPrice:      toInt(r.Pur_Pri),
+      profitPrice:   toInt(r.Profit_Pri),
+    })).filter(r => r.cusCode && r.saleNum);
+  } catch (e) {
+    warn(`회원 구매 품목 조회 실패 [${dateStr}]: ${e.message}`);
+    return [];
+  }
+}
+
 // ── 고객 마스터 전송 ──────────────────────────────────────────────
 async function sendCustomersToApi(customers) {
   const CHUNK = 500;
@@ -643,15 +759,22 @@ async function syncCustomers(pool) {
     return;
   }
 
-  auditCustomerPhones(customers);
+  const overlay = loadPhoneOverlay();
+  if (overlay.size > 0) {
+    log(`전화 overlay: ${overlay.size}명 (member-phones / ui-scrape / pairs)`);
+  }
+  auditCustomerPhones(customers, overlay);
 
   const batchSize = 400;
   let totalSynced = 0;
+  let overlayUsed = 0;
 
   for (let i = 0; i < customers.length; i += batchSize) {
     const batch = customers.slice(i, i + batchSize).map(c => {
-      const rawBest = pickBestPhone(c.cusHp, c.tel, c.mobile);
-      const phoneFull = normalizePhoneDigits(rawBest);
+      const phoneFull = resolveCustomerPhoneFull(c, overlay);
+      if (phoneFull && !normalizePhoneDigits(pickBestPhone(c.cusHp, c.tel, c.mobile))) {
+        overlayUsed++;
+      }
       return {
         cusCode:        String(c.cusCode        || '').trim(),
         name:           String(c.name           || '').trim(),
@@ -697,6 +820,7 @@ async function syncCustomers(pool) {
     }
   }
 
+  if (overlayUsed > 0) log(`overlay 전화 적용: ${overlayUsed}명`);
   log(`✅ 고객정보 총 ${totalSynced}명 동기화 완료`);
 }
 
@@ -1116,12 +1240,12 @@ async function sendToApi(payload) {
           Authorization:  `Bearer ${API_KEY}`,
           'Content-Type': 'application/json',
         },
-        timeout: 30000,
+        timeout: 120000,
       });
 
       if (res.data?.success) {
         const s = res.data.saved || {};
-        log(`✅ 전송 성공 | 헤더:${s.headers}건 상세:${s.details}건 마감:${s.finish} 리포트:${s.dailyReport}`);
+        log(`✅ 전송 성공 | 헤더:${s.headers}건 상세:${s.details}건 회원품목:${s.purchaseLines ?? 0}건 마감:${s.finish} 리포트:${s.dailyReport}`);
         return true;
       }
       warn(`응답 오류: ${JSON.stringify(res.data)}`);
@@ -1137,15 +1261,16 @@ async function sendToApi(payload) {
 async function syncDate(dateStr, dryRun) {
   log(`-------- ${dateStr} 동기화 시작 --------`);
 
-  let headers, details, finish, weather, customerSales, timeSlots;
+  let headers, details, finish, weather, customerSales, customerPurchaseLines, timeSlots;
   try {
     const timeMap = await fetchSaleTimeMap(dateStr);
-    [headers, details, finish, weather, customerSales, timeSlots] = await Promise.all([
+    [headers, details, finish, weather, customerSales, customerPurchaseLines, timeSlots] = await Promise.all([
       fetchHeaders(dateStr),
       fetchDetails(dateStr, timeMap),
       fetchFinish(dateStr),
       fetchWeather(dateStr),
       fetchCustomerSales(dateStr),
+      fetchCustomerPurchaseLines(dateStr),
       fetchTimeSlots(dateStr),
     ]);
   } catch (e) {
@@ -1161,6 +1286,7 @@ async function syncDate(dateStr, dryRun) {
     `품목:${details.length}건 ` +
     `일마감:${isClosed ? `${finish.totalSale.toLocaleString()}원 ✓` : '미마감'} ` +
     `고객:${customerSales.length}명 ` +
+    `회원품목:${customerPurchaseLines.length}건 ` +
     `날씨:${weather ? `${weather.condition} ${weather.tempMin}°~${weather.tempMax}°` : '-'}`
   );
 
@@ -1179,6 +1305,7 @@ async function syncDate(dateStr, dryRun) {
     isClosed,
     weather,
     customerSales,
+    customerPurchaseLines,
     timeSlots,
     syncedAt: new Date().toISOString(),
   };
@@ -1397,10 +1524,11 @@ async function main() {
         const p = await getPool();
         if (dryRun) {
           const list = await fetchCustomerInfo(p);
-          auditCustomerPhones(list);
+          const overlay = loadPhoneOverlay();
+          auditCustomerPhones(list, overlay);
           log(`[DRY-RUN] 고객 ${list.length}명. 전화 샘플 5명:`);
           list.slice(0, 5).forEach(c => {
-            const digits = normalizePhoneDigits(pickBestPhone(c.cusHp, c.tel, c.mobile));
+            const digits = resolveCustomerPhoneFull(c, overlay);
             console.log(
               `  [${c.cusCode}] Cus_HP:${c.cusHp || '-'} tel:${c.tel || '-'} mobile:${c.mobile || '-'} → digits:${digits || '(마스킹/없음)'}`
             );
@@ -1429,10 +1557,11 @@ async function main() {
       case 'probe-customer-phones': {
         const p = await getPool();
         const list = await fetchCustomerInfo(p);
-        auditCustomerPhones(list);
+        const overlay = loadPhoneOverlay();
+        auditCustomerPhones(list, overlay);
         log('── 전화 컬럼 샘플 (상위 10명) ──');
         list.slice(0, 10).forEach(c => {
-          const digits = normalizePhoneDigits(pickBestPhone(c.cusHp, c.tel, c.mobile));
+          const digits = resolveCustomerPhoneFull(c, overlay);
           console.log(JSON.stringify({
             cusCode: c.cusCode,
             cusHp: c.cusHp || null,

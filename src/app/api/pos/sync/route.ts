@@ -4,6 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { fetchWeather, getStoreCoords } from '@/lib/weather';
 import { runSalesHourlyAlertsForStore } from '@/lib/salesHourlyAlertRunner';
 import { upsertStoreDailyItemStats } from '@/lib/storeDailyItemStats';
+import { replaceCustomerPurchaseLinesForDate, type CustomerPurchaseLineInput } from '@/lib/customerPurchaseLines';
 
 // ── 타입 ──────────────────────────────────────────────────────────
 interface CustomerSale {
@@ -13,6 +14,8 @@ interface CustomerSale {
   visitCount: number;
 }
 
+interface CustomerPurchaseLinePayload extends CustomerPurchaseLineInput {}
+
 interface SyncBody {
   storeId?: string;
   date: string;
@@ -20,6 +23,7 @@ interface SyncBody {
   details?: SadDetail[] | null;
   finish?: FinishTotal | null;
   customerSales?: CustomerSale[] | null;
+  customerPurchaseLines?: CustomerPurchaseLinePayload[] | null;
   isClosed?: boolean;
   weather?: Record<string, unknown> | null;
   timeSlots?: Array<{ posNo?: string; Hour?: string; hour?: string; totalSale?: number; tranCount?: number }> | null;
@@ -298,6 +302,7 @@ export async function POST(req: Request) {
   const details      = Array.isArray(body.details)       ? body.details       : [];
   const finish       = body.finish ?? null;
   const customerSales = Array.isArray(body.customerSales) ? body.customerSales : [];
+  const customerPurchaseLines = Array.isArray(body.customerPurchaseLines) ? body.customerPurchaseLines : [];
   const timeSlotsRaw = Array.isArray(body.timeSlots) ? body.timeSlots : [];
   const timeSlots = timeSlotsRaw.map(r => ({
     posNo:     String(r.posNo ?? ''),
@@ -434,12 +439,43 @@ export async function POST(req: Request) {
     detailCount:    details.length,
     hasFinish,
     customerCount:  customerSales.length,
+    purchaseLineCount: customerPurchaseLines.length,
     syncedAt,
     status: 'success',
     createdAt: FieldValue.serverTimestamp(),
   });
 
   await batch.commit();
+
+  let savedPurchaseLines = 0;
+  if (customerPurchaseLines.length > 0) {
+    try {
+      savedPurchaseLines = await replaceCustomerPurchaseLinesForDate(
+        storeId,
+        date,
+        customerPurchaseLines.map(line => ({
+          cusCode: line.cusCode,
+          date: line.date || date,
+          saleNum: line.saleNum,
+          saleTime: line.saleTime,
+          posNo: line.posNo,
+          receiptTotal: line.receiptTotal,
+          barcode: line.barcode,
+          goodsName: line.goodsName,
+          categoryCode: line.categoryCode,
+          categoryName: line.categoryName,
+          saleCount: line.saleCount,
+          sellPrice: line.sellPrice,
+          totalPrice: line.totalPrice,
+          purPrice: line.purPrice,
+          profitPrice: line.profitPrice,
+        })),
+        syncedAt,
+      );
+    } catch (err) {
+      console.error('[pos/sync] pos_customer_purchase_lines 저장 실패:', err);
+    }
+  }
 
   await adminDb.collection('stores').doc(storeId).set(
     { posBridgeEnabled: true, updatedAt: FieldValue.serverTimestamp() },
@@ -468,6 +504,7 @@ export async function POST(req: Request) {
       details: savedDetails,
       finish: hasFinish,
       dailyReport: dailyReportSaved,
+      purchaseLines: savedPurchaseLines,
     },
   });
 }
