@@ -1,5 +1,12 @@
 /** 상권·유동인구 컨텍스트 (공공데이터 + 지역 추정) */
 
+import {
+  addDaysYMD,
+  getKSTHour,
+  getKSTTodayYMD,
+  subtractMonthsYMD,
+} from '@/lib/dateUtils';
+
 const SIGUNGU_CODES: Record<string, string> = {
   '강서구': '11500', '강남구': '11680', '강동구': '11740', '강북구': '11305',
   '관악구': '11620', '광진구': '11215', '구로구': '11530', '금천구': '11545',
@@ -32,6 +39,20 @@ export interface FootTrafficContext {
   source: 'estimate' | 'api';
 }
 
+export interface FootTrafficComparisonPoint {
+  index: number;
+  change: number;
+  changePct: number | null;
+}
+
+export interface FootTrafficWithComparisons extends FootTrafficContext {
+  comparisons: {
+    vsYesterday: FootTrafficComparisonPoint;
+    vsLastWeek: FootTrafficComparisonPoint;
+    vsLastMonth: FootTrafficComparisonPoint;
+  };
+}
+
 export interface CommercialAreaContext {
   region: string;
   storeDensity: string;
@@ -44,24 +65,89 @@ function stripHtml(s: string) {
   return s.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').trim();
 }
 
-export function estimateFootTraffic(regionSido: string, regionSigungu: string): FootTrafficContext {
-  const now = new Date();
-  const dow = now.getDay();
-  const hour = now.getHours();
-  const base = REGION_FOOT_INDEX[regionSido] || REGION_FOOT_INDEX[Object.keys(REGION_FOOT_INDEX).find(k => regionSido.startsWith(k)) || ''] || 60;
+const DOW_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+
+function getKSTDowFromYMD(ymd: string): number {
+  const wd = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Seoul',
+    weekday: 'short',
+  }).format(new Date(`${ymd}T12:00:00+09:00`));
+  const map: Record<string, number> = {
+    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+  };
+  return map[wd] ?? 0;
+}
+
+function calcFootIndex(regionSido: string, dow: number, hour: number): number {
+  const base = REGION_FOOT_INDEX[regionSido]
+    || REGION_FOOT_INDEX[Object.keys(REGION_FOOT_INDEX).find(k => regionSido.startsWith(k)) || '']
+    || 60;
   const dowFactor = DOW_FACTOR[dow];
   const hourFactor = hour >= 10 && hour <= 20 ? 1.1 : hour >= 7 && hour < 10 ? 0.85 : 0.65;
-  const index = Math.round(base * dowFactor * hourFactor);
-  const level = index >= 90 ? '높음' : index >= 65 ? '보통' : '낮음';
-  const DOW = ['일', '월', '화', '수', '목', '금', '토'];
+  return Math.round(base * dowFactor * hourFactor);
+}
+
+function footLevel(index: number): FootTrafficContext['level'] {
+  return index >= 90 ? '높음' : index >= 65 ? '보통' : '낮음';
+}
+
+export function estimateFootTrafficForDate(
+  regionSido: string,
+  regionSigungu: string,
+  ymd: string,
+  hour?: number,
+): FootTrafficContext {
+  const h = hour ?? getKSTHour();
+  const dow = getKSTDowFromYMD(ymd);
+  const index = calcFootIndex(regionSido, dow, h);
+  const level = footLevel(index);
 
   return {
     region: `${regionSido} ${regionSigungu}`.trim(),
     index,
     level,
-    dayOfWeek: DOW[dow],
-    summary: `${regionSigungu || regionSido} ${DOW[dow]}요일 ${hour}시 기준 유동지수 ${index} (${level}). ${dow === 0 || dow === 6 ? '주말·휴일 유입 증가 구간' : '평일 점심·저녁 피크 전후'}`,
+    dayOfWeek: DOW_LABELS[dow],
+    summary: `${regionSigungu || regionSido} ${DOW_LABELS[dow]}요일 ${h}시 기준 유동지수 ${index} (${level}). ${dow === 0 || dow === 6 ? '주말·휴일 유입 증가 구간' : '평일 점심·저녁 피크 전후'}`,
     source: 'estimate',
+  };
+}
+
+export function estimateFootTraffic(regionSido: string, regionSigungu: string): FootTrafficContext {
+  return estimateFootTrafficForDate(regionSido, regionSigungu, getKSTTodayYMD(), getKSTHour());
+}
+
+function compareFootIndex(current: number, previous: number): FootTrafficComparisonPoint {
+  return {
+    index: previous,
+    change: current - previous,
+    changePct: previous > 0 ? Math.round(((current - previous) / previous) * 1000) / 10 : null,
+  };
+}
+
+export function estimateFootTrafficWithComparisons(
+  regionSido: string,
+  regionSigungu: string,
+): FootTrafficWithComparisons {
+  const today = getKSTTodayYMD();
+  const hour = getKSTHour();
+  const current = estimateFootTrafficForDate(regionSido, regionSigungu, today, hour);
+
+  const idxYesterday = estimateFootTrafficForDate(regionSido, regionSigungu, addDaysYMD(today, -1), hour).index;
+  const idxLastWeek = estimateFootTrafficForDate(regionSido, regionSigungu, addDaysYMD(today, -7), hour).index;
+  const idxLastMonth = estimateFootTrafficForDate(
+    regionSido,
+    regionSigungu,
+    subtractMonthsYMD(today, 1),
+    hour,
+  ).index;
+
+  return {
+    ...current,
+    comparisons: {
+      vsYesterday: compareFootIndex(current.index, idxYesterday),
+      vsLastWeek: compareFootIndex(current.index, idxLastWeek),
+      vsLastMonth: compareFootIndex(current.index, idxLastMonth),
+    },
   };
 }
 

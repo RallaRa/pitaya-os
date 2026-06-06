@@ -1,7 +1,7 @@
 import type { LayoutItem } from 'react-grid-layout';
 
 export const GRID_COLS = 12;
-export const DASHBOARD_LAYOUT_VERSION = 5;
+export const DASHBOARD_LAYOUT_VERSION = 6;
 
 export interface WidgetMeta {
   id: string;
@@ -64,9 +64,15 @@ export const WIDGET_META: WidgetMeta[] = [
     permKey: 'news',
   },
   {
+    id: 'customer_visit',
+    title: '고객 방문 · 전월대비',
+    defaultItem: { i: 'customer_visit', x: 0, y: 22, w: 4, h: 4, minW: 3, minH: 3, maxW: 6, maxH: 8 },
+    permKey: 'customer_visit',
+  },
+  {
     id: 'ai_insight',
     title: 'AI 오늘 브리핑',
-    defaultItem: { i: 'ai_insight', x: 0, y: 22, w: 12, h: 6, minW: 6, minH: 5, maxW: 12, maxH: 10 },
+    defaultItem: { i: 'ai_insight', x: 4, y: 22, w: 8, h: 6, minW: 6, minH: 5, maxW: 12, maxH: 10 },
     permKey: 'ai_insight',
   },
   {
@@ -86,6 +92,7 @@ export const DEFAULT_ACTIVE = [
   'weekly_analysis',
   'yesterday_analysis',
   'news',
+  'customer_visit',
   'ai_insight',
   'total_partner',
 ];

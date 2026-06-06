@@ -17,6 +17,7 @@ const WIDGET_LIST = [
   { key: 'sales_prediction',   label: 'AI 매출 예측',      desc: '예측 + AI 서포터 코멘트' },
   { key: 'today_sales',        label: '당일 매출 현황',    desc: '실시간 POS 매출' },
   { key: 'sales_compare',      label: '매출 목표',         desc: '주·월 목표 달성·진도율' },
+  { key: 'customer_visit',     label: '고객 방문 · 전월대비', desc: '방문 고객·방문률 전월 대비' },
 ];
 
 const ROLE_COLS: { key: string; label: string; locked?: boolean }[] = [
@@ -39,6 +40,7 @@ const DEFAULT_PERMS: Permissions = {
   sales_prediction:   { master: true, admin: true,  user: true,  staff: false },
   today_sales:        { master: true, admin: true,  user: true,  staff: true  },
   sales_compare:      { master: true, admin: true,  user: true,  staff: false },
+  customer_visit:     { master: true, admin: true,  user: true,  staff: false },
 };
 
 export default function WidgetPermissionsPage() {

@@ -27,7 +27,16 @@ interface ComprehensiveData {
   actions?: string[];
   trends?: TrendItem[];
   news?: { keyword: string; title: string; description?: string }[];
-  footTraffic?: { index: number; level: string; summary: string };
+  footTraffic?: {
+    index: number;
+    level: string;
+    summary: string;
+    comparisons?: {
+      vsYesterday: { changePct: number | null };
+      vsLastWeek: { changePct: number | null };
+      vsLastMonth: { changePct: number | null };
+    };
+  };
   commercial?: { businessSummary: string; competitiveLevel: string };
   sales?: { today: number; yesterday: number; change: number | null };
   dataSourceStatus?: Record<string, { status: string; detail?: string }>;
@@ -79,6 +88,16 @@ function hasBriefingContent(data: ComprehensiveData | null | undefined): boolean
     || data.commercial
     || (data.sales && (data.sales.today > 0 || data.sales.yesterday > 0))
   );
+}
+
+function fmtComparePct(value: number | null | undefined): string {
+  if (value == null) return '-';
+  return `${value > 0 ? '+' : ''}${value}%`;
+}
+
+function compareColor(value: number | null | undefined): string {
+  if (value == null || value === 0) return 'text-slate-400';
+  return value > 0 ? 'text-green-400' : 'text-red-400';
 }
 
 function boldify(text: string) {
@@ -177,6 +196,19 @@ export default function AiInsightWidget({
                   <p className="text-[9px] text-slate-500">유동</p>
                   <p className="text-sm font-bold text-slate-200">{data.footTraffic.index}</p>
                   <p className="text-[9px] text-slate-500">{data.footTraffic.level}</p>
+                  {data.footTraffic.comparisons && (
+                    <div className="mt-1 space-y-0.5">
+                      <p className={`text-[9px] ${compareColor(data.footTraffic.comparisons.vsYesterday.changePct)}`}>
+                        전일 {fmtComparePct(data.footTraffic.comparisons.vsYesterday.changePct)}
+                      </p>
+                      <p className={`text-[9px] ${compareColor(data.footTraffic.comparisons.vsLastWeek.changePct)}`}>
+                        전주 {fmtComparePct(data.footTraffic.comparisons.vsLastWeek.changePct)}
+                      </p>
+                      <p className={`text-[9px] ${compareColor(data.footTraffic.comparisons.vsLastMonth.changePct)}`}>
+                        전월 {fmtComparePct(data.footTraffic.comparisons.vsLastMonth.changePct)}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
               {data?.commercial && (

@@ -37,6 +37,7 @@ import YesterdayWidget      from '@/components/widgets/YesterdayWidget';
 import QuickMenuWidget      from '@/components/widgets/QuickMenuWidget';
 import TodaySalesWidget       from '@/components/widgets/TodaySalesWidget';
 import SalesCompareWidget     from '@/components/widgets/SalesCompareWidget';
+import CustomerVisitWidget    from '@/components/widgets/CustomerVisitWidget';
 import LazyWidgetMount from '@/components/dashboard/LazyWidgetMount';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import {
@@ -63,7 +64,7 @@ type ResponsiveLayouts = Partial<Record<string, GridLayout>>;
 
 function ensureRequiredWidgets(widgets: string[]): string[] {
   let next = [...widgets];
-  for (const id of ['ai_insight', 'total_partner'] as const) {
+  for (const id of ['ai_insight', 'total_partner', 'customer_visit'] as const) {
     if (!next.includes(id)) next = [...next, id];
   }
   return next;
@@ -320,6 +321,7 @@ export default function DashboardPage() {
       case 'total_partner':      return wrapLazyWidget(id, <TotalPartnerWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} mobileLayout={isMobile} />);
       case 'today_sales':        return wrapLazyWidget(id, <TodaySalesWidget       editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'sales_compare':      return wrapLazyWidget(id, <SalesCompareWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'customer_visit':     return wrapLazyWidget(id, <CustomerVisitWidget    editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       default:                   return null;
     }
   };

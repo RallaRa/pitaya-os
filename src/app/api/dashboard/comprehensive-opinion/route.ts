@@ -10,7 +10,7 @@ import { getDisplayNetSales } from '@/lib/posDailySales';
 import { loadSystemContext } from '@/lib/aiStoreContext';
 import { fetchNaverTrendData } from '@/lib/naverTrendServer';
 import {
-  estimateFootTraffic,
+  estimateFootTrafficWithComparisons,
   fetchCommercialArea,
   fetchNaverNewsHeadlines,
 } from '@/lib/areaContext';
@@ -71,7 +71,7 @@ export async function GET(req: Request) {
     fetchNaverNewsHeadlines(6),
   ]);
 
-  const footTraffic = estimateFootTraffic(regionSido, regionSigungu);
+  const footTraffic = estimateFootTrafficWithComparisons(regionSido, regionSigungu);
 
   const todaySale = getDisplayNetSales(storeContext?.todaySales ?? null);
   const yesterdaySale = getDisplayNetSales(storeContext?.yesterdaySales ?? null);

@@ -11,6 +11,7 @@ export const DEFAULT_WIDGET_PERMISSIONS = {
   sales_prediction:   { master: true, admin: true,  user: true,  staff: false },
   today_sales:        { master: true, admin: true,  user: true,  staff: true  },
   sales_compare:      { master: true, admin: true,  user: true,  staff: false },
+  customer_visit:     { master: true, admin: true,  user: true,  staff: false },
 };
 
 export async function getDashboardWidgetPermissions(storeId: string) {
