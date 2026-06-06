@@ -5,7 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line, PieChart, Pie, Cell, Legend,
+  LineChart, Line,
 } from 'recharts';
 import {
   Users, TrendingUp, UserPlus, ShoppingBag, RefreshCw,
@@ -47,6 +47,11 @@ const CustomerMessageHistoryTab = dynamic(
 
 const CustomerPurchaseHistoryPanel = dynamic(
   () => import('@/components/customers/CustomerPurchaseHistoryPanel'),
+  { ssr: false },
+);
+
+const CustomerPurchaseAnalyticsTab = dynamic(
+  () => import('@/components/customers/CustomerPurchaseAnalyticsTab'),
   { ssr: false },
 );
 
@@ -94,7 +99,6 @@ interface AnalysisData {
   dowPattern:        { dow: string; visits: number; sales: number }[];
   returnRate:        number;
   freqDistribution:  { label: string; count: number }[];
-  gradeDistribution: { grade: string; count: number; totalSales: number }[];
   newCustomerTrend:  { month: string; count: number }[];
   cycleDistribution?: { label: string; count: number }[];
   overdueCount?: number;
@@ -121,7 +125,7 @@ interface DecryptLogRow {
 }
 
 const GRADE_COLORS = ['#14b8a6','#f97316','#a78bfa','#fb7185','#34d399','#60a5fa','#fbbf24'];
-const TABS = ['고객 목록', '방문 분석', '등급 현황', '알림톡', '조회 이력'] as const;
+const TABS = ['고객 목록', '방문 분석', '구매 분석', '알림톡', '조회 이력'] as const;
 
 type SortField = CustomerSortField;
 
@@ -134,8 +138,6 @@ export default function CustomersPage() {
   const [tab,          setTab]          = useState<typeof TABS[number]>('고객 목록');
   const [customers,    setCustomers]    = useState<Customer[]>([]);
   const [stats,        setStats]        = useState<Stats | null>(null);
-  const [grades,       setGrades]       = useState<string[]>([]);
-  const [gradeFilter,  setGradeFilter]  = useState('');
   const [page,         setPage]         = useState(1);
   const [total,        setTotal]        = useState(0);
   const [search,       setSearch]       = useState('');
@@ -172,7 +174,7 @@ export default function CustomersPage() {
   const [messagePanelOpen, setMessagePanelOpen] = useState(false);
 
   const LIMIT = 50;
-  const COL_COUNT = 16;
+  const COL_COUNT = 15;
   const LOGS_LIMIT = 30;
 
   const clearPii = useCallback(() => {
@@ -295,7 +297,6 @@ export default function CustomersPage() {
       sortBy,
       sortOrder,
     });
-    if (gradeFilter) params.set('grade', gradeFilter);
     if (search.trim()) params.set('search', search.trim());
     if (joinFrom) params.set('joinFrom', joinFrom);
     if (joinTo) params.set('joinTo', joinTo);
@@ -305,11 +306,10 @@ export default function CustomersPage() {
     if (trendFilter) params.set('visitTrend', trendFilter);
     if (opts?.exportAll) params.set('exportAll', '1');
     return params;
-  }, [storeId, page, sortBy, sortOrder, gradeFilter, search, joinFrom, joinTo, visitFrom, visitTo, cycleFilter, trendFilter]);
+  }, [storeId, page, sortBy, sortOrder, search, joinFrom, joinTo, visitFrom, visitTo, cycleFilter, trendFilter]);
 
   const buildFilterBody = useCallback(() => ({
     storeId,
-    grade: gradeFilter,
     search: search.trim(),
     joinFrom,
     joinTo,
@@ -319,7 +319,7 @@ export default function CustomersPage() {
     visitTrend: trendFilter,
     sortBy,
     sortOrder,
-  }), [storeId, gradeFilter, search, joinFrom, joinTo, visitFrom, visitTo, cycleFilter, trendFilter, sortBy, sortOrder]);
+  }), [storeId, search, joinFrom, joinTo, visitFrom, visitTo, cycleFilter, trendFilter, sortBy, sortOrder]);
 
   const mapApiRow = (r: Record<string, unknown>): Customer => ({
     id: String(r.cusCode || ''),
@@ -366,7 +366,6 @@ export default function CustomersPage() {
       setCustomers((d.customers || []).map(mapApiRow));
       setTotal(d.total ?? 0);
       if (d.stats) setStats(d.stats);
-      if (d.grades) setGrades(d.grades);
     } catch (e) {
       console.error('[customers] list error:', e);
       setListError('고객 목록을 불러오지 못했습니다. 잠시 후 새로고침하세요.');
@@ -403,7 +402,7 @@ export default function CustomersPage() {
       setSortOrder(o => (o === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortBy(field);
-      setSortOrder(field === 'cusCode' || field === 'grade' ? 'asc' : 'desc');
+      setSortOrder(field === 'cusCode' ? 'asc' : 'desc');
     }
     setPage(1);
   };
@@ -422,7 +421,6 @@ export default function CustomersPage() {
         이름: String(r.nameMasked || ''),
         전화: String(r.phoneMasked || ''),
         회원구분: String(r.cusGubun || ''),
-        등급: String(r.cusClass || r.grade || ''),
         포인트: Number(r.point || 0),
         총구매액: Number(r.totalSales ?? r.totalPurchase ?? 0),
         방문일수: Number(r.distinctVisitDays ?? r.totalVisits ?? 0),
@@ -508,7 +506,6 @@ export default function CustomersPage() {
         전화: String(r.phone || ''),
         생년월일: String(r.birth || '').slice(0, 10),
         회원구분: String(r.cusGubun || ''),
-        등급: String(r.cusClass || r.grade || ''),
         포인트: Number(r.point || 0),
         총구매액: Number(r.totalPurchase || 0),
         방문일수: Number(r.visitCount || 0),
@@ -587,7 +584,6 @@ export default function CustomersPage() {
       const d = await res.json();
       if (!d.error) {
         setStats(d.stats || null);
-        setGrades(d.grades || []);
         if (d.total > 0) setTotal(d.total);
       }
     } catch (e) {
@@ -608,7 +604,7 @@ export default function CustomersPage() {
     finally { setAnalysisLoad(false); }
   }, [storeId]);
 
-  useEffect(() => { if (tab !== '고객 목록') loadAnalysis(); }, [tab, loadAnalysis]);
+  useEffect(() => { if (tab === '방문 분석') loadAnalysis(); }, [tab, loadAnalysis]);
 
   const loadDecryptLogs = useCallback(async () => {
     if (!storeId || !canDecrypt) return;
@@ -635,7 +631,6 @@ export default function CustomersPage() {
   const formatFilterSummary = (filters: Record<string, string> | null) => {
     if (!filters) return '전체';
     const parts: string[] = [];
-    if (filters.grade) parts.push(`등급:${filters.grade}`);
     if (filters.search) parts.push(`검색:${filters.search}`);
     if (filters.cycleStatus) parts.push(`상태:${filters.cycleStatus}`);
     if (filters.joinFrom || filters.joinTo) parts.push(`가입 ${filters.joinFrom || '…'}~${filters.joinTo || '…'}`);
@@ -788,14 +783,6 @@ export default function CustomersPage() {
                 <option value="decreasing">방문 감소</option>
                 <option value="stable">안정</option>
               </select>
-              <select
-                value={gradeFilter}
-                onChange={e => { setGradeFilter(e.target.value); setPage(1); }}
-                className="px-3 py-2 bg-slate-800/60 border border-slate-700 rounded-lg text-xs text-slate-300 outline-none focus:border-teal-500"
-              >
-                <option value="">전체 등급</option>
-                {grades.map(g => <option key={g} value={g}>{g}</option>)}
-              </select>
               <button
                 onClick={exportExcel}
                 disabled={exporting || loading}
@@ -884,11 +871,6 @@ export default function CustomersPage() {
                   <th className="text-left px-3 py-2.5 font-medium">이름</th>
                   <th className="text-left px-3 py-2.5 font-medium">전화</th>
                   <th className="text-left px-3 py-2.5 font-medium">회원구분</th>
-                  <th className="text-left px-3 py-2.5 font-medium">
-                    <button type="button" onClick={() => handleSort('grade')} className="inline-flex items-center gap-1 hover:text-slate-300">
-                      등급 <SortIcon field="grade" />
-                    </button>
-                  </th>
                   <th className="text-right px-3 py-2.5 font-medium">
                     <button type="button" onClick={() => handleSort('point')} className="inline-flex items-center gap-1 hover:text-slate-300 ml-auto">
                       포인트 <SortIcon field="point" />
@@ -964,11 +946,6 @@ export default function CustomersPage() {
                         {dec?.phone || c.mobile || ''}
                       </td>
                       <td className="px-3 py-2 text-slate-400">{c.cusGubun || ''}</td>
-                      <td className="px-3 py-2">
-                        {(c.cusClass || c.grade) ? (
-                          <span className="px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 text-[10px]">{c.cusClass || c.grade}</span>
-                        ) : ''}
-                      </td>
                       <td className="px-3 py-2 text-right text-slate-300">{c.point.toLocaleString()}</td>
                       <td className="px-3 py-2 text-right text-slate-300">
                         {c.totalPurchase ? c.totalPurchase.toLocaleString() : ''}
@@ -1212,81 +1189,9 @@ export default function CustomersPage() {
         </div>
       )}
 
-      {/* 등급 현황 탭 */}
-      {tab === '등급 현황' && (
-        <div className="space-y-5">
-          {analysisLoad ? (
-            <div className="flex justify-center py-16">
-              <Loader2 className="w-6 h-6 animate-spin text-teal-400" />
-            </div>
-          ) : analysis && analysis.gradeDistribution.length > 0 ? (
-            <>
-              {/* 파이차트 */}
-              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4">
-                <p className="text-xs font-semibold text-slate-400 mb-3">등급별 고객 비율</p>
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie
-                      data={analysis.gradeDistribution}
-                      dataKey="count"
-                      nameKey="grade"
-                      cx="50%" cy="50%"
-                      outerRadius={80}
-                      label={({ name, percent }) =>
-                        `${name} ${Math.round((percent as number) * 100)}%`
-                      }
-                      labelLine={false}
-                    >
-                      {analysis.gradeDistribution.map((_, i) => (
-                        <Cell key={i} fill={GRADE_COLORS[i % GRADE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
-                      formatter={(v: number) => [v.toLocaleString() + '명', '고객수']}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-
-              {/* 테이블 */}
-              <div className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-800 text-slate-500">
-                      <th className="text-left px-3 py-2.5">등급</th>
-                      <th className="text-right px-3 py-2.5">고객수</th>
-                      <th className="text-right px-3 py-2.5">비율</th>
-                      <th className="text-right px-3 py-2.5">총매출</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {analysis.gradeDistribution.map((g, i) => (
-                      <tr key={g.grade} className="border-b border-slate-800/50 hover:bg-slate-800/20 transition">
-                        <td className="px-3 py-2 flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full shrink-0"
-                            style={{ background: GRADE_COLORS[i % GRADE_COLORS.length] }} />
-                          {g.grade}
-                        </td>
-                        <td className="px-3 py-2 text-right text-slate-300">{g.count.toLocaleString()}명</td>
-                        <td className="px-3 py-2 text-right text-slate-400">
-                          {analysis.totalCustomers > 0
-                            ? Math.round((g.count / analysis.totalCustomers) * 100) + '%'
-                            : '-'}
-                        </td>
-                        <td className="px-3 py-2 text-right text-slate-300">
-                          {g.totalSales ? Math.round(g.totalSales / 10000).toLocaleString() + '만' : '-'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          ) : (
-            <p className="text-center py-16 text-slate-600 text-sm">등급 데이터가 없습니다</p>
-          )}
-        </div>
+      {/* 구매 분석 탭 */}
+      {tab === '구매 분석' && storeId && (
+        <CustomerPurchaseAnalyticsTab storeId={storeId} />
       )}
 
       {tab === '알림톡' && canDecrypt && storeId && (
