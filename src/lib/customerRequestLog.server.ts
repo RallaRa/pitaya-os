@@ -14,11 +14,10 @@ export async function fetchCustomerRequestSummaries(
   const snap = await adminDb.collection('customer_request_logs')
     .where('storeId', '==', storeId)
     .where('cusCode', '==', cusCode)
-    .orderBy('updatedAt', 'desc')
-    .limit(limit)
+    .limit(Math.max(limit * 5, 20))
     .get();
 
-  return snap.docs.map(doc => {
+  const rows = snap.docs.map(doc => {
     const d = doc.data();
     return {
       id: doc.id,
@@ -35,4 +34,7 @@ export async function fetchCustomerRequestSummaries(
       updatedByEmail: String(d.updatedByEmail || ''),
     };
   });
+
+  rows.sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  return rows.slice(0, limit);
 }

@@ -56,8 +56,17 @@ function saveState(state) {
 }
 
 function normalizePhone(raw) {
+  if (raw && typeof raw === 'object') return '';
   const digits = String(raw || '').replace(/\D/g, '');
   if (/^010\d{8}$/.test(digits)) return digits;
+  return '';
+}
+
+function normalizeCusCode(raw) {
+  if (raw && typeof raw === 'object') return '';
+  const code = String(raw || '').trim();
+  if (/^98\d{6}$/.test(code)) return code;
+  if (/^\d{8}$/.test(code)) return code;
   return '';
 }
 
@@ -292,8 +301,8 @@ async function pollOnce() {
     const probe = await probePosMember();
     if (!probe.running) return;
 
-    const cusCode = String(probe.cusCode || '').trim();
-    const memberName = String(probe.memberName || '').trim();
+    const cusCode = normalizeCusCode(probe.cusCode);
+    const memberName = typeof probe.memberName === 'string' ? probe.memberName.trim() : '';
     const phone = normalizePhone(probe.phone);
 
     if (!cusCode) {

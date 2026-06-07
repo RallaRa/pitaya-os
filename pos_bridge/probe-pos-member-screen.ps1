@@ -101,11 +101,14 @@ foreach ($t in $unique) {
   if ($nm -and $names -notcontains $nm) { $names += $nm }
 }
 
-$cusCode = ($codes | Select-Object -First 1)
-$memberName = ($names | Select-Object -First 1)
-$phone = ($phones | Select-Object -First 1)
+$cusCode = [string]($codes | Select-Object -First 1)
+$memberName = [string]($names | Select-Object -First 1)
+$phone = [string]($phones | Select-Object -First 1)
+if (-not $cusCode) { $cusCode = $null }
+if (-not $memberName) { $memberName = $null }
+if (-not $phone) { $phone = $null }
 
-@{
+[pscustomobject]@{
   running = $true
   pid = $pos.Id
   cusCode = $cusCode
