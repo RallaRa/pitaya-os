@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import {
   Copy, ExternalLink, Loader2, Trash2, ChevronLeft, ChevronRight,
   GripVertical, Link2, Play, Pause,
@@ -39,6 +39,8 @@ export default function PublicOrdersAdminPage() {
   const { currentStore } = useStore();
   const storeId = currentStore?.storeId || '';
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const sessionFromUrl = searchParams.get('session');
 
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -191,10 +193,21 @@ export default function PublicOrdersAdminPage() {
     }
   };
 
+  const clearSessionSelection = () => {
+    setSelectedId(null);
+    if (sessionFromUrl) {
+      router.replace(pathname);
+    }
+  };
+
   return (
-    <div className="flex h-full min-h-[calc(100vh-4rem)] bg-slate-950 text-slate-100 overflow-hidden">
-      {/* 회차 목록 */}
-      <aside className="w-full lg:w-56 shrink-0 border-r border-slate-800 bg-slate-900/40 p-3 flex flex-col">
+    <div className="flex flex-col md:flex-row h-full min-h-[calc(100vh-4rem)] bg-slate-950 text-slate-100 overflow-hidden">
+      {/* 회차 목록 — 모바일에서는 상세 보기 시 숨김 */}
+      <aside
+        className={`${
+          selectedId ? 'hidden md:flex' : 'flex'
+        } w-full md:w-56 shrink-0 border-r border-slate-800 bg-slate-900/40 p-3 flex-col min-h-0`}
+      >
         <h1 className="text-sm font-bold text-white mb-0.5">공개 주문</h1>
         <p className="text-[10px] text-slate-500 mb-3 leading-snug">
           AI 채팅으로 회차·품목 생성 · 손님은 링크로만 주문
@@ -259,13 +272,17 @@ export default function PublicOrdersAdminPage() {
         </div>
       </aside>
 
-      {/* 미리보기 */}
-      <main className="flex-1 min-w-0 overflow-y-auto p-4 pb-[48vh] md:pb-4">
+      {/* 미리보기 — 모바일에서는 회차 선택 시에만 표시 */}
+      <main
+        className={`${
+          selectedId ? 'flex' : 'hidden md:flex'
+        } flex-1 flex-col min-w-0 min-h-0 overflow-y-auto p-4 pb-[48vh] md:pb-4`}
+      >
         <div className="max-w-2xl mb-4">
           <PublicOrderKakaoHookSettings storeId={storeId} />
         </div>
         {!selectedId ? (
-          <div className="flex flex-col items-center justify-center h-full min-h-[320px] text-center px-4">
+          <div className="flex flex-col items-center justify-center flex-1 min-h-[320px] text-center px-4">
             <p className="text-slate-400 text-sm mb-2">AI에게 말해서 주문 회차를 만드세요</p>
             <p className="text-[11px] text-slate-600 max-w-md leading-relaxed">
               예: 「5월 한우 특판 회차 만들고 등심 50kg 89000원, 갈비 30kg 65000원 넣고 접수 시작해줘」
@@ -275,6 +292,14 @@ export default function PublicOrdersAdminPage() {
           <Loader2 className="w-6 h-6 animate-spin text-teal-400" />
         ) : (
           <div className="space-y-4 max-w-2xl">
+            <button
+              type="button"
+              onClick={clearSessionSelection}
+              className="md:hidden flex items-center gap-1 text-xs text-slate-400 hover:text-teal-300 -mt-1 mb-1"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              회차 목록
+            </button>
             <section className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
               <div className="flex items-start justify-between gap-2">
                 <div>

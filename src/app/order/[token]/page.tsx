@@ -74,6 +74,14 @@ export default function PublicOrderPage() {
       setSession(data.session);
       setLines(data.lines || []);
       setIsOpen(data.isOpen === true);
+      setQtyMap(prev => {
+        const activeIds = new Set((data.lines || []).map((l: PublicOrderLine) => l.id));
+        const next: Record<string, number> = {};
+        for (const [id, q] of Object.entries(prev)) {
+          if (activeIds.has(id) && q > 0) next[id] = q;
+        }
+        return next;
+      });
       void recordVisit(token);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '오류가 발생했습니다');
@@ -104,9 +112,16 @@ export default function PublicOrderPage() {
   const handleSubmit = async () => {
     setSubmitting(true);
     setSubmitError(null);
+    const activeLineIds = new Set(lines.map(l => l.id));
     const items = Object.entries(qtyMap)
-      .filter(([, q]) => q > 0)
+      .filter(([lineId, q]) => q > 0 && activeLineIds.has(lineId))
       .map(([lineId, qty]) => ({ lineId, qty }));
+
+    if (items.length === 0) {
+      setSubmitError('주문할 품목을 선택해 주세요');
+      setSubmitting(false);
+      return;
+    }
 
     try {
       const res = await fetch(`/api/public/orders/${encodeURIComponent(token)}/submit`, {

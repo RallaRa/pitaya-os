@@ -34,6 +34,18 @@ export async function POST(
     return NextResponse.json({ error: '주문할 품목을 선택해 주세요' }, { status: 400 });
   }
 
+  const mergedItems = new Map<string, number>();
+  for (const item of items) {
+    const lineId = String(item.lineId || '').trim();
+    const qty = Math.max(0, Math.floor(Number(item.qty) || 0));
+    if (!lineId || qty <= 0) continue;
+    mergedItems.set(lineId, (mergedItems.get(lineId) || 0) + qty);
+  }
+  const normalizedItems = [...mergedItems.entries()].map(([lineId, qty]) => ({ lineId, qty }));
+  if (normalizedItems.length === 0) {
+    return NextResponse.json({ error: '주문할 품목을 선택해 주세요' }, { status: 400 });
+  }
+
   try {
     const sessionSnap = await adminDb.collection('public_order_sessions')
       .where('publicToken', '==', token)
@@ -54,17 +66,29 @@ export async function POST(
 
     const ordererKey = makeOrdererKey(sessionId, ordererName, ordererPhone);
     const phoneMasked = maskPhone(ordererPhone);
-    const entryLines: { lineId: string; name: string; qty: number; unitPrice: number; unit: string }[] = [];
-    let totalAmount = 0;
 
-    await adminDb.runTransaction(async (tx) => {
-      for (const item of items) {
+    const { entryLines, totalAmount } = await adminDb.runTransaction(async (tx) => {
+      type PendingLine = {
+        lineRef: FirebaseFirestore.DocumentReference;
+        lineId: string;
+        qty: number;
+        orderedQty: number;
+        lineData: FirebaseFirestore.DocumentData;
+      };
+
+      const pending: PendingLine[] = [];
+      const lineRefs = normalizedItems.map(item =>
+        adminDb.collection('public_order_lines').doc(item.lineId),
+      );
+      const lineSnaps = lineRefs.length > 0 ? await tx.getAll(...lineRefs) : [];
+
+      for (let i = 0; i < normalizedItems.length; i++) {
+        const item = normalizedItems[i];
         const qty = Math.max(0, Math.floor(Number(item.qty) || 0));
         if (qty <= 0) continue;
 
-        const lineRef = adminDb.collection('public_order_lines').doc(item.lineId);
-        const lineSnap = await tx.get(lineRef);
-        if (!lineSnap.exists) throw new Error('품목을 찾을 수 없습니다');
+        const lineSnap = lineSnaps[i];
+        if (!lineSnap?.exists) throw new Error('품목을 찾을 수 없습니다');
 
         const lineData = lineSnap.data()!;
         if (lineData.sessionId !== sessionId || lineData.isActive === false) {
@@ -81,24 +105,45 @@ export async function POST(
           );
         }
 
+        pending.push({
+          lineRef: lineRefs[i],
+          lineId: item.lineId,
+          qty,
+          orderedQty,
+          lineData,
+        });
+      }
+
+      if (pending.length === 0) {
+        throw new Error('유효한 주문 수량이 없습니다');
+      }
+
+      const entryLines: {
+        lineId: string;
+        name: string;
+        qty: number;
+        unitPrice: number;
+        unit: string;
+      }[] = [];
+      let totalAmount = 0;
+
+      for (const { lineId, qty, lineData } of pending) {
         const unitPrice = Number(lineData.discountPrice) || Number(lineData.normalPrice) || 0;
         entryLines.push({
-          lineId: item.lineId,
+          lineId,
           name: String(lineData.name || ''),
           qty,
           unitPrice,
           unit: String(lineData.unit || 'ea'),
         });
         totalAmount += unitPrice * qty;
+      }
 
+      for (const { lineRef, qty, orderedQty } of pending) {
         tx.update(lineRef, {
           orderedQty: orderedQty + qty,
           updatedAt: FieldValue.serverTimestamp(),
         });
-      }
-
-      if (entryLines.length === 0) {
-        throw new Error('유효한 주문 수량이 없습니다');
       }
 
       const entryRef = adminDb.collection('public_order_entries').doc();
@@ -115,6 +160,8 @@ export async function POST(
         totalAmount,
         createdAt: FieldValue.serverTimestamp(),
       });
+
+      return { entryLines, totalAmount };
     });
 
     void notifyPublicOrderReceived({
