@@ -51,6 +51,8 @@ const PACKAGES: Record<Pkg, { dir: string; files: Set<string> }> = {
       'probe-scale-code-match.js',
       'RUN-PHONE-PROBE.ps1',
       'probe-pos-member-screen.ps1',
+      'scrape-pos-member-ui.ps1',
+      'merge-member-phones.ps1',
       'pos-member-watcher.js',
       'run-member-watcher.bat',
       'run-member-watcher-loop.bat',

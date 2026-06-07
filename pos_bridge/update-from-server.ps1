@@ -30,7 +30,7 @@ if (-not $key) {
 }
 
 $headers = @{ Authorization = "Bearer $key" }
-$files = @('bridge.js', 'package.json', 'sync-customers.bat', 'run-realtime.bat', 'run-realtime-hidden.vbs', 'install-realtime-task.bat', 'find-ukey2-key.ps1', 'FIND-KEY.bat', 'dll-strings.ps1', 'export-en-ukey2.bat', 'remote-from-pitaya.ps1', 'probe-pos-member-screen.ps1', 'pos-member-watcher.js', 'run-member-watcher.bat', 'run-member-watcher-loop.bat', 'run-member-watcher-hidden.vbs', 'install-member-watcher.ps1', 'install-member-watcher.bat')
+$files = @('bridge.js', 'package.json', 'sync-customers.bat', 'run-realtime.bat', 'run-realtime-hidden.vbs', 'install-realtime-task.bat', 'find-ukey2-key.ps1', 'FIND-KEY.bat', 'dll-strings.ps1', 'export-en-ukey2.bat', 'remote-from-pitaya.ps1', 'probe-pos-member-screen.ps1', 'scrape-pos-member-ui.ps1', 'merge-member-phones.ps1', 'pos-member-watcher.js', 'run-member-watcher.bat', 'run-member-watcher-loop.bat', 'run-member-watcher-hidden.vbs', 'install-member-watcher.ps1', 'install-member-watcher.bat')
 
 Write-Host "API: $apiBase"
 Write-Host '다운로드 중...'

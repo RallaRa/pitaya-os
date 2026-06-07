@@ -1,8 +1,8 @@
 /**
- * Pitaya OS — POS 회원호출 감지 → 고객 요청 이력 토스트
+ * Pitaya OS — POS 회원/결제 화면 감지
+ * - 평문 전화번호 → Pitaya sync + public_order 재매칭
+ * - 회원 요청 이력 토스트
  * C:\pitaya-bridge\pos-member-watcher.js
- *
- * npm install node-notifier dotenv axios firebase-admin
  */
 'use strict';
 
@@ -36,7 +36,9 @@ const API_KEY = process.env.POS_BRIDGE_KEY || '';
 const APP_URL = (process.env.PITAYA_APP_URL || 'https://pitaya-osv1.vercel.app').replace(/\/$/, '');
 const POLL_MS = parseInt(process.env.MEMBER_WATCH_MS || '2000', 10);
 const COOLDOWN_MS = parseInt(process.env.MEMBER_WATCH_COOLDOWN_MS || '600000', 10);
+const SYNC_COOLDOWN_MS = parseInt(process.env.MEMBER_SYNC_COOLDOWN_MS || String(6 * 60 * 60 * 1000), 10);
 const STATE_FILE = path.join(__dirname, 'pos-member-watcher-state.json');
+const UI_SCRAPED_CSV = path.join(__dirname, 'ui-scraped-phones.csv');
 const PROBE_SCRIPT = path.join(__dirname, 'probe-pos-member-screen.ps1');
 
 let db;
@@ -44,11 +46,19 @@ let polling = false;
 
 function loadState() {
   try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); }
-  catch { return { lastCusCode: '', lastNotifyAt: 0 }; }
+  catch {
+    return { lastCusCode: '', lastNotifyAt: 0, lastSync: {} };
+  }
 }
 
 function saveState(state) {
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+}
+
+function normalizePhone(raw) {
+  const digits = String(raw || '').replace(/\D/g, '');
+  if (/^010\d{8}$/.test(digits)) return digits;
+  return '';
 }
 
 function initFirebase() {
@@ -89,6 +99,57 @@ function probePosMember() {
     });
     ps.on('error', () => resolve({ running: false }));
   });
+}
+
+function appendUiScrapedPhone(cusCode, phone) {
+  try {
+    if (!fs.existsSync(UI_SCRAPED_CSV)) {
+      fs.writeFileSync(UI_SCRAPED_CSV, 'scraped_at,cus_code_hint,phone\r\n', 'utf8');
+    }
+    const line = `${new Date().toISOString()},${cusCode},${phone}\r\n`;
+    fs.appendFileSync(UI_SCRAPED_CSV, line, 'utf8');
+  } catch (e) {
+    log(`CSV 저장 실패: ${e.message}`);
+  }
+}
+
+function shouldSyncPhone(state, cusCode, phone) {
+  const key = `${cusCode}:${phone}`;
+  const lastAt = state.lastSync?.[key] || 0;
+  return Date.now() - lastAt >= SYNC_COOLDOWN_MS;
+}
+
+function markSynced(state, cusCode, phone) {
+  if (!state.lastSync) state.lastSync = {};
+  state.lastSync[`${cusCode}:${phone}`] = Date.now();
+  const keys = Object.keys(state.lastSync);
+  if (keys.length > 500) {
+    const sorted = keys.sort((a, b) => (state.lastSync[a] || 0) - (state.lastSync[b] || 0));
+    for (const k of sorted.slice(0, keys.length - 400)) delete state.lastSync[k];
+  }
+}
+
+async function syncCustomerScreen(cusCode, phone, memberName) {
+  const res = await axios.post(
+    `${APP_URL}/api/pos/sync-customer-screen`,
+    {
+      storeId: STORE_ID,
+      cusCode,
+      phoneFull: phone,
+      memberName: memberName || undefined,
+      source: 'pos_payment_screen',
+      rematch: true,
+      syncedAt: new Date().toISOString(),
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 20000,
+    },
+  );
+  return res.data;
 }
 
 async function fetchMemberRequests(cusCode) {
@@ -178,7 +239,27 @@ async function notifyStoreWeb(title, message, cusCode) {
   }
 }
 
-async function handleMember(cusCode, screenName) {
+async function handlePhoneSync(cusCode, phone, memberName) {
+  const state = loadState();
+  if (!shouldSyncPhone(state, cusCode, phone)) return;
+
+  try {
+    appendUiScrapedPhone(cusCode, phone);
+    const data = await syncCustomerScreen(cusCode, phone, memberName);
+    markSynced(state, cusCode, phone);
+    saveState(state);
+
+    const rematch = data.rematch || {};
+    log(
+      `전화 sync: ${cusCode} ${phone.slice(0, 3)}****${phone.slice(-4)} ` +
+      `| phone=${data.phoneOutcome || '?'} rematch=${rematch.matched || 0}/${rematch.scanned || 0}`,
+    );
+  } catch (e) {
+    log(`전화 sync 실패 [${cusCode}]: ${e.response?.data?.error || e.message}`);
+  }
+}
+
+async function handleMemberNotify(cusCode, screenName) {
   const state = loadState();
   const now = Date.now();
 
@@ -212,6 +293,9 @@ async function pollOnce() {
     if (!probe.running) return;
 
     const cusCode = String(probe.cusCode || '').trim();
+    const memberName = String(probe.memberName || '').trim();
+    const phone = normalizePhone(probe.phone);
+
     if (!cusCode) {
       const state = loadState();
       if (state.lastCusCode) {
@@ -221,7 +305,11 @@ async function pollOnce() {
       return;
     }
 
-    await handleMember(cusCode, String(probe.memberName || '').trim());
+    if (phone) {
+      await handlePhoneSync(cusCode, phone, memberName);
+    }
+
+    await handleMemberNotify(cusCode, memberName);
   } finally {
     polling = false;
   }
@@ -238,7 +326,10 @@ async function main() {
   }
 
   initFirebase();
-  log(`POS 회원 감시 시작 | store=${STORE_ID} | poll=${POLL_MS}ms | cooldown=${COOLDOWN_MS / 1000}s`);
+  log(
+    `POS 회원 감시 시작 | store=${STORE_ID} | poll=${POLL_MS}ms ` +
+    `| notifyCooldown=${COOLDOWN_MS / 1000}s | syncCooldown=${SYNC_COOLDOWN_MS / 1000}s`,
+  );
 
   await pollOnce();
   setInterval(pollOnce, POLL_MS);
