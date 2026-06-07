@@ -41,11 +41,14 @@ const VISION_SYSTEM = `정육점 공개주문 품목 사진을 분석합니다.
 - 사진 1장당 lines 1개 (imageIndex는 0부터)
 - 가격이 사진에 없으면 0
 - 품목명은 한국어로 구체적으로 (예: 한우 등심, 한돈 삼겹살)
+- 이미 등록된 품목과 같은/유사한 고기면 name을 기존 명칭과 최대한 동일하게 (신규 품목명 창작 금지)
+- 사용자가 「새 품목/신규/새로 추가」라고 하지 않았으면 기존 품목명을 그대로 사용
 - JSON만, 마크다운 금지`;
 
 export async function analyzePublicOrderImages(
   images: ChatImageInput[],
   userMessage: string,
+  existingLineNames: string[] = [],
 ): Promise<PublicOrderVisionResult> {
   if (!hasAnyAiProvider() || images.length === 0) {
     return { reply: '', lines: [] };
@@ -61,9 +64,13 @@ export async function analyzePublicOrderImages(
     };
   });
 
+  const existingHint = existingLineNames.length
+    ? `\n\n[이미 등록된 품목명 — 사진이 이 중 하나면 name을 아래와 동일하게]\n${existingLineNames.join(', ')}`
+    : '';
+
   const prompt = userMessage.trim()
-    ? `사용자 요청: ${userMessage}\n\n첨부 사진 ${images.length}장을 분석해 품목 정보를 JSON으로 반환하세요.`
-    : `첨부 사진 ${images.length}장을 분석해 공개주문 품목 JSON을 반환하세요.`;
+    ? `사용자 요청: ${userMessage}\n\n첨부 사진 ${images.length}장을 분석해 품목 정보를 JSON으로 반환하세요.${existingHint}`
+    : `첨부 사진 ${images.length}장을 분석해 공개주문 품목 JSON을 반환하세요.${existingHint}`;
 
   try {
     const result = await generateVisionWithFallback({

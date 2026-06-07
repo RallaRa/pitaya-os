@@ -1,6 +1,12 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { generatePublicToken, serializeLine } from '@/lib/publicOrders';
+import {
+  generatePublicToken,
+  serializeLine,
+  findExistingLineMatch,
+  isPhotoPrimaryLineInput,
+  wantsExplicitNewPublicOrderLine,
+} from '@/lib/publicOrders';
 import { sanitizePhotoUrl } from '@/lib/sanitizePhotoUrl';
 
 export interface PublicOrderLineInput {
@@ -43,6 +49,89 @@ export interface ExecuteResult {
   errors?: string[];
 }
 
+export interface ExecutePublicOrderOptions {
+  /** 사용자 원문 — 신규 품목 명시 여부 판단 */
+  userMessage?: string;
+}
+
+function buildLinePatch(
+  existing: FirebaseFirestore.DocumentData,
+  incoming: PublicOrderLineInput,
+  opts?: { keepExistingName?: boolean; photoPrimary?: boolean },
+): Record<string, unknown> {
+  const patch: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
+
+  const photoUrl = sanitizePhotoUrl(incoming.photoUrl);
+  if (photoUrl) patch.photoUrl = photoUrl;
+
+  if (opts?.photoPrimary) {
+    if (incoming.description?.trim()) patch.description = incoming.description.trim();
+    if (incoming.origin?.trim()) patch.origin = incoming.origin.trim();
+    return patch;
+  }
+
+  if (incoming.description?.trim()) patch.description = incoming.description.trim();
+  if (incoming.origin?.trim()) patch.origin = incoming.origin.trim();
+
+  const normalPrice = Number(incoming.normalPrice) || 0;
+  const discountPrice = Number(incoming.discountPrice) || 0;
+  if (normalPrice > 0) patch.normalPrice = normalPrice;
+  if (discountPrice > 0) {
+    patch.discountPrice = discountPrice;
+  } else if (normalPrice > 0) {
+    patch.discountPrice = normalPrice;
+  }
+
+  if (incoming.unit?.trim()) patch.unit = incoming.unit.trim();
+  if (incoming.priceUnitLabel != null) patch.priceUnitLabel = String(incoming.priceUnitLabel).trim();
+
+  const totalQty = Number(incoming.totalQty);
+  if (totalQty > 0) {
+    patch.totalQty = Math.max(
+      Math.floor(totalQty),
+      Number(existing.orderedQty) || 0,
+    );
+  }
+
+  if (!opts?.keepExistingName && incoming.name?.trim()) {
+    patch.name = incoming.name.trim();
+  }
+
+  return patch;
+}
+
+function findExistingLineDoc(
+  snap: FirebaseFirestore.QuerySnapshot,
+  lineName: string,
+  incoming?: Partial<PublicOrderLineInput>,
+  opts?: { allowNewLines?: boolean },
+) {
+  const activeDocs = snap.docs.filter(d => d.data().isActive !== false);
+  const candidates = activeDocs.map(d => ({
+    id: d.id,
+    name: String(d.data().name || ''),
+    photoUrl: String(d.data().photoUrl || ''),
+    doc: d,
+  }));
+
+  const photoPrimary = incoming ? isPhotoPrimaryLineInput(incoming) : false;
+  const match = findExistingLineMatch(lineName, candidates, {
+    allowNewLines: opts?.allowNewLines,
+    hasExistingLines: candidates.length > 0,
+    photoPrimary,
+  });
+
+  if (match) {
+    return candidates.find(c => c.id === match.id)?.doc ?? null;
+  }
+
+  const targetName = lineName.trim();
+  return activeDocs.find(d => {
+    const n = String(d.data().name || '');
+    return n === targetName || n.includes(targetName) || targetName.includes(n);
+  }) ?? null;
+}
+
 async function resolveSessionId(
   storeId: string,
   sessionId?: string,
@@ -67,9 +156,11 @@ export async function executePublicOrderActions(
   storeId: string,
   actions: PublicOrderAiAction[],
   defaultSessionId?: string,
+  options?: ExecutePublicOrderOptions,
 ): Promise<{ results: ExecuteResult[]; activeSessionId?: string; publicUrl?: string }> {
   const results: ExecuteResult[] = [];
   let activeSessionId = defaultSessionId;
+  const allowNewLines = wantsExplicitNewPublicOrderLine(options?.userMessage || '');
 
   for (const action of actions) {
     try {
@@ -156,11 +247,36 @@ export async function executePublicOrderActions(
           const existingSnap = await adminDb.collection('public_order_lines')
             .where('sessionId', '==', sid)
             .get();
-          let sortOrder = existingSnap.size;
+          let sortOrder = existingSnap.docs.filter(d => d.data().isActive !== false).length;
           const added: string[] = [];
+          const updated: string[] = [];
+          const skipped: string[] = [];
+          const activeExisting = existingSnap.docs.filter(d => d.data().isActive !== false);
+          const hasExisting = activeExisting.length > 0;
+
           for (const line of lines) {
             const name = String(line.name || '').trim();
             if (!name) continue;
+
+            const existingDoc = findExistingLineDoc(existingSnap, name, line, { allowNewLines });
+            if (existingDoc) {
+              const photoPrimary = isPhotoPrimaryLineInput(line);
+              const patch = buildLinePatch(existingDoc.data()!, line, {
+                keepExistingName: true,
+                photoPrimary,
+              });
+              if (Object.keys(patch).length > 1) {
+                await existingDoc.ref.update(patch);
+              }
+              updated.push(String(existingDoc.data()?.name || name));
+              continue;
+            }
+
+            if (!allowNewLines && hasExisting) {
+              skipped.push(name);
+              continue;
+            }
+
             const normalPrice = Number(line.normalPrice) || 0;
             const discountPrice = Number(line.discountPrice) || normalPrice;
             await adminDb.collection('public_order_lines').add({
@@ -184,9 +300,17 @@ export async function executePublicOrderActions(
             added.push(name);
           }
           activeSessionId = sid;
+          const parts: string[] = [];
+          if (updated.length) parts.push(`기존 품목 ${updated.length}개 반영 (${updated.join(', ')})`);
+          if (added.length) parts.push(`신규 ${added.length}개 추가 (${added.join(', ')})`);
+          if (skipped.length) {
+            parts.push(
+              `매칭 안 됨 ${skipped.length}개 (${skipped.join(', ')}) — 새 품목이면 「새 품목으로 추가」라고 말씀해 주세요`,
+            );
+          }
           results.push({
-            ok: true,
-            message: `품목 ${added.length}개 추가: ${added.join(', ')}`,
+            ok: updated.length > 0 || added.length > 0 || skipped.length === 0,
+            message: parts.length ? parts.join(' · ') : '변경된 품목이 없습니다',
             sessionId: sid,
           });
           break;
@@ -202,28 +326,26 @@ export async function executePublicOrderActions(
             .where('sessionId', '==', sid)
             .get();
           const targetName = action.lineName.trim();
-          const doc = snap.docs.find(d => {
-            const n = String(d.data().name || '');
-            return n === targetName || n.includes(targetName) || targetName.includes(n);
-          });
+          const doc = findExistingLineDoc(snap, targetName, action.lineUpdates, { allowNewLines });
           if (!doc) {
             results.push({ ok: false, message: `품목 「${targetName}」을 찾지 못했습니다` });
             break;
           }
           const u = action.lineUpdates || {};
-          const patch: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
-          if (u.name) patch.name = String(u.name).trim();
-          if (u.description != null) patch.description = String(u.description).trim();
-          if (u.origin != null) patch.origin = String(u.origin).trim();
-          if (u.normalPrice != null) patch.normalPrice = Number(u.normalPrice) || 0;
-          if (u.discountPrice != null) patch.discountPrice = Number(u.discountPrice) || 0;
-          if (u.unit) patch.unit = String(u.unit).trim();
-          if (u.priceUnitLabel != null) patch.priceUnitLabel = String(u.priceUnitLabel).trim();
-          if (u.totalQty != null) patch.totalQty = Math.max(0, Math.floor(Number(u.totalQty) || 0));
-          if (u.photoUrl != null) patch.photoUrl = sanitizePhotoUrl(u.photoUrl);
+          const patch = buildLinePatch(doc.data()!, {
+            name: u.name || targetName,
+            description: u.description,
+            origin: u.origin,
+            normalPrice: u.normalPrice,
+            discountPrice: u.discountPrice,
+            unit: u.unit,
+            priceUnitLabel: u.priceUnitLabel,
+            totalQty: u.totalQty,
+            photoUrl: u.photoUrl,
+          });
           await doc.ref.update(patch);
           activeSessionId = sid;
-          results.push({ ok: true, message: `품목 「${targetName}」 수정`, sessionId: sid });
+          results.push({ ok: true, message: `품목 「${String(doc.data()?.name || targetName)}」 수정`, sessionId: sid });
           break;
         }
 
