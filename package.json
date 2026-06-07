@@ -29,6 +29,8 @@
     "@anthropic-ai/sdk": "^0.98.0",
     "@google/generative-ai": "^0.24.1",
     "@hello-pangea/dnd": "^18.0.1",
+    "@simplewebauthn/browser": "^13.3.0",
+    "@simplewebauthn/server": "^13.3.1",
     "@supabase/supabase-js": "^2.105.4",
     "@types/recharts": "^1.8.29",
     "bwip-js": "^4.11.1",

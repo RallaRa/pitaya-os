@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import {
@@ -27,6 +27,11 @@ import {
   type DecryptedCustomer,
 } from '@/lib/customerPiiSession';
 import { canDecryptCustomerPIIClient } from '@/lib/customerDecryptAuth.client';
+import {
+  clearPiiUnlockToken,
+  isPiiUnlockTokenValid,
+  loadPiiUnlockToken,
+} from '@/lib/piiStepUp/piiUnlockSession.client';
 import { isSuperuserEmail, isSuperuser } from '@/lib/auth/permissions';
 import dynamic from 'next/dynamic';
 
@@ -52,6 +57,11 @@ const CustomerPurchaseHistoryPanel = dynamic(
 
 const CustomerPurchaseAnalyticsTab = dynamic(
   () => import('@/components/customers/CustomerPurchaseAnalyticsTab'),
+  { ssr: false },
+);
+
+const PiiUnlockModal = dynamic(
+  () => import('@/components/customers/PiiUnlockModal'),
   { ssr: false },
 );
 
@@ -172,6 +182,9 @@ export default function CustomersPage() {
   const [requestPanel, setRequestPanel] = useState<{ cusCode: string; label: string } | null>(null);
   const [purchasePanel, setPurchasePanel] = useState<{ cusCode: string; label: string } | null>(null);
   const [messagePanelOpen, setMessagePanelOpen] = useState(false);
+  const [piiUnlockOpen, setPiiUnlockOpen] = useState(false);
+  const [stepUpToken, setStepUpToken] = useState<string | null>(null);
+  const pendingDecryptRef = useRef(false);
 
   const LIMIT = 50;
   const COL_COUNT = 15;
@@ -181,7 +194,9 @@ export default function CustomersPage() {
     setPiiUnlocked(false);
     setDecryptedMap({});
     setDecryptedRows([]);
+    setStepUpToken(null);
     clearCustomerPiiSession();
+    clearPiiUnlockToken();
   }, []);
 
   /* 세션 복원 / 매장·계정 변경 시 */
@@ -191,10 +206,12 @@ export default function CustomersPage() {
       return;
     }
     const saved = loadCustomerPiiSession(user.uid, storeId);
-    if (saved && Object.keys(saved.decryptedMap).length > 0) {
+    const savedToken = loadPiiUnlockToken(user.uid, storeId);
+    if (saved && Object.keys(saved.decryptedMap).length > 0 && savedToken) {
       setDecryptedMap(saved.decryptedMap);
       setDecryptedRows(saved.decryptedRows || []);
       setPiiUnlocked(true);
+      setStepUpToken(savedToken);
     } else {
       setDecryptedMap({});
       setDecryptedRows([]);
@@ -448,19 +465,22 @@ export default function CustomersPage() {
     }
   };
 
-  const handleBulkDecrypt = async () => {
+  const runBulkDecrypt = async (unlockToken: string) => {
     if (!storeId || bulkDecrypting || !canDecrypt) return;
-    if (!confirm('현재 필터 조건의 고객 개인정보를 복호화합니다. 조회 이력이 기록됩니다. 계속할까요?')) return;
 
     setBulkDecrypting(true);
     try {
       const headers = await getAuthHeaders();
       const res = await fetch('/api/customers/decrypt', {
         method: 'POST',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildFilterBody()),
+        headers: { ...headers, 'Content-Type': 'application/json', 'X-PII-Unlock-Token': unlockToken },
+        body: JSON.stringify({ ...buildFilterBody(), stepUpToken: unlockToken }),
       });
       const d = await res.json();
+      if (d.code === 'STEP_UP_REQUIRED') {
+        setPiiUnlockOpen(true);
+        return;
+      }
       if (d.error) throw new Error(d.error);
 
       const incomingMap: Record<string, DecryptedInfo> = {};
@@ -476,12 +496,35 @@ export default function CustomersPage() {
       setDecryptedRows(prev => mergeDecryptedRows(prev, d.customers || []));
       setPiiUnlocked(true);
       const added = Object.keys(incomingMap).length;
-      alert(`${added.toLocaleString()}명 개인정보가 복호화되었습니다. (세션 만료 전까지 유지)`);
+      alert(`${added.toLocaleString()}명 개인정보가 복호화되었습니다. (30분·마스킹 전까지 유지)`);
     } catch (e) {
       console.error('[customers] bulk decrypt error:', e);
       alert(e instanceof Error ? e.message : '복호화에 실패했습니다.');
     } finally {
       setBulkDecrypting(false);
+    }
+  };
+
+  const handleBulkDecrypt = async () => {
+    if (!storeId || bulkDecrypting || !canDecrypt) return;
+    if (!confirm('현재 필터 조건의 고객 개인정보를 복호화합니다. 지문 확인 후 조회 이력이 기록됩니다. 계속할까요?')) return;
+
+    const existing = stepUpToken || loadPiiUnlockToken(user?.uid || '', storeId);
+    if (existing && isPiiUnlockTokenValid(user?.uid || '', storeId)) {
+      setStepUpToken(existing);
+      await runBulkDecrypt(existing);
+      return;
+    }
+
+    pendingDecryptRef.current = true;
+    setPiiUnlockOpen(true);
+  };
+
+  const handlePiiUnlocked = async (token: string) => {
+    setStepUpToken(token);
+    if (pendingDecryptRef.current) {
+      pendingDecryptRef.current = false;
+      await runBulkDecrypt(token);
     }
   };
 
@@ -844,7 +887,7 @@ export default function CustomersPage() {
             {piiUnlocked && (
               <p className="text-[10px] text-violet-400/90 flex items-center gap-1">
                 <Unlock className="w-3 h-3" />
-                {Object.keys(decryptedMap).length.toLocaleString()}명 복호화 표시 중 · 로그아웃 또는 마스킹 전까지 유지
+                {Object.keys(decryptedMap).length.toLocaleString()}명 복호화 표시 중 · 지문 승인 후 30분 · 마스킹 전까지 유지
               </p>
             )}
 
@@ -1303,6 +1346,22 @@ export default function CustomersPage() {
           filterBody={buildFilterBody()}
           filteredTotal={total}
           onClose={() => setMessagePanelOpen(false)}
+        />
+      )}
+
+      {piiUnlockOpen && storeId && user?.uid && (
+        <PiiUnlockModal
+          open={piiUnlockOpen}
+          storeId={storeId}
+          uid={user.uid}
+          onClose={() => {
+            setPiiUnlockOpen(false);
+            pendingDecryptRef.current = false;
+          }}
+          onUnlocked={(token) => {
+            setPiiUnlockOpen(false);
+            void handlePiiUnlocked(token);
+          }}
         />
       )}
     </div>

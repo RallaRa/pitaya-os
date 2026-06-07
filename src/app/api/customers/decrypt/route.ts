@@ -3,6 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
 import { canDecryptCustomerPII } from '@/lib/customerDecryptAuth';
+import { verifyPiiUnlockToken } from '@/lib/piiStepUp/unlockToken';
 import { fetchCustomerPiiBulk } from '@/lib/customerPii';
 import { queryCustomers, type CustomerQueryParams } from '@/lib/customerQuery';
 
@@ -32,16 +33,24 @@ export async function POST(req: Request) {
   const user = await verifyToken(req);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  let body: CustomerQueryParams & { storeId?: string };
+  let body: CustomerQueryParams & { storeId?: string; stepUpToken?: string };
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
 
-  const { storeId, ...filters } = body;
+  const { storeId, stepUpToken: bodyToken, ...filters } = body;
   if (!storeId) return NextResponse.json({ error: 'storeId required' }, { status: 400 });
 
   const auth = await canDecryptCustomerPII(user.uid, user.email, storeId);
   if (!auth.allowed) {
     return NextResponse.json({ error: '복호화 권한이 없습니다 (관리자/master만 허용)' }, { status: 403 });
+  }
+
+  const stepUpToken = req.headers.get('x-pii-unlock-token') || bodyToken;
+  if (!verifyPiiUnlockToken(stepUpToken, user.uid, storeId)) {
+    return NextResponse.json(
+      { error: '본인 확인(지문 또는 휴대폰 승인)이 필요합니다', code: 'STEP_UP_REQUIRED' },
+      { status: 403 },
+    );
   }
 
   try {
