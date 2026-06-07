@@ -38,6 +38,7 @@ const TYPE_ICON: Record<string, string> = {
   member_approved: '✅',
   member_rejected: '❌',
   phone_call:      '📞',
+  pos_member_comment: '📝',
   pii_unlock_request: '🔐',
   system:          '🔔',
   message:         '💬',

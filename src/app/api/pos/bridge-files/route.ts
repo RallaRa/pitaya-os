@@ -49,6 +49,12 @@ const PACKAGES: Record<Pkg, { dir: string; files: Set<string> }> = {
       'probe-goods-table.js',
       'RUN-PROBE-GOODS-TABLE.bat',
       'probe-scale-code-match.js',
+      'RUN-PHONE-PROBE.ps1',
+      'probe-pos-member-screen.ps1',
+      'pos-member-watcher.js',
+      'run-member-watcher.bat',
+      'install-member-watcher.ps1',
+      'probe-member-sales-range.js',
     ]),
   },
   scraper: {
