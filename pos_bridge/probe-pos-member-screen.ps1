@@ -40,9 +40,43 @@ function Find-MemberName([string]$text) {
   return $null
 }
 
+# 판매등록·결제 화면에서 회원호출/입력 시에만 true (회원관리·회원조회 화면 제외)
+function Test-IsPaymentScreen([string[]]$texts) {
+  if (-not $texts -or $texts.Count -eq 0) { return $false }
+  $blob = ($texts -join ' ')
+
+  $paymentHints = @(
+    '판매등록', '판매 등록', '결제', '받을금액', '받을 금액', '합계금액', '합계 금액',
+    '카드결제', '현금결제', '영수증', '판매(F', '회원호출', '회원명검색', '할인', '적립'
+  )
+  $memberMgmtHints = @(
+    '회원관리', '회원등록', '회원명부', '회원조회', '회원정보관리', '회원수정', '회원삭제',
+    '회원현황', '회원리스트', '신규회원'
+  )
+
+  $hasPayment = $false
+  foreach ($h in $paymentHints) {
+    if ($blob -match [regex]::Escape($h)) { $hasPayment = $true; break }
+  }
+
+  $hasMemberMgmt = $false
+  foreach ($h in $memberMgmtHints) {
+    if ($blob -match [regex]::Escape($h)) { $hasMemberMgmt = $true; break }
+  }
+
+  if (-not $hasPayment) { return $false }
+  if (-not $hasMemberMgmt) { return $true }
+
+  # 결제·판매 키워드가 있으면 회원관리 메뉴와 겹쳐도 결제 화면으로 간주
+  if ($blob -match '판매등록|판매 등록|결제|받을금액|받을 금액|회원호출|회원명검색') {
+    return $true
+  }
+  return $false
+}
+
 $pos = Get-Process -Name 'POSON2','POSon2' -EA 0 | Select-Object -First 1
 if (-not $pos) {
-  @{ running = $false; cusCode = $null; memberName = $null; phone = $null } | ConvertTo-Json -Compress
+  @{ running = $false; isPaymentScreen = $false; cusCode = $null; memberName = $null; phone = $null } | ConvertTo-Json -Compress
   exit 1
 }
 
@@ -101,7 +135,8 @@ try {
   }
 } catch {}
 
-$unique = $texts | Select-Object -Unique
+$unique = @($texts | Select-Object -Unique)
+$isPaymentScreen = Test-IsPaymentScreen $unique
 $codes = @()
 $names = @()
 $phones = @()
@@ -143,10 +178,13 @@ if (-not $phone) {
 
 [pscustomobject]@{
   running = $true
+  isPaymentScreen = $isPaymentScreen
   pid = $pos.Id
   cusCode = $cusCode
   memberName = $memberName
   phone = $phone
 } | ConvertTo-Json -Compress
 
-if ($cusCode -or $phone) { exit 0 } else { exit 2 }
+if ($isPaymentScreen -and ($cusCode -or $phone)) { exit 0 }
+if ($cusCode -or $phone) { exit 3 }
+exit 2

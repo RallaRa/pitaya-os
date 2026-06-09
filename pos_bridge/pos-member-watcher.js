@@ -1,5 +1,5 @@
 /**
- * Pitaya OS — POS 회원/결제 화면 감지
+ * Pitaya OS — POS 결제(판매등록) 화면 회원 입력 감지
  * - 평문 전화번호 → Pitaya sync + public_order 재매칭
  * - 회원 요청 이력 토스트
  * C:\pitaya-bridge\pos-member-watcher.js
@@ -53,7 +53,7 @@ let polling = false;
 function loadState() {
   try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); }
   catch {
-    return { lastCusCode: '', lastNotifyAt: 0, lastSync: {} };
+    return { lastCusCode: '', lastNotifyAt: 0, lastSync: {}, onPaymentScreen: false };
   }
 }
 
@@ -220,6 +220,7 @@ function buildToastMessages(data, screenName, opts = {}) {
     title: 'Pitaya 회원',
     body: lines.join('\n').slice(0, 240),
     summary: lines.slice(1).join(' · ').slice(0, 120),
+    webMessage: lines.join('\n').slice(0, 480),
   };
 }
 
@@ -335,13 +336,13 @@ async function handleMemberNotify(cusCode, screenName, phone, syncNote) {
     log(`API 조회 실패 [${cusCode}]: ${e.message} (로컬 정보로 토스트)`);
   }
 
-  const { title, body, summary } = buildToastMessages(data, screenName, {
+  const { title, body, webMessage } = buildToastMessages(data, screenName, {
     phone,
     syncNote,
   });
-  log(`회원 감지: ${cusCode} | ${data.requestCount}건 | phone=${phone || 'none'}`);
+  log(`결제화면 회원 입력: ${cusCode} | ${data.requestCount}건 | phone=${phone || 'none'}`);
   showToast(title, body);
-  await notifyStoreWeb(title, summary || body.replace(/\n/g, ' '), cusCode);
+  await notifyStoreWeb(title, webMessage || body, cusCode);
 
   state.lastCusCode = cusCode;
   state.lastNotifyAt = now;
@@ -355,19 +356,40 @@ async function pollOnce() {
     const probe = await probePosMember();
     if (!probe.running) return;
 
+    const state = loadState();
+    const onPayment = probe.isPaymentScreen === true;
+
+    if (!onPayment) {
+      if (state.onPaymentScreen || state.lastCusCode) {
+        state.onPaymentScreen = false;
+        state.lastCusCode = '';
+        saveState(state);
+      }
+      if (!probe._skipLogged || Date.now() - probe._skipLogged > 120000) {
+        probe._skipLogged = Date.now();
+        const cus = normalizeCusCode(probe.cusCode);
+        if (cus) {
+          log(`회원화면/기타 화면 — 결제화면 회원 입력만 알림 (${cus} 무시)`);
+        }
+      }
+      return;
+    }
+
+    state.onPaymentScreen = true;
+    saveState(state);
+
     const cusCode = normalizeCusCode(probe.cusCode);
     const memberName = typeof probe.memberName === 'string' ? probe.memberName.trim() : '';
     const phone = normalizePhone(probe.phone);
 
     if (!cusCode) {
-      const state = loadState();
       if (state.lastCusCode) {
         state.lastCusCode = '';
         saveState(state);
       }
       if (!probe._emptyLogged || Date.now() - probe._emptyLogged > 60000) {
         probe._emptyLogged = Date.now();
-        log(`화면 읽기: cusCode/phone 없음 (POS 회원·결제 화면인지 확인)`);
+        log('결제화면 — 회원번호/전화 대기 중 (회원호출 후 입력)');
       }
       return;
     }
@@ -395,7 +417,7 @@ async function main() {
 
   initFirebase();
   log(
-    `POS 회원 감시 시작 | store=${STORE_ID} | poll=${POLL_MS}ms ` +
+    `POS 결제화면 회원 감시 | store=${STORE_ID} | poll=${POLL_MS}ms ` +
     `| notifyCooldown=${COOLDOWN_MS / 1000}s | syncCooldown=${SYNC_COOLDOWN_MS / 1000}s`,
   );
 

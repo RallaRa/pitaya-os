@@ -126,7 +126,7 @@ export default function PhoneCallToast() {
         const type = String(data.type || '');
         if (!LIVE_TYPES.has(type)) continue;
 
-        const title = String(data.title || (type === 'phone_call' ? '전화 수신' : 'POS 회원'));
+        const title = String(data.title || (type === 'phone_call' ? '전화 수신' : '결제 회원'));
         const message = String(data.message || '');
         const missed = type === 'phone_call' && title.includes('부재중');
         const defaultLink = type === 'pos_member_comment'
@@ -190,7 +190,7 @@ export default function PhoneCallToast() {
           <p className="text-sm font-bold">{toast.title}</p>
           <p className="text-xs mt-0.5 opacity-90 leading-snug whitespace-pre-line">{toast.message}</p>
           <p className="text-[10px] mt-1.5 opacity-60">
-            {isMember ? '탭하면 회원·요청 이력으로 이동' : '탭하면 고객 화면으로 이동'}
+            {isMember ? '탭하면 회원·요청 이력으로 이동 (결제 화면 입력)' : '탭하면 고객 화면으로 이동'}
           </p>
         </span>
         <span
