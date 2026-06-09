@@ -2,7 +2,7 @@
 # Mac → POS PC KT Caller 배포
 set -euo pipefail
 HOST="${KT_SSH_HOST:-pitayaos.iptime.org}"
-PORT="${KT_SSH_PORT:-2223}"
+PORT="${KT_SSH_PORT:-2222}"
 KEY="${KT_SSH_KEY:-$HOME/.ssh/pitaya_pos}"
 USER="${KT_SSH_USER:-User}"
 REMOTE="C:/pitaya-os"

@@ -40,11 +40,10 @@ public static class PosUi2 {
   [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
   const int WM_GETTEXT = 0x000D;
   static void Collect(IntPtr h, List<string> texts) {
-    if (!IsWindowVisible(h)) return;
-    var sb = new StringBuilder(512);
-    if (GetWindowText(h, sb, 512) > 0) { var t = sb.ToString().Trim(); if (t.Length > 0) texts.Add(t); }
-    sb = new StringBuilder(512);
-    if (SendMessage(h, WM_GETTEXT, (IntPtr)512, sb) > 0) {
+    var sb = new StringBuilder(2048);
+    if (GetWindowText(h, sb, 2048) > 0) { var t = sb.ToString().Trim(); if (t.Length > 0) texts.Add(t); }
+    sb = new StringBuilder(2048);
+    if (SendMessage(h, WM_GETTEXT, (IntPtr)2048, sb) > 0) {
       var t2 = sb.ToString().Trim();
       if (t2.Length > 0 && !texts.Contains(t2)) texts.Add(t2);
     }

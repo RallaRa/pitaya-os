@@ -20,9 +20,24 @@ KT_STORE_PHONE=0226629592
 
 ## 배포 (Mac)
 ```bash
-# SSH 키 등록 후
-./pos_pc/deploy-kt-caller.sh
+# SSH 2222 + 비밀번호 (expect)
+expect pos_pc/deploy-kt-caller-auto-2222.exp
+
+# 또는 kt-caller 전체
+expect pos_pc/deploy-kt-caller-2222.exp
 ```
+
+## 상시 실행 (자동)
+| 작업 | 동작 |
+|------|------|
+| `PitayaKTCallerBoot` | PC 부팅 2분 후 기동 |
+| `PitayaKTCallerLogon` | 로그인 시 기동 |
+| `PitayaKTCallerWatchdog` | 5분마다 프로세스 확인 → 죽었으면 재기동 |
+| `Startup\PitayaKTCallerSupervisor.vbs` | 로그인 시 5분마다 생존 확인 (워치독 폴백) |
+| `HKCU\...\Run\PitayaKTCaller` | 위 VBS 자동 실행 |
+
+`kt-caller-run.cmd` — 크래시 시 5초 후 자동 재시작 루프  
+로그: `C:\pitaya-os\kt-caller-supervisor.log`
 
 ## 배포 (POS PowerShell — SSH 접속 중)
 ```powershell

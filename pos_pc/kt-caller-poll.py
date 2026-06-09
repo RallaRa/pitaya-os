@@ -9,11 +9,11 @@ SINCE = sys.argv[1] if len(sys.argv) > 1 else ''
 
 
 def connect_db():
-    # immutable=1 은 WAL 신규 통화를 못 읽는 경우가 있음 — mode=ro 로 최신 WAL 반영
+    # WAL 모드 DB — 일반 연결로 -wal sidecar까지 읽음 (immutable=1 은 신규 통화 누락)
     try:
-        conn = sqlite3.connect(f'file:{DB_PATH}?mode=ro', uri=True, timeout=5.0)
-    except sqlite3.OperationalError:
         conn = sqlite3.connect(DB_PATH, timeout=5.0)
+    except sqlite3.OperationalError as e:
+        raise SystemExit(json.dumps({'error': str(e)}))
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA query_only=ON')
     return conn

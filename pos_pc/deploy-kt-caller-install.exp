@@ -5,8 +5,9 @@ if {[info exists env(PITAYA_SSH_PASS)] && $env(PITAYA_SSH_PASS) ne ""} {
 } else {
   set pass "pitaya1234"
 }
+set port [expr {[info exists env(KT_SSH_PORT)] ? $env(KT_SSH_PORT) : 2222}]
 
-spawn ssh -p 2223 -o StrictHostKeyChecking=accept-new User@pitayaos.iptime.org
+spawn ssh -p $port -o StrictHostKeyChecking=accept-new User@pitayaos.iptime.org
 expect {
   "password:" { send "$pass\r" }
   "yes/no" { send "yes\r"; exp_continue }
