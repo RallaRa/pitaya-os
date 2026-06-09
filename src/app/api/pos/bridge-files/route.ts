@@ -63,6 +63,8 @@ const PACKAGES: Record<Pkg, { dir: string; files: Set<string> }> = {
       'run-member-watcher-hidden.vbs',
       'install-member-watcher.ps1',
       'install-member-watcher.bat',
+      'deploy-member-watcher-remote.ps1',
+      'remote-notification-deploy.ps1',
       'probe-member-sales-range.js',
     ]),
   },

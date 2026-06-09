@@ -1,0 +1,33 @@
+#!/usr/bin/expect -f
+set timeout 600
+if {[info exists env(PITAYA_SSH_PASS)] && $env(PITAYA_SSH_PASS) ne ""} {
+  set pass $env(PITAYA_SSH_PASS)
+} else {
+  set pass "pitaya1234"
+}
+
+set raw "https://raw.githubusercontent.com/RallaRa/pitaya-os/main/pos_bridge/remote-notification-deploy.ps1"
+
+spawn ssh -p 2223 -o StrictHostKeyChecking=accept-new User@pitayaos.iptime.org
+expect "password:"
+send "$pass\r"
+expect -re {>\s*$}
+
+send "powershell -NoProfile -Command \"Invoke-WebRequest -Uri '$raw' -OutFile 'C:\\pitaya-bridge\\remote-notification-deploy.ps1' -UseBasicParsing; Write-Host UPLOAD_OK\"\r"
+expect {
+  "UPLOAD_OK" {}
+  -timeout 120
+  timeout { puts "UPLOAD TIMEOUT"; exit 1 }
+}
+expect -re {>\s*$}
+
+send "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\pitaya-bridge\\remote-notification-deploy.ps1\r"
+expect {
+  "=== DONE ===" {}
+  -timeout 480
+  timeout { puts "DEPLOY TIMEOUT" }
+}
+expect -re {>\s*$}
+
+send "exit\r"
+expect eof
