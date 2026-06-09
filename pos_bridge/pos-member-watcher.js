@@ -43,6 +43,10 @@ const STATE_FILE = path.join(__dirname, 'pos-member-watcher-state.json');
 const UI_SCRAPED_CSV = path.join(__dirname, 'ui-scraped-phones.csv');
 const PROBE_SCRIPT = path.join(__dirname, 'probe-pos-member-screen.ps1');
 
+/** POS 화면에서 PowerShell 창이 깜빡이지 않도록 항상 숨김 실행 */
+const PS_HIDDEN_ARGS = ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass'];
+const PS_HIDDEN_SPAWN = { cwd: __dirname, windowsHide: true };
+
 let db;
 let polling = false;
 
@@ -99,11 +103,9 @@ function probePosMember() {
       return;
     }
     const ps = spawn('powershell.exe', [
-      '-NoProfile', '-NonInteractive', '-WindowStyle', 'Normal',
-      '-ExecutionPolicy', 'Bypass', '-File', PROBE_SCRIPT,
+      ...PS_HIDDEN_ARGS, '-File', PROBE_SCRIPT,
     ], {
-      cwd: __dirname,
-      windowsHide: false,
+      ...PS_HIDDEN_SPAWN,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -242,13 +244,12 @@ function showToast(title, body) {
     return;
   }
   spawn('powershell.exe', [
-    '-NoProfile', '-ExecutionPolicy', 'Bypass',
+    ...PS_HIDDEN_ARGS,
     '-File', toastScript,
     '-Title', title,
     '-BodyFile', bodyFile,
   ], {
-    cwd: __dirname,
-    windowsHide: false,
+    ...PS_HIDDEN_SPAWN,
     detached: true,
     stdio: 'ignore',
   }).unref();

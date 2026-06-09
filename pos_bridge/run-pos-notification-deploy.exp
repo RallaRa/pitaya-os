@@ -6,9 +6,14 @@ if {[info exists env(PITAYA_SSH_PASS)] && $env(PITAYA_SSH_PASS) ne ""} {
   set pass "pitaya1234"
 }
 
+set port 2222
+if {[info exists env(PITAYA_SSH_PORT)] && $env(PITAYA_SSH_PORT) ne ""} {
+  set port $env(PITAYA_SSH_PORT)
+}
+
 set raw "https://raw.githubusercontent.com/RallaRa/pitaya-os/main/pos_bridge/remote-notification-deploy.ps1"
 
-spawn ssh -p 2223 -o StrictHostKeyChecking=accept-new User@pitayaos.iptime.org
+spawn ssh -p $port -o StrictHostKeyChecking=accept-new User@pitayaos.iptime.org
 expect "password:"
 send "$pass\r"
 expect -re {>\s*$}

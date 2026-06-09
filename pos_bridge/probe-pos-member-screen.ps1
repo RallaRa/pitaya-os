@@ -10,6 +10,20 @@ function Normalize-Phone([string]$text) {
   return $null
 }
 
+function Extract-PhonesFromText([string]$text) {
+  $found = New-Object System.Collections.Generic.List[string]
+  if (-not $text) { return @() }
+  $compact = ($text -replace '\D', '')
+  for ($i = 0; $i -le ($compact.Length - 11); $i++) {
+    if ($compact.Substring($i, 3) -ne '010') { continue }
+    $c = $compact.Substring($i, [Math]::Min(11, $compact.Length - $i))
+    if ($c.Length -eq 11 -and $c -match '^010\d{8}$' -and -not $found.Contains($c)) {
+      [void]$found.Add($c)
+    }
+  }
+  return @($found)
+}
+
 function Find-MemberCode([string]$text) {
   if (-not $text) { return $null }
   $t = $text.Trim()
@@ -46,11 +60,10 @@ public static class PosMemberProbe {
   [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
   const int WM_GETTEXT = 0x000D;
   static void Collect(IntPtr h, List<string> texts) {
-    if (!IsWindowVisible(h)) return;
-    var sb = new StringBuilder(512);
-    if (GetWindowText(h, sb, 512) > 0) { var t = sb.ToString().Trim(); if (t.Length > 0) texts.Add(t); }
-    sb = new StringBuilder(512);
-    if (SendMessage(h, WM_GETTEXT, (IntPtr)512, sb) > 0) {
+    var sb = new StringBuilder(2048);
+    if (GetWindowText(h, sb, 2048) > 0) { var t = sb.ToString().Trim(); if (t.Length > 0) texts.Add(t); }
+    sb = new StringBuilder(2048);
+    if (SendMessage(h, WM_GETTEXT, (IntPtr)2048, sb) > 0) {
       var t2 = sb.ToString().Trim();
       if (t2.Length > 0 && !texts.Contains(t2)) texts.Add(t2);
     }
@@ -107,6 +120,26 @@ $phone = [string]($phones | Select-Object -First 1)
 if (-not $cusCode) { $cusCode = $null }
 if (-not $memberName) { $memberName = $null }
 if (-not $phone) { $phone = $null }
+
+# 전화번호 없으면 OCR (회원번호만 UIA로 잡혀도 전화는 OCR 필요)
+if (-not $phone) {
+  $ocrScript = Join-Path $PSScriptRoot 'probe-pos-member-ocr.ps1'
+  if (Test-Path $ocrScript) {
+    try {
+      $ocrOut = & powershell -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File $ocrScript 2>$null
+      $ocrLine = ($ocrOut | Where-Object { $_ -match '^\{' } | Select-Object -Last 1)
+      if ($ocrLine) {
+        $ocr = $ocrLine | ConvertFrom-Json
+        if (-not $cusCode -and $ocr.cusCode) { $cusCode = [string]$ocr.cusCode }
+        if ($ocr.phone) { $phone = [string]$ocr.phone }
+        if (-not $phone -and $ocr.ocrText) {
+          $fromText = Extract-PhonesFromText ([string]$ocr.ocrText)
+          if ($fromText.Count -gt 0) { $phone = [string]$fromText[0] }
+        }
+      }
+    } catch {}
+  }
+}
 
 [pscustomobject]@{
   running = $true

@@ -63,8 +63,34 @@ foreach ($f in $files) {
 Write-Host '=== NPM ==='
 npm install --omit=dev 2>&1 | Select-Object -Last 5
 
-Write-Host '=== INSTALL WATCHER ==='
+Write-Host '=== INSTALL WATCHER (hidden) ==='
 powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Dir 'install-member-watcher.ps1')
+
+Write-Host '=== FIX sshd watchdog (hidden PS) ==='
+$watchPs1 = Join-Path $Dir 'watch-sshd.ps1'
+@'
+$svc = Get-Service sshd -ErrorAction SilentlyContinue
+if ($svc -and $svc.Status -ne 'Running') {
+  $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+  Add-Content -Path 'C:\pitaya-bridge\sshd-watch.log' -Value "$ts sshd stopped -> starting"
+  net start sshd 2>&1 | Out-Null
+}
+'@ | Set-Content -Path $watchPs1 -Encoding ASCII
+schtasks /delete /tn PitayaSshdWatch /f 2>$null | Out-Null
+schtasks /create /tn PitayaSshdWatch `
+  /tr "powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watchPs1`"" `
+  /sc minute /mo 5 /ru SYSTEM /rl HIGHEST /f 2>&1 | Out-Host
+
+Write-Host '=== RESTART WATCHER ==='
+Get-Process -Name node -ErrorAction SilentlyContinue | Where-Object {
+  try {
+    $cmd = (Get-CimInstance Win32_Process -Filter "ProcessId=$($_.Id)" -ErrorAction Stop).CommandLine
+    $cmd -like '*pos-member-watcher*'
+  } catch { $false }
+} | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+schtasks /end /tn PitayaMemberWatcher 2>$null | Out-Null
+Start-Sleep -Seconds 2
+schtasks /run /tn PitayaMemberWatcher 2>&1 | Out-Host
 
 Write-Host '=== FILES ==='
 @('pos-member-watcher.js', 'show-pitaya-toast.ps1', 'probe-pos-member-ocr.ps1') | ForEach-Object {
