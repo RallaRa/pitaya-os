@@ -1,5 +1,5 @@
 ---
-description: POS PC 원격 작업 시 SSH 접속·경로·PowerShell 규칙 (포트 2222)
+description: POS PC 원격 작업 시 SSH 접속·경로·PowerShell 규칙 (포트 2223)
 alwaysApply: true
 ---
 
@@ -10,55 +10,65 @@ POS PC에서 `bridge.js`, 마이그레이션, DB 확인, kt-caller 등이 필요
 ## 접속
 
 ```bash
-ssh -p 2222 User@pitayaos.iptime.org
+ssh -p 2223 User@pitayaos.iptime.org
+# 또는 (키 등록 시)
+ssh -p 2223 -i ~/.ssh/pitaya_pos User@pitayaos.iptime.org
 ```
 
 | 항목 | 값 |
 |------|-----|
-| 포트 | **2222** |
-| 인증 | 비밀번호 (`PITAYA_SSH_PASS` 또는 expect 스크립트) |
+| 포트 | **2223** (Cursor·원격 유지보수) |
+| 금지 | **2222** — 외부에서 타임아웃·다른 용도 |
+| 인증 | 비밀번호 (`PITAYA_SSH_PASS`) 또는 SSH 키 |
 | OS | Windows 10 v1607 |
-| 쉘 | PowerShell (SSH 접속 시 자동) |
-| 작업 경로 | `C:\pitaya-os` |
+| 쉘 | PowerShell (SSH 접속 시 cmd → powershell) |
+| bridge 작업 | `C:\pitaya-bridge` (`.env`, `bridge.js`, watcher) |
+| kt-caller | `C:\pitaya-os` |
 
-## KT Caller 배포 (Mac)
+환경 변수로 포트 오버라이드: `PITAYA_SSH_PORT=2223`
+
+## 자주 쓰는 배포 (Mac)
 
 ```bash
-expect pos_pc/deploy-kt-caller-2222.exp
-# 또는
-KT_SSH_PORT=2222 ./pos_pc/deploy-kt-caller.sh   # SSH 키 등록된 경우
+# bridge.js API pull
+expect pos_bridge/run-bridge-update-2222.exp
+
+# member watcher·토스트
+expect pos_bridge/run-pos-notification-deploy.exp
+
+# KT caller 상시 실행
+expect pos_pc/run-kt-caller-install-2223.exp
 ```
 
 ## 실행 규칙
 
-- Windows 명령은 **PowerShell 문법**으로 작성 (`;` 체인, `cd` 후 명령 등).
+- Windows 원격 작업은 **SSH에 PowerShell 명령을 인자로 넘기는 한 방식**이 안정적 (expect 대화형 프롬프트는 ANSI 때문에 멈출 수 있음).
 - **긴 작업은 한 줄씩** 실행하고 출력 확인 후 다음 단계.
 - 경로에 **한글 포함 시 반드시 따옴표** (`"C:\Program Files\..."`).
 - Node: **v18.20.4** — `node bridge.js ...`
-- Python: **3.14** — `python` 명령 (통화매니저 SQLite 등).
+- Python: **3.14** — `python` (통화매니저 SQLite 등).
 
 ## 환경 (POS PC)
 
 | 항목 | 값 |
 |------|-----|
-| pitaya-os / bridge | `C:\pitaya-os` |
-| Firebase | `C:\pitaya-os\.env` (`FIREBASE_SERVICE_ACCOUNT_KEY`) |
+| pitaya-bridge | `C:\pitaya-bridge` — bridge.js, member watcher, `.env` |
+| pitaya-os | `C:\pitaya-os` — kt-caller, `.env` (동일 store) |
 | storeId | `STR-1779194754785` |
 | POS DB | `localhost:18973`, DB=`tips`, user=`sa`, pass=`tips` |
-| 통화매니저 DB | `C:\Program Files\통화매니저\KPD.dat` (SQLite, Python) |
+| 통화매니저 DB | `C:\Program Files\통화매니저\KPD.dat` (SQLite) |
 
 ## 자주 쓰는 명령 (PowerShell)
 
 ```powershell
-cd C:\pitaya-os
+cd C:\pitaya-bridge
 node bridge.js check-tables
 node bridge.js today
 node bridge.js migrate 2026-01-01 2026-05-28
-node bridge.js --dry-run
+powershell -ExecutionPolicy Bypass -File update-from-server.ps1
 ```
 
 ## 문서
 
 - `docs/modules/pos-bridge.md`
-- `pos_bridge/작업순서_*.txt`
 - `AGENTS.md` — POS·KST

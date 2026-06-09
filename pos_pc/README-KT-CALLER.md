@@ -20,10 +20,10 @@ KT_STORE_PHONE=0226629592
 
 ## 배포 (Mac)
 ```bash
-# SSH 2222 + 비밀번호 (expect)
-expect pos_pc/deploy-kt-caller-auto-2222.exp
+# SSH 2223 + 비밀번호 (expect)
+expect pos_pc/run-kt-caller-install-2223.exp
 
-# 또는 kt-caller 전체
+# 또는 파일 업로드 포함 전체 배포
 expect pos_pc/deploy-kt-caller-2222.exp
 ```
 

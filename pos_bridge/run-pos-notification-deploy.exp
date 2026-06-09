@@ -1,38 +1,28 @@
 #!/usr/bin/expect -f
+# POS — member watcher·알림 원격 배포 (SSH 2223, 원격 PowerShell 한 방)
 set timeout 600
 if {[info exists env(PITAYA_SSH_PASS)] && $env(PITAYA_SSH_PASS) ne ""} {
   set pass $env(PITAYA_SSH_PASS)
 } else {
   set pass "pitaya1234"
 }
-
-set port 2222
+set port 2223
 if {[info exists env(PITAYA_SSH_PORT)] && $env(PITAYA_SSH_PORT) ne ""} {
   set port $env(PITAYA_SSH_PORT)
 }
 
 set raw "https://raw.githubusercontent.com/RallaRa/pitaya-os/main/pos_bridge/remote-notification-deploy.ps1"
 
-spawn ssh -p $port -o StrictHostKeyChecking=accept-new User@pitayaos.iptime.org
-expect "password:"
-send "$pass\r"
-expect -re {>\s*$}
+set cmd "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command \"\
+\$u='$raw'; \
+Invoke-WebRequest -Uri \$u -OutFile 'C:\\\\pitaya-bridge\\\\remote-notification-deploy.ps1' -UseBasicParsing; \
+& 'C:\\\\pitaya-bridge\\\\remote-notification-deploy.ps1'\""
 
-send "powershell -NoProfile -Command \"Invoke-WebRequest -Uri '$raw' -OutFile 'C:\\pitaya-bridge\\remote-notification-deploy.ps1' -UseBasicParsing; Write-Host UPLOAD_OK\"\r"
+spawn ssh -p $port -o StrictHostKeyChecking=accept-new User@pitayaos.iptime.org $cmd
 expect {
-  "UPLOAD_OK" {}
-  -timeout 120
-  timeout { puts "UPLOAD TIMEOUT"; exit 1 }
-}
-expect -re {>\s*$}
-
-send "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\pitaya-bridge\\remote-notification-deploy.ps1\r"
-expect {
+  -re {(?i)password:} { send "$pass\r"; exp_continue }
   "=== DONE ===" {}
   -timeout 480
-  timeout { puts "DEPLOY TIMEOUT" }
+  timeout { puts "DEPLOY TIMEOUT"; exit 1 }
 }
-expect -re {>\s*$}
-
-send "exit\r"
 expect eof
