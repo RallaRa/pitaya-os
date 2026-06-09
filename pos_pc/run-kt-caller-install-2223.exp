@@ -1,0 +1,22 @@
+#!/usr/bin/expect -f
+set timeout 300
+if {[info exists env(PITAYA_SSH_PASS)] && $env(PITAYA_SSH_PASS) ne ""} {
+  set pass $env(PITAYA_SSH_PASS)
+} else {
+  set pass "pitaya1234"
+}
+set port 2223
+if {[info exists env(PITAYA_SSH_PORT)] && $env(PITAYA_SSH_PORT) ne ""} {
+  set port $env(PITAYA_SSH_PORT)
+}
+
+set cmd {powershell -NoProfile -Command "Set-Location 'C:\pitaya-os'; if (-not (Test-Path 'install-kt-caller.ps1')) { Write-Host MISSING_INSTALL; exit 1 }; schtasks /delete /tn PitayaKTCaller /f 2>$null | Out-Null; powershell -NoProfile -ExecutionPolicy Bypass -File .\install-kt-caller.ps1; Write-Host '--- TASKS ---'; schtasks /query /fo LIST /v 2>&1 | findstr /i PitayaKTCaller; Write-Host '--- NODE ---'; Get-CimInstance Win32_Process -Filter \"name='node.exe'\" | Where-Object { $_.CommandLine -like '*kt-caller.js*' } | Select-Object ProcessId | Format-Table -HideTableHeaders"}
+
+spawn ssh -p $port -o StrictHostKeyChecking=accept-new User@pitayaos.iptime.org $cmd
+expect {
+  -re {(?i)password:} { send "$pass\r"; exp_continue }
+  "MISSING_INSTALL" { exit 1 }
+  -timeout 240
+  timeout { puts "KT INSTALL TIMEOUT" }
+}
+expect eof

@@ -1,0 +1,34 @@
+#!/usr/bin/expect -f
+set timeout 600
+if {[info exists env(PITAYA_SSH_PASS)] && $env(PITAYA_SSH_PASS) ne ""} {
+  set pass $env(PITAYA_SSH_PASS)
+} else {
+  set pass "pitaya1234"
+}
+set port 2223
+if {[info exists env(PITAYA_SSH_PORT)] && $env(PITAYA_SSH_PORT) ne ""} {
+  set port $env(PITAYA_SSH_PORT)
+}
+
+set gitBase "https://raw.githubusercontent.com/RallaRa/pitaya-os/main/pos_bridge"
+
+set cmd "powershell -NoProfile -Command \"\
+Set-Location 'C:\\\\pitaya-bridge'; \
+if (-not (Test-Path '.env')) { Write-Host NO_ENV; exit 1 }; \
+Write-Host DIR pitaya-bridge; \
+Invoke-WebRequest -Uri '$gitBase/update-from-server.ps1' -OutFile 'update-from-server.ps1' -UseBasicParsing; \
+powershell -NoProfile -ExecutionPolicy Bypass -File .\\\\update-from-server.ps1; \
+Write-Host '--- bridge.js markers ---'; \
+Select-String bridge.js -Pattern 'FINGERPRINT_CACHE|300000' | Select -First 3 | ForEach-Object { \$_.Line.Trim() }; \
+Write-Host '--- bridge.js mtime ---'; \
+(Get-Item bridge.js).LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')\""
+
+spawn ssh -p $port -o StrictHostKeyChecking=accept-new User@pitayaos.iptime.org $cmd
+expect {
+  -re {(?i)password:} { send "$pass\r"; exp_continue }
+  "DIR pitaya-bridge" {}
+  "NO_ENV" { puts "NO .env"; exit 1 }
+  -timeout 420
+  timeout { puts "BRIDGE UPDATE TIMEOUT" }
+}
+expect eof
