@@ -4,6 +4,7 @@
 /node_modules
 pos_bridge/node_modules/
 pos_bridge/package-lock.json
+pos_bridge/.sync-fingerprint-cache.json
 bridge_copy.txt
 env_copy.txt
 /.pnp
@@ -37,6 +38,15 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
+pitaya-prod.env
+
+# local experiments / key recovery (never commit)
+key-hunt-*
+*key-hunt*
+PITAYA_*.txt
+
+# build output at repo root
+/dist/
 
 # env backups (never commit secrets)
 /backups/
