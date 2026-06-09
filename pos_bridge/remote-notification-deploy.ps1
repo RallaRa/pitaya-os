@@ -64,7 +64,38 @@ Write-Host '=== NPM ==='
 npm install --omit=dev 2>&1 | Select-Object -Last 5
 
 Write-Host '=== INSTALL WATCHER (hidden) ==='
-powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Dir 'install-member-watcher.ps1')
+$TaskName = 'PitayaMemberWatcher'
+$vbs = Join-Path $Dir 'run-member-watcher-hidden.vbs'
+$runAs = $env:USERDOMAIN + '\' + $env:USERNAME
+schtasks /delete /tn $TaskName /f 2>$null | Out-Null
+$okTask = $false
+try {
+  $action = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument ('"' + $vbs + '"')
+  $tLogon = New-ScheduledTaskTrigger -AtLogon -User $env:USERNAME
+  $tBoot = New-ScheduledTaskTrigger -AtStartup
+  $tBoot.Delay = 'PT2M'
+  $settings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -RestartCount 999 `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
+    -ExecutionTimeLimit ([TimeSpan]::Zero)
+  Register-ScheduledTask -TaskName $TaskName `
+    -Action $action `
+    -Trigger @($tLogon, $tBoot) `
+    -Settings $settings `
+    -RunLevel Highest `
+    -User $env:USERNAME `
+    -Force | Out-Host
+  $okTask = $true
+} catch {
+  Write-Warning $_.Exception.Message
+  $tr = 'wscript.exe "' + $vbs + '"'
+  schtasks /create /tn $TaskName /tr $tr /sc onlogon /ru $runAs /rl HIGHEST /f 2>&1 | Out-Host
+  if ($LASTEXITCODE -eq 0) { $okTask = $true }
+}
+if ($okTask) { Write-Host 'OK PitayaMemberWatcher registered (hidden)' }
 
 Write-Host '=== FIX sshd watchdog (hidden PS) ==='
 $watchPs1 = Join-Path $Dir 'watch-sshd.ps1'
