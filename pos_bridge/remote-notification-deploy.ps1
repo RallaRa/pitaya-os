@@ -107,6 +107,19 @@ Write-Host '=== ENV KEYS ==='
 Select-String -Path (Join-Path $Dir '.env') -Pattern '^(POS_BRIDGE_KEY|STORE_ID|FIREBASE_SERVICE_ACCOUNT_KEY|PITAYA_APP_URL)=' |
   ForEach-Object { ($_.Line -replace '=.*', '=***') }
 
+if (Test-Path 'C:\pitaya-os\kt-caller-watchdog.ps1') {
+  Write-Host '=== KT-CALLER WATCHDOG (hidden) ==='
+  try {
+    $ktUrl = "$GitBase/kt-caller-watchdog.ps1".Replace('/pos_bridge/', '/../pos_pc/')
+    # pos_pc is sibling path on GitHub
+    $ktUrl = 'https://raw.githubusercontent.com/RallaRa/pitaya-os/main/pos_pc/kt-caller-watchdog.ps1'
+    Invoke-WebRequest -Uri $ktUrl -OutFile 'C:\pitaya-os\kt-caller-watchdog.ps1' -UseBasicParsing
+    Write-Host 'OK kt-caller-watchdog.ps1'
+  } catch {
+    Write-Host "WARN kt-caller-watchdog: $($_.Exception.Message)"
+  }
+}
+
 if (Test-Path 'C:\pitaya-os\kt-caller.js') {
   Write-Host '=== KT-CALLER TEST ==='
   Set-Location 'C:\pitaya-os'

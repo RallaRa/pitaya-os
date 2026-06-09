@@ -15,7 +15,7 @@ foreach ($f in @('pos-member-watcher.js', 'probe-pos-member-screen.ps1', 'run-me
   }
 }
 
-$runAs = "$($env:USERDOMAIN)\$($env:USERNAME)"
+$runAs = $env:USERDOMAIN + '\' + $env:USERNAME
 $vbs = Join-Path $Dir 'run-member-watcher-hidden.vbs'
 Write-Host "=== 작업 스케줄러 등록 ($runAs) ==="
 
@@ -71,5 +71,5 @@ if ($ok) {
   Write-Host '중지: schtasks /end /tn PitayaMemberWatcher'
   Write-Host '삭제: schtasks /delete /tn PitayaMemberWatcher /f'
 } else {
-  Write-Warning "수동: wscript.exe `"$vbs`""
+  Write-Warning ('수동: wscript.exe "' + $vbs + '"')
 }
