@@ -10,6 +10,7 @@ import {
   buildStoreContextPrompt,
   loadSystemContext,
 } from '@/lib/aiStoreContext';
+import { loadAnalysisPack, type AnalysisPackResult } from '@/lib/aiAnalysis';
 import {
   runCollaborativeDebate,
   friendlyAiError,
@@ -44,10 +45,16 @@ import {
   tryCreateCalendarEventFromAiChat,
 } from '@/lib/calendarAi/fromAiChat';
 import {
+  AI_API_CATALOG_APPENDIX,
+  AI_EMPLOYEE_DATA_POLICY,
+  loadModuleSnapshotsAppendix,
+} from '@/lib/aiChatFullContext';
+import {
   buildWikiAiAppendix,
   listWikiDocs,
   wikiIndexFromDocs,
 } from '@/lib/wiki/wikiStore';
+import { appendStoreBusinessContext } from '@/lib/storeBusinessContext';
 
 export type { DebateEntry, DebateRoundResult };
 
@@ -58,12 +65,21 @@ type GroqModel = 'groq-mixtral' | 'groq-llama';
 type ModelChoice = 'auto' | 'gemini' | 'claude' | 'gpt' | 'groq' | GroqModel | 'debate';
 type ChatMode = 'chat' | 'debate' | 'analysis';
 
+const ANALYST_SYSTEM = appendStoreBusinessContext(
+  '당신은 Pitaya OS의 AI 데이터 분석가입니다.\n'
+  + '강서정육점 Pitaya OS AI 어시스턴트로, 매출·매입·고객·품목·쿠폰·주문 데이터를 수치와 팩트 기반으로 분석합니다.\n'
+  + '조회만 가능하고 데이터 수정은 절대 불가합니다. 사원·HR·출퇴근·급여 정보는 제공되지 않습니다.\n\n'
+  + '분석 모드에서는 시스템에 주입된 「Pitaya AI 분석 팩」 수치를 1차 근거로 사용하세요.\n'
+  + '- pos_customer_purchase_lines: 회원별 실구매 품목·lost buyers·품목 mix\n'
+  + '- pos_customer_sales / pos_customers: 방문·이탈·휴면 세그먼트\n'
+  + '- daily_reports / pos_daily_sales: 매출·객수·객단가\n\n'
+  + '응답 형식: ①한줄 결론 ②원인(유입→객단가→mix 순) ③핵심 수치 인용 ④실행 조치 3개 이내.\n'
+  + '데이터에 없는 내용은 추측하지 말고 "데이터 없음"이라고 하세요.',
+);
+
 const SYSTEM_INSTRUCTIONS: Record<string, string> = {
   default: SYSTEM_PROMPT,
-  analyst: `당신은 Pitaya OS의 AI 데이터 분석가입니다.
-강서정육점 Pitaya OS AI 어시스턴트로, 매출·매입·고객·직원 데이터를 수치와 팩트 기반으로 분석합니다.
-조회만 가능하고 데이터 수정은 절대 불가합니다.
-전월·전년 대비, 이상 수치, 품목·고객 패턴을 명확하게 요약하고 실용적 조언을 제공합니다.`,
+  analyst: ANALYST_SYSTEM,
 };
 
 /* ── 축산물 이력번호 감지 및 조회 ── */
@@ -347,11 +363,21 @@ export async function POST(req: Request) {
 
     const msgs = history || [];
     let storeContext = null;
+    let analysisPack: AnalysisPackResult | null = null;
+
     if (storeId) {
       try {
         storeContext = await loadSystemContext(storeId);
       } catch (err) {
         console.error('[AI] loadSystemContext failed:', err);
+      }
+
+      const analysisMessage =
+        chatMode === 'analysis' ? message.trim() : '매장 운영 종합 분석';
+      try {
+        analysisPack = await loadAnalysisPack(storeId, analysisMessage);
+      } catch (err) {
+        console.error('[AI] loadAnalysisPack failed:', err);
       }
     }
 
@@ -361,14 +387,27 @@ export async function POST(req: Request) {
     const baseSystem = SYSTEM_INSTRUCTIONS[basePersona] ?? SYSTEM_INSTRUCTIONS.default;
     let system = buildStoreContextPrompt(baseSystem, storeContext);
 
-    if (wikiMode && storeId) {
+    if (analysisPack) {
+      system += `\n\n${analysisPack.promptAppendix}`;
+    }
+
+    if (storeId) {
       try {
         const wikiDocs = await listWikiDocs(storeId);
         system += buildWikiAiAppendix(wikiIndexFromDocs(wikiDocs));
       } catch (err) {
         console.error('[AI] wiki appendix:', err);
       }
+
+      try {
+        system += await loadModuleSnapshotsAppendix(storeId);
+      } catch (err) {
+        console.error('[AI] module snapshots:', err);
+      }
     }
+
+    system += AI_API_CATALOG_APPENDIX;
+    system += AI_EMPLOYEE_DATA_POLICY;
 
     // ── 이력번호 자동 감지 → 정보 주입 ──
     const traceMatches = [...new Set(Array.from(message.matchAll(TRACE_NO_RE), m => m[1]))];
@@ -588,6 +627,12 @@ export async function POST(req: Request) {
       chatRoute:       chatRouteLabel,
       aiExclusions:    aiExclusions.length ? aiExclusions : undefined,
       chatMode,
+      analysisContext: analysisPack ? {
+        pack: analysisPack.pack,
+        packLabel: analysisPack.packLabel,
+        asOf: analysisPack.data.asOf,
+        summary: analysisPack.summary,
+      } : undefined,
       expiryReminder: expiryReminder?.created ? expiryReminder.result : undefined,
       calendarEvent: calendarEvent?.created ? calendarEvent.result : undefined,
     });

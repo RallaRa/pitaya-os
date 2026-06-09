@@ -9,6 +9,10 @@ import { useStore } from '@/context/StoreContext';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { discountLabel } from '@/lib/coupons/types';
 
+const CouponLayoutManager = dynamic(
+  () => import('@/components/coupons/CouponLayoutManager'),
+  { ssr: false },
+);
 const CouponAiCreator = dynamic(
   () => import('@/components/coupons/CouponAiCreator'),
   { ssr: false },
@@ -22,7 +26,7 @@ const CouponAnalyticsPanel = dynamic(
   { ssr: false },
 );
 
-const PAGE_TABS = ['쿠폰 목록', '효과·이력'] as const;
+const PAGE_TABS = ['레이아웃', '쿠폰 목록', '효과·이력'] as const;
 
 interface Coupon {
   id: string;
@@ -53,6 +57,7 @@ export default function CouponsPage() {
   const [showForm, setShowForm] = useState(false);
   const [showAi, setShowAi] = useState(false);
   const [applyCoupon, setApplyCoupon] = useState<Coupon | null>(null);
+  const [layouts, setLayouts] = useState<{ id: string; name: string; backgroundUrl: string }[]>([]);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [form, setForm] = useState({
     code: '', type: 'percent' as 'percent' | 'fixed', value: '10',
@@ -141,8 +146,8 @@ export default function CouponsPage() {
         <div className="flex items-center gap-2">
           <Tag className="w-6 h-6 text-teal-400" />
           <div>
-            <h1 className="text-xl font-bold text-teal-400">쿠폰 발행 관리</h1>
-            <p className="text-xs text-slate-500">{currentStore.storeName}</p>
+            <h1 className="text-xl font-bold text-teal-400">쿠폰·할인 관리</h1>
+            <p className="text-xs text-slate-500">{currentStore.storeName} · AI 생성 · 알림톡 발송 전 선택</p>
           </div>
         </div>
         {pageTab === '쿠폰 목록' && (
@@ -150,9 +155,9 @@ export default function CouponsPage() {
             <button
               type="button"
               onClick={() => setShowAi(true)}
-              className="flex items-center gap-1.5 bg-violet-700 hover:bg-violet-600 text-white px-4 py-2 rounded-xl text-sm font-bold"
+              className="flex items-center gap-1.5 bg-teal-700 hover:bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-bold"
             >
-              <Sparkles className="w-4 h-4" />AI로 만들기
+              <Sparkles className="w-4 h-4" />쿠폰 만들기 (문구 AI)
             </button>
             <button
               type="button"
@@ -183,6 +188,14 @@ export default function CouponsPage() {
       </div>
 
       {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
+
+      {pageTab === '레이아웃' && (
+        <CouponLayoutManager
+          storeId={currentStore.storeId}
+          storeName={currentStore.storeName || ''}
+          onLayoutsChange={setLayouts}
+        />
+      )}
 
       {pageTab === '효과·이력' && (
         <CouponAnalyticsPanel storeId={currentStore.storeId} />
@@ -274,6 +287,7 @@ export default function CouponsPage() {
           )}
 
           <p className="text-xs text-slate-600 mt-6">
+            「AI로 만들기」로 대화형 생성 · 발행된 쿠폰은 고객 관리 → 알림톡 발송에서 선택합니다.<br />
             사용 횟수는 「쿠폰 적용」 버튼으로만 기록됩니다 (POS 할인 후 직원 확인).<br />
             바코드는 AI/업로드 시 선택 · 키오스크는 할인 미리보기만 (`/kiosk/coupon-overlay`)
           </p>
@@ -284,7 +298,8 @@ export default function CouponsPage() {
         <CouponAiCreator
           storeId={currentStore.storeId}
           storeName={currentStore.storeName || ''}
-          onPublished={load}
+          layouts={layouts}
+          onPublished={() => load()}
           onClose={() => setShowAi(false)}
         />
       )}

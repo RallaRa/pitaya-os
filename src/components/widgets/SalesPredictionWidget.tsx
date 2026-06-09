@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, ChevronDown, ChevronUp, Target, HelpCircle } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
 import WidgetEmptyReason from './WidgetEmptyReason';
+import SalesEvidenceLine from './SalesEvidenceLine';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { isPlaceholderSupporterComment } from '@/lib/salesPredictionBuild';
@@ -513,9 +514,12 @@ export default function SalesPredictionWidget({
               {boldify(displayComment)}
             </p>
             {data.analysisSourcesLine && (
-              <p className="text-[10px] text-slate-500 mt-2 leading-snug border-t border-slate-700/50 pt-2">
-                {data.analysisSourcesLine}
-              </p>
+              <SalesEvidenceLine
+                summary={data.analysisSourcesLine}
+                detail="당일 예측은 90일 평균·전주·전월·전년 동요일·날씨·휴일·네이버 트렌드·축산가 등 다기준 가중으로 산출합니다. 품목별 근거는 목록에서 펼치기."
+                className="mt-2 border-t border-slate-700/50 pt-2"
+                compact
+              />
             )}
             <p className="text-[9px] text-slate-600 mt-1.5">
               {displayComment.length}자 · {data.aiUsedStatisticalFallback ? '다기준 통계·외부 API' : 'AI·다기준 데이터'} · 참고용

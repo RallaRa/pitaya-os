@@ -1,5 +1,6 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { getKSTTodayYMD, normDateYMD, subtractMonthsYMD } from '@/lib/dateUtils';
+import { truncateEvidenceSummary } from '@/lib/salesEvidence';
 
 export interface CustomerVisitSummary {
   thisMonthLabel: string;
@@ -17,6 +18,11 @@ export interface CustomerVisitSummary {
   prevMonthVisits: number;
   visitTxChangePct: number | null;
   direction: 'up' | 'down' | 'flat';
+  /** ~100자 근거 요약 (비교 기준·데이터 출처) */
+  evidenceSummary: string;
+  evidenceDetail: string;
+  /** 매출 향상 연결 힌트 */
+  salesHint: string;
 }
 
 function monthPrefix(ymd: string): string {
@@ -92,6 +98,19 @@ export async function getCustomerVisitSummary(storeId: string): Promise<Customer
   const direction: CustomerVisitSummary['direction'] =
     primaryChange > 0 ? 'up' : primaryChange < 0 ? 'down' : 'flat';
 
+  const evidenceSummary = truncateEvidenceSummary(
+    `POS 방문고객 ${monthLabel(thisYM)} ${thisM.visitors}명 vs ${monthLabel(prevYM)} ${prevM.visitors}명·등록 ${totalCustomers}명 대비 방문률 ${thisMonthVisitRate ?? '-'}%·pos_customer_sales`,
+  );
+  const evidenceDetail =
+    `기준: pos_customer_sales에서 월별 cusCode 중복 제거(방문고객), visitCount 합(방문횟수). ` +
+    `방문률 = 월 방문고객 ÷ pos_customers 등록수. ${monthLabel(thisYM)}은 ${today}까지 집계, ${monthLabel(prevYM)}은 전월 전체.`;
+  const salesHint =
+    direction === 'down'
+      ? '방문·방문률 하락 → 단골 쿠폰·재방문 알림·핵심 품목 전면 진열로 객단가 보완'
+      : direction === 'up'
+        ? '방문 증가 → 베스트·신상 전면·세트 프로모션으로 구매 전환 강화'
+        : '방문 유지 → 단골 VIP·구매 빈도 높은 고객 대상 업셀';
+
   return {
     thisMonthLabel: monthLabel(thisYM),
     prevMonthLabel: monthLabel(prevYM),
@@ -108,5 +127,8 @@ export async function getCustomerVisitSummary(storeId: string): Promise<Customer
     prevMonthVisits: prevM.visits,
     visitTxChangePct,
     direction,
+    evidenceSummary,
+    evidenceDetail,
+    salesHint,
   };
 }

@@ -1,15 +1,19 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import {
-  Bot, User, Send, Plus, Trash2,
-  Loader2, MessageSquare,
+  Bot, Send, Plus, Trash2,
+  Loader2,
   Edit2, Check, X, AlertCircle, Swords,
-  PanelLeftOpen, PanelLeftClose,
+  PanelLeftOpen, ChevronDown,
+  Mic, MicOff, Volume2, VolumeX, ArrowLeft, Sparkles,
 } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { useSpeechInput } from '@/hooks/useSpeechInput';
+import { useSpeechOutput } from '@/hooks/useSpeechOutput';
 import type { DebateEntry, DebateRoundResult } from '@/app/api/ai/route';
 
 // ── 모델 정의 ──────────────────────────────────────────────────────
@@ -77,14 +81,24 @@ const CHAT_MODES: { id: ChatMode; label: string; desc: string }[] = [
 
 const DEBATE_TOPICS = ['주말 영업 확대', '온라인 판매 확대', '직원 추가 채용'];
 
-// usedModel 문자열 → badge 스타일 맵
-const MODEL_BY_NAME: Record<string, typeof MODELS[number]> = {
-  'Gemini 2.5 Flash':  MODELS[1],
-  'Claude Sonnet 4.6': MODELS[2],
-  'GPT-4o':            MODELS[3],
-  'Groq Llama3 70B':   MODELS[4],
-  'Groq Llama3 8B':    MODELS[4],
-};
+const ANALYSIS_STARTER_PROMPTS = [
+  '최근 매출이 왜 하락했는지 분석해줘',
+  '이탈 고객과 lost buyers 현황',
+  '품목 mix 변화와 급감 SKU',
+  '요일별 매출·쿠폰 타깃 제안',
+];
+
+interface AnalysisContextMeta {
+  pack: string;
+  packLabel: string;
+  asOf: string;
+  summary: {
+    netWoW: number | null;
+    custWoW: number | null;
+    lostBuyers: number;
+    decreasingCustomers: number;
+  };
+}
 
 const DEBATE_COLORS: Record<string, { border: string; header: string; badge: string }> = {
   gemini: { border: 'border-blue-500/40',   header: 'text-blue-400',   badge: 'bg-blue-500/20 text-blue-300' },
@@ -106,6 +120,37 @@ interface Message {
   debateSummary?: string;
   debatePhase?: string;
   chatMode?: ChatMode;
+  analysisContext?: AnalysisContextMeta;
+}
+
+function formatPct(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(n)) return '—';
+  const sign = n > 0 ? '+' : '';
+  return `${sign}${n.toFixed(1)}%`;
+}
+
+function AnalysisContextChips({ ctx }: { ctx: AnalysisContextMeta }) {
+  const { summary } = ctx;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mt-1">
+      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-teal-500/15 text-teal-300 border-teal-500/30">
+        📊 {ctx.packLabel}
+      </span>
+      <span className="text-[11px] px-2 py-0.5 rounded-full border bg-slate-800 text-slate-300 border-slate-700">
+        매출 WoW {formatPct(summary.netWoW)}
+      </span>
+      <span className="text-[11px] px-2 py-0.5 rounded-full border bg-slate-800 text-slate-300 border-slate-700">
+        객수 WoW {formatPct(summary.custWoW)}
+      </span>
+      <span className="text-[11px] px-2 py-0.5 rounded-full border bg-slate-800 text-slate-300 border-slate-700">
+        lost buyers {summary.lostBuyers}명
+      </span>
+      <span className="text-[11px] px-2 py-0.5 rounded-full border bg-slate-800 text-slate-300 border-slate-700">
+        구매감소 {summary.decreasingCustomers}명
+      </span>
+      <span className="text-[10px] text-slate-500">기준 {ctx.asOf}</span>
+    </div>
+  );
 }
 
 interface Conversation {
@@ -130,6 +175,7 @@ function normalizeMsg(msg: any): Message {
     debateSummary:   msg.debateSummary,
     debatePhase:     msg.debatePhase,
     chatMode:        msg.chatMode,
+    analysisContext: msg.analysisContext,
   };
 }
 
@@ -241,8 +287,16 @@ export default function AiChatPage() {
   const [activeIds,      setActiveIds]      = useState<Set<string>>(new Set());
   const [modelsLoaded,   setModelsLoaded]   = useState(false);
   const [sendError,      setSendError]      = useState<string | null>(null);
+  const [voiceConversation, setVoiceConversation] = useState(false);
+  const [showModelMenu,  setShowModelMenu]  = useState(false);
+  const [showModeMenu,   setShowModeMenu]   = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const voiceConversationRef = useRef(voiceConversation);
+  const isWorkingRef = useRef(false);
+  const sendFromVoiceRef = useRef<(text: string) => void>(() => {});
+
+  useEffect(() => { voiceConversationRef.current = voiceConversation; }, [voiceConversation]);
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 767px)');
@@ -255,6 +309,23 @@ export default function AiChatPage() {
     mq.addEventListener('change', apply);
     return () => mq.removeEventListener('change', apply);
   }, []);
+
+  const { enabled: ttsEnabled, setEnabled: setTtsEnabled, speaking, speak, stop: stopSpeaking, supported: ttsSupported } = useSpeechOutput();
+
+  const { listening, supported: sttSupported, toggle: toggleListening, start: startListening, stop: stopListening } = useSpeechInput({
+    onFinalTranscript: (text) => {
+      if (voiceConversationRef.current) {
+        sendFromVoiceRef.current(text);
+        return;
+      }
+      setInput(prev => (prev ? `${prev} ${text}` : text));
+    },
+    onError: (msg) => setSendError(msg),
+  });
+
+  useEffect(() => {
+    setVoiceConversation(ttsEnabled);
+  }, [ttsEnabled]);
 
   useEffect(() => {
     getAuthHeaders()
@@ -324,22 +395,25 @@ export default function AiChatPage() {
   };
 
   // ── 4AI 협업 토론 (3라운드 + 종합) ──
-  const handleDebate = async () => {
-    if (!input.trim() || isLoading || isDebating) return;
+  const handleDebate = async (textOverride?: string) => {
+    const messageText = (textOverride ?? input).trim();
+    if (!messageText || isLoading || isDebating) return;
     setSendError(null);
+    stopListening();
+    stopSpeaking();
 
     const userMsg: Message = {
       role:      'user',
-      content:   input.trim(),
+      content:   messageText,
       timestamp: new Date().toISOString(),
     };
 
     const historyForAI = [...messages];
     const newMessages  = [...messages, userMsg];
     setMessages(newMessages);
-    const savedInput = input.trim();
-    setInput('');
+    if (!textOverride) setInput('');
     setIsDebating(true);
+    isWorkingRef.current = true;
 
     try {
       const res = await fetch('/api/ai', {
@@ -387,36 +461,45 @@ export default function AiChatPage() {
       const title = `[토론] ${userMsg.content.slice(0, 16)}...`;
       await saveConversation(finalMessages, title);
 
+      speak(aiMsg.content, () => {
+        if (voiceConversationRef.current) startListening();
+      });
+
     } catch (e: any) {
       setSendError(`토론 오류: ${e.message}`);
       setMessages(historyForAI);
-      setInput(savedInput);
+      if (!textOverride) setInput(messageText);
     } finally {
       setIsDebating(false);
+      isWorkingRef.current = false;
     }
   };
 
   // ── 일반 메시지 전송 ──
-  const handleSend = async () => {
-    if (!input.trim() || isLoading || isDebating) return;
+  const handleSend = async (textOverride?: string) => {
+    const messageText = (textOverride ?? input).trim();
+    if (!messageText || isLoading || isDebating) return;
     if (chatMode === 'debate') {
-      return handleDebate();
+      return handleDebate(messageText);
     }
     setSendError(null);
+    stopListening();
+    stopSpeaking();
 
     const modelInfo = MODELS.find(m => m.id === selectedModel) ?? MODELS[0];
 
     const userMsg: Message = {
       role:      'user',
-      content:   input.trim(),
+      content:   messageText,
       timestamp: new Date().toISOString(),
     };
 
     const historyForAI = [...messages];
     const newMessages  = [...messages, userMsg];
     setMessages(newMessages);
-    setInput('');
+    if (!textOverride) setInput('');
     setIsLoading(true);
+    isWorkingRef.current = true;
 
     try {
       const res = await fetch('/api/ai', {
@@ -437,7 +520,7 @@ export default function AiChatPage() {
         const errMsg = data.error || data.text || `API 오류 (${res.status})`;
         setSendError(`${modelInfo.name} 오류: ${errMsg}`);
         setMessages(historyForAI);
-        setInput(userMsg.content);
+        if (!textOverride) setInput(messageText);
         return;
       }
 
@@ -449,6 +532,7 @@ export default function AiChatPage() {
         isAuto:         data.isAuto,
         autoSelectedBy: data.autoSelectedBy,
         chatMode,
+        analysisContext: data.analysisContext,
       };
 
       const finalMessages = [...newMessages, aiMsg];
@@ -458,13 +542,23 @@ export default function AiChatPage() {
       const title = modePrefix + userMsg.content.slice(0, 20) + (userMsg.content.length > 20 ? '...' : '');
       await saveConversation(finalMessages, title);
 
+      speak(aiMsg.content, () => {
+        if (voiceConversationRef.current) startListening();
+      });
+
     } catch (e: any) {
       setSendError(`네트워크 오류: ${e.message}`);
       setMessages(historyForAI);
-      setInput(userMsg.content);
+      if (!textOverride) setInput(messageText);
     } finally {
       setIsLoading(false);
+      isWorkingRef.current = false;
     }
+  };
+
+  sendFromVoiceRef.current = (text: string) => {
+    setInput(text);
+    void handleSend(text);
   };
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
@@ -526,6 +620,10 @@ export default function AiChatPage() {
     return activeIds.has(id);
   };
   const activeMode = CHAT_MODES.find(m => m.id === chatMode)!;
+  const selectedModelInfo = MODELS.find(m => m.id === selectedModel) ?? MODELS[0];
+  const currentTitle = currentId
+    ? (conversations.find(c => c.id === currentId)?.title || 'AI 대화')
+    : '새 대화';
   const inputPlaceholder =
     chatMode === 'debate'
       ? (messages.length === 0
@@ -536,72 +634,63 @@ export default function AiChatPage() {
         : '메시지를 입력하세요... (Enter 전송, Shift+Enter 줄바꿈)';
 
   return (
-    <div className="flex flex-1 min-h-0 bg-slate-950 md:rounded-xl overflow-hidden md:border md:border-slate-800 relative">
+    <div className="flex h-full w-full bg-[#212121] text-[#ececec] overflow-hidden relative">
 
-      {/* 모바일: 목록 열릴 때 배경 딤 */}
       {isMobileLayout && showSidebar && (
         <button
           type="button"
           aria-label="대화 목록 닫기"
-          className="absolute inset-0 z-40 bg-black/60 md:hidden"
+          className="absolute inset-0 z-40 bg-black/50 md:hidden"
           onClick={() => setShowSidebar(false)}
         />
       )}
 
-      {/* ── 대화 목록 사이드바 ── */}
-      <div
+      <aside
         className={`
-          flex-shrink-0 bg-slate-900 border-r border-slate-700
-          flex flex-col overflow-hidden z-50
-          transition-all duration-200 ease-out
+          flex-shrink-0 flex flex-col bg-[#171717] border-r border-[#2f2f2f] z-50 overflow-hidden
+          transition-transform duration-200 ease-out
           ${isMobileLayout
-            ? `absolute inset-y-0 left-0 w-[min(20rem,88vw)] shadow-2xl ${showSidebar ? 'translate-x-0' : '-translate-x-full'}`
-            : `${showSidebar ? 'w-72' : 'w-0'}`
+            ? `absolute inset-y-0 left-0 w-[min(17.5rem,88vw)] shadow-2xl ${showSidebar ? 'translate-x-0' : '-translate-x-full'}`
+            : 'relative w-[260px]'
           }
         `}
       >
-        <div className="p-3 border-b border-slate-700 flex items-center gap-2">
-          {isMobileLayout && (
-            <button
-              type="button"
-              onClick={() => setShowSidebar(false)}
-              className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 shrink-0"
-              aria-label="대화 목록 닫기"
-            >
-              <PanelLeftClose className="w-5 h-5" />
-            </button>
-          )}
+        <div className="p-3 border-b border-[#2f2f2f] space-y-2">
+          <Link
+            href="/dashboard"
+            className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-[#b4b4b4] hover:text-[#ececec] hover:bg-[#2f2f2f] text-sm transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4 shrink-0" />
+            <span className="truncate">Pitaya OS</span>
+          </Link>
           <button
             onClick={handleNewChat}
-            className="flex-1 flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-500 text-white px-4 py-2.5 rounded-xl font-medium text-sm transition-colors"
+            className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-[#3f3f3f] bg-transparent hover:bg-[#2f2f2f] text-[#ececec] text-sm font-medium transition-colors"
           >
-            <Plus className="w-4 h-4" />새 대화
+            <Plus className="w-4 h-4" />
+            새 대화
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-2">
+        <div className="flex-1 overflow-y-auto px-2 py-2">
           {isLoadingList ? (
             <div className="flex justify-center py-8">
-              <Loader2 className="w-5 h-5 text-teal-400 animate-spin" />
+              <Loader2 className="w-5 h-5 text-[#b4b4b4] animate-spin" />
             </div>
           ) : conversations.length === 0 ? (
-            <div className="text-center py-8">
-              <MessageSquare className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-              <p className="text-slate-500 text-sm">대화 기록이 없습니다.</p>
-            </div>
+            <p className="text-center text-[#6b6b6b] text-sm py-8">대화 기록이 없습니다</p>
           ) : (
             Object.entries(grouped).map(([group, convs]) =>
               convs.length > 0 && (
-                <div key={group} className="mb-4">
-                  <p className="text-slate-500 text-xs font-medium px-2 py-1 uppercase tracking-wider">{group}</p>
+                <div key={group} className="mb-3">
+                  <p className="text-[#6b6b6b] text-[11px] font-medium px-2 py-1">{group}</p>
                   {convs.map(conv => (
                     <div
                       key={conv.id}
                       onClick={() => handleSelect(conv)}
                       className={`
-                        group flex items-center gap-2 px-3 py-2
-                        rounded-lg cursor-pointer transition-colors mb-0.5
-                        ${currentId === conv.id ? 'bg-teal-600/20 text-teal-400' : 'hover:bg-slate-800 text-slate-300'}
+                        group flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer transition-colors mb-0.5
+                        ${currentId === conv.id ? 'bg-[#2f2f2f] text-[#ececec]' : 'text-[#b4b4b4] hover:bg-[#2f2f2f]/70 hover:text-[#ececec]'}
                       `}
                     >
                       {editingId === conv.id ? (
@@ -610,28 +699,27 @@ export default function AiChatPage() {
                             value={editTitle}
                             onChange={e => setEditTitle(e.target.value)}
                             onKeyDown={e => {
-                              if (e.key === 'Enter')  handleRenameSave(conv.id);
+                              if (e.key === 'Enter') handleRenameSave(conv.id);
                               if (e.key === 'Escape') setEditingId(null);
                             }}
-                            className="flex-1 bg-slate-700 text-white text-sm px-2 py-1 rounded focus:outline-none focus:ring-1 focus:ring-teal-500"
+                            className="flex-1 bg-[#2f2f2f] text-[#ececec] text-sm px-2 py-1 rounded focus:outline-none focus:ring-1 focus:ring-[#6b6b6b]"
                             autoFocus
                           />
-                          <button onClick={() => handleRenameSave(conv.id)} className="text-teal-400 hover:text-teal-300">
+                          <button onClick={() => handleRenameSave(conv.id)} className="text-[#ececec]">
                             <Check className="w-3.5 h-3.5" />
                           </button>
-                          <button onClick={() => setEditingId(null)} className="text-slate-400 hover:text-slate-200">
+                          <button onClick={() => setEditingId(null)} className="text-[#6b6b6b]">
                             <X className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       ) : (
                         <>
-                          <MessageSquare className="w-4 h-4 flex-shrink-0 opacity-60" />
                           <span className="flex-1 text-sm truncate">{conv.title}</span>
-                          <div className="hidden group-hover:flex items-center gap-1">
-                            <button onClick={e => handleRenameStart(conv, e)} className="p-1 hover:text-white text-slate-400 transition-colors">
+                          <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
+                            <button onClick={e => handleRenameStart(conv, e)} className="p-1 hover:text-[#ececec] text-[#6b6b6b]">
                               <Edit2 className="w-3 h-3" />
                             </button>
-                            <button onClick={e => handleDelete(conv.id, e)} className="p-1 hover:text-red-400 text-slate-400 transition-colors">
+                            <button onClick={e => handleDelete(conv.id, e)} className="p-1 hover:text-red-400 text-[#6b6b6b]">
                               <Trash2 className="w-3 h-3" />
                             </button>
                           </div>
@@ -644,332 +732,309 @@ export default function AiChatPage() {
             )
           )}
         </div>
-      </div>
 
-      {/* ── 채팅 영역 ── */}
-      <div className="flex-1 flex flex-col min-w-0">
-
-        {/* 헤더 */}
-        <div className="bg-slate-900 border-b border-slate-700 px-3 sm:px-4 py-3 flex items-center gap-2 sm:gap-3 shrink-0">
-          <button
-            type="button"
-            onClick={() => setShowSidebar(v => !v)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
-            aria-label={showSidebar ? '대화 목록 접기' : '대화 목록 펼치기'}
-            title={showSidebar ? '대화 목록 접기' : '대화 목록 펼치기'}
-          >
-            {showSidebar
-              ? <PanelLeftClose className="w-5 h-5" />
-              : <PanelLeftOpen className="w-5 h-5" />}
-            <span className="text-xs font-medium md:hidden">목록</span>
-          </button>
-          <Bot className="w-5 h-5 text-teal-400 shrink-0" />
-          <div className="min-w-0 flex-1">
-            <h1 className="text-white font-bold text-sm truncate">
-              {currentId ? (conversations.find(c => c.id === currentId)?.title || 'AI 대화') : '새 대화'}
-            </h1>
-            <p className="text-slate-500 text-xs truncate">Pitaya OS AI Assistant</p>
-          </div>
-        </div>
-
-        {/* 모드 탭 */}
-        <div className="bg-slate-900/80 border-b border-slate-700 px-4 py-2">
-          <div className="flex items-center gap-1">
-            {CHAT_MODES.map(mode => (
-              <button
-                key={mode.id}
-                type="button"
-                onClick={() => { setChatMode(mode.id); setSendError(null); }}
-                title={mode.desc}
-                className={`
-                  px-4 py-2 rounded-lg text-xs font-semibold transition-all
-                  ${chatMode === mode.id
-                    ? 'bg-teal-600 text-white ring-2 ring-teal-400/50 shadow-sm'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'}
-                `}
-              >
-                {mode.label}
-              </button>
-            ))}
-          </div>
-          <p className="text-slate-500 text-[11px] mt-1">{activeMode.desc}</p>
-        </div>
-
-        {/* 메시지 목록 */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <Bot className="w-16 h-16 text-teal-400/30 mb-4" />
-              <h2 className="text-white font-bold text-xl mb-2">
-                {chatMode === 'debate' ? '어떤 주제로 토론할까요?' : chatMode === 'analysis' ? '무엇을 분석해 드릴까요?' : '무엇을 도와드릴까요?'}
-              </h2>
-              <p className="text-slate-500 text-sm max-w-sm leading-relaxed">
-                {chatMode === 'debate' ? (
-                  <>
-                    4개 AI가 주제에 대해 3라운드 의견을 교환합니다.<br />
-                    <span className="text-slate-400">1라운드: 초기 의견 → 2·3라운드: 서로 반응</span><br />
-                    <span className="text-slate-400">📋 마지막에 종합 권고안 제공</span>
-                  </>
-                ) : chatMode === 'analysis' ? (
-                  <>
-                    Pitaya OS 매장 데이터 기반 심층 분석입니다.<br />
-                    <span className="text-slate-400">📊 오늘/어제 매출, 고객 TOP5 자동 연동</span><br />
-                    <span className="text-slate-400">🔒 조회만 가능, 데이터 수정 불가</span>
-                  </>
-                ) : (
-                  <>
-                    Pitaya OS 전담 AI 분석가입니다.<br />
-                    <span className="text-slate-400">🎯 Groq가 질문 분석 후 최적 AI 자동 선택</span><br />
-                    <span className="text-slate-400">📊 매장 매출·고객 데이터 자동 연동</span><br />
-                    <span className="text-slate-400">🔍 이력번호 축산물 자동 조회</span>
-                  </>
-                )}
-              </p>
-            </div>
-          )}
-
-          {messages.map((msg, idx) => (
-            <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`flex gap-2 sm:gap-3 w-full ${msg.role === 'user' ? 'flex-row-reverse justify-end' : ''}`}>
-                <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                  msg.role === 'user' ? 'bg-blue-600' : 'bg-teal-600'
-                }`}>
-                  {msg.role === 'user'
-                    ? <User className="w-4 h-4 text-white" />
-                    : <Bot  className="w-4 h-4 text-white" />
-                  }
-                </div>
-
-                <div className={`flex flex-col gap-1 min-w-0 flex-1 ${(msg.debateRounds?.length || msg.debate?.length) ? 'max-w-full' : 'max-w-[min(100%,42rem)]'}`}>
-                  {/* 말풍선 (토론은 헤더만, 개별 카드는 DebateCards에서) */}
-                  {(!msg.debateRounds?.length && (!msg.debate || msg.debate.length === 0)) && (
-                    <div className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
-                      msg.role === 'user'
-                        ? 'bg-blue-600 text-white rounded-tr-sm'
-                        : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-tl-sm'
-                    }`}>
-                      {msg.content}
-                      <p className={`text-xs mt-1 ${msg.role === 'user' ? 'text-blue-200' : 'text-slate-500'}`}>
-                        {new Date(msg.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                  )}
-
-                  {msg.debateRounds && msg.debateRounds.length > 0 && (
-                    <CollaborativeDebateView rounds={msg.debateRounds} summary={msg.debateSummary || msg.content} />
-                  )}
-
-                  {(!msg.debateRounds?.length) && msg.debate && msg.debate.length > 0 && (
-                    <DebateCards entries={msg.debate} />
-                  )}
-
-                  {/* 모델 배지 */}
-                  {msg.role === 'model' && (msg.usedModel || msg.debatePhase) && (
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {msg.debatePhase && (
-                        <span className={`self-start text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
-                          msg.debatePhase === '찬성' ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                          : msg.debatePhase === '반대' ? 'bg-red-500/20 text-red-400 border-red-500/30'
-                          : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                        }`}>
-                          {msg.debatePhase === '찬성' ? '✅ 찬성' : msg.debatePhase === '반대' ? '❌ 반대' : '📋 종합'}
-                        </span>
-                      )}
-                      {msg.usedModel === '4AI 토론' ? (
-                        <span className="self-start text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
-                          ⚔️ 4AI 토론
-                        </span>
-                      ) : (() => {
-                        const m = MODEL_BY_NAME[msg.usedModel];
-                        return (
-                          <span className={`self-start text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
-                            m ? m.badgeCls : 'bg-slate-700 text-slate-400 border-slate-600'
-                          }`}>
-                            {m?.emoji ?? '🤖'} {msg.usedModel}
-                            {msg.isAuto && (
-                              <span className="ml-1 opacity-60 font-normal">
-                                {msg.autoSelectedBy === 'groq' ? '(Groq 선택)' : '(자동)'}
-                              </span>
-                            )}
-                          </span>
-                        );
-                      })()}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {/* 로딩 인디케이터 */}
-          {isWorking && (
-            <div className="flex justify-start">
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full bg-teal-600 flex items-center justify-center flex-shrink-0">
-                  {isDebating
-                    ? <Swords className="w-4 h-4 text-white" />
-                    : <Bot    className="w-4 h-4 text-white" />
-                  }
-                </div>
-                <div className="bg-slate-800 border border-slate-700 px-4 py-3 rounded-2xl rounded-tl-sm flex items-center gap-2">
-                  {isDebating && (
-                    <span className="text-yellow-400 text-xs font-medium mr-1">4AI 3라운드 토론 중... (30~90초)</span>
-                  )}
-                  <div className="flex gap-1">
-                    {[0, 1, 2].map(i => (
-                      <div
-                        key={i}
-                        className={`w-2 h-2 rounded-full animate-bounce ${isDebating ? 'bg-yellow-400' : 'bg-teal-400'}`}
-                        style={{ animationDelay: `${i * 0.15}s` }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* 입력 영역 */}
-        <div className="bg-slate-900 border-t border-slate-700 p-4 space-y-3">
-
-          {/* 에러 배너 */}
-          {sendError && (
-            <div className="flex items-center gap-2 bg-red-900/30 border border-red-700/50 rounded-xl px-3 py-2 text-sm text-red-400">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span className="flex-1">{sendError}</span>
-              <button onClick={() => setSendError(null)} className="text-red-400 hover:text-red-200 shrink-0">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-
-          {/* 텍스트 입력 (버튼보다 위 — 입력 후 버튼 활성화) */}
-          <div className="flex items-end gap-2">
-            <textarea
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-              placeholder={inputPlaceholder}
-              rows={1}
-              className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors resize-none"
-            />
+        <div className="p-3 border-t border-[#2f2f2f] space-y-2">
+          <div className="relative">
             <button
               type="button"
-              onClick={handleSend}
-              disabled={!canSend}
-              title={chatMode === 'debate' ? '4AI 토론 시작' : '메시지 전송'}
-              className={`disabled:bg-slate-700 disabled:cursor-not-allowed text-white p-3 rounded-xl transition-colors flex-shrink-0 ${
-                chatMode === 'debate'
-                  ? 'bg-yellow-600 hover:bg-yellow-500'
-                  : 'bg-teal-600 hover:bg-teal-500'
-              }`}
+              onClick={() => setShowModeMenu(v => !v)}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-[#2f2f2f] text-sm text-[#ececec] hover:bg-[#3f3f3f] transition-colors"
             >
-              {isLoading
-                ? <Loader2 className="w-5 h-5 animate-spin" />
-                : chatMode === 'debate'
-                  ? <Swords className="w-5 h-5" />
-                  : <Send className="w-5 h-5" />}
+              <span>{activeMode.label}</span>
+              <ChevronDown className="w-4 h-4 text-[#6b6b6b]" />
             </button>
-          </div>
-
-          {/* 토론 모드: 빠른 주제 + 액션 버튼 */}
-          {chatMode === 'debate' && (
-            <div className="space-y-2">
-              {messages.length === 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {DEBATE_TOPICS.map(topic => (
-                    <button
-                      key={topic}
-                      type="button"
-                      onClick={() => setInput(topic)}
-                      className="px-3 py-1.5 rounded-full text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:border-yellow-500/40 hover:text-yellow-300 transition-colors"
-                    >
-                      {topic}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={handleDebate}
-                  disabled={!canSend}
-                  title="4개 AI가 3라운드 의견 교환 후 종합 답변"
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold border transition-all ${
-                    isDebating
-                      ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40 cursor-not-allowed'
-                      : 'bg-yellow-600/90 text-white border-yellow-500 hover:bg-yellow-500 disabled:opacity-40 disabled:cursor-not-allowed'
-                  }`}
-                >
-                  <Swords className="w-3.5 h-3.5" />
-                  4AI 토론 시작
-                </button>
-                {!input.trim() && (
-                  <span className="text-[11px] text-slate-500">주제 입력 또는 위 예시 클릭 후 버튼 활성화</span>
-                )}
+            {showModeMenu && (
+              <div className="absolute bottom-full left-0 right-0 mb-1 rounded-lg border border-[#3f3f3f] bg-[#2f2f2f] shadow-xl overflow-hidden z-10">
+                {CHAT_MODES.map(mode => (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    onClick={() => { setChatMode(mode.id); setShowModeMenu(false); setSendError(null); }}
+                    className={`w-full text-left px-3 py-2 text-sm transition-colors ${chatMode === mode.id ? 'bg-[#3f3f3f] text-[#ececec]' : 'text-[#b4b4b4] hover:bg-[#3f3f3f]/60'}`}
+                  >
+                    <div className="font-medium">{mode.label}</div>
+                    <div className="text-[11px] text-[#6b6b6b] mt-0.5">{mode.desc}</div>
+                  </button>
+                ))}
               </div>
-            </div>
-          )}
-
-          {/* 모델 선택 + 4AI 토론 (일반/분석 모드) */}
-          {chatMode !== 'debate' && (
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {MODELS.map(m => {
-              const modelActive = isModelActive(m.id);
-              const isSelected = selectedModel === m.id;
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => { if (modelActive) setSelectedModel(m.id); }}
-                  title={!modelActive ? 'API 키 미설정' : `${m.name} ${m.subName}`}
-                  disabled={!modelActive}
-                  className={`
-                    flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
-                    border transition-all
-                    ${isSelected ? m.activeCls : modelActive ? m.inactiveCls : 'bg-slate-900 text-slate-600 border-slate-800 cursor-not-allowed opacity-40'}
-                  `}
-                >
-                  <span>{m.emoji}</span>
-                  <span>{m.name}</span>
-                  <span className={`text-[10px] font-normal ${isSelected ? 'opacity-80' : 'opacity-60'}`}>{m.subName}</span>
-                  {!modelActive && <span className="text-[9px]">🔒</span>}
-                </button>
-              );
-            })}
-
-            <div className="w-px h-5 bg-slate-700 mx-1" />
-
-            <button
-              type="button"
-              onClick={handleDebate}
-              disabled={!canSend}
-              title={!input.trim() ? '메시지 입력 후 활성화' : '4AI 3라운드 협업 토론'}
-              className={`
-                flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all
-                ${isDebating
-                  ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40 cursor-not-allowed'
-                  : 'bg-slate-800 text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/10 disabled:opacity-40 disabled:cursor-not-allowed'
-                }
-              `}
-            >
-              <Swords className="w-3 h-3" />
-              <span>4AI 토론</span>
-            </button>
-            {!input.trim() && (
-              <span className="text-[11px] text-slate-500">메시지 입력 후 4AI 토론 활성화</span>
             )}
           </div>
+          {currentStore?.storeName && (
+            <p className="text-[11px] text-[#6b6b6b] px-1 truncate">{currentStore.storeName}</p>
           )}
         </div>
+      </aside>
+
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        <header className="h-12 shrink-0 flex items-center gap-2 px-3 sm:px-4 border-b border-[#2f2f2f] bg-[#212121]">
+          {isMobileLayout && (
+            <button
+              type="button"
+              onClick={() => setShowSidebar(true)}
+              className="p-2 rounded-lg text-[#b4b4b4] hover:text-[#ececec] hover:bg-[#2f2f2f]"
+              aria-label="대화 목록"
+            >
+              <PanelLeftOpen className="w-5 h-5" />
+            </button>
+          )}
+          <h1 className="flex-1 text-sm font-medium text-[#ececec] truncate min-w-0">{currentTitle}</h1>
+
+          {chatMode !== 'debate' && (
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowModelMenu(v => !v)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-[#b4b4b4] hover:text-[#ececec] hover:bg-[#2f2f2f] transition-colors"
+              >
+                <span>{selectedModelInfo.emoji}</span>
+                <span className="hidden sm:inline">{selectedModelInfo.name}</span>
+                <ChevronDown className="w-4 h-4" />
+              </button>
+              {showModelMenu && (
+                <div className="absolute right-0 top-full mt-1 w-52 rounded-lg border border-[#3f3f3f] bg-[#2f2f2f] shadow-xl overflow-hidden z-20">
+                  {MODELS.map(m => {
+                    const modelActive = isModelActive(m.id);
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        disabled={!modelActive}
+                        onClick={() => { if (modelActive) { setSelectedModel(m.id); setShowModelMenu(false); } }}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${selectedModel === m.id ? 'bg-[#3f3f3f] text-[#ececec]' : 'text-[#b4b4b4] hover:bg-[#3f3f3f]/60'} ${!modelActive ? 'opacity-40 cursor-not-allowed' : ''}`}
+                      >
+                        <span>{m.emoji}</span>
+                        <div>
+                          <div>{m.name}</div>
+                          <div className="text-[11px] text-[#6b6b6b]">{m.subName}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {(sttSupported || ttsSupported) && (
+            <button
+              type="button"
+              onClick={() => {
+                const next = !ttsEnabled;
+                setTtsEnabled(next);
+                setVoiceConversation(next);
+                if (!next) {
+                  stopListening();
+                  stopSpeaking();
+                } else if (sttSupported && !isWorkingRef.current) {
+                  startListening();
+                }
+              }}
+              title={ttsEnabled ? '음성 대화 끄기' : '음성 대화 켜기'}
+              className={`p-2 rounded-lg transition-colors ${ttsEnabled ? 'bg-[#d97757]/20 text-[#d97757]' : 'text-[#b4b4b4] hover:text-[#ececec] hover:bg-[#2f2f2f]'}`}
+            >
+              {ttsEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+            </button>
+          )}
+        </header>
+
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-3xl mx-auto w-full px-4 py-6 sm:py-8">
+            {messages.length === 0 && (
+              <div className="flex flex-col items-center justify-center min-h-[50vh] text-center px-4">
+                <div className="w-12 h-12 rounded-full bg-[#2f2f2f] flex items-center justify-center mb-4">
+                  <Sparkles className="w-6 h-6 text-[#d97757]" />
+                </div>
+                <h2 className="text-2xl font-medium text-[#ececec] mb-2">
+                  {chatMode === 'debate' ? '어떤 주제로 토론할까요?' : chatMode === 'analysis' ? '무엇을 분석해 드릴까요?' : '무엇을 도와드릴까요?'}
+                </h2>
+                <p className="text-[#6b6b6b] text-sm max-w-md leading-relaxed">{activeMode.desc}</p>
+                {chatMode === 'analysis' && (
+                  <div className="flex flex-wrap justify-center gap-2 mt-6 max-w-lg">
+                    {ANALYSIS_STARTER_PROMPTS.map(prompt => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => setInput(prompt)}
+                        className="px-3 py-2 rounded-full text-xs bg-[#2f2f2f] text-[#b4b4b4] border border-[#3f3f3f] hover:border-[#6b6b6b] hover:text-[#ececec] transition-colors"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {chatMode === 'debate' && (
+                  <div className="flex flex-wrap justify-center gap-2 mt-6">
+                    {DEBATE_TOPICS.map(topic => (
+                      <button
+                        key={topic}
+                        type="button"
+                        onClick={() => setInput(topic)}
+                        className="px-3 py-2 rounded-full text-xs bg-[#2f2f2f] text-[#b4b4b4] border border-[#3f3f3f] hover:border-[#d97757]/40 hover:text-[#ececec] transition-colors"
+                      >
+                        {topic}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-8">
+              {messages.map((msg, idx) => (
+                <div key={idx} className="group">
+                  {msg.role === 'user' ? (
+                    <div className="flex justify-end">
+                      <div className="max-w-[85%] rounded-2xl bg-[#2f2f2f] px-4 py-3 text-[15px] leading-relaxed whitespace-pre-wrap text-[#ececec]">
+                        {msg.content}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {(!msg.debateRounds?.length && (!msg.debate || msg.debate.length === 0)) && (
+                        <div className="text-[15px] leading-relaxed whitespace-pre-wrap text-[#ececec]">
+                          {msg.content}
+                        </div>
+                      )}
+                      {msg.debateRounds && msg.debateRounds.length > 0 && (
+                        <CollaborativeDebateView rounds={msg.debateRounds} summary={msg.debateSummary || msg.content} />
+                      )}
+                      {(!msg.debateRounds?.length) && msg.debate && msg.debate.length > 0 && (
+                        <DebateCards entries={msg.debate} />
+                      )}
+                      {(msg.usedModel || msg.debatePhase) && (
+                        <div className="flex items-center gap-1.5 flex-wrap opacity-0 group-hover:opacity-100 transition-opacity">
+                          {msg.debatePhase && (
+                            <span className="text-[11px] px-2 py-0.5 rounded-full border border-[#3f3f3f] text-[#b4b4b4]">
+                              {msg.debatePhase}
+                            </span>
+                          )}
+                          {msg.usedModel && (
+                            <span className="text-[11px] px-2 py-0.5 rounded-full border border-[#3f3f3f] text-[#6b6b6b]">
+                              {msg.usedModel}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {msg.analysisContext && <AnalysisContextChips ctx={msg.analysisContext} />}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {isWorking && (
+                <div className="flex items-center gap-2 text-[#6b6b6b] text-sm">
+                  {isDebating ? (
+                    <Swords className="w-4 h-4 text-[#d97757] animate-pulse" />
+                  ) : (
+                    <Bot className="w-4 h-4 animate-pulse" />
+                  )}
+                  <span>{isDebating ? '4AI 토론 중...' : chatMode === 'analysis' ? '분석 중...' : '생각 중...'}</span>
+                </div>
+              )}
+            </div>
+            <div ref={messagesEndRef} />
+          </div>
+        </div>
+
+        <div className="shrink-0 px-4 pb-4 pt-2">
+          <div className="max-w-3xl mx-auto w-full">
+            {sendError && (
+              <div className="mb-2 flex items-center gap-2 rounded-xl border border-red-900/50 bg-red-950/30 px-3 py-2 text-sm text-red-300">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span className="flex-1">{sendError}</span>
+                <button onClick={() => setSendError(null)} className="text-red-300 hover:text-red-100">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {(listening || speaking) && (
+              <p className="mb-2 text-center text-xs text-[#d97757]">
+                {speaking ? '🔊 AI 응답 재생 중...' : '🎤 듣고 있습니다...'}
+              </p>
+            )}
+
+            <div className="rounded-2xl border border-[#3f3f3f] bg-[#2f2f2f] shadow-lg focus-within:border-[#6b6b6b] transition-colors">
+              <textarea
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    void handleSend();
+                  }
+                }}
+                placeholder={inputPlaceholder}
+                rows={1}
+                className="w-full bg-transparent px-4 pt-4 pb-2 text-[15px] text-[#ececec] placeholder:text-[#6b6b6b] focus:outline-none resize-none min-h-[52px] max-h-40"
+              />
+              <div className="flex items-center justify-between gap-2 px-3 pb-3">
+                <div className="flex items-center gap-1 flex-wrap min-w-0">
+                  {chatMode === 'debate' ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleDebate()}
+                      disabled={!canSend}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium text-[#d97757] hover:bg-[#3f3f3f] disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <Swords className="w-3.5 h-3.5" />
+                      4AI 토론
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void handleDebate()}
+                      disabled={!canSend}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs text-[#6b6b6b] hover:text-[#ececec] hover:bg-[#3f3f3f] disabled:opacity-40"
+                    >
+                      <Swords className="w-3.5 h-3.5" />
+                      토론
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  {sttSupported && (
+                    <button
+                      type="button"
+                      onClick={toggleListening}
+                      disabled={isWorking || speaking}
+                      title={listening ? '음성 입력 중지' : voiceConversation ? '음성으로 말하기' : '음성 입력'}
+                      className={`p-2 rounded-lg transition-colors disabled:opacity-40 ${listening ? 'bg-[#d97757]/20 text-[#d97757]' : 'text-[#b4b4b4] hover:text-[#ececec] hover:bg-[#3f3f3f]'}`}
+                    >
+                      {listening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void handleSend()}
+                    disabled={!canSend}
+                    title="전송"
+                    className="p-2 rounded-lg bg-[#ececec] text-[#212121] hover:bg-white disabled:bg-[#3f3f3f] disabled:text-[#6b6b6b] disabled:cursor-not-allowed transition-colors"
+                  >
+                    {isWorking ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-center text-[11px] text-[#6b6b6b] mt-2">
+              Enter 전송 · Shift+Enter 줄바꿈
+              {voiceConversation && sttSupported && ttsSupported ? ' · 음성 대화 모드' : ''}
+            </p>
+          </div>
+        </div>
       </div>
+
+      {(showModelMenu || showModeMenu) && (
+        <button
+          type="button"
+          className="fixed inset-0 z-10 cursor-default"
+          aria-label="메뉴 닫기"
+          onClick={() => { setShowModelMenu(false); setShowModeMenu(false); }}
+        />
+      )}
     </div>
   );
+
 }

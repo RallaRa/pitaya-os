@@ -1,6 +1,25 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+
+const SYNC_LOG_RETAIN_DAYS = 30;
+
+async function cleanupOldSyncLogs(): Promise<number> {
+  const cutoff = Timestamp.fromDate(new Date(Date.now() - SYNC_LOG_RETAIN_DAYS * 86400000));
+  let deleted = 0;
+  for (let round = 0; round < 20; round++) {
+    const snap = await adminDb.collection('pos_sync_log')
+      .where('createdAt', '<', cutoff)
+      .limit(400)
+      .get();
+    if (snap.empty) break;
+    const batch = adminDb.batch();
+    snap.docs.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+    deleted += snap.size;
+  }
+  return deleted;
+}
 
 // POS 동기화 지연 감지 — pos_sync_log 마지막 기록이 2시간 초과 시 알림
 export async function POST(req: Request) {
@@ -61,5 +80,12 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, storesAlerted: alerted });
+  let logsDeleted = 0;
+  try {
+    logsDeleted = await cleanupOldSyncLogs();
+  } catch (err) {
+    console.error('[pos-sync-check] sync log cleanup failed:', err);
+  }
+
+  return NextResponse.json({ ok: true, storesAlerted: alerted, logsDeleted });
 }

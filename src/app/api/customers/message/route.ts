@@ -3,6 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { verifyToken } from '@/lib/authVerify';
 import { canDecryptCustomerPII } from '@/lib/customerDecryptAuth';
 import { isMessagingConfigured, sendCustomerMessages, type CustomerMessageVariables } from '@/lib/messaging/sendToCustomers';
+import { resolveCouponForAlimtalk } from '@/lib/coupons/alimtalkVariables.server';
 import type { CustomerQueryParams } from '@/lib/customerQuery';
 
 interface MessageRequestBody extends Omit<CustomerQueryParams, 'storeId'> {
@@ -12,6 +13,7 @@ interface MessageRequestBody extends Omit<CustomerQueryParams, 'storeId'> {
   smsFallback?: boolean;
   variables?: CustomerMessageVariables;
   campaignKey?: string;
+  couponId?: string;
   dryRun?: boolean;
 }
 
@@ -68,6 +70,7 @@ export async function GET(req: Request) {
         skipReasons: d.skipReasons || {},
         filters: d.filters || null,
         variables: d.variables || {},
+        couponId: d.couponId || '',
         createdAt,
       };
     });
@@ -95,12 +98,25 @@ export async function POST(req: Request) {
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 }); }
 
-  const { storeId, templateCode, templateId, smsFallback, variables, campaignKey, dryRun, ...filters } = body;
+  const { storeId, templateCode, templateId, smsFallback, variables, campaignKey, couponId, dryRun, ...filters } = body;
   if (!storeId) return NextResponse.json({ error: 'storeId required' }, { status: 400 });
 
   const auth = await canDecryptCustomerPII(user.uid, user.email, storeId);
   if (!auth.allowed) {
     return NextResponse.json({ error: '발송 권한이 없습니다 (관리자/master만 허용)' }, { status: 403 });
+  }
+
+  let resolvedVariables = variables;
+  let resolvedCampaignKey = campaignKey;
+  let resolvedCouponId = couponId?.trim() || '';
+
+  if (resolvedCouponId) {
+    const payload = await resolveCouponForAlimtalk(storeId, resolvedCouponId);
+    if (!payload) {
+      return NextResponse.json({ error: '쿠폰을 찾을 수 없거나 비활성 상태입니다' }, { status: 404 });
+    }
+    resolvedVariables = payload.variables;
+    resolvedCampaignKey = campaignKey?.trim() || payload.campaignKey;
   }
 
   try {
@@ -110,8 +126,9 @@ export async function POST(req: Request) {
       templateCode,
       templateId,
       smsFallback,
-      variables,
-      campaignKey,
+      variables: resolvedVariables,
+      campaignKey: resolvedCampaignKey,
+      couponId: resolvedCouponId || undefined,
       dryRun: !!dryRun,
       requestedBy: user.uid,
       requestedByEmail: auth.email,

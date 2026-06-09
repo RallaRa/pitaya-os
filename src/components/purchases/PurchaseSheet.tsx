@@ -5,6 +5,7 @@ import {
   ChevronRight, ChevronDown, Plus, Trash2, Save, Loader2, Check,
   ShoppingCart, Image as ImageIcon,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import PurchaseDocumentViewer from '@/components/purchases/PurchaseDocumentViewer';
 import {
   isImageAttachment,
@@ -28,6 +29,11 @@ import {
   usePurchaseMasterData,
   type SupplierOption,
 } from '@/components/purchases/PurchaseMasterSelect';
+
+const PurchaseItemPriceHistoryPanel = dynamic(
+  () => import('@/components/purchases/PurchaseItemPriceHistoryPanel'),
+  { ssr: false },
+);
 
 export interface PurchaseItem {
   name: string;
@@ -185,6 +191,14 @@ export default function PurchaseSheet({
 }: Props) {
   const [visibleCols, setVisibleCols] = useState<Set<OptionalCol>>(new Set());
   const [viewer, setViewer] = useState<{ groupId: string; index: number } | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<{
+    groupId: string;
+    itemIdx: number;
+    itemName: string;
+    itemUnit: string;
+    purchaseDate: string;
+  } | null>(null);
+  const [historyCollapsed, setHistoryCollapsed] = useState(false);
   const { suppliers, reload: reloadMaster } = usePurchaseMasterData(storeId);
 
   const hasData = useMemo<Record<OptionalCol, boolean>>(() => {
@@ -267,6 +281,28 @@ export default function PurchaseSheet({
   const viewerGroup = viewer ? groups.find(g => g.id === viewer.groupId) : null;
   const viewerAttachments = viewerGroup ? resolveGroupAttachments(viewerGroup) : [];
 
+  const handleItemDoubleClick = (groupId: string, itemIdx: number, item: PurchaseItem, purchaseDate: string) => {
+    if (!item.name.trim() || !storeId) return;
+    setHistoryTarget({
+      groupId,
+      itemIdx,
+      itemName: item.name.trim(),
+      itemUnit: item.unit || 'kg',
+      purchaseDate,
+    });
+    setHistoryCollapsed(false);
+  };
+
+  const applyHistoryPrice = useCallback((groupId: string, itemIdx: number, unitPrice: number) => {
+    updateGroup(groupId, g => {
+      const items = [...g.invoice.items];
+      const item = items[itemIdx];
+      if (!item) return g;
+      items[itemIdx] = applyItemChange(item, 'unitPrice', unitPrice);
+      return { ...g, invoice: recalcTotals({ ...g.invoice, items }) };
+    });
+  }, [updateGroup]);
+
   if (groups.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-slate-500 gap-3">
@@ -278,7 +314,8 @@ export default function PurchaseSheet({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="flex gap-0 min-w-0">
+    <div className="flex-1 min-w-0 space-y-3">
       {viewer && viewerAttachments.length > 0 && (
         <PurchaseDocumentViewer
           attachments={viewerAttachments}
@@ -496,7 +533,13 @@ export default function PurchaseSheet({
                     {inv.items.map((item, idx) => (
                       <tr
                         key={idx}
-                        className="border-b border-slate-800/50 hover:bg-slate-800/20 group"
+                        onDoubleClick={() => handleItemDoubleClick(group.id, idx, item, inv.purchaseDate)}
+                        className={`border-b border-slate-800/50 hover:bg-slate-800/20 group cursor-default ${
+                          historyTarget?.groupId === group.id && historyTarget?.itemIdx === idx
+                            ? 'bg-teal-900/20 ring-1 ring-inset ring-teal-700/40'
+                            : ''
+                        }`}
+                        title={item.name.trim() ? '더블클릭: 단가 히스토리' : undefined}
                       >
                         <td className="px-1.5 py-0.5 text-slate-600 tabular-nums">{idx + 1}</td>
 
@@ -686,6 +729,20 @@ export default function PurchaseSheet({
           </div>
         );
       })}
+    </div>
+
+    {historyTarget && storeId && (
+      <PurchaseItemPriceHistoryPanel
+        storeId={storeId}
+        itemName={historyTarget.itemName}
+        itemUnit={historyTarget.itemUnit}
+        referenceDate={historyTarget.purchaseDate}
+        collapsed={historyCollapsed}
+        onToggleCollapse={() => setHistoryCollapsed(v => !v)}
+        onClose={() => setHistoryTarget(null)}
+        onSelectPrice={(price) => applyHistoryPrice(historyTarget.groupId, historyTarget.itemIdx, price)}
+      />
+    )}
     </div>
   );
 }

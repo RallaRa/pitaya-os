@@ -48,6 +48,7 @@ export async function POST(req: Request) {
       const newTask = {
         id: `t_${Date.now()}`,
         title: task.title,
+        detail: task.detail?.trim() || undefined,
         status: 'open' as const,
         priority: (task.priority || 'pending') as 'urgent' | 'in_progress' | 'pending',
         createdAt: new Date().toISOString(),

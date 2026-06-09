@@ -5,9 +5,10 @@ import {
   hasAnyAiProvider,
   stripJsonMarkdown,
 } from '@/lib/aiProviderFallback';
+import { appendStoreBusinessContext } from '@/lib/storeBusinessContext';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
 
-const SYSTEM_PROMPT = `너는 정육점 저울 코드 관리 도우미야.
+const SYSTEM_PROMPT = appendStoreBusinessContext(`너는 정육점 저울 코드 관리 도우미야.
 사용자 입력을 분석해서 반드시 아래 JSON만 반환해.
 다른 텍스트 없이 순수 JSON만 반환.
 
@@ -36,7 +37,7 @@ const SYSTEM_PROMPT = `너는 정육점 저울 코드 관리 도우미야.
 - action이 'query'일 때: filter에 검색 키워드
 - action이 'clear'일 때: items 빈 배열
 - action이 'chat'일 때: 일반 대화 응답 (items 빈 배열)
-- message는 항상 친절한 한국어로`;
+- message는 항상 친절한 한국어로`);
 
 export async function POST(req: Request) {
   const authUser = await verifyToken(req);

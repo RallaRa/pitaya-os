@@ -9,6 +9,7 @@ export type PurchasePage =
   | 'ledger'
   | 'by-supplier'
   | 'prices'
+  | 'unit-price-detail'
   | 'trace-ledger'
   | 'trace-numbers';
 
@@ -30,6 +31,7 @@ const PAGE_LABELS: Record<PurchasePage, string> = {
   ledger: '매입 원장',
   'by-supplier': '거래처별 매입',
   prices: '품목별 단가',
+  'unit-price-detail': '매입 단가 상세',
   'trace-ledger': '거래내역서',
   'trace-numbers': '이력번호 관리',
 };
@@ -39,6 +41,7 @@ const QUICK_BTNS: Record<PurchasePage, string[]> = {
   ledger: ['이상거래 찾아줘', '거래처 편중 분석', '트렌드 해석'],
   'by-supplier': ['외상 위험 분석', '단가 적정성', '거래처 비교'],
   prices: ['시세 대비 분석', '마진 위험 품목', '발주 타이밍'],
+  'unit-price-detail': ['기간 단가 추이', '동일일 중복 분석', '매입량 요약'],
   'trace-ledger': ['누락 항목 찾아줘', '이력번호 검증', '법정 요건 확인'],
   'trace-numbers': ['이상 패턴 탐지', '미확인 이력 확인', '통계 요약'],
 };

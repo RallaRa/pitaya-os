@@ -1,3 +1,8 @@
+import {
+  appendStoreBusinessContext,
+  STORE_BUSINESS_CONVENTIONS,
+} from '@/lib/storeBusinessContext';
+
 export const DEV_CONTEXT_DOC_ID = 'pitaya-os-main';
 
 export type TaskPriority = 'urgent' | 'in_progress' | 'pending';
@@ -6,6 +11,7 @@ export type TaskStatus = 'open' | 'done';
 export interface DevTask {
   id: string;
   title: string;
+  detail?: string;
   status: TaskStatus;
   priority: TaskPriority;
   createdAt?: string;
@@ -53,7 +59,7 @@ export const DEFAULT_DEV_CONTEXT: DevContext = {
     { id: 'w5', title: '저울 코드 관리', status: 'open', priority: 'pending' },
     { id: 'w6', title: '쿠폰 검증 레이어', status: 'open', priority: 'pending' },
     { id: 'w7', title: '포스 자동 동기화', status: 'open', priority: 'pending' },
-    { id: 'w8', title: '모바일 AI 개발 콘솔', status: 'open', priority: 'in_progress' },
+    { id: 'w8', title: '개발 큐 (queue.md → Cursor Auto)', status: 'open', priority: 'in_progress' },
     { id: 'sec1', title: '[보안·나중] GitHub PAT workflow scope 재발급 (cron workflow push용)', status: 'open', priority: 'pending' },
     { id: 'sec2', title: '[보안·나중] deploy.yml 스케줄 cron GitHub 반영 (PAT 또는 웹 편집)', status: 'open', priority: 'pending' },
   ],
@@ -65,6 +71,7 @@ export const DEFAULT_DEV_CONTEXT: DevContext = {
     deployUrl: 'https://pitaya-osv1.vercel.app',
     github: 'https://github.com/RallaRa/pitaya-os',
     superuser: 'hipona00@gmail.com',
+    ...STORE_BUSINESS_CONVENTIONS,
   },
   recentDecisions: [
     { date: '2026-06-02', decision: 'cron 스케줄: Vercel에서 시간민감 job 제거, GitHub Actions·로컬 스크립트로 대체', reason: 'Hobby 오차·skip 방지' },
@@ -84,7 +91,7 @@ export function buildDevSystemPrompt(ctx: DevContext): string {
     .map(d => `- [${d.date}] ${d.decision}${d.reason ? ` (${d.reason})` : ''}`)
     .join('\n');
 
-  return `너는 Pitaya OS 전담 개발 AI야.
+  return appendStoreBusinessContext(`너는 Pitaya OS 전담 개발 AI야.
 프로젝트: Next.js 16 + Firebase + Vercel (App Router, TypeScript)
 배포URL: https://pitaya-osv1.vercel.app
 GitHub: https://github.com/RallaRa/pitaya-os
@@ -104,7 +111,7 @@ ${tasks || '(없음)'}
 ${decisions || '(없음)'}
 
 코드 생성 시 현재 프로젝트 구조(src/app, src/components, src/lib)에 맞게 작성.
-한국어로 답변. 코드는 \`\`\`typescript 또는 \`\`\`tsx 블록으로 제공.`;
+한국어로 답변. 코드는 \`\`\`typescript 또는 \`\`\`tsx 블록으로 제공.`);
 }
 
 export function extractCodeBlocks(text: string): { lang: string; code: string }[] {

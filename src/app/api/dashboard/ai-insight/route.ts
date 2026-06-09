@@ -5,6 +5,7 @@ import { verifyToken } from '@/lib/authVerify';
 import { getKSTTodayYMD } from '@/lib/dateUtils';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
+import { formatStaffingLine, STORE_BUSINESS_ANALYSIS_RULES } from '@/lib/storeBusinessContext';
 
 function midnightMs() {
   const d = new Date();
@@ -89,6 +90,10 @@ export async function GET(req: Request) {
   const prompt = `너는 정육점 매출 분석 전문가야.
 아래 데이터를 종합 분석해서 JSON으로만 응답해줘.
 다른 텍스트 없이 순수 JSON만 반환.
+
+【운영 전제】
+- ${formatStaffingLine()}
+${STORE_BUSINESS_ANALYSIS_RULES}
 
 [우리 매장 최근 30일 매출]
 ${salesText}

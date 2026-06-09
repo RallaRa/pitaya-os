@@ -11,7 +11,7 @@ import {
   Users, TrendingUp, UserPlus, ShoppingBag, RefreshCw,
   Search, ChevronLeft, ChevronRight, Lock, Unlock, Loader2,
   BarChart2, PieChart as PieIcon, List, Download, ArrowUp, ArrowDown, ArrowUpDown,
-  History, Eye, EyeOff, ClipboardList, Send,
+  History, Eye, EyeOff, ClipboardList, Send, UserSearch,
 } from 'lucide-react';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import * as XLSX from 'xlsx';
@@ -57,6 +57,11 @@ const CustomerPurchaseHistoryPanel = dynamic(
 
 const CustomerPurchaseAnalyticsTab = dynamic(
   () => import('@/components/customers/CustomerPurchaseAnalyticsTab'),
+  { ssr: false },
+);
+
+const UnmatchedIdentityPanel = dynamic(
+  () => import('@/components/customers/UnmatchedIdentityPanel'),
   { ssr: false },
 );
 
@@ -182,6 +187,8 @@ export default function CustomersPage() {
   const [requestPanel, setRequestPanel] = useState<{ cusCode: string; label: string } | null>(null);
   const [purchasePanel, setPurchasePanel] = useState<{ cusCode: string; label: string } | null>(null);
   const [messagePanelOpen, setMessagePanelOpen] = useState(false);
+  const [unmatchedOpen, setUnmatchedOpen] = useState(false);
+  const [unmatchedCount, setUnmatchedCount] = useState(0);
   const [piiUnlockOpen, setPiiUnlockOpen] = useState(false);
   const [stepUpToken, setStepUpToken] = useState<string | null>(null);
   const pendingDecryptRef = useRef(false);
@@ -305,6 +312,20 @@ export default function CustomersPage() {
 
     return () => { cancelled = true; };
   }, [user?.uid, user?.email, storeId, currentStore?.role]);
+
+  const loadUnmatchedCount = useCallback(async () => {
+    if (!storeId || !canDecrypt) return;
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/customers/unmatched?storeId=${encodeURIComponent(storeId)}`, { headers });
+      const data = await res.json();
+      if (res.ok) setUnmatchedCount(data.total || 0);
+    } catch { /* ignore */ }
+  }, [storeId, canDecrypt]);
+
+  useEffect(() => {
+    void loadUnmatchedCount();
+  }, [loadUnmatchedCount]);
 
   const buildQueryParams = useCallback((opts?: { page?: number; exportAll?: boolean }) => {
     const params = new URLSearchParams({
@@ -701,21 +722,39 @@ export default function CustomersPage() {
   return (
     <div className="p-4 md:p-6 space-y-5 text-slate-200 min-h-screen">
       {/* 헤더 */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <Users className="w-6 h-6 text-teal-400" />
           <h1 className="text-lg font-bold">고객 관리</h1>
         </div>
-        <button
-          onClick={() => {
-            if (tab === '고객 목록') loadCustomerList();
-            else if (tab === '조회 이력') loadDecryptLogs();
-            else { loadStats(); loadAnalysis(); }
-          }}
-          className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />새로고침
-        </button>
+        <div className="flex items-center gap-2">
+          {canDecrypt && (
+            <button
+              type="button"
+              onClick={() => setUnmatchedOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-900/40 border border-amber-600/40 text-amber-200 hover:bg-amber-800/50"
+            >
+              <UserSearch className="w-3.5 h-3.5" />
+              공개주문 미매치
+              {unmatchedCount > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-500 text-slate-900 text-[10px] font-bold">
+                  {unmatchedCount}
+                </span>
+              )}
+            </button>
+          )}
+          <button
+            onClick={() => {
+              if (tab === '고객 목록') loadCustomerList();
+              else if (tab === '조회 이력') loadDecryptLogs();
+              else { loadStats(); loadAnalysis(); }
+              void loadUnmatchedCount();
+            }}
+            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />새로고침
+          </button>
+        </div>
       </div>
 
       {/* 통계 카드 */}
@@ -1362,6 +1401,15 @@ export default function CustomersPage() {
             setPiiUnlockOpen(false);
             void handlePiiUnlocked(token);
           }}
+        />
+      )}
+
+      {unmatchedOpen && storeId && (
+        <UnmatchedIdentityPanel
+          storeId={storeId}
+          open={unmatchedOpen}
+          onClose={() => setUnmatchedOpen(false)}
+          onLinked={() => void loadUnmatchedCount()}
         />
       )}
     </div>

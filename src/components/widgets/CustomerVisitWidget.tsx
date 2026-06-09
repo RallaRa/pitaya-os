@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { TrendingUp, TrendingDown, Minus, Users } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
 import WidgetEmptyReason from './WidgetEmptyReason';
+import SalesEvidenceLine from './SalesEvidenceLine';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import type { CustomerVisitSummary } from '@/lib/customerVisitStats';
 
@@ -105,6 +106,14 @@ export default function CustomerVisitWidget({
         </div>
       ) : data ? (
         <div className="h-full p-3 flex flex-col gap-3 justify-center">
+          {data.evidenceSummary && (
+            <SalesEvidenceLine
+              summary={data.evidenceSummary}
+              detail={data.evidenceDetail}
+              salesLink={data.salesHint}
+              compact
+            />
+          )}
           <div className="flex items-start justify-between gap-2">
             <div>
               <p className="text-[10px] text-slate-500">{data.thisMonthLabel} 방문 고객</p>

@@ -5,9 +5,10 @@ import {
   hasAnyAiProvider,
   stripJsonMarkdown,
 } from '@/lib/aiProviderFallback';
+import { appendStoreBusinessContext } from '@/lib/storeBusinessContext';
 import { aiMetaJson } from '@/lib/aiProviderMeta';
 
-const SYSTEM_PROMPT = `너는 정육점 매입관리 AI 도우미야.
+const SYSTEM_PROMPT = appendStoreBusinessContext(`너는 정육점 매입관리 AI 도우미야.
 사용자 입력을 분석해서 반드시 아래 JSON만 반환해. 다른 텍스트 없이 순수 JSON만.
 
 처리 가능한 액션:
@@ -31,7 +32,7 @@ const SYSTEM_PROMPT = `너는 정육점 매입관리 AI 도우미야.
 규칙:
 - 정보 변경 시 confirmRequired: true
 - 단순 조회/일반대화 시 confirmRequired: false
-- message는 항상 친절한 한국어`;
+- message는 항상 친절한 한국어`);
 
 export async function POST(req: Request) {
   const authUser = await verifyToken(req);

@@ -18,9 +18,10 @@ import {
 } from '@/lib/publicOrderImageUpload';
 import { isDriveConnected } from '@/lib/googleDrive';
 import { sanitizePhotoUrl } from '@/lib/sanitizePhotoUrl';
+import { appendStoreBusinessContext } from '@/lib/storeBusinessContext';
 import { wantsExplicitNewPublicOrderLine } from '@/lib/publicOrders';
 
-const SYSTEM = `당신은 정육점 「공개 주문(손님 링크 주문)」 관리 AI입니다.
+const SYSTEM = appendStoreBusinessContext(`당신은 정육점 「공개 주문(손님 링크 주문)」 관리 AI입니다.
 사용자의 자연어 요청을 분석해 Firestore에 반영할 작업(actions)과 친절한 한국어 reply를 JSON으로만 반환하세요.
 
 가능한 action.type:
@@ -48,7 +49,7 @@ lines[] 필드: name(필수), description, origin, normalPrice, discountPrice, u
 {
   "reply": "사용자에게 보여줄 한국어 메시지",
   "actions": [ { "type": "...", ... } ]
-}`;
+}`);
 
 interface AiChatJson {
   reply?: string;

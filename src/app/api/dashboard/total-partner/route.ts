@@ -11,6 +11,7 @@ import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@
 import { aiMetaJson } from '@/lib/aiProviderMeta';
 import { getKSTTodayYMD, addDaysYMD, isKstTodayTimestamp } from '@/lib/dateUtils';
 import { sourceStatus, stripUndefinedDeep } from '@/lib/firestoreSanitize';
+import { STORE_BUSINESS_ANALYSIS_RULES, formatStaffingLine } from '@/lib/storeBusinessContext';
 
 export const maxDuration = 120;
 
@@ -459,6 +460,11 @@ export async function GET(req: Request) {
   }
 
   const prompt = `너는 정육점 **AI 운영 파트너**야. POS·품목·기간·발주 중심으로 4개 기간별 실행안을 JSON으로만 반환해. 순수 JSON만 반환. 마크다운 없음.
+
+【운영 전제】
+- ${formatStaffingLine()}
+${STORE_BUSINESS_ANALYSIS_RULES}
+- 공휴일·일요일도 매장 영업 (365일 무휴). 직원 휴무와 매장 휴무 구분
 
 금지: 유동인구·상권 상세 해설, 뉴스 목록 나열 (품목·매입·매출에 직접 영향 있을 때만 opinion에 1문장)
 

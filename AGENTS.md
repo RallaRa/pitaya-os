@@ -14,10 +14,18 @@
 
 **모든 날짜·시각 해석은 한국 표준시(KST, `Asia/Seoul`, UTC+9) 기준.**
 
-- 서버/Firestore `syncedAt`, `toISOString()` → **UTC** → 사용자·운영 설명 시 **+9시간**.
-- `04:09` 같은 UTC 시각을 “새벽 4시”로 말하지 않는다 (예: 6/2 04:09 UTC = **6/2 13:09 KST**).
-- 앱·리포트 영업일: `src/lib/dateUtils.ts` (`getKSTTodayYMD` 등).
-- 포스 PC `pos_bridge/bridge.js`: 로그에 `KST` 표기, `getKSTTodayYMD()`로 “오늘” 계산.
+## 매장 운영 전제 (AI·분석·개발 공통)
+
+Pitaya OS 대상: **정육 소매점**
+
+| 항목 | 값 |
+|------|-----|
+| 영업 | **365일 무휴**, **24시간** |
+| 유인 | **11:00–21:00 KST** (직원 상주·상담·진열) |
+| 무인 | **21:00–11:00 KST** (셀프·키오스크, 대면 서비스 제한) |
+
+- 분석·브리핑·AI 의견: 유인/무인 시간대 구분, 휴무일 가정 금지
+- 코드: `src/lib/storeBusinessContext.ts`
 
 상세: `.cursor/rules/kst-timezone.mdc`
 

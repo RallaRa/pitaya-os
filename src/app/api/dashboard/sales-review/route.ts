@@ -6,6 +6,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { getStoreCoords, fetchWeather } from '@/lib/weather';
 import { getCompareDates, formatCompareDate, topItems, aggregateTimeSlotsFromItems } from '@/lib/reportCompare';
 import { getKSTTodayYMD } from '@/lib/dateUtils';
+import { formatStaffingLine, STORE_BUSINESS_ANALYSIS_RULES } from '@/lib/storeBusinessContext';
 
 function stripHtml(s: string) {
   return s.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').trim();
@@ -202,6 +203,8 @@ export async function POST(req: Request) {
 
 [중요 규칙]
 - ${timeContext}
+- ${formatStaffingLine()}
+${STORE_BUSINESS_ANALYSIS_RULES}
 - 숫자 나열보다 원인·패턴·대응(발주/프로모션/품목) 중심
 - 날씨·뉴스·시세·검색트렌드가 매출과 연관되면 언급
 - 비교 시 반드시 날짜를 함께 표기 (예: 전일 05-28 대비)

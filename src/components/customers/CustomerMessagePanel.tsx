@@ -3,6 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { X, Loader2, Send, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import CouponSelectList from '@/components/coupons/CouponSelectList';
+import type { AlimtalkCouponPayload } from '@/lib/coupons/alimtalkVariables';
+import { useStore } from '@/context/StoreContext';
 
 interface CustomerMessagePanelProps {
   storeId: string;
@@ -33,31 +36,33 @@ export default function CustomerMessagePanel({
   filteredTotal,
   onClose,
 }: CustomerMessagePanelProps) {
+  const { currentStore } = useStore();
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [templateCode, setTemplateCode] = useState('');
-  const [campaignKey, setCampaignKey] = useState('');
+  const [campaignKeyOverride, setCampaignKeyOverride] = useState('');
   const [smsFallback, setSmsFallback] = useState(true);
-  const [add1, setAdd1] = useState('');
-  const [add2, setAdd2] = useState('');
-  const [add3, setAdd3] = useState('');
+  const [selectedCoupon, setSelectedCoupon] = useState<AlimtalkCouponPayload | null | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [preview, setPreview] = useState<DryRunResult | null>(null);
   const [result, setResult] = useState<SendResult | null>(null);
   const [error, setError] = useState('');
 
+  const effectiveCampaignKey = campaignKeyOverride.trim()
+    || selectedCoupon?.campaignKey
+    || '';
+
   const buildBody = useCallback((dryRun: boolean) => ({
     ...filterBody,
     storeId,
     templateCode: templateCode.trim() || undefined,
-    campaignKey: campaignKey.trim() || undefined,
+    campaignKey: effectiveCampaignKey || undefined,
+    couponId: selectedCoupon?.couponId || undefined,
     smsFallback,
     dryRun,
-    variables: {
-      add1: add1.trim(),
-      add2: add2.trim(),
-      add3: add3.trim(),
-    },
-  }), [filterBody, storeId, templateCode, campaignKey, smsFallback, add1, add2, add3]);
+    variables: selectedCoupon
+      ? selectedCoupon.variables
+      : { add1: '', add2: '', add3: '' },
+  }), [filterBody, storeId, templateCode, effectiveCampaignKey, selectedCoupon, smsFallback]);
 
   useEffect(() => {
     (async () => {
@@ -73,6 +78,10 @@ export default function CustomerMessagePanel({
   }, [storeId]);
 
   const runDryRun = async () => {
+    if (selectedCoupon === undefined) {
+      setError('발송할 쿠폰을 선택하거나 「쿠폰 없이 발송」을 선택하세요.');
+      return;
+    }
     setLoading(true);
     setError('');
     setResult(null);
@@ -94,8 +103,15 @@ export default function CustomerMessagePanel({
   };
 
   const handleSend = async () => {
+    if (selectedCoupon === undefined) {
+      setError('발송할 쿠폰을 선택하거나 「쿠폰 없이 발송」을 선택하세요.');
+      return;
+    }
     const count = preview?.attempted ?? filteredTotal;
-    if (!confirm(`현재 필터 조건의 고객 ${count.toLocaleString()}명에게 알림톡을 발송합니다. 계속할까요?`)) return;
+    const couponHint = selectedCoupon
+      ? `\n쿠폰: ${selectedCoupon.previewLabel}`
+      : '\n(쿠폰 없이 일반 안내)';
+    if (!confirm(`현재 필터 조건의 고객 ${count.toLocaleString()}명에게 알림톡을 발송합니다.${couponHint}\n\n계속할까요?`)) return;
 
     setLoading(true);
     setError('');
@@ -124,7 +140,7 @@ export default function CustomerMessagePanel({
           <div>
             <h2 className="text-sm font-semibold text-slate-100">SOLAPI 알림톡 발송</h2>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              현재 필터 {filteredTotal.toLocaleString()}명 · solapi.com API
+              현재 필터 {filteredTotal.toLocaleString()}명 · 쿠폰 선택 후 발송
             </p>
           </div>
           <button type="button" onClick={onClose} className="p-1.5 text-slate-500 hover:text-slate-300">
@@ -142,6 +158,28 @@ export default function CustomerMessagePanel({
             </div>
           )}
 
+          <CouponSelectList
+            storeId={storeId}
+            storeName={currentStore?.storeName || ''}
+            selectedId={selectedCoupon === undefined ? undefined : (selectedCoupon?.couponId ?? null)}
+            onSelect={payload => {
+              setSelectedCoupon(payload);
+              setPreview(null);
+              setResult(null);
+            }}
+            compact
+          />
+
+          {selectedCoupon && (
+            <div className="p-3 bg-teal-950/25 border border-teal-800/40 rounded-lg text-xs space-y-1">
+              <p className="font-medium text-teal-300">알림톡 변수 미리보기</p>
+              <p className="text-slate-400"><span className="text-slate-500">추가정보1</span> {selectedCoupon.variables.add1}</p>
+              <p className="text-slate-400"><span className="text-slate-500">추가정보2</span> {selectedCoupon.variables.add2}</p>
+              <p className="text-slate-400"><span className="text-slate-500">추가정보3</span> {selectedCoupon.variables.add3}</p>
+              <p className="text-[10px] text-slate-600 pt-1">고객명은 자동 · 캠페인키 {selectedCoupon.campaignKey}</p>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <label className="block col-span-2">
               <span className="text-[11px] text-slate-500">템플릿 ID (SOLAPI)</span>
@@ -155,34 +193,12 @@ export default function CustomerMessagePanel({
             <label className="block col-span-2">
               <span className="text-[11px] text-slate-500">캠페인 키 (재발송 방지, 선택)</span>
               <input
-                value={campaignKey}
-                onChange={e => setCampaignKey(e.target.value)}
-                placeholder="예: coupon_20260531"
+                value={campaignKeyOverride}
+                onChange={e => setCampaignKeyOverride(e.target.value)}
+                placeholder={selectedCoupon ? selectedCoupon.campaignKey : '쿠폰 선택 시 자동 생성'}
                 className="mt-1 w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 outline-none focus:border-teal-500"
               />
             </label>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-[11px] text-slate-500">템플릿 변수 (#{'{추가정보1}'} ~ 3, 고객명은 자동)</p>
-            <input
-              value={add1}
-              onChange={e => setAdd1(e.target.value)}
-              placeholder="추가정보1 — 예: 쿠폰코드 SUMMER10"
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 outline-none focus:border-teal-500"
-            />
-            <input
-              value={add2}
-              onChange={e => setAdd2(e.target.value)}
-              placeholder="추가정보2 — 예: 10% 할인"
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 outline-none focus:border-teal-500"
-            />
-            <input
-              value={add3}
-              onChange={e => setAdd3(e.target.value)}
-              placeholder="추가정보3 — 예: ~6/30까지"
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-200 outline-none focus:border-teal-500"
-            />
           </div>
 
           <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">

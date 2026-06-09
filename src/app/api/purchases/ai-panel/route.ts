@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 import { verifyToken } from '@/lib/authVerify';
+import { appendStoreBusinessContext } from '@/lib/storeBusinessContext';
 
 const PAGE_HINTS: Record<string, string> = {
   register: 'OCR 인식 품목 단가 적정성 확인. 이력번호 누락 지적. 알리아스 매칭 판단 도움.',
@@ -15,7 +16,7 @@ function buildSystemPrompt(context: any): string {
   const pageHint = PAGE_HINTS[context.currentPage] || '';
   const dataSnippet = JSON.stringify(context.currentData || {}).slice(0, 2000);
 
-  return `너는 정육점 매입 전문 AI 어드바이저야.
+  return appendStoreBusinessContext(`너는 정육점 매입 전문 AI 어드바이저야.
 현재 사용자가 보고 있는 화면 데이터를 바탕으로 실용적이고 구체적인 조언을 해줘.
 추측은 [추정], 확실한 근거가 있으면 [데이터 기반], 위험/문제는 [주의]로 표시해.
 200자 이내로 간결하게 답변해. 한국어로만 답변.
@@ -24,7 +25,7 @@ function buildSystemPrompt(context: any): string {
 ${pageHint}
 
 현재 화면 데이터:
-${dataSnippet}`;
+${dataSnippet}`);
 }
 
 export async function POST(req: NextRequest) {

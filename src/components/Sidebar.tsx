@@ -7,7 +7,7 @@ import {
   Settings, MessageCircle, ShoppingCart, ShoppingBag, Sparkles,
   BarChart2, ClipboardCheck, X,
   Circle, CalendarDays, Tag, Scale, LineChart, Building2, SlidersHorizontal, Users, Crown, History, ChevronRight, ChevronDown,
-  FileText, TrendingUp, Truck, BookOpen, Hash, Code, LayoutGrid, PenLine, Clock, Tv,
+  FileText, TrendingUp, Truck, BookOpen, Hash, Code, LayoutGrid, PenLine, Clock, Tv, ListTodo,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -388,6 +388,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { href: '/dashboard/report/purchases/ledger',       icon: <BookOpen className="w-3.5 h-3.5" />,     label: '매입 원장' },
     { href: '/dashboard/report/purchases/by-supplier',  icon: <Truck className="w-3.5 h-3.5" />,        label: '거래처별 매입' },
     { href: '/dashboard/report/purchases/prices',       icon: <TrendingUp className="w-3.5 h-3.5" />,   label: '품목별 단가' },
+    { href: '/dashboard/report/purchases/unit-price-detail', icon: <History className="w-3.5 h-3.5" />, label: '매입 단가 상세' },
     { href: '/dashboard/report/purchases/price-analysis', icon: <BarChart2 className="w-3.5 h-3.5" />, label: '매입단가 분석' },
     { href: '/dashboard/report/purchases/trace-ledger', icon: <FileText className="w-3.5 h-3.5" />,     label: '거래내역서(법정)' },
     { href: '/dashboard/report/purchases/trace-numbers',icon: <Hash className="w-3.5 h-3.5" />,         label: '이력번호 관리' },
@@ -415,7 +416,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { key: 'customers' as const,             href: '/dashboard/customers',                            icon: <Users              className="w-4 h-4" />, label: '고객 관리' },
     { key: 'predictionHistory' as const,     href: '/dashboard/prediction-analysis',                    icon: <TrendingUp         className="w-4 h-4" />, label: '예측분석' },
     { key: 'items' as const,                 href: '/dashboard/items',                                icon: <Tag                className="w-4 h-4" />, label: '품목관리' },
-    { key: 'store' as const,                 href: '/dashboard/coupons',                              icon: <Tag                className="w-4 h-4" />, label: '쿠폰 관리' },
+    { key: 'store' as const,                 href: '/dashboard/coupons',                              icon: <Tag                className="w-4 h-4" />, label: '쿠폰·할인' },
     { key: 'store' as const,                 href: '/dashboard/public-orders',                        icon: <ShoppingBag        className="w-4 h-4" />, label: '공개 주문' },
     { key: 'store' as const,                 href: '/dashboard/signage',                              icon: <Tv                 className="w-4 h-4" />, label: '사이니지' },
   ];
@@ -604,8 +605,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                       : 'text-slate-400 hover:bg-slate-800 hover:text-purple-300'
                   }`}
                 >
-                  <Code className="w-4 h-4 shrink-0" />
-                  개발 콘솔
+                  <ListTodo className="w-4 h-4 shrink-0" />
+                  개발 큐
                 </Link>
               )}
             </>

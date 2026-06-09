@@ -7,6 +7,7 @@ import { buildCouponImagePrompt } from '@/lib/coupons/buildCouponPrompt';
 import { renderCouponCard } from '@/lib/coupons/renderCouponCard';
 import { generateSignageBackgroundImage } from '@/lib/signage/generateBackgroundImage';
 import { discountLabel, type CouponDiscountType } from '@/lib/coupons/types';
+import { adminDb } from '@/lib/firebase/admin';
 
 export const maxDuration = 120;
 
@@ -22,7 +23,9 @@ export async function POST(req: Request) {
     value?: number;
     imagePrompt?: string;
     backgroundUrl?: string;
+    layoutId?: string;
     backgroundBase64?: string;
+    bodyLines?: string[];
     includeBarcode?: boolean;
   };
   try {
@@ -50,6 +53,15 @@ export async function POST(req: Request) {
         ? body.backgroundBase64.split(',')[1]
         : body.backgroundBase64;
       background = Buffer.from(b64, 'base64');
+    } else if (body.layoutId) {
+      const layoutDoc = await adminDb.collection('coupon_layouts').doc(body.layoutId).get();
+      if (!layoutDoc.exists || layoutDoc.data()?.storeId !== storeId) {
+        return NextResponse.json({ error: '레이아웃을 찾을 수 없습니다' }, { status: 404 });
+      }
+      const layoutUrl = String(layoutDoc.data()?.backgroundUrl || '');
+      const res = await fetch(layoutUrl);
+      if (!res.ok) throw new Error('레이아웃 배경을 불러오지 못했습니다');
+      background = Buffer.from(await res.arrayBuffer());
     } else if (body.backgroundUrl) {
       const res = await fetch(body.backgroundUrl);
       if (!res.ok) throw new Error('배경 이미지를 불러오지 못했습니다');
@@ -66,15 +78,21 @@ export async function POST(req: Request) {
     }
 
     const includeBarcode = body.includeBarcode === true;
+    const bodyLines = Array.isArray(body.bodyLines)
+      ? body.bodyLines.map(l => String(l).trim()).filter(Boolean)
+      : [];
 
     const cardBuffer = await renderCouponCard({
       background,
       code,
       title: body.title || code,
-      discountText: discountLabel(
-        body.type === 'fixed' ? 'fixed' : 'percent',
-        Number(body.value) || 0,
-      ),
+      discountText: bodyLines.length
+        ? bodyLines.join(' · ').slice(0, 80)
+        : discountLabel(
+          body.type === 'fixed' ? 'fixed' : 'percent',
+          Number(body.value) || 0,
+        ),
+      bodyLines,
       includeBarcode,
     });
 

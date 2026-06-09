@@ -10,6 +10,8 @@ import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
 import WidgetWrapper from './WidgetWrapper';
 import WidgetEmptyReason from './WidgetEmptyReason';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
+import SalesEvidenceLine from './SalesEvidenceLine';
+import type { BriefingAction, SalesEvidenceLine as SalesEvidenceLineType } from '@/lib/salesEvidence';
 
 interface TrendItem {
   groupName: string;
@@ -24,7 +26,7 @@ interface ComprehensiveData {
   summary?: string;
   opinion?: string;
   highlights?: Highlight[];
-  actions?: string[];
+  actions?: (string | BriefingAction)[];
   trends?: TrendItem[];
   news?: { keyword: string; title: string; description?: string }[];
   footTraffic?: {
@@ -39,6 +41,8 @@ interface ComprehensiveData {
   };
   commercial?: { businessSummary: string; competitiveLevel: string };
   sales?: { today: number; yesterday: number; change: number | null };
+  evidenceLines?: SalesEvidenceLineType[];
+  salesBasis?: string;
   dataSourceStatus?: Record<string, { status: string; detail?: string }>;
   noData?: boolean;
   emptyReason?: string;
@@ -46,6 +50,35 @@ interface ComprehensiveData {
   error?: string;
   aiError?: boolean;
   ai?: AiMetaDisplay;
+}
+
+function normalizeActions(actions: ComprehensiveData['actions']): BriefingAction[] {
+  if (!actions?.length) return [];
+  return actions.map(a => {
+    if (typeof a === 'string') return { text: a };
+    return a;
+  });
+}
+
+function EvidenceBlock({
+  line,
+  className,
+  compact,
+}: {
+  line?: SalesEvidenceLineType;
+  className?: string;
+  compact?: boolean;
+}) {
+  if (!line) return null;
+  return (
+    <SalesEvidenceLine
+      summary={line.summary}
+      detail={line.detail}
+      salesLink={line.salesLink}
+      className={className}
+      compact={compact}
+    />
+  );
 }
 
 const TAG_COLORS: Record<string, string> = {
@@ -156,6 +189,9 @@ export default function AiInsightWidget({
 
   const srcStatus = data?.dataSourceStatus || {};
   const okCount = Object.values(srcStatus).filter(s => s.status === 'ok' || s.status === 'estimate').length;
+  const briefingActions = normalizeActions(data?.actions);
+  const evidenceLines = data?.evidenceLines;
+  const ev = (id: string) => evidenceLines?.find(l => l.id === id);
 
   return (
     <WidgetWrapper
@@ -187,6 +223,9 @@ export default function AiInsightWidget({
             {data?.summary && (
               <div className="bg-teal-900/30 border border-teal-700/40 rounded-xl px-3 py-2">
                 <p className="text-teal-200 text-sm font-semibold">{data.summary}</p>
+                {data.salesBasis && (
+                  <SalesEvidenceLine summary={data.salesBasis} className="mt-1.5" compact />
+                )}
               </div>
             )}
 
@@ -210,6 +249,7 @@ export default function AiInsightWidget({
                       </p>
                     </div>
                   )}
+                  <EvidenceBlock line={ev('footTraffic')} className="mt-1.5" compact />
                 </div>
               )}
               {data?.commercial && (
@@ -217,6 +257,7 @@ export default function AiInsightWidget({
                   <p className="text-[9px] text-slate-500">상권</p>
                   <p className="text-sm font-bold text-slate-200">{data.commercial.competitiveLevel}</p>
                   <p className="text-[9px] text-slate-500 truncate">{data.commercial.businessSummary.slice(0, 20)}</p>
+                  <EvidenceBlock line={ev('commercial')} className="mt-1.5" compact />
                 </div>
               )}
               {data?.sales && (
@@ -230,20 +271,31 @@ export default function AiInsightWidget({
                       {data.sales.change >= 0 ? '+' : ''}{data.sales.change}%
                     </p>
                   )}
+                  <EvidenceBlock line={ev('sales')} className="mt-1.5" compact />
                 </div>
               )}
             </div>
 
             {/* 오늘 실행 (메인) */}
-            {data?.actions && data.actions.length > 0 && (
+            {briefingActions.length > 0 && (
               <div className="bg-blue-900/25 border border-blue-700/35 rounded-xl p-3">
                 <p className="text-[10px] font-semibold text-blue-300 mb-1.5 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3" /> 오늘 실행
+                  <CheckCircle2 className="w-3 h-3" /> 오늘 실행 · 매출 향상
                 </p>
-                <ul className="space-y-1">
-                  {data.actions.map((a, i) => (
-                    <li key={i} className="text-[11px] text-blue-100/90 flex gap-1.5">
-                      <span className="text-blue-400 shrink-0">{i + 1}.</span>{a}
+                <ul className="space-y-2">
+                  {briefingActions.map((a, i) => (
+                    <li key={i} className="text-[11px] text-blue-100/90">
+                      <div className="flex gap-1.5">
+                        <span className="text-blue-400 shrink-0">{i + 1}.</span>
+                        <span>{a.text}</span>
+                      </div>
+                      {a.basis && (
+                        <SalesEvidenceLine
+                          summary={a.basis}
+                          className="ml-4 mt-0.5"
+                          compact
+                        />
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -270,6 +322,7 @@ export default function AiInsightWidget({
                 <p className="text-[10px] font-semibold text-slate-400 mb-1.5 flex items-center gap-1">
                   <TrendingUp className="w-3 h-3" /> 네이버 검색 트렌드
                 </p>
+                <EvidenceBlock line={ev('trends')} className="mb-1.5 px-0.5" compact />
                 <div className="space-y-1">
                   {data.trends.map((t, i) => (
                     <div key={i} className="flex items-center gap-2 bg-slate-800/40 rounded-lg px-2 py-1.5">

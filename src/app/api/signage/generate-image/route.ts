@@ -13,18 +13,22 @@ export async function POST(req: NextRequest) {
   if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
-    const { prompt, title, storeId, includeBase64 } = await req.json() as {
+    const { prompt, title, storeId, includeBase64, aspect } = await req.json() as {
       prompt?: string;
       title?: string;
       storeId?: string;
       includeBase64?: boolean;
+      aspect?: 'landscape' | 'portrait';
     };
 
     if (!prompt?.trim()) {
       return NextResponse.json({ error: 'prompt required' }, { status: 400 });
     }
 
-    const { buffer, provider, contentType } = await generateSignageBackgroundImage(prompt);
+    const { buffer, provider, contentType } = await generateSignageBackgroundImage(
+      prompt,
+      aspect === 'portrait' ? 'portrait' : 'landscape',
+    );
 
     const token = uuidv4();
     const sid = storeId || 'global';

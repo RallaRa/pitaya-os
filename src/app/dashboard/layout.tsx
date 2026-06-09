@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Menu } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import Sidebar from '@/components/Sidebar';
 import NotificationHub from '@/components/NotificationHub';
+import PhoneCallToast from '@/components/PhoneCallToast';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { isSuperuser } from '@/lib/auth/permissions';
 
@@ -21,6 +22,8 @@ export default function DashboardLayout({
   const { user, loading } = useAuth();
   const { currentStore, myStores, storesLoaded, refreshStores, setCurrentStore } = useStore();
   const router = useRouter();
+  const pathname = usePathname();
+  const isAiFullscreen = pathname === '/dashboard/ai';
 
   useEffect(() => {
     if (!loading && !user) {
@@ -71,8 +74,25 @@ export default function DashboardLayout({
 
   const isSuperuserMode = isSuperuser(user?.email, userRole || undefined);
 
+  if (isAiFullscreen) {
+    return (
+      <div className="flex flex-col h-screen bg-[#212121] text-[#ececec] overflow-hidden font-sans">
+        <PhoneCallToast />
+        {isSuperuserMode && (
+          <div className="shrink-0 bg-purple-900/80 border-b border-purple-700/60 text-purple-200 text-xs text-center py-1 px-4 tracking-wide">
+            👑 슈퍼유저 모드 — 모든 매장 및 권한에 접근 가능합니다
+          </div>
+        )}
+        <main className="flex-1 min-h-0 overflow-hidden flex flex-col">
+          {children}
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
+      <PhoneCallToast />
       {isSuperuserMode && (
         <div className="shrink-0 bg-purple-900/80 border-b border-purple-700/60 text-purple-200 text-xs text-center py-1 px-4 tracking-wide">
           👑 슈퍼유저 모드 — 모든 매장 및 권한에 접근 가능합니다

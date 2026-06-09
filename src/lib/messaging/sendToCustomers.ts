@@ -32,6 +32,7 @@ export interface SendCustomerMessagesOptions {
   smsFallback?: boolean;
   variables?: CustomerMessageVariables;
   campaignKey?: string;
+  couponId?: string;
   dryRun?: boolean;
   requestedBy: string;
   requestedByEmail: string;
@@ -400,6 +401,7 @@ export async function sendCustomerMessages(
     skipReasons,
     filters: filterSnapshot,
     variables: opts.variables || {},
+    couponId: opts.couponId || '',
     smsFallback: opts.smsFallback ?? solapiConfig?.smsFallback ?? dhnConfig?.smsFallback ?? true,
     failures: failures.slice(0, 20),
     createdAt: FieldValue.serverTimestamp(),

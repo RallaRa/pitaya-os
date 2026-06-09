@@ -35,18 +35,20 @@ export interface DebateProvider {
 
 const ROUND_LABELS = ['1라운드 · 초기 의견', '2라운드 · 의견 교환', '3라운드 · 심화 토론'] as const;
 
-const DEBATE_SYSTEM = `당신은 정육점·외식 사업 전문 AI 토론자입니다.
+import { appendStoreBusinessContext } from '@/lib/storeBusinessContext';
+
+const DEBATE_SYSTEM = appendStoreBusinessContext(`당신은 정육점·외식 사업 전문 AI 토론자입니다.
 다른 AI들과 함께 주제에 대해 토론합니다.
 - 자신의 고유 관점을 유지하세요.
 - 다른 AI 의견을 인용·반박·보완할 수 있습니다.
 - 3~5문장, 핵심만 한국어로 답하세요.
-- 마크다운 없이 plain text만.`;
+- 마크다운 없이 plain text만.`);
 
-const SUMMARY_SYSTEM = `당신은 AI 토론 종합 moderator입니다.
+const SUMMARY_SYSTEM = appendStoreBusinessContext(`당신은 AI 토론 종합 moderator입니다.
 여러 AI의 3라운드 토론을 읽고 정육점 사장님에게 실용적인 최종 권고안을 작성하세요.
 - 5~8문장, 실행 가능한 조언 중심
 - 찬반을 균형 있게 반영
-- 📋 [종합]으로 시작`;
+- 📋 [종합]으로 시작`);
 
 export function friendlyAiError(msg: string): string {
   const m = msg || '알 수 없는 오류';

@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -281,6 +282,26 @@ async function syncToDailyReports(params: {
   }
 }
 
+function buildSyncFingerprint(
+  headerDoc: SatHeader,
+  details: SadDetail[],
+  finish: FinishTotal | null,
+  customerSales: CustomerSale[],
+  isClosed?: boolean,
+): string {
+  const sig = {
+    totalSale: headerDoc.totalSale ?? 0,
+    transCount: headerDoc.transCount ?? 0,
+    detailCount: details.length,
+    detailAmount: details.reduce((s, d) => s + (d.totalPrice ?? 0), 0),
+    finishNet: finish?.netSale ?? 0,
+    finishTotal: finish?.totalSale ?? 0,
+    isClosed: !!isClosed,
+    customerCount: customerSales.length,
+  };
+  return createHash('sha256').update(JSON.stringify(sig)).digest('hex').slice(0, 16);
+}
+
 // ── POST /api/pos/sync ────────────────────────────────────────────
 export async function POST(req: Request) {
   const authHeader = req.headers.get('authorization');
@@ -336,8 +357,6 @@ export async function POST(req: Request) {
     }
   }
 
-  const batch = adminDb.batch();
-
   // 1. 매출 헤더 (SaT)
   const headerDoc = headers.reduce<SatHeader>(
     (acc, h) => ({
@@ -349,6 +368,20 @@ export async function POST(req: Request) {
     }),
     {},
   );
+
+  const fingerprint = buildSyncFingerprint(headerDoc, details, finish, customerSales, body.isClosed);
+  const metaDoc = await adminDb.collection('pos_sync_meta').doc(storeId).get();
+  const prevFingerprint = metaDoc.data()?.syncFingerprints?.[date];
+  if (prevFingerprint === fingerprint) {
+    return NextResponse.json({
+      success: true,
+      skipped: true,
+      reason: 'unchanged',
+      message: `${date} 데이터 변경 없음 — Firestore 쓰기 생략`,
+    });
+  }
+
+  const batch = adminDb.batch();
 
   batch.set(
     adminDb.collection('pos_sales_header').doc(`${storeId}_${date}`),
@@ -446,6 +479,12 @@ export async function POST(req: Request) {
   });
 
   await batch.commit();
+
+  await adminDb.collection('pos_sync_meta').doc(storeId).set({
+    [`syncFingerprints.${date}`]: fingerprint,
+    lastSyncAt: FieldValue.serverTimestamp(),
+    lastSyncDate: date,
+  }, { merge: true });
 
   let savedPurchaseLines = 0;
   if (customerPurchaseLines.length > 0) {

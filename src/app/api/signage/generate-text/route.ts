@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Groq from 'groq-sdk';
 import { verifyToken } from '@/lib/authVerify';
 import { generateTextWithFallback } from '@/lib/aiProviderFallback';
+import { appendStoreBusinessContext } from '@/lib/storeBusinessContext';
 
 export async function POST(req: NextRequest) {
   const authUser = await verifyToken(req);
@@ -20,10 +21,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const systemPrompt = `정육점 사이니지용 텍스트 슬라이드 JSON을 만들어줘.
+    const systemPrompt = appendStoreBusinessContext(`정육점 사이니지용 텍스트 슬라이드 JSON을 만들어줘.
 반드시 아래 JSON 형식만 반환해:
 {"title": "메인 제목", "body": "부제목 또는 설명", "footer": "하단 문구(매장명 등)"}
-임팩트 있고 식욕을 자극하는 문구로.`;
+임팩트 있고 식욕을 자극하는 문구로. 유인(11–21시) vs 무인(21–11시) 시간대에 맞는 문구를 고려.`);
 
     let content = '';
 

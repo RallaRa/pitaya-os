@@ -3,6 +3,7 @@
 import {
   useState, useEffect, useCallback, useRef, useMemo, KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
+import { appendStoreBusinessContext } from '@/lib/storeBusinessContext';
 import { useSearchParams } from 'next/navigation';
 import {
   ChevronLeft, ChevronRight, Plus, X, Check, Search, Printer,
@@ -1056,7 +1057,7 @@ interface ParsedBulkItem {
   matched: boolean;
 }
 
-const AI_BULK_SYSTEM = `당신은 연차/휴무 일괄 등록 파서입니다.
+const AI_BULK_SYSTEM = appendStoreBusinessContext(`당신은 연차/휴무 일괄 등록 파서입니다.
 사용자의 자연어 입력을 파싱하여 반드시 아래 JSON 배열만 출력하세요. 다른 설명 없이 JSON만.
 
 직원 목록(userId, userName 포함)이 제공되면 이름 매칭에 사용하세요.
@@ -1087,7 +1088,7 @@ const AI_BULK_SYSTEM = `당신은 연차/휴무 일괄 등록 파서입니다.
 - 오전반차 → half_am, 오후반차 → half_pm, 연차 → annual
 - 정기휴무 → regular, 대체휴무 → substitute, 무급휴무 → unpaid
 - leaveType/dayoffType 미지정 시 연차는 annual, 휴무는 regular로 기본값 설정
-- 반드시 순수 JSON 배열만 출력`;
+- 반드시 순수 JSON 배열만 출력`);
 
 function AiBulkLeaveModal({
   storeId, uid, user, onClose, onSuccess, showToast,

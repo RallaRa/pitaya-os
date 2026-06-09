@@ -33,10 +33,15 @@ export async function POST(req: Request) {
     minAmount = 0, maxDiscount = 0, maxUse = 0,
     startDate, endDate,
     title, description, imageUrl, imagePrompt, barcodeValue, includeBarcode,
+    layoutId, bodyLines: rawBodyLines,
   } = body;
 
-  if (!storeId || !code || !type || !value) {
-    return NextResponse.json({ error: '필수 필드 누락' }, { status: 400 });
+  const bodyLines = Array.isArray(rawBodyLines)
+    ? rawBodyLines.map((l: unknown) => String(l).trim()).filter(Boolean)
+    : [];
+
+  if (!storeId || !code || !type || (value == null && bodyLines.length === 0)) {
+    return NextResponse.json({ error: '필수 필드 누락 (코드·타입·할인값 또는 bodyLines)' }, { status: 400 });
   }
 
   const groupId = await getActualGroupId(authUser.uid, storeId);
@@ -59,6 +64,8 @@ export async function POST(req: Request) {
     description: description ? String(description).trim() : '',
     imageUrl: imageUrl ? String(imageUrl).trim() : '',
     imagePrompt: imagePrompt ? String(imagePrompt).trim() : '',
+    layoutId: layoutId ? String(layoutId).trim() : '',
+    bodyLines,
     barcodeValue: includeBarcode === true ? (barcodeValue ? String(barcodeValue).trim().toUpperCase() : upperCode) : '',
     includeBarcode: includeBarcode === true,
     isActive: true, usedCount: 0,
@@ -83,7 +90,7 @@ export async function PUT(req: Request) {
   const allowed = [
     'type', 'value', 'minAmount', 'maxDiscount', 'maxUse',
     'startDate', 'endDate', 'isActive',
-    'title', 'description', 'imageUrl', 'imagePrompt', 'barcodeValue', 'includeBarcode',
+    'title', 'description', 'imageUrl', 'imagePrompt', 'layoutId', 'bodyLines', 'barcodeValue', 'includeBarcode',
   ];
   const patch: Record<string, unknown> = {};
   for (const k of allowed) {

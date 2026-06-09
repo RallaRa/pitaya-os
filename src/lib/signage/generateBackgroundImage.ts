@@ -32,12 +32,21 @@ export function sanitizeBackgroundPrompt(userPrompt: string): string {
   return scene || '정육점 내부, 신선한 고기, 따뜻한 조명';
 }
 
-export function buildSignageBackgroundPrompt(userPrompt: string): string {
+export type SignageBackgroundAspect = 'landscape' | 'portrait';
+
+export function buildSignageBackgroundPrompt(
+  userPrompt: string,
+  aspect: SignageBackgroundAspect = 'landscape',
+): string {
   const scene = sanitizeBackgroundPrompt(userPrompt);
+  const aspectLine = aspect === 'portrait'
+    ? '고품질 상업용 사진, 세로 4:5 쿠폰 카드 구도, 하단에 텍스트 여백.'
+    : '고품질 상업용 사진, 가로 16:9 구도, 선명하고 식욕을 돋우는 연출.';
+  const useCase = aspect === 'portrait' ? '정육점 쿠폰 카드 배경 사진.' : '정육점 사이니지용 배경 사진.';
   return [
-    '정육점 사이니지용 배경 사진.',
+    useCase,
     `분위기·장면·컨셉: ${scene}.`,
-    '고품질 상업용 사진, 가로 16:9 구도, 선명하고 식욕을 돋우는 연출.',
+    aspectLine,
     '이미지 안에 글자, 숫자, 로고, 간판, 라벨, 워터마크를 절대 넣지 마세요.',
   ].join(' ');
 }
@@ -142,8 +151,9 @@ async function generateWithDalle(fullPrompt: string): Promise<Buffer> {
 
 export async function generateSignageBackgroundImage(
   userPrompt: string,
+  aspect: SignageBackgroundAspect = 'landscape',
 ): Promise<SignageBackgroundImageResult> {
-  const fullPrompt = buildSignageBackgroundPrompt(userPrompt);
+  const fullPrompt = buildSignageBackgroundPrompt(userPrompt, aspect);
 
   if (cloudflareConfig()) {
     try {

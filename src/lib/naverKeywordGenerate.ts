@@ -1,6 +1,7 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { fetchPeriodTotals } from '@/lib/dashboardSalesData';
 import { generateTextWithFallback, hasAnyAiProvider, stripJsonMarkdown } from '@/lib/aiProviderFallback';
+import { STORE_BUSINESS_ANALYSIS_RULES, formatStaffingLine } from '@/lib/storeBusinessContext';
 
 /** 시장 참조 검색 키워드 목표 개수 */
 export const MARKET_KEYWORD_TARGET = 30;
@@ -238,6 +239,10 @@ export async function generateMarketKeywords(
   const perGroup = KEYWORDS_PER_TREND_GROUP;
 
   const prompt = `당신은 정육·축산 시장 분석가입니다.
+
+【운영 전제】
+- ${formatStaffingLine()}
+${STORE_BUSINESS_ANALYSIS_RULES}
 
 목표: 정육점 **운영방향 설정**에 쓸 **시장 참조 검색 키워드 30개**를 선정하세요.
 이 키워드는 POS 품목명이 아니라, **전국 소비자 검색·시장 이슈**를 반영하는 참조 변수입니다.

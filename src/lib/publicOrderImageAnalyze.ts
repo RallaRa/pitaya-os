@@ -5,6 +5,7 @@ import {
 } from '@/lib/aiProviderFallback';
 import type { PublicOrderLineInput } from '@/lib/publicOrderChatExecutor';
 import type { ChatImageInput } from '@/lib/publicOrderImageUpload';
+import { appendStoreBusinessContext } from '@/lib/storeBusinessContext';
 
 export interface VisionLineResult extends PublicOrderLineInput {
   imageIndex?: number;
@@ -16,7 +17,7 @@ export interface PublicOrderVisionResult {
   lines: VisionLineResult[];
 }
 
-const VISION_SYSTEM = `정육점 공개주문 품목 사진을 분석합니다.
+const VISION_SYSTEM = appendStoreBusinessContext(`정육점 공개주문 품목 사진을 분석합니다.
 각 사진에서 품목명·설명·원산지·가격(보이면)·단위·수량(추정)을 추출해 JSON만 반환하세요.
 
 반환 형식:
@@ -43,7 +44,7 @@ const VISION_SYSTEM = `정육점 공개주문 품목 사진을 분석합니다.
 - 품목명은 한국어로 구체적으로 (예: 한우 등심, 한돈 삼겹살)
 - 이미 등록된 품목과 같은/유사한 고기면 name을 기존 명칭과 최대한 동일하게 (신규 품목명 창작 금지)
 - 사용자가 「새 품목/신규/새로 추가」라고 하지 않았으면 기존 품목명을 그대로 사용
-- JSON만, 마크다운 금지`;
+- JSON만, 마크다운 금지`);
 
 export async function analyzePublicOrderImages(
   images: ChatImageInput[],

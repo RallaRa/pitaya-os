@@ -2,6 +2,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue, type DocumentData } from 'firebase-admin/firestore';
 import { GLOBAL_WIKI_SEEDS } from './seedDocs';
 import type { WikiDoc, WikiDocIndexItem } from './types';
+import { appendStoreBusinessContext } from '@/lib/storeBusinessContext';
 
 const COL = 'wiki_docs';
 
@@ -100,9 +101,9 @@ export function wikiIndexFromDocs(docs: WikiDoc[]): WikiDocIndexItem[] {
 }
 
 export function buildWikiAiAppendix(index: WikiDocIndexItem[]): string {
-  if (index.length === 0) return '';
+  if (index.length === 0) return appendStoreBusinessContext('');
   const lines = index.map(d => `- [[${d.slug}|${d.title}]] (${d.category})`).join('\n');
-  return `
+  return appendStoreBusinessContext(`
 
 ## AI 매장 백과 (위키 모드)
 당신은 Pitaya OS **매장 백과** 안내 AI입니다. 답변 시 아래 등록된 문서를 참고하고, 관련 내용이 있으면 반드시 위키 링크 형식 **[[slug|표시제목]]** 을 본문에 1~3개 포함하세요.
@@ -112,5 +113,5 @@ export function buildWikiAiAppendix(index: WikiDocIndexItem[]): string {
 
 ### 등록 문서 목록
 ${lines}
-`;
+`);
 }

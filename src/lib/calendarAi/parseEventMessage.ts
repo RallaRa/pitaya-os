@@ -7,6 +7,7 @@ import {
   CALENDAR_INTENT_RE,
 } from '@/lib/calendarAi/constants';
 import type { ParsedCalendarEventInput } from '@/lib/calendarAi/types';
+import { appendStoreBusinessContext } from '@/lib/storeBusinessContext';
 
 function pad2(n: number) {
   return String(n).padStart(2, '0');
@@ -162,13 +163,13 @@ export function parseEventByRules(message: string): ParsedCalendarEventInput | n
   };
 }
 
-const AI_PARSE_SYSTEM = `정육점 캘린더 일정 등록 문장에서 일정 정보를 추출합니다.
+const AI_PARSE_SYSTEM = appendStoreBusinessContext(`정육점 캘린더 일정 등록 문장에서 일정 정보를 추출합니다.
 반드시 JSON만 반환:
 {"title":"일정 제목","startDate":"YYYY-MM-DD","startTime":"HH:mm 또는 null","allDay":true|false,"location":null}
 - 유통기한/소비기한/만료일 관련이면 title을 null로
 - 일정 등록 의도가 아니면 title을 null로
 - startDate는 KST, 연도 없으면 올해·지난 날짜면 내년
-- 시간 없으면 allDay true, startTime null`;
+- 시간 없으면 allDay true, startTime null`);
 
 type CalendarAiJson = {
   title?: string | null;
