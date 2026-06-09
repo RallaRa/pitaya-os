@@ -57,6 +57,7 @@ const PACKAGES: Record<Pkg, { dir: string; files: Set<string> }> = {
       'scrape-pos-member-ui.ps1',
       'merge-member-phones.ps1',
       'pos-member-watcher.js',
+      'show-pitaya-toast.ps1',
       'run-member-watcher.bat',
       'run-member-watcher-loop.bat',
       'run-member-watcher-hidden.vbs',

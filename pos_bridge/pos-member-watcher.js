@@ -28,8 +28,10 @@ const NOTIFIER = (() => {
   try { return require('node-notifier'); } catch { return null; }
 })();
 
-const admin = require('firebase-admin');
-const { FieldValue } = require('firebase-admin/firestore');
+const admin = (() => {
+  try { return require('firebase-admin'); } catch { return null; }
+})();
+const { FieldValue } = admin ? require('firebase-admin/firestore') : { FieldValue: null };
 
 const STORE_ID = process.env.STORE_ID || 'STR-1779194754785';
 const API_KEY = process.env.POS_BRIDGE_KEY || '';
@@ -71,6 +73,10 @@ function normalizeCusCode(raw) {
 }
 
 function initFirebase() {
+  if (!admin) {
+    log('firebase-admin 미설치 — 웹 알림만 생략 (POS 토스트는 계속 동작)');
+    return;
+  }
   if (admin.apps.length) {
     db = admin.firestore();
     return;
@@ -93,8 +99,13 @@ function probePosMember() {
       return;
     }
     const ps = spawn('powershell.exe', [
-      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', PROBE_SCRIPT,
-    ], { cwd: __dirname, windowsHide: true });
+      '-NoProfile', '-NonInteractive', '-WindowStyle', 'Normal',
+      '-ExecutionPolicy', 'Bypass', '-File', PROBE_SCRIPT,
+    ], {
+      cwd: __dirname,
+      windowsHide: false,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
     let out = '';
     ps.stdout.on('data', d => { out += d.toString(); });
@@ -175,13 +186,25 @@ function formatDateShort(ymd) {
   return `${ymd.slice(5, 7)}/${ymd.slice(8, 10)}`;
 }
 
-function buildToastMessages(data, screenName) {
+function maskPhone(phone) {
+  if (!phone || phone.length < 11) return '미감지';
+  return `${phone.slice(0, 3)}****${phone.slice(-4)}`;
+}
+
+function buildToastMessages(data, screenName, opts = {}) {
   const name = data.customerName || screenName || data.cusCode;
   const header = `👤 ${name} (${data.cusCode})`;
   const lines = [header];
 
+  if (opts.phone) {
+    lines.push(`📞 ${maskPhone(opts.phone)}`);
+  } else {
+    lines.push('📞 전화 OCR 중…');
+  }
+  if (opts.syncNote) lines.push(opts.syncNote);
+
   if (!data.requests?.length) {
-    lines.push('등록된 요청 이력 없음');
+    lines.push('요청 이력 없음');
   } else {
     for (const r of data.requests) {
       const dt = formatDateShort(r.requestDate);
@@ -192,28 +215,47 @@ function buildToastMessages(data, screenName) {
   }
 
   return {
-    title: 'Pitaya 회원 요청 이력',
+    title: 'Pitaya 회원',
     body: lines.join('\n').slice(0, 240),
     summary: lines.slice(1).join(' · ').slice(0, 120),
   };
 }
 
 function showToast(title, body) {
-  if (!NOTIFIER) {
-    log(`[토스트] ${title}\n${body}`);
+  log(`[토스트] ${title}\n${body}`);
+  const toastScript = path.join(__dirname, 'show-pitaya-toast.ps1');
+  if (!fs.existsSync(toastScript)) {
+    if (NOTIFIER) {
+      try {
+        NOTIFIER.notify({ title, message: body, sound: true, wait: false, timeout: 12 });
+      } catch (e) {
+        log(`토스트 표시 실패: ${e.message}`);
+      }
+    }
     return;
   }
-  NOTIFIER.notify({
-    title,
-    message: body,
-    icon: path.join(__dirname, 'icon.ico'),
-    sound: true,
-    wait: false,
-  });
+  const bodyFile = path.join(__dirname, '.pitaya-toast-body.txt');
+  try {
+    fs.writeFileSync(bodyFile, body, 'utf8');
+  } catch (e) {
+    log(`토스트 body 저장 실패: ${e.message}`);
+    return;
+  }
+  spawn('powershell.exe', [
+    '-NoProfile', '-ExecutionPolicy', 'Bypass',
+    '-File', toastScript,
+    '-Title', title,
+    '-BodyFile', bodyFile,
+  ], {
+    cwd: __dirname,
+    windowsHide: false,
+    detached: true,
+    stdio: 'ignore',
+  }).unref();
 }
 
 async function notifyStoreWeb(title, message, cusCode) {
-  if (!db) return;
+  if (!db || !FieldValue) return;
   const mapSnap = await db.collection('user_store_map')
     .where('storeId', '==', STORE_ID)
     .where('status', '==', 'active')
@@ -235,7 +277,7 @@ async function notifyStoreWeb(title, message, cusCode) {
       type: 'pos_member_comment',
       title,
       message,
-      link: `/dashboard/customers?cusCode=${encodeURIComponent(cusCode)}`,
+      link: `/dashboard/customers?cusCode=${encodeURIComponent(cusCode)}&openRequests=1`,
       isRead: false,
       createdAt: FieldValue.serverTimestamp(),
     });
@@ -250,7 +292,7 @@ async function notifyStoreWeb(title, message, cusCode) {
 
 async function handlePhoneSync(cusCode, phone, memberName) {
   const state = loadState();
-  if (!shouldSyncPhone(state, cusCode, phone)) return;
+  if (!shouldSyncPhone(state, cusCode, phone)) return null;
 
   try {
     appendUiScrapedPhone(cusCode, phone);
@@ -259,16 +301,20 @@ async function handlePhoneSync(cusCode, phone, memberName) {
     saveState(state);
 
     const rematch = data.rematch || {};
+    const note = `Pitaya 반영됨 (${data.phoneOutcome || 'ok'})`;
     log(
       `전화 sync: ${cusCode} ${phone.slice(0, 3)}****${phone.slice(-4)} ` +
       `| phone=${data.phoneOutcome || '?'} rematch=${rematch.matched || 0}/${rematch.scanned || 0}`,
     );
+    return note;
   } catch (e) {
-    log(`전화 sync 실패 [${cusCode}]: ${e.response?.data?.error || e.message}`);
+    const msg = e.response?.data?.error || e.message;
+    log(`전화 sync 실패 [${cusCode}]: ${msg}`);
+    return `sync 실패: ${String(msg).slice(0, 40)}`;
   }
 }
 
-async function handleMemberNotify(cusCode, screenName) {
+async function handleMemberNotify(cusCode, screenName, phone, syncNote) {
   const state = loadState();
   const now = Date.now();
 
@@ -276,16 +322,23 @@ async function handleMemberNotify(cusCode, screenName) {
     return;
   }
 
-  let data;
+  let data = {
+    cusCode,
+    customerName: screenName || '',
+    requestCount: 0,
+    requests: [],
+  };
   try {
     data = await fetchMemberRequests(cusCode);
   } catch (e) {
-    log(`API 조회 실패 [${cusCode}]: ${e.message}`);
-    return;
+    log(`API 조회 실패 [${cusCode}]: ${e.message} (로컬 정보로 토스트)`);
   }
 
-  const { title, body, summary } = buildToastMessages(data, screenName);
-  log(`회원 감지: ${cusCode} | ${data.requestCount}건`);
+  const { title, body, summary } = buildToastMessages(data, screenName, {
+    phone,
+    syncNote,
+  });
+  log(`회원 감지: ${cusCode} | ${data.requestCount}건 | phone=${phone || 'none'}`);
   showToast(title, body);
   await notifyStoreWeb(title, summary || body.replace(/\n/g, ' '), cusCode);
 
@@ -311,14 +364,19 @@ async function pollOnce() {
         state.lastCusCode = '';
         saveState(state);
       }
+      if (!probe._emptyLogged || Date.now() - probe._emptyLogged > 60000) {
+        probe._emptyLogged = Date.now();
+        log(`화면 읽기: cusCode/phone 없음 (POS 회원·결제 화면인지 확인)`);
+      }
       return;
     }
 
+    let syncNote = '';
     if (phone) {
-      await handlePhoneSync(cusCode, phone, memberName);
+      syncNote = (await handlePhoneSync(cusCode, phone, memberName)) || '';
     }
 
-    await handleMemberNotify(cusCode, memberName);
+    await handleMemberNotify(cusCode, memberName, phone, syncNote);
   } finally {
     polling = false;
   }

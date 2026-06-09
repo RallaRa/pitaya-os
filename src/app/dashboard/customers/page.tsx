@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import {
@@ -145,7 +146,21 @@ const TABS = ['고객 목록', '방문 분석', '구매 분석', '알림톡', '�
 type SortField = CustomerSortField;
 
 export default function CustomersPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <Loader2 className="w-6 h-6 animate-spin text-teal-400" />
+      </div>
+    }>
+      <CustomersPageContent />
+    </Suspense>
+  );
+}
+
+function CustomersPageContent() {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const { currentStore } = useStore();
   const storeId = currentStore?.storeId || '';
 
@@ -192,6 +207,8 @@ export default function CustomersPage() {
   const [piiUnlockOpen, setPiiUnlockOpen] = useState(false);
   const [stepUpToken, setStepUpToken] = useState<string | null>(null);
   const pendingDecryptRef = useRef(false);
+
+  const pendingDeepLink = useRef<string | null>(null);
 
   const LIMIT = 50;
   const COL_COUNT = 15;
@@ -414,6 +431,44 @@ export default function CustomersPage() {
   }, [storeId, buildQueryParams]);
 
   useEffect(() => { loadCustomerList(); }, [loadCustomerList]);
+
+  /* 알림·POS watcher 딥링크: ?cusCode=98001234&openRequests=1 */
+  useEffect(() => {
+    if (!storeId) return;
+    const cusCode = searchParams.get('cusCode')?.trim();
+    if (!cusCode) return;
+    if (pendingDeepLink.current === cusCode) return;
+
+    pendingDeepLink.current = cusCode;
+    setSearch(cusCode);
+    setPage(1);
+    setTab('고객 목록');
+
+    const openRequests = searchParams.get('openRequests');
+    if (openRequests === '1' || openRequests === 'true') {
+      setRequestPanel({ cusCode, label: cusCode });
+    }
+
+    router.replace('/dashboard/customers', { scroll: false });
+  }, [storeId, searchParams, router]);
+
+  useEffect(() => {
+    const cusCode = pendingDeepLink.current;
+    if (!cusCode || loading) return;
+
+    const match = customers.find(c => c.cusCode === cusCode);
+    if (!match) return;
+
+    const dec = decryptedMap[match.cusCode];
+    setRequestPanel(prev => {
+      if (prev?.cusCode === cusCode && prev.label !== cusCode) return prev;
+      return {
+        cusCode: match.cusCode,
+        label: dec?.name || match.name || match.cusCode,
+      };
+    });
+    pendingDeepLink.current = null;
+  }, [customers, loading, decryptedMap]);
 
   const applyDateFilters = () => {
     setJoinFrom(joinFromDraft);

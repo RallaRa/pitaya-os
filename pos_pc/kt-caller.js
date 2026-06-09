@@ -226,8 +226,10 @@ function indexCustomerDoc(data) {
   else if (data.nameEncrypted) name = decryptText(String(data.nameEncrypted));
   if (!name && data.cusName) name = String(data.cusName);
   const label = name || '고객';
-  phoneIndex.set(digits, label);
-  if (digits.length === 11) phoneIndex.set(digits.slice(1), label);
+  const cusCode = String(data.cusCode || data.id || '').trim();
+  const entry = { name: label, cusCode };
+  phoneIndex.set(digits, entry);
+  if (digits.length === 11) phoneIndex.set(digits.slice(1), entry);
 }
 
 async function refreshCustomerIndex() {
@@ -247,12 +249,14 @@ async function refreshCustomerIndex() {
 
 function lookupCustomer(callerRaw) {
   const digits = normalizePhoneDigits(callerRaw);
-  if (!digits) return { name: null, digits: '' };
-  const name =
+  if (!digits) return { name: null, digits: '', cusCode: '' };
+  const raw =
     phoneIndex.get(digits) ||
     phoneIndex.get(digits.length === 11 ? digits.slice(1) : `0${digits}`) ||
     null;
-  return { name, digits };
+  if (!raw) return { name: null, digits, cusCode: '' };
+  if (typeof raw === 'string') return { name: raw, digits, cusCode: '' };
+  return { name: raw.name || null, digits, cusCode: raw.cusCode || '' };
 }
 
 // ── Python SQLite 폴링 ────────────────────────────────────────────
@@ -324,17 +328,50 @@ function buildMessages(row, customer) {
 }
 
 function showToast(body) {
-  if (!NOTIFIER) {
-    log(`[토스트 스킵] ${body}`);
-    return;
+  const title = 'Pitaya OS 전화알림';
+  if (NOTIFIER) {
+    try {
+      NOTIFIER.notify({
+        title,
+        message: body,
+        icon: fs.existsSync(path.join(__dirname, 'icon.ico'))
+          ? path.join(__dirname, 'icon.ico')
+          : undefined,
+        sound: true,
+        wait: false,
+        appID: 'Microsoft.Windows.ShellExperienceHost_cw5n1h2txyewy!App',
+      });
+      return;
+    } catch (e) {
+      log(`node-notifier 실패: ${e.message}`);
+    }
+  } else {
+    log('node-notifier 미설치 — PowerShell 토스트 시도');
   }
-  NOTIFIER.notify({
-    title: 'Pitaya OS 전화알림',
-    message: body,
-    icon: path.join(__dirname, 'icon.ico'),
-    sound: true,
-    wait: false,
+
+  showToastPowerShell(title, body);
+}
+
+function showToastPowerShell(title, body) {
+  const safeTitle = String(title).replace(/'/g, "''");
+  const safeBody = String(body).replace(/'/g, "''");
+  const script = [
+    '[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null',
+    '[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null',
+    `$t = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02)`,
+    `$n = New-Object Windows.Data.Xml.Dom.XmlDocument`,
+    `$n.LoadXml($t.GetXml())`,
+    `$n.GetElementsByTagName('text')[0].InnerText = '${safeTitle}'`,
+    `$n.GetElementsByTagName('text')[1].InnerText = '${safeBody}'`,
+    `$toast = [Windows.UI.Notifications.ToastNotification]::new($n)`,
+    `[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Pitaya OS').Show($toast)`,
+  ].join('; ');
+
+  const proc = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+    windowsHide: true,
+    stdio: 'ignore',
   });
+  proc.on('error', e => log(`PowerShell 토스트 실패: ${e.message}`));
 }
 
 function postKakaoMemo(token, templateObject) {
@@ -378,7 +415,7 @@ function postKakaoMemo(token, templateObject) {
   });
 }
 
-async function notifyStoreWeb(title, message) {
+async function notifyStoreWeb(title, message, link = '/dashboard/customers') {
   const mapSnap = await db.collection('user_store_map')
     .where('storeId', '==', STORE_ID)
     .where('status', '==', 'active')
@@ -404,7 +441,7 @@ async function notifyStoreWeb(title, message) {
       type: 'phone_call',
       title,
       message,
-      link: '/dashboard/customers',
+      link: link || '/dashboard/customers',
       isRead: false,
       createdAt: FieldValue.serverTimestamp(),
     });
@@ -460,11 +497,14 @@ async function handleRow(row, state) {
   const customer = lookupCustomer(row.cl_caller);
   const { toastBody, kakaoText } = buildMessages(row, customer);
   const webTitle = Number(row.cl_absence) === 1 ? '부재중 전화' : '전화 수신';
+  const webLink = customer.cusCode
+    ? `/dashboard/customers?cusCode=${encodeURIComponent(customer.cusCode)}`
+    : '/dashboard/customers';
 
   log(`알림: ${toastBody}`);
   showToast(toastBody);
   try {
-    await notifyStoreWeb(webTitle, toastBody.replace(/^📞 |^📵 /, ''));
+    await notifyStoreWeb(webTitle, toastBody.replace(/^📞 |^📵 /, ''), webLink);
   } catch (e) {
     log(`웹 알림 실패: ${e.message}`);
   }

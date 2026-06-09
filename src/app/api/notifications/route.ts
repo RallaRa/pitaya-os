@@ -13,6 +13,9 @@ export async function GET(req: Request) {
   const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50);
 
   if (!uid) return NextResponse.json({ error: 'uid required' }, { status: 400 });
+  if (uid !== authUser.uid) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   try {
     const snap = await adminDb.collection('notifications')
@@ -51,6 +54,9 @@ export async function PUT(req: Request) {
 
     // 전체 읽음 처리
     if (body.action === 'readAll' && body.uid) {
+      if (body.uid !== authUser.uid) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
       const snap = await adminDb.collection('notifications')
         .where('targetUid', '==', body.uid)
         .where('isRead', '==', false)

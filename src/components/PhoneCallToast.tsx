@@ -2,13 +2,15 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Phone, PhoneMissed, X } from 'lucide-react';
+import { Phone, PhoneMissed, X, ClipboardList } from 'lucide-react';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '@/lib/firebase/firebase';
 import { useAuth } from '@/context/AuthContext';
+import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 
-interface PhoneToast {
+interface LiveToast {
   id: string;
+  type: 'phone_call' | 'pos_member_comment';
   title: string;
   message: string;
   link: string;
@@ -16,38 +18,52 @@ interface PhoneToast {
 }
 
 const TOAST_MS = 12000;
+const LIVE_TYPES = new Set(['phone_call', 'pos_member_comment']);
 
-function playRingTone() {
+function playRingTone(kind: LiveToast['type']) {
   try {
     const ctx = new AudioContext();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.frequency.value = 880;
-    gain.gain.value = 0.08;
-    osc.start();
-    osc.stop(ctx.currentTime + 0.15);
-    setTimeout(() => {
-      const o2 = ctx.createOscillator();
-      const g2 = ctx.createGain();
-      o2.connect(g2);
-      g2.connect(ctx.destination);
-      o2.frequency.value = 660;
-      g2.gain.value = 0.08;
-      o2.start();
-      o2.stop(ctx.currentTime + 0.15);
-    }, 180);
+    const playTone = (freq: number, delay = 0) => {
+      setTimeout(() => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = freq;
+        gain.gain.value = kind === 'phone_call' ? 0.08 : 0.05;
+        osc.start();
+        osc.stop(ctx.currentTime + 0.12);
+      }, delay);
+    };
+    if (kind === 'phone_call') {
+      playTone(880);
+      playTone(660, 180);
+    } else {
+      playTone(520);
+    }
   } catch {
     /* ignore */
   }
 }
 
-function showBrowserNotification(title: string, body: string) {
+function showBrowserNotification(title: string, body: string, tag: string) {
   if (typeof Notification === 'undefined') return;
   if (Notification.permission !== 'granted') return;
   try {
-    new Notification(title, { body, tag: 'pitaya-phone-call', requireInteraction: true });
+    new Notification(title, { body, tag, requireInteraction: true });
+  } catch {
+    /* ignore */
+  }
+}
+
+async function markNotificationRead(id: string) {
+  try {
+    const headers = await getAuthJsonHeaders();
+    await fetch('/api/notifications', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ id }),
+    });
   } catch {
     /* ignore */
   }
@@ -56,7 +72,7 @@ function showBrowserNotification(title: string, body: string) {
 export default function PhoneCallToast() {
   const { user } = useAuth();
   const router = useRouter();
-  const [toast, setToast] = useState<PhoneToast | null>(null);
+  const [toast, setToast] = useState<LiveToast | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bootstrapped = useRef(false);
   const seenIds = useRef(new Set<string>());
@@ -66,10 +82,14 @@ export default function PhoneCallToast() {
     setToast(null);
   }, []);
 
-  const show = useCallback((item: PhoneToast) => {
+  const show = useCallback((item: LiveToast) => {
     setToast(item);
-    playRingTone();
-    showBrowserNotification(item.title, item.message);
+    playRingTone(item.type);
+    showBrowserNotification(
+      item.title,
+      item.message,
+      item.type === 'phone_call' ? 'pitaya-phone-call' : 'pitaya-pos-member',
+    );
     if (hideTimer.current) clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => setToast(null), TOAST_MS);
   }, []);
@@ -103,17 +123,22 @@ export default function PhoneCallToast() {
         seenIds.current.add(id);
 
         const data = change.doc.data();
-        if (data.type !== 'phone_call') continue;
+        const type = String(data.type || '');
+        if (!LIVE_TYPES.has(type)) continue;
 
-        const title = String(data.title || '전화 수신');
+        const title = String(data.title || (type === 'phone_call' ? '전화 수신' : 'POS 회원'));
         const message = String(data.message || '');
-        const missed = title.includes('부재중');
+        const missed = type === 'phone_call' && title.includes('부재중');
+        const defaultLink = type === 'pos_member_comment'
+          ? '/dashboard/customers'
+          : '/dashboard/customers';
 
         show({
           id,
+          type: type as LiveToast['type'],
           title,
           message,
-          link: String(data.link || '/dashboard/customers'),
+          link: String(data.link || defaultLink),
           missed,
         });
       }
@@ -127,6 +152,9 @@ export default function PhoneCallToast() {
 
   if (!toast) return null;
 
+  const isPhone = toast.type === 'phone_call';
+  const isMember = toast.type === 'pos_member_comment';
+
   return (
     <div
       className="fixed top-4 left-1/2 -translate-x-1/2 z-[200] w-[min(92vw,24rem)] animate-in fade-in slide-in-from-top-2 duration-300"
@@ -136,21 +164,34 @@ export default function PhoneCallToast() {
         type="button"
         onClick={() => {
           dismiss();
+          void markNotificationRead(toast.id);
           router.push(toast.link);
         }}
         className={`w-full text-left rounded-2xl border shadow-2xl px-4 py-3.5 flex items-start gap-3 transition-transform active:scale-[0.98] ${
-          toast.missed
+          isPhone && toast.missed
             ? 'bg-amber-950/95 border-amber-600/60 text-amber-50'
-            : 'bg-teal-950/95 border-teal-500/60 text-teal-50'
+            : isPhone
+              ? 'bg-teal-950/95 border-teal-500/60 text-teal-50'
+              : 'bg-indigo-950/95 border-indigo-500/60 text-indigo-50'
         }`}
       >
-        <span className={`shrink-0 mt-0.5 p-2 rounded-xl ${toast.missed ? 'bg-amber-600/30' : 'bg-teal-600/30'}`}>
-          {toast.missed ? <PhoneMissed className="w-5 h-5" /> : <Phone className="w-5 h-5 animate-pulse" />}
+        <span className={`shrink-0 mt-0.5 p-2 rounded-xl ${
+          isPhone && toast.missed
+            ? 'bg-amber-600/30'
+            : isPhone
+              ? 'bg-teal-600/30'
+              : 'bg-indigo-600/30'
+        }`}>
+          {isPhone
+            ? (toast.missed ? <PhoneMissed className="w-5 h-5" /> : <Phone className="w-5 h-5 animate-pulse" />)
+            : <ClipboardList className="w-5 h-5" />}
         </span>
         <span className="flex-1 min-w-0">
           <p className="text-sm font-bold">{toast.title}</p>
-          <p className="text-xs mt-0.5 opacity-90 leading-snug">{toast.message}</p>
-          <p className="text-[10px] mt-1.5 opacity-60">탭하면 고객 화면으로 이동</p>
+          <p className="text-xs mt-0.5 opacity-90 leading-snug whitespace-pre-line">{toast.message}</p>
+          <p className="text-[10px] mt-1.5 opacity-60">
+            {isMember ? '탭하면 회원·요청 이력으로 이동' : '탭하면 고객 화면으로 이동'}
+          </p>
         </span>
         <span
           role="button"
