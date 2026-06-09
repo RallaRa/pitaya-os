@@ -48,6 +48,10 @@ PITAYA_*.txt
 # build output at repo root
 /dist/
 
+# POS bridge local exports (PII / probe output)
+pos_bridge/member-phones.csv
+pos_bridge/find-pos-member-export.txt
+
 # env backups (never commit secrets)
 /backups/
 
