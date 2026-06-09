@@ -5,7 +5,7 @@
  * 실행 방법:
  *   node bridge.js                      # 오늘 매출 전송
  *   node bridge.js today                # 오늘 데이터 전송 (+ 사원/고객)
- *   node bridge.js realtime             # 30초마다 반복 (+ 사원/고객)
+ *   node bridge.js realtime             # 5분마다 반복 (+ 사원/고객)
  *   node bridge.js date 2026-05-30      # 특정 날짜
  *   node bridge.js migrate START END    # 기간 마이그레이션
  *   node bridge.js customers            # Cus_Mst 고객 마스터 (레거시)
@@ -25,10 +25,11 @@
 'use strict';
 
 require('dotenv').config();
-const fs    = require('fs');
-const path  = require('path');
-const sql   = require('mssql');
-const axios = require('axios');
+const fs     = require('fs');
+const path   = require('path');
+const crypto = require('crypto');
+const sql    = require('mssql');
+const axios  = require('axios');
 
 const MEMBER_PROBE_OUT = path.join(__dirname, 'find-pos-member-export.txt');
 
@@ -56,9 +57,10 @@ const DB_CONFIG = {
   },
 };
 
-const REALTIME_INTERVAL_MS = parseInt(process.env.REALTIME_INTERVAL_MS || '30000', 10); // 기본 30초
+const REALTIME_INTERVAL_MS = parseInt(process.env.REALTIME_INTERVAL_MS || '300000', 10); // 기본 5분
 /** realtime 모드에서 고객 전체 동기화 간격 (기본 6시간). 매출은 REALTIME_INTERVAL_MS마다 전송 */
 const CUSTOMER_SYNC_EVERY_MS = parseInt(process.env.CUSTOMER_SYNC_EVERY_MS || String(6 * 60 * 60 * 1000), 10);
+const FINGERPRINT_CACHE_PATH = path.join(__dirname, '.sync-fingerprint-cache.json');
 
 // ── 유틸 ──────────────────────────────────────────────────────────
 const toInt = v => (v == null ? 0 : parseInt(v, 10) || 0);
@@ -1231,6 +1233,36 @@ async function fetchTimeSlots(dateStr) {
   }
 }
 
+// ── 변경 감지 (Firestore 쓰기·읽기 절감) ─────────────────────────
+function loadFingerprintCache() {
+  try {
+    return JSON.parse(fs.readFileSync(FINGERPRINT_CACHE_PATH, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function saveFingerprintCache(cache) {
+  fs.writeFileSync(FINGERPRINT_CACHE_PATH, JSON.stringify(cache, null, 2));
+}
+
+function buildPayloadFingerprint(payload) {
+  const headers = payload.headers || [];
+  const details = payload.details || [];
+  const sig = {
+    totalSale: headers.reduce((s, h) => s + (h.totalSale || 0), 0),
+    transCount: headers.reduce((s, h) => s + (h.transCount || 0), 0),
+    detailCount: details.length,
+    detailAmount: details.reduce((s, d) => s + (d.totalPrice || 0), 0),
+    finishNet: payload.finish?.netSale || 0,
+    finishTotal: payload.finish?.totalSale || 0,
+    isClosed: !!payload.isClosed,
+    customerCount: (payload.customerSales || []).length,
+    purchaseLineCount: (payload.customerPurchaseLines || []).length,
+  };
+  return crypto.createHash('sha256').update(JSON.stringify(sig)).digest('hex').slice(0, 16);
+}
+
 // ── API 전송 ──────────────────────────────────────────────────────
 async function sendToApi(payload) {
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -1341,7 +1373,19 @@ async function syncDate(dateStr, dryRun) {
     return true;
   }
 
-  return await sendToApi(payload);
+  const cache = loadFingerprintCache();
+  const fingerprint = buildPayloadFingerprint(payload);
+  if (cache[dateStr] === fingerprint) {
+    log(`⏭️  ${dateStr} 변경 없음 — API 전송 생략`);
+    return true;
+  }
+
+  const ok = await sendToApi(payload);
+  if (ok) {
+    cache[dateStr] = fingerprint;
+    saveFingerprintCache(cache);
+  }
+  return ok;
 }
 
 // ── 모드별 실행 ───────────────────────────────────────────────────
@@ -1365,7 +1409,7 @@ async function runToday(dryRun, opts = {}) {
   return ok;
 }
 
-// 실시간 반복 (30초)
+// 실시간 반복 (기본 5분)
 async function runRealtime(dryRun) {
   const intervalLabel = REALTIME_INTERVAL_MS >= 60000
     ? `${REALTIME_INTERVAL_MS / 60000}분`

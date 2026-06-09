@@ -3,8 +3,44 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     @apply bg-slate-950 text-slate-50;
+    overflow-x: hidden;
+    min-height: 100dvh;
+  }
+}
+
+@layer utilities {
+  .h-app {
+    height: 100dvh;
+  }
+
+  .min-h-app {
+    min-height: 100dvh;
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .touch-target {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+
+  .scrollbar-thin-x {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
   }
 }
 

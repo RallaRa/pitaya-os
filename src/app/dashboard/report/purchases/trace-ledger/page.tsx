@@ -101,7 +101,7 @@ export default function TraceLedgerPage() {
   const warningCount = records.filter(r => missingFields(r).length > 0).length;
 
   return (
-    <div className="flex h-full min-h-screen bg-slate-950">
+    <div className="flex h-full min-h-0 bg-slate-950">
       <div className="flex-1 flex flex-col min-w-0 overflow-auto p-4 md:p-6 space-y-5">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>

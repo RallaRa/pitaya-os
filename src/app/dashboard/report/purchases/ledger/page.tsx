@@ -66,7 +66,7 @@ export default function PurchaseLedgerPage() {
   const pieData = [...suppMap.entries()].sort(([, a], [, b]) => b - a).slice(0, 6).map(([name, value]) => ({ name, value }));
 
   return (
-    <div className="flex h-full min-h-screen bg-slate-950">
+    <div className="flex h-full min-h-0 bg-slate-950">
       {viewDocs && viewDocs.length > 0 && (
         <PurchaseDocumentViewer attachments={viewDocs} onClose={() => setViewDocs(null)} />
       )}

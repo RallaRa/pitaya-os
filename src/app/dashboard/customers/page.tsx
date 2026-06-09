@@ -764,7 +764,7 @@ function CustomersPageContent() {
   const TabBtn = ({ label }: { label: typeof TABS[number] }) => (
     <button
       onClick={() => setTab(label)}
-      className={`px-4 py-2 text-sm rounded-lg transition-all ${
+      className={`px-4 py-2 text-sm rounded-lg transition-all shrink-0 whitespace-nowrap ${
         tab === label
           ? 'bg-teal-600/20 text-teal-300 font-semibold border border-teal-500/30'
           : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
@@ -775,7 +775,7 @@ function CustomersPageContent() {
   );
 
   return (
-    <div className="p-4 md:p-6 space-y-5 text-slate-200 min-h-screen">
+    <div className="p-4 md:p-6 space-y-5 text-slate-200 min-h-0">
       {/* 헤더 */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
@@ -842,7 +842,7 @@ function CustomersPageContent() {
       )}
 
       {/* 탭 */}
-      <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
+      <div className="flex items-center gap-2 border-b border-slate-800 pb-3 overflow-x-auto scrollbar-thin-x flex-nowrap -mx-1 px-1">
         {TABS.filter(t => {
           if (t === '조회 이력' || t === '알림톡') return canDecrypt;
           return true;
@@ -996,8 +996,8 @@ function CustomersPageContent() {
           </div>
 
           {/* 테이블 */}
-          <div className="bg-slate-900/60 rounded-xl border border-slate-800 overflow-x-auto">
-            <table className="w-full text-xs">
+          <div className="bg-slate-900/60 rounded-xl border border-slate-800 overflow-x-auto scrollbar-thin-x">
+            <table className="w-full min-w-[720px] text-xs">
               <thead>
                 <tr className="border-b border-slate-800 text-slate-500">
                   <th className="text-left px-3 py-2.5 font-medium">

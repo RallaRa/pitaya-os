@@ -74,7 +74,7 @@ export default function BySupplierPage() {
   const panelData = { suppliers: suppliers.map(s => ({ name: s.name, total: s.total, credit: s.credit })) };
 
   return (
-    <div className="flex h-full min-h-screen bg-slate-950">
+    <div className="flex h-full min-h-0 bg-slate-950">
       <div className="flex-1 flex flex-col min-w-0 overflow-auto p-4 md:p-6 space-y-5">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">거래처별 매입</h1>

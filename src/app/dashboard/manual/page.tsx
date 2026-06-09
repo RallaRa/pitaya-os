@@ -153,7 +153,7 @@ export default function ManualPage() {
   }, [docs]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-0px)] md:h-screen bg-slate-950">
+    <div className="flex flex-col h-full min-h-0 bg-slate-950">
       {/* 헤더 */}
       <header className="shrink-0 border-b border-slate-800 bg-slate-900 px-4 py-3 flex items-center gap-3">
         <Link href="/dashboard" className="text-slate-500 hover:text-teal-400" title="홈">

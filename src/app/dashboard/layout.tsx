@@ -66,7 +66,7 @@ export default function DashboardLayout({
 
   if (loading || !user) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-app bg-slate-950 flex items-center justify-center">
         <div className="w-6 h-6 border-2 border-teal-400 border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -76,7 +76,7 @@ export default function DashboardLayout({
 
   if (isAiFullscreen) {
     return (
-      <div className="flex flex-col h-screen bg-[#212121] text-[#ececec] overflow-hidden font-sans">
+      <div className="flex flex-col h-app bg-[#212121] text-[#ececec] overflow-hidden font-sans">
         <PhoneCallToast />
         {isSuperuserMode && (
           <div className="shrink-0 bg-purple-900/80 border-b border-purple-700/60 text-purple-200 text-xs text-center py-1 px-4 tracking-wide">
@@ -91,29 +91,29 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
+    <div className="flex flex-col h-app bg-slate-950 text-slate-100 overflow-hidden font-sans">
       <PhoneCallToast />
       {isSuperuserMode && (
-        <div className="shrink-0 bg-purple-900/80 border-b border-purple-700/60 text-purple-200 text-xs text-center py-1 px-4 tracking-wide">
+        <div className="shrink-0 bg-purple-900/80 border-b border-purple-700/60 text-purple-200 text-xs text-center py-1 px-4 tracking-wide safe-top">
           👑 슈퍼유저 모드 — 모든 매장 및 권한에 접근 가능합니다
         </div>
       )}
-      <header className="md:hidden flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800 shrink-0">
-        <Link href="/dashboard" className="text-teal-400 hover:text-teal-300 font-bold text-lg transition-colors">Pitaya OS</Link>
-        <div className="flex items-center gap-1">
+      <header className="md:hidden flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800 shrink-0 safe-top">
+        <Link href="/dashboard" className="text-teal-400 hover:text-teal-300 font-bold text-lg transition-colors truncate min-w-0">Pitaya OS</Link>
+        <div className="flex items-center gap-1 shrink-0">
           <NotificationHub />
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+            className="p-2.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors touch-target flex items-center justify-center"
             aria-label="메뉴 열기"
           >
             <Menu className="w-6 h-6" />
           </button>
         </div>
       </header>
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-        <main className="flex-1 min-h-0 overflow-y-auto flex flex-col touch-pan-y [-webkit-overflow-scrolling:touch]">
+        <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden flex flex-col touch-pan-y [-webkit-overflow-scrolling:touch]">
           {children}
         </main>
       </div>

@@ -74,20 +74,28 @@ async function fetchTopCustomers(storeId: string) {
 
 async function fetchRecentPurchases(storeId: string) {
   try {
-    return await adminDb.collection('purchases')
+    return await adminDb.collection('purchase_records')
       .where('storeId', '==', storeId)
       .orderBy('purchaseDate', 'desc')
       .limit(10)
       .get();
   } catch {
-    const snap = await adminDb.collection('purchases')
-      .where('storeId', '==', storeId)
-      .limit(50)
-      .get();
-    const docs = [...snap.docs]
-      .sort((a, b) => String(b.data().purchaseDate || '').localeCompare(String(a.data().purchaseDate || '')))
-      .slice(0, 10);
-    return { docs, empty: docs.length === 0, size: docs.length };
+    try {
+      return await adminDb.collection('purchases')
+        .where('storeId', '==', storeId)
+        .orderBy('purchaseDate', 'desc')
+        .limit(10)
+        .get();
+    } catch {
+      const snap = await adminDb.collection('purchase_records')
+        .where('storeId', '==', storeId)
+        .limit(50)
+        .get();
+      const docs = [...snap.docs]
+        .sort((a, b) => String(b.data().purchaseDate || '').localeCompare(String(a.data().purchaseDate || '')))
+        .slice(0, 10);
+      return { docs, empty: docs.length === 0, size: docs.length };
+    }
   }
 }
 
@@ -171,7 +179,7 @@ export function buildStoreContextPrompt(basePrompt: string, context: AiStoreCont
     ).join('\n');
   }
 
-  prompt += '\n\n위 데이터를 바탕으로 질문에 답해줘. 사원·HR·출퇴근·급여 정보는 제공되지 않음. 데이터 수정·삭제·추가 요청은 정중히 거절해.';
+  prompt += '\n\n위 데이터를 바탕으로 질문에 답해줘. Pitaya OS 매출·고객·매입·쿠폰·주문·위키·사이니지 등 시스템 데이터(사원·HR 제외)와 API 카탈로그·모듈 스냅샷을 함께 참고해. 데이터 수정·삭제·추가 요청은 정중히 거절해.';
 
   return prompt;
 }

@@ -243,7 +243,7 @@ export default function PriceAnalysisPage() {
   }
 
   return (
-    <div className="p-4 max-w-full overflow-x-auto min-h-screen">
+    <div className="p-4 max-w-full overflow-x-auto min-h-0">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-teal-400">매입단가 분석</h1>

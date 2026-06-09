@@ -11,6 +11,7 @@ import {
   Settings, MapPin, Video, Users, Bell, CheckSquare,
   List, Calendar as CalIcon, AlertCircle, ChevronDown, ChevronUp,
   SquarePen, ExternalLink, FileText, Clock, Bot, Send, Loader2,
+  PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react';
 import {
   DragDropContext, Droppable, Draggable, DropResult,
@@ -29,6 +30,7 @@ import {
 import DateRangePicker from './DateRangePicker';
 import LeavePanel from './LeavePanel';
 import { isAdminLevelGroup } from '@/lib/roleMapping';
+import { useIsMobileView } from '@/hooks/useIsMobileView';
 
 /** calendar_events 컬렉션으로 저장·수정 가능한 개인 일정인지 */
 function isEditablePersonalEvent(ev: Partial<CalEvent> | CalEvent): boolean {
@@ -634,6 +636,7 @@ function TodoPanel({
   onTodosChange: () => void;
   showToast: (msg: string, ok?: boolean) => void;
 }) {
+  const isMobile = useIsMobileView();
   const [input, setInput]             = useState('');
   const [selectedTodo, setSelected]   = useState<TodoItem | null>(null);
   const [showCompleted, setShowComp]  = useState(false);
@@ -748,9 +751,9 @@ function TodoPanel({
   };
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-col md:flex-row h-full min-h-0 relative">
       {/* 할 일 목록 */}
-      <div className="flex-1 flex flex-col overflow-hidden border-r border-slate-800">
+      <div className="flex-1 flex flex-col overflow-hidden md:border-r border-slate-800 min-w-0">
         {/* 입력 */}
         <div className="p-3 border-b border-slate-800">
           <div className="flex gap-2">
@@ -847,7 +850,21 @@ function TodoPanel({
 
       {/* 상세 패널 */}
       {selectedTodo && (
-        <div className="w-64 xl:w-72 flex flex-col overflow-hidden bg-slate-900/50 border-l border-slate-800">
+        <>
+          {isMobile && (
+            <button
+              type="button"
+              aria-label="할 일 상세 닫기"
+              className="fixed inset-0 z-40 bg-black/60 md:hidden"
+              onClick={() => setSelected(null)}
+            />
+          )}
+        <div className={`
+          flex flex-col overflow-hidden bg-slate-900/95 border-slate-800 z-50
+          ${isMobile
+            ? 'fixed inset-x-0 bottom-0 max-h-[85dvh] rounded-t-2xl border-t shadow-2xl safe-bottom'
+            : 'w-64 xl:w-72 border-l shrink-0'}
+        `}>
           <div className="flex items-center justify-between p-3 border-b border-slate-800">
             <span className="text-xs font-semibold text-slate-400">할 일 상세</span>
             <button onClick={() => setSelected(null)} className="p-1 text-slate-600 hover:text-slate-300 rounded">
@@ -973,6 +990,7 @@ function TodoPanel({
             </button>
           </div>
         </div>
+        </>
       )}
     </div>
   );
@@ -1364,6 +1382,7 @@ export default function CalendarApp() {
 
   // ── 뷰 상태 ──
   const [view,   setView]   = useState<ViewMode>('month');
+  const isMobile = useIsMobileView();
   const [mainTab, setMainTab] = useState<'calendar' | 'todo' | 'leave'>('calendar');
   const searchParams = useSearchParams();
 
@@ -1389,6 +1408,7 @@ export default function CalendarApp() {
   const [popoverPos,     setPopoverPos]       = useState({ x: 0, y: 0 });
   const [showSearch,     setShowSearch]       = useState(false);
   const [showSidebar,    setShowSidebar]      = useState(true);
+  const [sidebarReady,   setSidebarReady]     = useState(false);
   const [quickDate,      setQuickDate]        = useState<string>('');
 
   // ── 캘린더 사이드 패널 ──
@@ -1405,6 +1425,33 @@ export default function CalendarApp() {
     setToast({ msg, ok });
     setTimeout(() => setToast(null), 3500);
   }, []);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('pitaya-calendar-sidebar');
+      if (saved === '0' || saved === '1') {
+        setShowSidebar(saved === '1');
+      } else if (window.matchMedia('(max-width: 767px)').matches) {
+        setShowSidebar(false);
+      }
+    } catch { /* ignore */ }
+    setSidebarReady(true);
+  }, []);
+
+  const toggleSidebar = useCallback(() => {
+    setShowSidebar(prev => {
+      const next = !prev;
+      try { localStorage.setItem('pitaya-calendar-sidebar', next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    if (view === 'week' || view === '4day' || view === 'year') {
+      setView('day');
+    }
+  }, [isMobile, view]);
 
   useEffect(() => {
     if (!uid || !storeReady) return;
@@ -1814,12 +1861,44 @@ export default function CalendarApp() {
 
   /* ═══════════════════════ RENDER ═══════════════════════ */
   return (
-    <div className="flex h-full bg-slate-950 overflow-hidden">
-      {/* 좌측 사이드바 */}
-      {showSidebar && (
-        <div className="w-60 xl:w-64 border-r border-slate-800 flex flex-col overflow-y-auto shrink-0 bg-slate-950">
+    <div className="flex h-full bg-slate-950 overflow-hidden relative">
+      {isMobile && showSidebar && (
+        <button
+          type="button"
+          aria-label="캘린더 사이드바 닫기"
+          className="fixed inset-0 z-40 bg-black/60 md:hidden"
+          onClick={() => setShowSidebar(false)}
+        />
+      )}
+
+      {/* 좌측 사이드바 — 접기/펼치기 (모바일: 오버레이) */}
+      <aside
+        className={`
+          shrink-0 border-r border-slate-800 flex flex-col bg-slate-950 overflow-hidden z-50
+          transition-[width,transform] duration-200 ease-out
+          ${isMobile
+            ? `fixed inset-y-0 left-0 w-[min(15rem,88vw)] shadow-2xl safe-top ${showSidebar ? 'translate-x-0' : '-translate-x-full pointer-events-none'}`
+            : `${showSidebar ? 'w-60 xl:w-64' : 'w-0 border-r-0'} ${sidebarReady ? '' : 'w-0'}`
+          }
+        `}
+        aria-hidden={!showSidebar}
+      >
+        <div className={`w-60 xl:w-64 flex flex-col h-full overflow-y-auto ${showSidebar ? 'opacity-100' : 'opacity-0 pointer-events-none'} transition-opacity duration-150`}>
+          <div className="flex items-center justify-between p-3 pb-0">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">캘린더</span>
+            <button
+              type="button"
+              onClick={() => { toggleSidebar(); }}
+              className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-lg touch-target flex items-center justify-center"
+              title="사이드바 접기"
+              aria-label="사이드바 접기"
+            >
+              <PanelLeftClose className="w-4 h-4" />
+            </button>
+          </div>
+
           {/* 새 이벤트 버튼 */}
-          <div className="p-3">
+          <div className="p-3 pt-2">
             <button
               onClick={openNewEventModal}
               className="w-full flex items-center gap-2 px-4 py-2.5 bg-teal-600 hover:bg-teal-500 text-white rounded-2xl text-sm font-medium shadow-lg transition-colors"
@@ -1841,7 +1920,11 @@ export default function CalendarApp() {
               <MiniCalendar
                 cursor={cursor}
                 events={filteredEvents}
-                onSelectDate={d => { setCursor(d); if (view === 'month' || view === 'year') setView('month'); }}
+                onSelectDate={d => {
+                  setCursor(d);
+                  if (view === 'month' || view === 'year') setView('month');
+                  if (isMobile) setShowSidebar(false);
+                }}
               />
             )}
           </div>
@@ -1898,20 +1981,25 @@ export default function CalendarApp() {
             </button>
           </div>
         </div>
-      )}
+      </aside>
 
       {/* 메인 영역 */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* 툴바 */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-800 bg-slate-950 shrink-0 flex-wrap">
+        <div className="flex items-center gap-2 px-3 md:px-4 py-2.5 md:py-3 border-b border-slate-800 bg-slate-950 shrink-0 overflow-x-auto scrollbar-thin-x flex-nowrap">
           {/* 사이드바 토글 */}
-          <button onClick={() => setShowSidebar(!showSidebar)}
-            className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-lg">
-            <List className="w-4 h-4" />
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            className="p-2 text-slate-500 hover:text-slate-300 hover:bg-slate-800 rounded-lg touch-target flex items-center justify-center shrink-0"
+            title={showSidebar ? '사이드바 접기' : '사이드바 펼치기'}
+            aria-label={showSidebar ? '사이드바 접기' : '사이드바 펼치기'}
+          >
+            {showSidebar ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
           </button>
 
           {/* 탭 */}
-          <div className="flex gap-1 bg-slate-800 rounded-xl p-0.5">
+          <div className="flex gap-1 bg-slate-800 rounded-xl p-0.5 shrink-0">
             <button onClick={() => setMainTab('calendar')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 mainTab === 'calendar' ? 'bg-teal-600 text-white' : 'text-slate-400 hover:text-slate-200'
@@ -1935,7 +2023,7 @@ export default function CalendarApp() {
           {mainTab === 'calendar' && (
             <>
               {/* 날짜 이동 */}
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 shrink-0">
                 <button onClick={() => navigate(-1)}
                   className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg">
                   <ChevronLeft className="w-4 h-4" />
@@ -1951,14 +2039,16 @@ export default function CalendarApp() {
               </div>
 
               {/* 타이틀 */}
-              <span className="text-slate-200 font-semibold text-sm">{headerTitle}</span>
+              <span className="text-slate-200 font-semibold text-sm truncate min-w-0 max-w-[36vw] sm:max-w-none shrink">{headerTitle}</span>
 
               {/* 뷰 선택 */}
-              <div className="ml-auto flex gap-1 bg-slate-800 rounded-lg p-0.5">
+              <div className="ml-auto flex gap-1 bg-slate-800 rounded-lg p-0.5 shrink-0">
                 {([
                   ['day', '일'],['4day', '4일'],['week', '주'],
                   ['month', '월'],['year', '연'],['list', '목록'],
-                ] as [ViewMode, string][]).map(([v, label]) => (
+                ] as [ViewMode, string][])
+                  .filter(([v]) => !isMobile || v === 'day' || v === 'month' || v === 'list')
+                  .map(([v, label]) => (
                   <button key={v} onClick={() => setView(v)}
                     className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
                       view === v ? 'bg-slate-600 text-white' : 'text-slate-500 hover:text-slate-300'
@@ -1989,9 +2079,9 @@ export default function CalendarApp() {
           )}
         </div>
 
-        {/* 단축키 힌트 */}
+        {/* 단축키 힌트 — 데스크톱만 */}
         {mainTab === 'calendar' && (
-          <div className="px-4 py-1 border-b border-slate-800/60 bg-slate-950 flex gap-4 text-[10px] text-slate-700 shrink-0 overflow-x-auto">
+          <div className="hidden md:flex px-4 py-1 border-b border-slate-800/60 bg-slate-950 gap-4 text-[10px] text-slate-700 shrink-0 overflow-x-auto">
             {[['T','오늘'],['D','일간'],['W','주간'],['M','월간'],['Y','연간'],['C','새 이벤트'],['←→','이동'],['ESC','닫기'],['/ ','검색']].map(([k, l]) => (
               <span key={k}><kbd className="font-mono">{k}</kbd> {l}</span>
             ))}

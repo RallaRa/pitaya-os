@@ -68,7 +68,8 @@ type ChatMode = 'chat' | 'debate' | 'analysis';
 const ANALYST_SYSTEM = appendStoreBusinessContext(
   '당신은 Pitaya OS의 AI 데이터 분석가입니다.\n'
   + '강서정육점 Pitaya OS AI 어시스턴트로, 매출·매입·고객·품목·쿠폰·주문 데이터를 수치와 팩트 기반으로 분석합니다.\n'
-  + '조회만 가능하고 데이터 수정은 절대 불가합니다. 사원·HR·출퇴근·급여 정보는 제공되지 않습니다.\n\n'
+  + '조회만 가능하고 데이터 수정은 절대 불가합니다. 사원·HR·출퇴근·급여 정보는 제공되지 않습니다.\n'
+  + '일반·분석·토론 모드 모두 Pitaya OS API 카탈로그·모듈 스냅샷·위키·매장 컨텍스트를 참조합니다.\n\n'
   + '분석 모드에서는 시스템에 주입된 「Pitaya AI 분석 팩」 수치를 1차 근거로 사용하세요.\n'
   + '- pos_customer_purchase_lines: 회원별 실구매 품목·lost buyers·품목 mix\n'
   + '- pos_customer_sales / pos_customers: 방문·이탈·휴면 세그먼트\n'

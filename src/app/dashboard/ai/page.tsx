@@ -14,6 +14,7 @@ import {
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useSpeechInput } from '@/hooks/useSpeechInput';
 import { useSpeechOutput } from '@/hooks/useSpeechOutput';
+import { useIsMobileView } from '@/hooks/useIsMobileView';
 import type { DebateEntry, DebateRoundResult } from '@/app/api/ai/route';
 
 // ── 모델 정의 ──────────────────────────────────────────────────────
@@ -74,10 +75,13 @@ type ModelId = typeof MODELS[number]['id'];
 type ChatMode = 'chat' | 'debate' | 'analysis';
 
 const CHAT_MODES: { id: ChatMode; label: string; desc: string }[] = [
-  { id: 'chat',     label: '일반 대화', desc: 'Pitaya OS 사용법·매장 데이터 Q&A' },
+  { id: 'chat',     label: '일반 대화', desc: 'Pitaya OS·매장 데이터·API 기반 Q&A (사원 정보 제외)' },
   { id: 'debate',   label: '토론 모드', desc: '4개 AI가 3라운드 의견 교환 후 종합 답변' },
   { id: 'analysis', label: '분석 모드', desc: '매출·고객 데이터 심층 분석' },
 ];
+
+/** 사이드바 모드 메뉴 — 토론은 입력창 「토론」 버튼으로만 실행 */
+const SIDEBAR_CHAT_MODES = CHAT_MODES.filter(m => m.id !== 'debate');
 
 const DEBATE_TOPICS = ['주말 영업 확대', '온라인 판매 확대', '직원 추가 채용'];
 
@@ -279,7 +283,7 @@ export default function AiChatPage() {
   const [isDebating,     setIsDebating]     = useState(false);
   const [isLoadingList,  setIsLoadingList]  = useState(true);
   const [showSidebar,    setShowSidebar]    = useState(false);
-  const [isMobileLayout, setIsMobileLayout] = useState(false);
+  const isMobileLayout = useIsMobileView();
   const [editingId,      setEditingId]      = useState<string | null>(null);
   const [editTitle,      setEditTitle]      = useState('');
   const [selectedModel,  setSelectedModel]  = useState<ModelId>('auto');
@@ -299,16 +303,8 @@ export default function AiChatPage() {
   useEffect(() => { voiceConversationRef.current = voiceConversation; }, [voiceConversation]);
 
   useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)');
-    const apply = () => {
-      const mobile = mq.matches;
-      setIsMobileLayout(mobile);
-      setShowSidebar(!mobile);
-    };
-    apply();
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
-  }, []);
+    setShowSidebar(!isMobileLayout);
+  }, [isMobileLayout]);
 
   const { enabled: ttsEnabled, setEnabled: setTtsEnabled, speaking, speak, stop: stopSpeaking, supported: ttsSupported } = useSpeechOutput();
 
@@ -715,11 +711,11 @@ export default function AiChatPage() {
                       ) : (
                         <>
                           <span className="flex-1 text-sm truncate">{conv.title}</span>
-                          <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
-                            <button onClick={e => handleRenameStart(conv, e)} className="p-1 hover:text-[#ececec] text-[#6b6b6b]">
+                          <div className={`flex items-center gap-0.5 shrink-0 ${isMobileLayout ? '' : 'hidden group-hover:flex'}`}>
+                            <button onClick={e => handleRenameStart(conv, e)} className="p-1.5 touch-target flex items-center justify-center hover:text-[#ececec] text-[#6b6b6b]">
                               <Edit2 className="w-3 h-3" />
                             </button>
-                            <button onClick={e => handleDelete(conv.id, e)} className="p-1 hover:text-red-400 text-[#6b6b6b]">
+                            <button onClick={e => handleDelete(conv.id, e)} className="p-1.5 touch-target flex items-center justify-center hover:text-red-400 text-[#6b6b6b]">
                               <Trash2 className="w-3 h-3" />
                             </button>
                           </div>
@@ -745,7 +741,7 @@ export default function AiChatPage() {
             </button>
             {showModeMenu && (
               <div className="absolute bottom-full left-0 right-0 mb-1 rounded-lg border border-[#3f3f3f] bg-[#2f2f2f] shadow-xl overflow-hidden z-10">
-                {CHAT_MODES.map(mode => (
+                {SIDEBAR_CHAT_MODES.map(mode => (
                   <button
                     key={mode.id}
                     type="button"
@@ -902,7 +898,7 @@ export default function AiChatPage() {
                         <DebateCards entries={msg.debate} />
                       )}
                       {(msg.usedModel || msg.debatePhase) && (
-                        <div className="flex items-center gap-1.5 flex-wrap opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-1.5 flex-wrap md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                           {msg.debatePhase && (
                             <span className="text-[11px] px-2 py-0.5 rounded-full border border-[#3f3f3f] text-[#b4b4b4]">
                               {msg.debatePhase}
@@ -936,7 +932,7 @@ export default function AiChatPage() {
           </div>
         </div>
 
-        <div className="shrink-0 px-4 pb-4 pt-2">
+        <div className="shrink-0 px-4 pb-4 pt-2 safe-bottom">
           <div className="max-w-3xl mx-auto w-full">
             {sendError && (
               <div className="mb-2 flex items-center gap-2 rounded-xl border border-red-900/50 bg-red-950/30 px-3 py-2 text-sm text-red-300">

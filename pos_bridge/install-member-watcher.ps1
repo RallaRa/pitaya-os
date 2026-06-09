@@ -15,48 +15,39 @@ foreach ($f in @('pos-member-watcher.js', 'probe-pos-member-screen.ps1', 'run-me
   }
 }
 
-$runAs = "$env:USERDOMAIN\$env:USERNAME"
+$runAs = "$($env:USERDOMAIN)\$($env:USERNAME)"
 $vbs = Join-Path $Dir 'run-member-watcher-hidden.vbs'
 Write-Host "=== 작업 스케줄러 등록 ($runAs) ==="
 
 schtasks /delete /tn $TaskName /f 2>$null | Out-Null
 
 $ok = $false
-$tr = "wscript.exe `"$vbs`""
-foreach ($args in @(
-  @('/create', '/tn', $TaskName, '/tr', $tr, '/sc', 'onlogon', '/ru', $runAs, '/rl', 'HIGHEST', '/f'),
-  @('/create', '/tn', $TaskName, '/tr', $tr, '/sc', 'onstart', '/delay', '0002:00', '/ru', $runAs, '/rl', 'HIGHEST', '/f')
-)) {
-  $out = schtasks @args 2>&1
+try {
+  $action = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument "`"$vbs`""
+  $tLogon = New-ScheduledTaskTrigger -AtLogon -User $env:USERNAME
+  $tBoot = New-ScheduledTaskTrigger -AtStartup
+  $tBoot.Delay = 'PT2M'
+  $settings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -RestartCount 999 `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
+    -ExecutionTimeLimit ([TimeSpan]::Zero)
+  Register-ScheduledTask -TaskName $TaskName `
+    -Action $action `
+    -Trigger @($tLogon, $tBoot) `
+    -Settings $settings `
+    -RunLevel Highest `
+    -User $env:USERNAME `
+    -Force | Out-Host
+  $ok = $true
+} catch {
+  Write-Warning "Register-ScheduledTask 실패: $($_.Exception.Message) — schtasks onlogon 시도"
+  $tr = "wscript.exe `"$vbs`""
+  $out = schtasks /create /tn $TaskName /tr $tr /sc onlogon /ru $runAs /rl HIGHEST /f 2>&1
   $out | Out-Host
-  if ($LASTEXITCODE -eq 0) { $ok = $true; break }
-}
-
-if (-not $ok) {
-  Write-Warning 'schtasks 기본 등록 실패 — Register-ScheduledTask 시도'
-  try {
-    $action = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument "`"$vbs`""
-    $tLogon = New-ScheduledTaskTrigger -AtLogon -User $env:USERNAME
-    $tBoot = New-ScheduledTaskTrigger -AtStartup
-    $tBoot.Delay = 'PT2M'
-    $settings = New-ScheduledTaskSettingsSet `
-      -AllowStartIfOnBatteries `
-      -DontStopIfGoingOnBatteries `
-      -StartWhenAvailable `
-      -RestartCount 999 `
-      -RestartInterval (New-TimeSpan -Minutes 1) `
-      -ExecutionTimeLimit ([TimeSpan]::Zero)
-    Register-ScheduledTask -TaskName $TaskName `
-      -Action $action `
-      -Trigger @($tLogon, $tBoot) `
-      -Settings $settings `
-      -RunLevel Highest `
-      -User $env:USERNAME `
-      -Force | Out-Host
-    $ok = $true
-  } catch {
-    Write-Warning $_.Exception.Message
-  }
+  if ($LASTEXITCODE -eq 0) { $ok = $true }
 }
 
 if ($ok) {
