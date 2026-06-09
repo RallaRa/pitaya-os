@@ -33,8 +33,7 @@ flowchart LR
 | 경로 | 역할 |
 |------|------|
 | `/order/[token]` | 고객 주문 UI |
-| `/order/[token]/history` | (비활성) 주문 페이지로 리다이렉트 — 이력은 매장 대시보드에서만 확인 |
-| `/dashboard/public-orders` | 세션·주문 관리·상태 변경 |
+| `/dashboard/public-orders` | 세션·주문 관리·상태 변경 (손님 주문 이력은 여기서만 확인) |
 
 ## 주문 상태 (`public_order_entries`)
 
