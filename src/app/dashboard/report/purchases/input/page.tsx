@@ -320,8 +320,12 @@ export default function PurchaseInputPage() {
     setTraceError('');
     setTraceInfo(null);
     try {
-      const res = await fetch(`/api/external/meat-history?traceNo=${encodeURIComponent(no)}`);
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/external/meat-history?traceNo=${encodeURIComponent(no)}`, {
+        headers,
+      });
       const d = await res.json();
+      if (res.status === 401) throw new Error('로그인이 필요합니다. 다시 로그인 후 시도해 주세요.');
       if (d.error) throw new Error(d.error);
       setTraceInfo(d);
     } catch (e: any) {
