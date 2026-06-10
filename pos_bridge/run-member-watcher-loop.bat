@@ -9,5 +9,5 @@ if not exist pos-member-watcher.js (
 echo [%date% %time%] start>> member-watcher.log
 node pos-member-watcher.js >> member-watcher.log 2>&1
 echo [%date% %time%] exit code %ERRORLEVEL%, restart in 5s>> member-watcher.log
-timeout /t 5 /nobreak >nul
+ping 127.0.0.1 -n 6 >nul
 goto loop

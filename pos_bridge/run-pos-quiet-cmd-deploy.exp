@@ -1,0 +1,28 @@
+#!/usr/bin/expect -f
+set timeout 300
+if {[info exists env(PITAYA_SSH_PASS)] && $env(PITAYA_SSH_PASS) ne ""} {
+  set pass $env(PITAYA_SSH_PASS)
+} else {
+  set pass "pitaya1234"
+}
+set port 2223
+if {[info exists env(PITAYA_SSH_PORT)] && $env(PITAYA_SSH_PORT) ne ""} {
+  set port $env(PITAYA_SSH_PORT)
+}
+
+if {[info exists env(PITAYA_DEPLOY_REV)] && $env(PITAYA_DEPLOY_REV) ne ""} {
+  set rev $env(PITAYA_DEPLOY_REV)
+} else {
+  set rev "main"
+}
+
+set cmd "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command \"\$u='https://raw.githubusercontent.com/RallaRa/pitaya-os/$rev/pos_bridge/deploy-pos-quiet-cmd.ps1'; Invoke-WebRequest -Uri \$u -OutFile 'C:\\pitaya-bridge\\deploy-pos-quiet-cmd.ps1' -UseBasicParsing; & 'C:\\pitaya-bridge\\deploy-pos-quiet-cmd.ps1'\""
+
+spawn ssh -p $port -o StrictHostKeyChecking=accept-new User@pitayaos.iptime.org $cmd
+expect {
+  "password:" { send "$pass\r"; exp_continue }
+  "=== DONE ===" {}
+  -timeout 240
+  timeout { puts "DEPLOY TIMEOUT"; exit 1 }
+}
+expect eof
