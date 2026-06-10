@@ -1,0 +1,48 @@
+#!/usr/bin/expect -f
+# POS 매출 전체 백필: 오늘 + 2025-05-01 ~ 오늘(KST)
+set timeout 120
+if {[info exists env(PITAYA_SSH_PASS)] && $env(PITAYA_SSH_PASS) ne ""} {
+  set pass $env(PITAYA_SSH_PASS)
+} else {
+  set pass "pitaya1234"
+}
+set port 2223
+if {[info exists env(PITAYA_SSH_PORT)] && $env(PITAYA_SSH_PORT) ne ""} {
+  set port $env(PITAYA_SSH_PORT)
+}
+
+set ps {
+$Dir = 'C:\pitaya-bridge'
+$log = Join-Path $Dir 'sync-batch.log'
+$end = (Get-Date).ToString('yyyy-MM-dd')
+$start = '2025-05-01'
+Set-Location $Dir
+Remove-Item (Join-Path $Dir '.sync-fingerprint-cache.json') -ErrorAction SilentlyContinue
+"=== BATCH START $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $start ~ $end ===" | Out-File $log -Encoding utf8
+$script = @"
+cd /d C:\pitaya-bridge
+echo === TODAY ===>> sync-batch.log
+node bridge.js today >> sync-batch.log 2>&1
+echo === MIGRATE $start ~ $end ===>> sync-batch.log
+node bridge.js migrate $start $end >> sync-batch.log 2>&1
+echo === BATCH DONE ===>> sync-batch.log
+"@
+$bat = Join-Path $Dir 'run-sync-batch.bat'
+Set-Content -Path $bat -Value $script -Encoding ASCII
+Get-CimInstance Win32_Process -Filter "name='node.exe'" | Where-Object { $_.CommandLine -like '*bridge.js migrate*' -or $_.CommandLine -like '*run-sync-batch*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+Start-Process -FilePath $bat -WorkingDirectory $Dir -WindowStyle Hidden
+Write-Host "STARTED batch: $start ~ $end (log: $log)"
+Write-Host DONE
+}
+
+regsub -all {\n} $ps { } psOneLine
+set cmd "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command \"$psOneLine\""
+
+spawn ssh -p $port -o StrictHostKeyChecking=accept-new User@pitayaos.iptime.org $cmd
+expect {
+  "password:" { send "$pass\r"; exp_continue }
+  "DONE" {}
+  -timeout 90
+  timeout { puts "START TIMEOUT"; exit 1 }
+}
+expect eof
