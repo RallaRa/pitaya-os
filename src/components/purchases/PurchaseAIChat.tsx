@@ -32,6 +32,8 @@ interface Props {
   onInvoicesFound: (invoices: Invoice[], files: SheetAttachedFile[]) => void;
   storeId?: string;
   onAnalysisLogged?: () => void;
+  /** OCR 배치마다 분석기록(중간저장) ID 전달 */
+  onAnalysisSession?: (analysisId: string) => void;
 }
 
 function genId() {
@@ -121,7 +123,9 @@ function readFile(f: File): Promise<string> {
 
 const QUICK_PROMPTS = ['단가 검토해줘', '누락 항목 확인', '총액 계산해줘'];
 
-export default function PurchaseAIChat({ onInvoicesFound, storeId = '', onAnalysisLogged }: Props) {
+export default function PurchaseAIChat({
+  onInvoicesFound, storeId = '', onAnalysisLogged, onAnalysisSession,
+}: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'assistant',
@@ -241,6 +245,7 @@ export default function PurchaseAIChat({ onInvoicesFound, storeId = '', onAnalys
         const allQualities: unknown[] = [];
         const allFileResults: FileAnalysisMeta[] = [];
         const batchErrors: string[] = [];
+        let analysisSessionId: string | null = null;
 
         const batchReplies: string[] = [];
 
@@ -310,6 +315,28 @@ export default function PurchaseAIChat({ onInvoicesFound, storeId = '', onAnalys
               allFileResults.push(...data.fileResults);
             }
 
+            if (storeId && (data.invoices?.length || allFileResults.length)) {
+              const sessionId = await logPurchaseAnalysis({
+                storeId,
+                userMessage: text || '파일을 분석해 주세요.',
+                fileNames: sentFiles.map(f => f.name),
+                fileResults: allFileResults,
+                invoiceCount: allInvoices.length,
+                suppliers: [...new Set(allInvoices.map(i => i.supplierName).filter(Boolean))],
+                success: allInvoices.length > 0,
+                errors: batchErrors,
+                invoices: allInvoices,
+                analysisId: analysisSessionId,
+                merge: !!analysisSessionId,
+                status: 'draft',
+              });
+              if (sessionId) {
+                analysisSessionId = sessionId;
+                onAnalysisSession?.(sessionId);
+                onAnalysisLogged?.();
+              }
+            }
+
             if (data.reply) {
               batchReplies.push(data.reply);
             }
@@ -347,18 +374,44 @@ export default function PurchaseAIChat({ onInvoicesFound, storeId = '', onAnalys
           reply += `\n\n🏷️ **AI 분석 이력**\n${allFileResults.map(formatFileResultLine).join('\n')}`;
         }
 
-        await logPurchaseAnalysis({
-          storeId,
-          userMessage: text || '파일을 분석해 주세요.',
-          fileNames: sentFiles.map(f => f.name),
-          fileResults: allFileResults,
-          invoiceCount: allInvoices.length,
-          suppliers: [...new Set(allInvoices.map(i => i.supplierName).filter(Boolean))],
-          success: allInvoices.length > 0,
-          errors: batchErrors,
-          invoices: allInvoices,
-        });
-        onAnalysisLogged?.();
+        if (storeId) {
+          if (analysisSessionId) {
+            await logPurchaseAnalysis({
+              storeId,
+              userMessage: text || '파일을 분석해 주세요.',
+              fileNames: sentFiles.map(f => f.name),
+              fileResults: allFileResults,
+              invoiceCount: allInvoices.length,
+              suppliers: [...new Set(allInvoices.map(i => i.supplierName).filter(Boolean))],
+              success: allInvoices.length > 0,
+              errors: batchErrors,
+              invoices: allInvoices,
+              analysisId: analysisSessionId,
+              merge: true,
+              status: 'draft',
+            });
+            onAnalysisLogged?.();
+          } else if (sentFiles.length) {
+            const sessionId = await logPurchaseAnalysis({
+              storeId,
+              userMessage: text || '파일을 분석해 주세요.',
+              fileNames: sentFiles.map(f => f.name),
+              fileResults: allFileResults,
+              invoiceCount: 0,
+              suppliers: [],
+              success: false,
+              errors: batchErrors,
+              invoices: [],
+              status: 'draft',
+            });
+            if (sessionId) onAnalysisSession?.(sessionId);
+            onAnalysisLogged?.();
+          }
+        }
+
+        if (analysisSessionId && allInvoices.length > 0) {
+          reply += '\n\n💾 분석기록·시트에 **중간저장**되었습니다. (분석 기록에서 언제든 확인 가능)';
+        }
 
         setMessages(prev => {
           const next = [...prev];

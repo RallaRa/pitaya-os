@@ -85,7 +85,7 @@ function InvoiceBlock({ invoice, index }: { invoice: Invoice; index: number }) {
 interface Props {
   entry: AnalysisHistoryEntry;
   onClose: () => void;
-  onLoadToSheet?: (invoices: Invoice[]) => void;
+  onLoadToSheet?: (invoices: Invoice[], analysisHistoryId?: string) => void;
   onDelete?: (id: string) => void;
 }
 
@@ -119,7 +119,7 @@ export default function PurchaseAnalysisDetailPanel({
           {hasInvoices && onLoadToSheet && (
             <button
               type="button"
-              onClick={() => onLoadToSheet(entry.invoices!)}
+              onClick={() => onLoadToSheet(entry.invoices!, entry.id)}
               className="flex items-center gap-1 text-[10px] font-medium text-black bg-teal-400 hover:bg-teal-300 px-2 py-1 rounded-lg transition-colors"
             >
               <Upload className="w-3 h-3" />

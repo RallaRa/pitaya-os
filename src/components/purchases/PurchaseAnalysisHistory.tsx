@@ -20,6 +20,9 @@ export interface AnalysisHistoryEntry {
   createdAt: string | null;
   /** 분석 시 추출된 매입 명세 (신규 기록부터 저장) */
   invoices?: Invoice[];
+  /** draft=작업중, completed=확정 */
+  status?: 'draft' | 'completed';
+  updatedAt?: string | null;
 }
 
 interface Props {
@@ -69,9 +72,16 @@ function HistoryItem({
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-0.5">
               <span className="text-[9px] text-slate-500">{formatWhen(entry.createdAt)}</span>
-              {entry.invoiceCount > 0 && (
-                <span className="text-[8px] text-teal-400/80 shrink-0">{entry.invoiceCount}건</span>
-              )}
+              <div className="flex items-center gap-1 shrink-0">
+                {entry.status === 'draft' && (
+                  <span className="text-[8px] px-1 py-0.5 rounded bg-amber-900/40 text-amber-300 border border-amber-800/50">
+                    작업중
+                  </span>
+                )}
+                {entry.invoiceCount > 0 && (
+                  <span className="text-[8px] text-teal-400/80">{entry.invoiceCount}건</span>
+                )}
+              </div>
             </div>
             <p className="text-[10px] text-slate-200 truncate mt-0.5" title={entry.fileNames.join(', ')}>
               {entry.fileNames.join(', ') || '파일 없음'}
@@ -196,19 +206,61 @@ export async function logPurchaseAnalysis(params: {
   success: boolean;
   errors?: string[];
   invoices?: Invoice[];
-}) {
-  if (!params.storeId) return;
+  analysisId?: string | null;
+  merge?: boolean;
+  status?: 'draft' | 'completed';
+}): Promise<string | null> {
+  if (!params.storeId) return null;
+  try {
+    const headers = await getAuthJsonHeaders();
+    const payload = {
+      ...params,
+      invoices: params.invoices ? sanitizeInvoicesForHistory(params.invoices) : undefined,
+      status: params.status ?? 'draft',
+    };
+    const res = await fetch('/api/purchases/analysis-history', {
+      method: params.analysisId && params.merge ? 'PUT' : 'POST',
+      headers,
+      body: JSON.stringify(
+        params.analysisId && params.merge
+          ? {
+              id: params.analysisId,
+              storeId: params.storeId,
+              userMessage: params.userMessage,
+              fileNames: params.fileNames,
+              fileResults: params.fileResults,
+              invoiceCount: params.invoiceCount,
+              suppliers: params.suppliers,
+              success: params.success,
+              errors: params.errors,
+              invoices: payload.invoices,
+              status: payload.status,
+              mergeFileNames: true,
+              mergeFileResults: true,
+            }
+          : payload,
+      ),
+    });
+    const data = await res.json();
+    return data.id || params.analysisId || null;
+  } catch {
+    return params.analysisId || null;
+  }
+}
+
+export async function completePurchaseAnalysis(
+  storeId: string,
+  analysisId: string,
+): Promise<void> {
+  if (!storeId || !analysisId) return;
   try {
     const headers = await getAuthJsonHeaders();
     await fetch('/api/purchases/analysis-history', {
-      method: 'POST',
+      method: 'PUT',
       headers,
-      body: JSON.stringify({
-        ...params,
-        invoices: params.invoices ? sanitizeInvoicesForHistory(params.invoices) : undefined,
-      }),
+      body: JSON.stringify({ id: analysisId, storeId, status: 'completed' }),
     });
   } catch {
-    /* non-blocking */
+    /* ignore */
   }
 }

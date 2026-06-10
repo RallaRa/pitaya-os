@@ -46,7 +46,9 @@ export async function GET(req: Request) {
         success: !!d.success,
         errors: d.errors || [],
         createdAt: d.createdAt?.toDate?.()?.toISOString?.() || d.createdAt || null,
+        updatedAt: d.updatedAt?.toDate?.()?.toISOString?.() || d.updatedAt || null,
         invoices: d.invoices || [],
+        status: d.status === 'completed' ? 'completed' : 'draft',
       };
     }).sort((a, b) => {
       const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -78,6 +80,7 @@ export async function POST(req: Request) {
       success,
       errors,
       invoices,
+      status,
     } = body;
 
     if (!storeId) return NextResponse.json({ error: 'storeId 필수' }, { status: 400 });
@@ -93,10 +96,73 @@ export async function POST(req: Request) {
       success: !!success,
       errors: Array.isArray(errors) ? errors.slice(0, 5) : [],
       invoices: Array.isArray(invoices) ? invoices.slice(0, 15) : [],
+      status: status === 'completed' ? 'completed' : 'draft',
       createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
 
     return NextResponse.json({ ok: true, id: docRef.id });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
+
+export async function PUT(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  try {
+    const body = await req.json();
+    const {
+      id,
+      storeId,
+      userMessage,
+      fileNames,
+      fileResults,
+      invoiceCount,
+      suppliers,
+      success,
+      errors,
+      invoices,
+      status,
+      mergeFileNames,
+      mergeFileResults,
+    } = body;
+
+    if (!id || !storeId) {
+      return NextResponse.json({ error: 'id, storeId 필수' }, { status: 400 });
+    }
+
+    const ref = adminDb.collection(COLLECTION).doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    if (snap.data()?.uid !== authUser.uid) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const prev = snap.data()!;
+    const mergedFileNames = mergeFileNames && Array.isArray(fileNames)
+      ? [...new Set([...(prev.fileNames || []), ...fileNames])].slice(0, 20)
+      : (fileNames ?? prev.fileNames);
+    const mergedFileResults = mergeFileResults && Array.isArray(fileResults)
+      ? [...(prev.fileResults || []), ...fileResults].slice(-20)
+      : (fileResults ?? prev.fileResults);
+
+    await ref.update({
+      userMessage: userMessage != null ? String(userMessage).slice(0, 500) : prev.userMessage,
+      fileNames: mergedFileNames,
+      fileResults: mergedFileResults,
+      invoiceCount: invoiceCount != null ? Number(invoiceCount) : prev.invoiceCount,
+      suppliers: suppliers ?? prev.suppliers,
+      success: success != null ? !!success : prev.success,
+      errors: errors ?? prev.errors,
+      invoices: invoices ?? prev.invoices,
+      status: status === 'completed' ? 'completed' : (status ?? prev.status ?? 'draft'),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    return NextResponse.json({ ok: true, id });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: msg }, { status: 500 });

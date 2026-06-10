@@ -14,6 +14,12 @@ import type { Invoice, InvoiceGroup, AttachedFile } from '@/components/purchases
 import type { AnalysisHistoryEntry } from '@/components/purchases/PurchaseAnalysisHistory';
 import { mimeFromFileType } from '@/lib/purchaseAttachments';
 import { isValidMeatTraceNo, normalizeMeatTraceNo } from '@/lib/meatTrace/fetchMeatTrace';
+import {
+  clearPurchaseInputDraft,
+  loadPurchaseInputDraft,
+  savePurchaseInputDraft,
+} from '@/lib/purchaseInputDraftClient';
+import { completePurchaseAnalysis } from '@/components/purchases/PurchaseAnalysisHistory';
 
 const PurchaseAIChat = dynamic(() => import('@/components/purchases/PurchaseAIChat'), { ssr: false });
 const PurchaseSheet = dynamic(() => import('@/components/purchases/PurchaseSheet'), { ssr: false });
@@ -82,7 +88,12 @@ export default function PurchaseInputPage() {
   /** 모바일: 시트 vs AI 분석 (데스크탑은 우측 패널) */
   const [mobileTab, setMobileTab] = useState<'sheet' | 'ai'>('sheet');
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
+  const [draftNotice, setDraftNotice] = useState('');
+  const [draftSavedAt, setDraftSavedAt] = useState<Date | null>(null);
   const resizingRef = useRef(false);
+  const analysisHistoryIdRef = useRef<string | null>(null);
+  const draftLoadedRef = useRef(false);
+  const skipDraftSaveRef = useRef(true);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -109,6 +120,60 @@ export default function PurchaseInputPage() {
     document.body.style.userSelect = 'none';
   };
 
+  const persistInputDraft = useCallback(async (nextGroups: InvoiceGroup[]) => {
+    if (!currentStore?.storeId) return;
+    const ok = await savePurchaseInputDraft(
+      currentStore.storeId,
+      nextGroups,
+      analysisHistoryIdRef.current,
+    );
+    if (ok) setDraftSavedAt(new Date());
+  }, [currentStore?.storeId]);
+
+  useEffect(() => {
+    if (!currentStore?.storeId || !user?.uid) {
+      draftLoadedRef.current = false;
+      return;
+    }
+    draftLoadedRef.current = false;
+    skipDraftSaveRef.current = true;
+    setDraftNotice('');
+    setDraftSavedAt(null);
+    analysisHistoryIdRef.current = null;
+
+    loadPurchaseInputDraft(currentStore.storeId).then(draft => {
+      if (draft?.groups?.length) {
+        setGroups(draft.groups);
+        if (draft.analysisHistoryId) analysisHistoryIdRef.current = draft.analysisHistoryId;
+        const when = draft.updatedAt
+          ? new Date(draft.updatedAt).toLocaleString('ko-KR', {
+              month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
+            })
+          : '';
+        setDraftNotice(when ? `중간저장 작업을 불러왔습니다 (${when})` : '중간저장 작업을 불러왔습니다.');
+      }
+      draftLoadedRef.current = true;
+    });
+  }, [currentStore?.storeId, user?.uid]);
+
+  useEffect(() => {
+    if (!currentStore?.storeId || !draftLoadedRef.current) return;
+    if (skipDraftSaveRef.current) {
+      skipDraftSaveRef.current = false;
+      return;
+    }
+    const unsaved = groups.filter(g => !g.isSaved);
+    if (!unsaved.length) return;
+    const timer = setTimeout(() => {
+      void persistInputDraft(groups);
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [groups, currentStore?.storeId, persistInputDraft]);
+
+  const handleAnalysisSession = useCallback((analysisId: string) => {
+    analysisHistoryIdRef.current = analysisId;
+  }, []);
+
   const handleInvoicesFound = useCallback((invoices: Invoice[], files: AttachedFile[]) => {
     const newGroups: InvoiceGroup[] = invoices.map(inv => {
       const { _originalAiResult, _conflicts, ...clean } = inv;
@@ -121,8 +186,13 @@ export default function PurchaseInputPage() {
         attachedFiles: files.length > 0 ? files : undefined,
       };
     });
-    setGroups(prev => [...prev, ...newGroups]);
-  }, []);
+    setGroups(prev => {
+      const next = [...prev, ...newGroups];
+      skipDraftSaveRef.current = false;
+      void persistInputDraft(next);
+      return next;
+    });
+  }, [persistInputDraft]);
 
   const saveGroup = useCallback(async (groupId: string) => {
     const group = groups.find(g => g.id === groupId);
@@ -167,19 +237,30 @@ export default function PurchaseInputPage() {
         }).catch(() => {});
       }
 
-      setGroups(prev => prev.map(g =>
-        g.id === groupId
-          ? {
-              ...g,
-              isSaved: true,
-              purchaseRecordId: data.id,
-              savedImageUrls: data.imageUrls || [],
-              savedAttachments: data.purchaseAttachments?.length
-                ? data.purchaseAttachments
-                : undefined,
-            }
-          : g
-      ));
+      setGroups(prev => {
+        const next = prev.map(g =>
+          g.id === groupId
+            ? {
+                ...g,
+                isSaved: true,
+                purchaseRecordId: data.id,
+                savedImageUrls: data.imageUrls || [],
+                savedAttachments: data.purchaseAttachments?.length
+                  ? data.purchaseAttachments
+                  : undefined,
+              }
+            : g
+        );
+        if (next.every(g => g.isSaved) && currentStore?.storeId) {
+          void clearPurchaseInputDraft(currentStore.storeId);
+          if (analysisHistoryIdRef.current) {
+            void completePurchaseAnalysis(currentStore.storeId, analysisHistoryIdRef.current);
+            analysisHistoryIdRef.current = null;
+          }
+          setDraftSavedAt(null);
+        }
+        return next;
+      });
       setSavedCount(c => c + 1);
 
       const er = data.expiryReminders as {
@@ -271,8 +352,9 @@ export default function PurchaseInputPage() {
     }
   }, [selectedHistoryEntry?.id]);
 
-  const loadHistoryToSheet = useCallback((invoices: Invoice[]) => {
+  const loadHistoryToSheet = useCallback((invoices: Invoice[], analysisHistoryId?: string) => {
     if (!invoices.length) return;
+    if (analysisHistoryId) analysisHistoryIdRef.current = analysisHistoryId;
     handleInvoicesFound(invoices, []);
     setSelectedHistoryEntry(null);
     setMobileHistoryOpen(false);
@@ -361,6 +443,12 @@ export default function PurchaseInputPage() {
               <p className="text-[9px] text-slate-500 truncate">{currentStore.storeName}</p>
             )}
           </div>
+
+          {unsavedCount > 0 && draftSavedAt && (
+            <span className="hidden sm:inline text-[9px] text-slate-500 tabular-nums">
+              중간저장 {draftSavedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )}
 
           {/* 분석 기록 (모바일·태블릿) */}
           <button
@@ -478,8 +566,17 @@ export default function PurchaseInputPage() {
 
         {/* 알림 영역 */}
         <div className={mobileTab === 'ai' ? 'hidden md:block' : ''}>
-        {(error || savedCount > 0 || expiryNotice) && (
+        {(error || savedCount > 0 || expiryNotice || draftNotice) && (
           <div className="px-5 py-2 space-y-1 shrink-0">
+            {draftNotice && !error && (
+              <div className="flex items-center gap-2 bg-teal-900/20 border border-teal-500/30 rounded-lg px-3 py-2 text-xs text-teal-200">
+                <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+                <span className="flex-1">{draftNotice}</span>
+                <button onClick={() => setDraftNotice('')} className="text-slate-500 hover:text-slate-300">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
             {error && (
               <div className="flex items-center gap-2 bg-red-900/20 border border-red-500/30 rounded-lg px-3 py-2 text-xs text-red-300">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0" />
@@ -543,6 +640,7 @@ export default function PurchaseInputPage() {
                 setMobileTab('sheet');
               }}
               onAnalysisLogged={() => setHistoryRefresh(k => k + 1)}
+              onAnalysisSession={handleAnalysisSession}
             />
           </div>
         )}
@@ -577,6 +675,7 @@ export default function PurchaseInputPage() {
               storeId={currentStore?.storeId || ''}
               onInvoicesFound={handleInvoicesFound}
               onAnalysisLogged={() => setHistoryRefresh(k => k + 1)}
+              onAnalysisSession={handleAnalysisSession}
             />
           </div>
         </div>
