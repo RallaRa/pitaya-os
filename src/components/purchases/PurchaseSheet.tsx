@@ -160,65 +160,60 @@ function SupplierInfoSection({
   const displayName = matched?.supplierName || invoice.supplierName?.trim() || '';
 
   const infoRows: { label: string; value?: string }[] = [
-    { label: '업체명', value: displayName || undefined },
     { label: '사업자번호', value: matched?.businessNumber?.trim() || undefined },
     { label: '분류', value: matched?.category?.trim() || undefined },
     { label: '연락처', value: matched?.phone?.trim() || undefined },
-    { label: '매입일', value: invoice.purchaseDate || undefined },
-    { label: '결제', value: invoice.paymentMethod || undefined },
-    { label: '전표번호', value: invoice.invoiceNumber?.trim() || undefined },
   ].filter(r => r.value);
 
   return (
-    <div className="border-b border-slate-800/80 bg-slate-950/40 px-3 py-2.5">
+    <div className="border-b border-teal-900/40 bg-gradient-to-r from-slate-950/90 to-teal-950/20 px-3 py-2.5">
       <div className="flex items-center gap-1.5 mb-2">
         <Building2 className="w-3.5 h-3.5 text-teal-400 shrink-0" />
         <span className="text-[10px] font-semibold text-teal-300">공급자 정보</span>
+        {!displayName && (
+          <span className="text-[9px] text-amber-400/90">거래처를 선택하거나 업체명을 입력해 주세요</span>
+        )}
         {!matched && displayName && (
-          <span className="text-[9px] text-amber-400/90">마스터 미등록 — 아래에서 거래처 선택</span>
+          <span className="text-[9px] text-amber-400/90">마스터 미등록</span>
         )}
       </div>
 
-      {storeId ? (
-        <div className="mb-2">
-          <SupplierCodePicker
-            storeId={storeId}
-            supplierId={invoice.supplierId || matched?.id}
-            supplierName={invoice.supplierName}
-            suppliers={suppliers}
-            onReload={onReload}
-            onSelect={s => onUpdateSupplier(groupId, s)}
-          />
+      <div className="flex flex-col sm:flex-row sm:items-start gap-2 mb-2">
+        <div className="flex-1 min-w-0">
+          {storeId ? (
+            <SupplierCodePicker
+              storeId={storeId}
+              supplierId={invoice.supplierId || matched?.id}
+              supplierName={invoice.supplierName}
+              suppliers={suppliers}
+              onReload={onReload}
+              onSelect={s => onUpdateSupplier(groupId, s)}
+            />
+          ) : (
+            <input
+              value={invoice.supplierName}
+              onChange={e => onUpdateHeader(groupId, 'supplierName', e.target.value)}
+              placeholder="공급업체명"
+              className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-2 py-1.5 text-sm text-white font-semibold focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
+            />
+          )}
         </div>
-      ) : (
-        <input
-          value={invoice.supplierName}
-          onChange={e => onUpdateHeader(groupId, 'supplierName', e.target.value)}
-          placeholder="공급업체명"
-          className="w-full mb-2 bg-slate-800/60 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
-        />
-      )}
+        {displayName && (
+          <p className="sm:max-w-[45%] text-sm font-bold text-white leading-snug break-words shrink-0">
+            {displayName}
+          </p>
+        )}
+      </div>
 
-      {infoRows.length > 0 ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-1.5 text-[10px]">
+      {infoRows.length > 0 && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
           {infoRows.map(row => (
             <div key={row.label} className="min-w-0">
               <span className="text-slate-500">{row.label}: </span>
-              {row.label === '전표번호' ? (
-                <input
-                  value={invoice.invoiceNumber}
-                  onChange={e => onUpdateHeader(groupId, 'invoiceNumber', e.target.value)}
-                  placeholder="전표번호"
-                  className="inline-block w-[calc(100%-3.5rem)] max-w-[8rem] bg-transparent text-slate-200 focus:outline-none focus:bg-slate-800 rounded px-0.5 placeholder:text-slate-700"
-                />
-              ) : (
-                <span className="text-slate-200 break-words">{row.value}</span>
-              )}
+              <span className="text-slate-200">{row.value}</span>
             </div>
           ))}
         </div>
-      ) : (
-        <p className="text-[10px] text-slate-500">거래처를 선택하거나 AI 분석 결과의 업체명을 확인해 주세요.</p>
       )}
     </div>
   );
@@ -461,7 +456,18 @@ export default function PurchaseSheet({
               group.isSaved ? 'border-teal-700/50' : 'border-slate-700'
             }`}
           >
-            {/* 그룹 헤더 */}
+            {/* 공급자 정보 — 카드 상단 항상 표시 */}
+            <SupplierInfoSection
+              groupId={group.id}
+              invoice={inv}
+              storeId={storeId}
+              suppliers={suppliers}
+              onReload={reloadMaster}
+              onUpdateHeader={updateHeader}
+              onUpdateSupplier={updateSupplier}
+            />
+
+            {/* 그룹 헤더 (일자·합계·저장) */}
             <div className={`flex items-center gap-1 px-2 py-1.5 flex-wrap ${group.isSaved ? 'bg-teal-900/15' : 'bg-slate-800/60'}`}>
               <button
                 onClick={() => toggleExpand(group.id)}
@@ -478,25 +484,6 @@ export default function PurchaseSheet({
                 type="date"
                 className="bg-transparent text-[10px] text-slate-400 focus:outline-none focus:bg-slate-800 rounded px-0.5 w-[7.5rem] shrink-0"
               />
-
-              {storeId ? (
-                <SupplierCodePicker
-                  storeId={storeId}
-                  supplierId={inv.supplierId}
-                  supplierName={inv.supplierName}
-                  suppliers={suppliers}
-                  onReload={reloadMaster}
-                  onSelect={s => updateSupplier(group.id, s)}
-                  compact
-                />
-              ) : (
-                <input
-                  value={inv.supplierName}
-                  onChange={e => updateHeader(group.id, 'supplierName', e.target.value)}
-                  placeholder="공급업체명"
-                  className="bg-transparent text-[11px] text-white font-semibold focus:outline-none focus:bg-slate-800 rounded px-0.5 flex-1 min-w-[5rem] placeholder:text-slate-600"
-                />
-              )}
 
               {inv.aiTag && (
                 <span
@@ -601,18 +588,8 @@ export default function PurchaseSheet({
               </button>
             </div>
 
-            {/* 공급자 정보 + 품목 입력 */}
+            {/* 품목 입력 */}
             {group.isExpanded && (
-              <>
-              <SupplierInfoSection
-                groupId={group.id}
-                invoice={inv}
-                storeId={storeId}
-                suppliers={suppliers}
-                onReload={reloadMaster}
-                onUpdateHeader={updateHeader}
-                onUpdateSupplier={updateSupplier}
-              />
               <div className="overflow-x-auto">
                 <table className="w-full text-[10px] border-collapse table-fixed min-w-[640px]">
                   <thead>
@@ -836,7 +813,6 @@ export default function PurchaseSheet({
                   />
                 </div>
               </div>
-              </>
             )}
           </div>
         );
