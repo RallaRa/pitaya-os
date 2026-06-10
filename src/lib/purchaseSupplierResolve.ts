@@ -1,5 +1,3 @@
-import { adminDb } from '@/lib/firebase/admin';
-
 export interface SupplierMasterEntry {
   id: string;
   supplierName: string;
@@ -145,14 +143,6 @@ export function resolveInvoiceSupplier<T extends InvoiceSupplierInput>(
     supplierName: cleanName,
     supplierDraft: buildSupplierDraft(cleanName, invoice.items, invoice.supplierDraft),
   };
-}
-
-export async function loadStoreSuppliers(storeId: string): Promise<SupplierMasterEntry[]> {
-  if (!storeId) return [];
-  const snap = await adminDb.collection('suppliers').doc(storeId).collection('list')
-    .orderBy('supplierName')
-    .get();
-  return snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<SupplierMasterEntry, 'id'>) }));
 }
 
 export function applySuppliersToInvoices(

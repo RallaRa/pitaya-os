@@ -12,7 +12,7 @@ import {
   ensembleOcr,
 } from '@/lib/ensembleOcr';
 import { applyAliasesToInvoices, loadStoreAliases } from '@/lib/applyItemAliases';
-import { applySuppliersToInvoices, loadStoreSuppliers } from '@/lib/purchaseSupplierResolve';
+import { applySuppliersToInvoices, loadStoreSuppliers } from '@/lib/purchaseSupplierResolve.server';
 import { normalizePurchaseItem } from '@/lib/purchaseCategories';
 import { ANALYZE_MULTI_SYSTEM } from '@/lib/purchaseOcrRules';
 import { postProcessInvoice } from '@/lib/purchasePostProcess';
