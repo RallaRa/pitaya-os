@@ -1,4 +1,5 @@
-import { getAuth, onAuthStateChanged, User } from 'firebase/auth';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth as firebaseAuth } from '@/lib/firebase/firebase';
 
 /** 만료 5분 전부터 토큰 재발급 */
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
@@ -29,14 +30,14 @@ function clearAuthHeadersCache() {
 function ensureAuthListener() {
   if (authListenerAttached) return;
   authListenerAttached = true;
-  onAuthStateChanged(getAuth(), () => {
+  onAuthStateChanged(firebaseAuth, () => {
     clearAuthHeadersCache();
   });
 }
 
 function waitForUser(timeoutMs = WAIT_FOR_USER_MS): Promise<User | null> {
   ensureAuthListener();
-  const auth = getAuth();
+  const auth = firebaseAuth;
   if (auth.currentUser) return Promise.resolve(auth.currentUser);
 
   if (!waitForUserPromise) {

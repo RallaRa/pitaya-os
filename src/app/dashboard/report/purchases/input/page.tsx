@@ -316,20 +316,32 @@ export default function PurchaseInputPage() {
       setTraceError('이력번호 12자리 이상을 입력해주세요. (숫자·영문 L 등 포함)');
       return;
     }
+    if (!user?.uid) {
+      setTraceError('로그인이 필요합니다. 다시 로그인 후 시도해 주세요.');
+      return;
+    }
     setTraceLoading(true);
     setTraceError('');
     setTraceInfo(null);
     try {
-      const headers = await getAuthHeaders();
-      const res = await fetch(`/api/external/meat-history?traceNo=${encodeURIComponent(no)}`, {
-        headers,
-      });
+      const callApi = async (forceRefresh: boolean) => {
+        const token = await user.getIdToken(forceRefresh);
+        return fetch(`/api/external/meat-history?traceNo=${encodeURIComponent(no)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      };
+
+      let res = await callApi(false);
+      if (res.status === 401) res = await callApi(true);
+
       const d = await res.json();
-      if (res.status === 401) throw new Error('로그인이 필요합니다. 다시 로그인 후 시도해 주세요.');
+      if (res.status === 401) {
+        throw new Error('로그인 세션이 만료되었습니다. 로그아웃 후 다시 로그인해 주세요.');
+      }
       if (d.error) throw new Error(d.error);
       setTraceInfo(d);
-    } catch (e: any) {
-      setTraceError(e.message || '조회 실패');
+    } catch (e: unknown) {
+      setTraceError(e instanceof Error ? e.message : '조회 실패');
     } finally {
       setTraceLoading(false);
     }
