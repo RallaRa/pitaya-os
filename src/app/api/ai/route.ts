@@ -84,7 +84,7 @@ const SYSTEM_INSTRUCTIONS: Record<string, string> = {
 };
 
 /* ── 축산물 이력번호 감지 및 조회 ── */
-const TRACE_NO_RE = /\b(\d{12,15})\b/g;
+const TRACE_NO_RE = /\b([A-Z0-9]{12,15})\b/gi;
 
 async function fetchMeatHistory(traceNo: string): Promise<string | null> {
   try {

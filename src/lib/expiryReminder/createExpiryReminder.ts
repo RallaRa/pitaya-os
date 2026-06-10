@@ -1,5 +1,6 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { normalizeMeatTraceNo } from '@/lib/meatTrace/fetchMeatTrace';
 import {
   CALENDAR_LINK,
   DEFAULT_EXPIRY_REMINDER_OFFSETS_DAYS,
@@ -48,11 +49,11 @@ export async function createExpiryReminder(opts: {
     .limit(200)
     .get();
 
-  const traceKey = traceNo.replace(/\D/g, '');
+  const traceKey = normalizeMeatTraceNo(traceNo);
   const existingDoc = existingSnap.docs.find(d => {
     const x = d.data();
     if (x.status !== 'active') return false;
-    if (traceKey && String(x.traceNo || '').replace(/\D/g, '') === traceKey) return true;
+    if (traceKey && normalizeMeatTraceNo(String(x.traceNo || '')) === traceKey) return true;
     return x.itemName === itemName && x.expiryDate === expiryDate;
   });
 

@@ -1,4 +1,4 @@
-import { fetchMeatTraceByNo } from '@/lib/meatTrace/fetchMeatTrace';
+import { fetchMeatTraceByNo, normalizeMeatTraceNo } from '@/lib/meatTrace/fetchMeatTrace';
 import { isMeatCategory } from '@/lib/purchaseCategories';
 import { createExpiryReminder } from '@/lib/expiryReminder/createExpiryReminder';
 import type { CreateExpiryReminderResult } from '@/lib/expiryReminder/types';
@@ -49,7 +49,7 @@ export async function registerExpiryRemindersFromPurchase(opts: {
   const seenTrace = new Set<string>();
 
   for (const item of items) {
-    const traceNo = String(item.traceNo || '').replace(/\D/g, '');
+    const traceNo = normalizeMeatTraceNo(String(item.traceNo || ''));
     if (traceNo.length < 12) continue;
     const cat = String(item.category || '').trim();
     if (cat && !isMeatCategory(cat)) continue;

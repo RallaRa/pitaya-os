@@ -1,17 +1,17 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/authVerify';
-import { fetchMeatTraceByNo } from '@/lib/meatTrace/fetchMeatTrace';
+import { fetchMeatTraceByNo, isValidMeatTraceNo, normalizeMeatTraceNo } from '@/lib/meatTrace/fetchMeatTrace';
 
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
   if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
-  const traceNo = searchParams.get('traceNo')?.replace(/\D/g, '');
+  const traceNo = normalizeMeatTraceNo(searchParams.get('traceNo') || '');
 
-  if (!traceNo || traceNo.length < 12) {
+  if (!isValidMeatTraceNo(traceNo)) {
     return NextResponse.json(
-      { error: '이력번호 12자리를 입력해주세요 (예: ?traceNo=123456789012)' },
+      { error: '이력번호 12자리 이상을 입력해주세요 (숫자·영문 L 등 포함 가능)' },
       { status: 400 },
     );
   }

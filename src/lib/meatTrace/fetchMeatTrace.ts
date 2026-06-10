@@ -87,6 +87,18 @@ export function extractExpiryDateFromRecords(
   return null;
 }
 
+/** 이력번호 입력 정규화 (한돈 등 영문 L 포함, 하이픈·공백 제거) */
+export function normalizeMeatTraceNo(raw: string): string {
+  return String(raw || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+}
+
+export function isValidMeatTraceNo(raw: string): boolean {
+  return normalizeMeatTraceNo(raw).length >= 12;
+}
+
 async function fetchXml(endpoint: string, extra: Record<string, string>): Promise<Record<string, unknown>[]> {
   if (!API_KEY) throw new Error('PUBLIC_DATA_API_KEY 미설정');
 
@@ -107,19 +119,33 @@ async function fetchXml(endpoint: string, extra: Record<string, string>): Promis
   return list as Record<string, unknown>[];
 }
 
-const TRACE_ENDPOINTS = [
+const MEAT_TRACE_ENDPOINTS = [
   { endpoint: 'getMeatTraceInfoList', param: 'meatTraceNo' },
   { endpoint: 'getGradeInfoListIndi', param: 'meatTraceNo' },
   { endpoint: 'getDistbInfoList', param: 'meatTraceNo' },
   { endpoint: 'getProcessInfoList', param: 'meatTraceNo' },
-  { endpoint: 'getCattleDistbInfoList', param: 'cattleNo' },
 ] as const;
 
+async function queryTraceRecords(traceKey: string): Promise<Record<string, unknown>[]> {
+  const calls: Array<Promise<Record<string, unknown>[]>> = MEAT_TRACE_ENDPOINTS.map(
+    ({ endpoint, param }) => fetchXml(endpoint, { [param]: traceKey }),
+  );
+  if (/^\d+$/.test(traceKey)) {
+    calls.push(fetchXml('getCattleDistbInfoList', { cattleNo: traceKey }));
+  }
+  const results = await Promise.allSettled(calls);
+  const allRecords: Record<string, unknown>[] = [];
+  for (const r of results) {
+    if (r.status === 'fulfilled') allRecords.push(...r.value);
+  }
+  return allRecords;
+}
+
 export async function fetchMeatTraceByNo(traceNo: string): Promise<MeatTraceLookupResult> {
-  const normalized = traceNo.replace(/\D/g, '');
+  const normalized = normalizeMeatTraceNo(traceNo);
   const fetchedAt = new Date().toISOString();
 
-  if (!normalized || normalized.length < 12) {
+  if (!isValidMeatTraceNo(normalized)) {
     return { found: false, traceNo: normalized, message: '이력번호 12자리 이상 필요', fetchedAt };
   }
 
@@ -127,15 +153,13 @@ export async function fetchMeatTraceByNo(traceNo: string): Promise<MeatTraceLook
     return { found: false, traceNo: normalized, message: 'PUBLIC_DATA_API_KEY 미설정', fetchedAt };
   }
 
-  const allRecords: Record<string, unknown>[] = [];
-  const results = await Promise.allSettled(
-    TRACE_ENDPOINTS.map(({ endpoint, param }) =>
-      fetchXml(endpoint, { [param]: normalized }),
-    ),
-  );
+  let allRecords = await queryTraceRecords(normalized);
 
-  for (const r of results) {
-    if (r.status === 'fulfilled') allRecords.push(...r.value);
+  if (allRecords.length === 0 && /[A-Z]/.test(normalized)) {
+    const digitsOnly = normalized.replace(/\D/g, '');
+    if (digitsOnly.length >= 12 && digitsOnly !== normalized) {
+      allRecords = await queryTraceRecords(digitsOnly);
+    }
   }
 
   if (allRecords.length === 0) {

@@ -13,6 +13,7 @@ import {
 import type { Invoice, InvoiceGroup, AttachedFile } from '@/components/purchases/PurchaseSheet';
 import type { AnalysisHistoryEntry } from '@/components/purchases/PurchaseAnalysisHistory';
 import { mimeFromFileType } from '@/lib/purchaseAttachments';
+import { isValidMeatTraceNo, normalizeMeatTraceNo } from '@/lib/meatTrace/fetchMeatTrace';
 
 const PurchaseAIChat = dynamic(() => import('@/components/purchases/PurchaseAIChat'), { ssr: false });
 const PurchaseSheet = dynamic(() => import('@/components/purchases/PurchaseSheet'), { ssr: false });
@@ -229,13 +230,16 @@ export default function PurchaseInputPage() {
   };
 
   const handleTraceSearch = async () => {
-    const no = traceNo.replace(/\D/g, '');
-    if (no.length < 12) { setTraceError('이력번호 12자리를 입력해주세요.'); return; }
+    const no = normalizeMeatTraceNo(traceNo);
+    if (!isValidMeatTraceNo(no)) {
+      setTraceError('이력번호 12자리 이상을 입력해주세요. (숫자·영문 L 등 포함)');
+      return;
+    }
     setTraceLoading(true);
     setTraceError('');
     setTraceInfo(null);
     try {
-      const res = await fetch(`/api/external/meat-history?traceNo=${no}`);
+      const res = await fetch(`/api/external/meat-history?traceNo=${encodeURIComponent(no)}`);
       const d = await res.json();
       if (d.error) throw new Error(d.error);
       setTraceInfo(d);
@@ -417,14 +421,16 @@ export default function PurchaseInputPage() {
               <input
                 type="text"
                 value={traceNo}
-                onChange={e => setTraceNo(e.target.value.replace(/\D/g, '').slice(0, 15))}
+                onChange={e => setTraceNo(
+                  e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15),
+                )}
                 onKeyDown={e => e.key === 'Enter' && handleTraceSearch()}
-                placeholder="이력번호 12자리"
-                className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-amber-500/50"
+                placeholder="이력번호 12자리+ (L 등 영문 가능)"
+                className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono placeholder:text-slate-600 focus:outline-none focus:border-amber-500/50"
               />
               <button
                 onClick={handleTraceSearch}
-                disabled={traceLoading || traceNo.replace(/\D/g, '').length < 12}
+                disabled={traceLoading || !isValidMeatTraceNo(traceNo)}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-700 hover:bg-amber-600 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg text-xs transition-colors"
               >
                 {traceLoading
