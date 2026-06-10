@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   ChevronRight, ChevronDown, Plus, Trash2, Save, Loader2, Check,
   ShoppingCart, Image as ImageIcon, Building2,
@@ -19,6 +19,13 @@ import {
   PURCHASE_UNITS,
 } from '@/lib/purchaseCategories';
 import { hasInvoiceTotalMismatch } from '@/lib/purchasePostProcess';
+import {
+  buildSupplierDraft,
+  inferSupplierCategoryFromItems,
+  matchSupplierByName,
+  resolveInvoiceSupplier,
+  type SupplierDraftFields,
+} from '@/lib/purchaseSupplierResolve';
 import {
   formatPurchaseQty,
   normalizePurchaseQty,
@@ -55,6 +62,8 @@ export interface Invoice {
   purchaseDate: string;
   supplierName: string;
   supplierId?: string;
+  /** 마스터 미등록 시 등록용 초안 */
+  supplierDraft?: SupplierDraftFields;
   invoiceNumber: string;
   items: PurchaseItem[];
   supplyAmount: number;
@@ -123,21 +132,7 @@ const DEFAULT_ITEM: PurchaseItem = {
 
 const fmt = (n: number) => (n || 0).toLocaleString('ko-KR');
 
-function resolveSupplierForInvoice(
-  invoice: Invoice,
-  suppliers: SupplierOption[],
-): SupplierOption | undefined {
-  if (invoice.supplierId) {
-    return suppliers.find(s => s.id === invoice.supplierId);
-  }
-  const name = invoice.supplierName?.trim();
-  if (!name) return undefined;
-  const exact = suppliers.find(s => s.supplierName.trim() === name);
-  if (exact) return exact;
-  return suppliers.find(s =>
-    s.supplierName.includes(name) || name.includes(s.supplierName),
-  );
-}
+const SUPPLIER_CATEGORIES = ['소고기', '돼지고기', '닭고기', '수산물', '채소/과일', '공산품', '기타'];
 
 function SupplierInfoSection({
   groupId,
@@ -147,6 +142,7 @@ function SupplierInfoSection({
   onReload,
   onUpdateHeader,
   onUpdateSupplier,
+  onUpdateSupplierDraft,
 }: {
   groupId: string;
   invoice: Invoice;
@@ -155,26 +151,36 @@ function SupplierInfoSection({
   onReload: () => void;
   onUpdateHeader: (groupId: string, field: keyof Invoice, value: string) => void;
   onUpdateSupplier: (groupId: string, supplier: SupplierOption | null) => void;
+  onUpdateSupplierDraft: (groupId: string, field: keyof SupplierDraftFields, value: string) => void;
 }) {
-  const matched = resolveSupplierForInvoice(invoice, suppliers);
+  const matched = invoice.supplierId
+    ? suppliers.find(s => s.id === invoice.supplierId)
+    : matchSupplierByName(invoice.supplierName || '', suppliers);
+  const draft = invoice.supplierDraft
+    || buildSupplierDraft(invoice.supplierName || '', invoice.items);
   const displayName = matched?.supplierName || invoice.supplierName?.trim() || '';
+  const isUnregistered = !matched && !!storeId;
 
-  const infoRows: { label: string; value?: string }[] = [
-    { label: '사업자번호', value: matched?.businessNumber?.trim() || undefined },
-    { label: '분류', value: matched?.category?.trim() || undefined },
-    { label: '연락처', value: matched?.phone?.trim() || undefined },
-  ].filter(r => r.value);
+  const infoRows: { label: string; value?: string }[] = matched
+    ? [
+        { label: '사업자번호', value: matched.businessNumber?.trim() || undefined },
+        { label: '분류', value: matched.category?.trim() || undefined },
+        { label: '연락처', value: matched.phone?.trim() || undefined },
+      ].filter(r => r.value)
+    : [];
 
   return (
     <div className="border-b border-teal-900/40 bg-gradient-to-r from-slate-950/90 to-teal-950/20 px-3 py-2.5">
       <div className="flex items-center gap-1.5 mb-2">
         <Building2 className="w-3.5 h-3.5 text-teal-400 shrink-0" />
         <span className="text-[10px] font-semibold text-teal-300">공급자 정보</span>
-        {!displayName && (
-          <span className="text-[9px] text-amber-400/90">거래처를 선택하거나 업체명을 입력해 주세요</span>
+        {matched && (
+          <span className="text-[9px] text-emerald-400/90">마스터 연결됨</span>
         )}
-        {!matched && displayName && (
-          <span className="text-[9px] text-amber-400/90">마스터 미등록</span>
+        {isUnregistered && (
+          <span className="text-[9px] text-amber-400/90">
+            {displayName ? '미등록 — 아래 정보로 등록 가능' : '거래처명 확인 후 등록'}
+          </span>
         )}
       </div>
 
@@ -185,6 +191,9 @@ function SupplierInfoSection({
               storeId={storeId}
               supplierId={invoice.supplierId || matched?.id}
               supplierName={invoice.supplierName}
+              initialCategory={draft.category}
+              initialBusinessNumber={draft.businessNumber}
+              initialPhone={draft.phone}
               suppliers={suppliers}
               onReload={onReload}
               onSelect={s => onUpdateSupplier(groupId, s)}
@@ -205,7 +214,7 @@ function SupplierInfoSection({
         )}
       </div>
 
-      {infoRows.length > 0 && (
+      {matched && infoRows.length > 0 && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
           {infoRows.map(row => (
             <div key={row.label} className="min-w-0">
@@ -213,6 +222,50 @@ function SupplierInfoSection({
               <span className="text-slate-200">{row.value}</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {isUnregistered && (
+        <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="col-span-2 sm:col-span-1">
+            <label className="text-[9px] text-slate-500">거래처명</label>
+            <input
+              value={invoice.supplierName}
+              onChange={e => onUpdateHeader(groupId, 'supplierName', e.target.value)}
+              placeholder={invoice.items.length ? inferSupplierCategoryFromItems(invoice.items) + ' 거래처' : '공급업체명'}
+              className="w-full mt-0.5 bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
+            />
+          </div>
+          <div>
+            <label className="text-[9px] text-slate-500">분류</label>
+            <select
+              value={draft.category}
+              onChange={e => onUpdateSupplierDraft(groupId, 'category', e.target.value)}
+              className="w-full mt-0.5 bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-teal-600"
+            >
+              {SUPPLIER_CATEGORIES.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-[9px] text-slate-500">사업자번호</label>
+            <input
+              value={draft.businessNumber}
+              onChange={e => onUpdateSupplierDraft(groupId, 'businessNumber', e.target.value)}
+              placeholder="000-00-00000"
+              className="w-full mt-0.5 bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
+            />
+          </div>
+          <div>
+            <label className="text-[9px] text-slate-500">연락처</label>
+            <input
+              value={draft.phone}
+              onChange={e => onUpdateSupplierDraft(groupId, 'phone', e.target.value)}
+              placeholder="010-0000-0000"
+              className="w-full mt-0.5 bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
+            />
+          </div>
         </div>
       )}
     </div>
@@ -296,6 +349,28 @@ export default function PurchaseSheet({
   } | null>(null);
   const [historyCollapsed, setHistoryCollapsed] = useState(false);
   const { suppliers, reload: reloadMaster } = usePurchaseMasterData(storeId);
+  const groupsRef = useRef(groups);
+  groupsRef.current = groups;
+
+  useEffect(() => {
+    if (!storeId || !suppliers.length) return;
+    const current = groupsRef.current;
+    let changed = false;
+    const next = current.map(g => {
+      if (g.invoice.supplierId) return g;
+      const resolved = resolveInvoiceSupplier(g.invoice, suppliers);
+      if (
+        resolved.supplierId === g.invoice.supplierId
+        && resolved.supplierName === g.invoice.supplierName
+        && JSON.stringify(resolved.supplierDraft) === JSON.stringify(g.invoice.supplierDraft)
+      ) {
+        return g;
+      }
+      changed = true;
+      return { ...g, invoice: { ...g.invoice, ...resolved } };
+    });
+    if (changed) onGroupsChange(next);
+  }, [storeId, suppliers, onGroupsChange, groups.length]);
 
   const hasData = useMemo<Record<OptionalCol, boolean>>(() => {
     const r: Record<OptionalCol, boolean> = { traceNo: false, origin: false, cut: false, grade: false };
@@ -348,8 +423,23 @@ export default function PurchaseSheet({
         ...g.invoice,
         supplierId: supplier?.id || '',
         supplierName: supplier?.supplierName || '',
+        supplierDraft: supplier ? undefined : g.invoice.supplierDraft,
       }),
     }));
+  };
+
+  const updateSupplierDraft = (groupId: string, field: keyof SupplierDraftFields, value: string) => {
+    updateGroup(groupId, g => {
+      const draft = g.invoice.supplierDraft
+        || buildSupplierDraft(g.invoice.supplierName || '', g.invoice.items);
+      return {
+        ...g,
+        invoice: {
+          ...g.invoice,
+          supplierDraft: { ...draft, [field]: value },
+        },
+      };
+    });
   };
 
   const updateItem = (groupId: string, idx: number, field: keyof PurchaseItem, value: string | number) => {
@@ -465,6 +555,7 @@ export default function PurchaseSheet({
               onReload={reloadMaster}
               onUpdateHeader={updateHeader}
               onUpdateSupplier={updateSupplier}
+              onUpdateSupplierDraft={updateSupplierDraft}
             />
 
             {/* 그룹 헤더 (일자·합계·저장) */}

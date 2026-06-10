@@ -323,6 +323,9 @@ export function SupplierCodePicker({
   storeId,
   supplierId,
   supplierName,
+  initialCategory,
+  initialBusinessNumber,
+  initialPhone,
   onSelect,
   suppliers,
   onReload,
@@ -332,6 +335,9 @@ export function SupplierCodePicker({
   storeId: string;
   supplierId?: string;
   supplierName?: string;
+  initialCategory?: string;
+  initialBusinessNumber?: string;
+  initialPhone?: string;
   onSelect: (opt: SupplierOption | null) => void;
   suppliers: SupplierOption[];
   onReload: () => void;
@@ -440,6 +446,9 @@ export function SupplierCodePicker({
         <NewSupplierModal
           storeId={storeId}
           initialName={supplierName || search}
+          initialCategory={initialCategory}
+          initialBusinessNumber={initialBusinessNumber}
+          initialPhone={initialPhone}
           onClose={() => setShowNew(false)}
           onCreated={async (created) => {
             await onReload();
@@ -455,19 +464,25 @@ export function SupplierCodePicker({
 function NewSupplierModal({
   storeId,
   initialName,
+  initialCategory,
+  initialBusinessNumber,
+  initialPhone,
   onClose,
   onCreated,
 }: {
   storeId: string;
   initialName?: string;
+  initialCategory?: string;
+  initialBusinessNumber?: string;
+  initialPhone?: string;
   onClose: () => void;
   onCreated: (s: SupplierOption) => void;
 }) {
   const [form, setForm] = useState({
     supplierName: initialName || '',
-    businessNumber: '',
-    category: '소고기',
-    phone: '',
+    businessNumber: initialBusinessNumber || '',
+    category: initialCategory || '소고기',
+    phone: initialPhone || '',
     contactPerson: '',
   });
   const [saving, setSaving] = useState(false);

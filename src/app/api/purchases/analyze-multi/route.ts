@@ -12,6 +12,7 @@ import {
   ensembleOcr,
 } from '@/lib/ensembleOcr';
 import { applyAliasesToInvoices, loadStoreAliases } from '@/lib/applyItemAliases';
+import { applySuppliersToInvoices, loadStoreSuppliers } from '@/lib/purchaseSupplierResolve';
 import { normalizePurchaseItem } from '@/lib/purchaseCategories';
 import { ANALYZE_MULTI_SYSTEM } from '@/lib/purchaseOcrRules';
 import { postProcessInvoice } from '@/lib/purchasePostProcess';
@@ -268,7 +269,13 @@ export async function POST(req: Request) {
     const aliasResult = storeAliases.length
       ? applyAliasesToInvoices(invoices, storeAliases)
       : { invoices, applied: [] as Array<{ from: string; to: string; supplierName?: string }> };
-    const finalInvoices = aliasResult.invoices;
+    let finalInvoices = aliasResult.invoices;
+    if (storeId) {
+      const suppliers = await loadStoreSuppliers(storeId);
+      if (suppliers.length) {
+        finalInvoices = applySuppliersToInvoices(finalInvoices, suppliers);
+      }
+    }
     const avgConfidence = fileResults.length
       ? Math.round(fileResults.reduce((s, f) => s + (f.confidence ?? 100), 0) / fileResults.length)
       : 0;

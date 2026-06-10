@@ -1,4 +1,5 @@
 import { isMeatCategory, isRawMaterialCategory, normalizePurchaseItem } from '@/lib/purchaseCategories';
+import { extractSupplierNameFromRaw } from '@/lib/purchaseSupplierResolve';
 import { normalizePurchaseQty } from '@/lib/purchaseQtyFormat';
 
 const JUNK_ITEM_RE = /^(={2,}|[\-*]{2,}|소\s*계|합\s*계|이하\s*여백|이하여백|비\s*고|\*\*\*|total|subtotal)/i;
@@ -184,10 +185,11 @@ export function postProcessInvoice(raw: Record<string, unknown>): Record<string,
       return { ...enriched, unit };
     });
 
+  const extractedSupplier = extractSupplierNameFromRaw(raw);
   const base: Record<string, unknown> = {
     ...raw,
     items: filteredItems,
-    supplierName: String(raw.supplierName || '').trim() || (filteredItems.length ? '미확인' : ''),
+    supplierName: extractedSupplier || (filteredItems.length ? '미확인' : ''),
   };
 
   const totals = resolveInvoiceTotals(base);
