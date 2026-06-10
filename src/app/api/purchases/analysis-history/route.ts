@@ -46,6 +46,7 @@ export async function GET(req: Request) {
         success: !!d.success,
         errors: d.errors || [],
         createdAt: d.createdAt?.toDate?.()?.toISOString?.() || d.createdAt || null,
+        invoices: d.invoices || [],
       };
     }).sort((a, b) => {
       const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -76,6 +77,7 @@ export async function POST(req: Request) {
       suppliers,
       success,
       errors,
+      invoices,
     } = body;
 
     if (!storeId) return NextResponse.json({ error: 'storeId 필수' }, { status: 400 });
@@ -90,6 +92,7 @@ export async function POST(req: Request) {
       suppliers: Array.isArray(suppliers) ? suppliers.slice(0, 10) : [],
       success: !!success,
       errors: Array.isArray(errors) ? errors.slice(0, 5) : [],
+      invoices: Array.isArray(invoices) ? invoices.slice(0, 15) : [],
       createdAt: FieldValue.serverTimestamp(),
     });
 

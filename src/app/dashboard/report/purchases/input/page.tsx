@@ -4,19 +4,24 @@ import dynamic from 'next/dynamic';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
-import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import {
   ShoppingCart, Save, Loader2, CheckCircle, AlertCircle, Plus, X,
   Search, Beef, Bot, ChevronLeft, ChevronRight, GripVertical,
   FileSpreadsheet, MessageSquare,
 } from 'lucide-react';
 import type { Invoice, InvoiceGroup, AttachedFile } from '@/components/purchases/PurchaseSheet';
+import type { AnalysisHistoryEntry } from '@/components/purchases/PurchaseAnalysisHistory';
 import { mimeFromFileType } from '@/lib/purchaseAttachments';
 
 const PurchaseAIChat = dynamic(() => import('@/components/purchases/PurchaseAIChat'), { ssr: false });
 const PurchaseSheet = dynamic(() => import('@/components/purchases/PurchaseSheet'), { ssr: false });
 const PurchaseAnalysisHistory = dynamic(
   () => import('@/components/purchases/PurchaseAnalysisHistory'),
+  { ssr: false },
+);
+const PurchaseAnalysisDetailPanel = dynamic(
+  () => import('@/components/purchases/PurchaseAnalysisDetailPanel'),
   { ssr: false },
 );
 
@@ -67,6 +72,7 @@ export default function PurchaseInputPage() {
   const [traceLoading, setTraceLoading] = useState(false);
   const [traceError, setTraceError] = useState('');
   const [historyRefresh, setHistoryRefresh] = useState(0);
+  const [selectedHistoryEntry, setSelectedHistoryEntry] = useState<AnalysisHistoryEntry | null>(null);
 
   // 레이아웃: 좌측 히스토리 / 우측 AI 패널
   const [historyOpen, setHistoryOpen] = useState(true);
@@ -241,6 +247,31 @@ export default function PurchaseInputPage() {
 
   const unsavedCount = groups.filter(g => !g.isSaved).length;
 
+  const deleteHistoryEntry = useCallback(async (id: string) => {
+    if (!confirm('이 분석 기록을 삭제할까요?')) return;
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`/api/purchases/analysis-history?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers,
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || '삭제 실패');
+      }
+      if (selectedHistoryEntry?.id === id) setSelectedHistoryEntry(null);
+      setHistoryRefresh(k => k + 1);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '삭제 실패');
+    }
+  }, [selectedHistoryEntry?.id]);
+
+  const loadHistoryToSheet = useCallback((invoices: Invoice[]) => {
+    if (!invoices.length) return;
+    handleInvoicesFound(invoices, []);
+    setMobileTab('sheet');
+  }, [handleInvoicesFound]);
+
   return (
     <div className="flex flex-1 min-h-0 h-full bg-slate-950 text-slate-100 overflow-hidden">
 
@@ -258,6 +289,8 @@ export default function PurchaseInputPage() {
           <PurchaseAnalysisHistory
             storeId={currentStore?.storeId || ''}
             refreshKey={historyRefresh}
+            selectedId={selectedHistoryEntry?.id ?? null}
+            onSelectEntry={setSelectedHistoryEntry}
           />
         </div>
       ) : (
@@ -451,6 +484,14 @@ export default function PurchaseInputPage() {
         <div className={`flex-1 overflow-y-auto px-3 py-3 min-h-0 ${
           mobileTab === 'ai' ? 'hidden md:block' : ''
         }`}>
+          {selectedHistoryEntry && (
+            <PurchaseAnalysisDetailPanel
+              entry={selectedHistoryEntry}
+              onClose={() => setSelectedHistoryEntry(null)}
+              onLoadToSheet={loadHistoryToSheet}
+              onDelete={deleteHistoryEntry}
+            />
+          )}
           <PurchaseSheet
             groups={groups}
             onGroupsChange={setGroups}

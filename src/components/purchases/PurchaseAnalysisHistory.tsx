@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { History, RefreshCw, Trash2, ChevronDown, ChevronRight, CheckCircle, XCircle } from 'lucide-react';
+import { History, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
-import { formatAiTag, formatFileResultLine, type FileAnalysisMeta } from '@/lib/purchaseAiLabels';
+import { formatAiTag, type FileAnalysisMeta } from '@/lib/purchaseAiLabels';
+
+import type { Invoice } from '@/components/purchases/PurchaseSheet';
 
 export interface AnalysisHistoryEntry {
   id: string;
@@ -16,11 +18,15 @@ export interface AnalysisHistoryEntry {
   success: boolean;
   errors: string[];
   createdAt: string | null;
+  /** 분석 시 추출된 매입 명세 (신규 기록부터 저장) */
+  invoices?: Invoice[];
 }
 
 interface Props {
   storeId: string;
   refreshKey?: number;
+  selectedId?: string | null;
+  onSelectEntry?: (entry: AnalysisHistoryEntry | null) => void;
 }
 
 function formatWhen(iso: string | null) {
@@ -36,21 +42,26 @@ function formatWhen(iso: string | null) {
 
 function HistoryItem({
   entry,
-  onDelete,
+  selected,
+  onSelect,
 }: {
   entry: AnalysisHistoryEntry;
-  onDelete: (id: string) => void;
+  selected: boolean;
+  onSelect: (entry: AnalysisHistoryEntry) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const primary = entry.fileResults[0];
 
   return (
-    <div className="border border-slate-800 rounded-lg overflow-hidden bg-slate-900/50">
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className="w-full text-left px-2 py-2 hover:bg-slate-800/60 transition-colors"
-      >
+    <button
+      type="button"
+      onClick={() => onSelect(entry)}
+      className={`w-full text-left border rounded-lg overflow-hidden transition-colors ${
+        selected
+          ? 'border-teal-500/60 bg-teal-950/40 ring-1 ring-teal-600/30'
+          : 'border-slate-800 bg-slate-900/50 hover:bg-slate-800/60 hover:border-slate-700'
+      }`}
+    >
+      <div className="px-2 py-2">
         <div className="flex items-start gap-1.5">
           {entry.success
             ? <CheckCircle className="w-3 h-3 text-teal-400 shrink-0 mt-0.5" />
@@ -58,9 +69,9 @@ function HistoryItem({
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between gap-0.5">
               <span className="text-[9px] text-slate-500">{formatWhen(entry.createdAt)}</span>
-              {open
-                ? <ChevronDown className="w-2.5 h-2.5 text-slate-600 shrink-0" />
-                : <ChevronRight className="w-2.5 h-2.5 text-slate-600 shrink-0" />}
+              {entry.invoiceCount > 0 && (
+                <span className="text-[8px] text-teal-400/80 shrink-0">{entry.invoiceCount}건</span>
+              )}
             </div>
             <p className="text-[10px] text-slate-200 truncate mt-0.5" title={entry.fileNames.join(', ')}>
               {entry.fileNames.join(', ') || '파일 없음'}
@@ -68,47 +79,23 @@ function HistoryItem({
             {primary && (
               <span className="inline-block mt-0.5 text-[8px] px-1 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 max-w-full truncate">
                 {primary.ensemble?.length
-                  ? `🎯 ${primary.confidence ?? '?'}% · ${entry.invoiceCount > 0 ? `${entry.invoiceCount}건` : '실패'}`
-                  : `${formatAiTag(primary.provider, primary.model, primary.attempt)}${entry.invoiceCount > 0 ? ` · ${entry.invoiceCount}건` : ' · 실패'}`}
+                  ? `🎯 ${primary.confidence ?? '?'}%`
+                  : formatAiTag(primary.provider, primary.model, primary.attempt)}
               </span>
             )}
           </div>
         </div>
-      </button>
-
-      {open && (
-        <div className="px-2 pb-2 pt-0 border-t border-slate-800/80 space-y-1">
-          {entry.userMessage && entry.userMessage !== '파일을 분석해 주세요.' && (
-            <p className="text-[10px] text-slate-500 pt-2">요청: {entry.userMessage}</p>
-          )}
-          {entry.suppliers.length > 0 && (
-            <p className="text-[10px] text-slate-400">업체: {entry.suppliers.join(', ')}</p>
-          )}
-          {entry.fileResults.map((fr, i) => (
-            <div key={i} className="text-[10px] text-slate-400 leading-relaxed space-y-0.5">
-              <p className="whitespace-pre-wrap">{formatFileResultLine(fr)}</p>
-              {fr.ensemble?.filter(e => !e.success && e.exclusionReason).map((e, j) => (
-                <p key={j} className="text-red-400/70 pl-2">⛔ {e.exclusionReason}</p>
-              ))}
-            </div>
-          ))}
-          {entry.errors.length > 0 && (
-            <p className="text-[10px] text-red-400/80">{entry.errors.join(' · ')}</p>
-          )}
-          <button
-            type="button"
-            onClick={() => onDelete(entry.id)}
-            className="flex items-center gap-1 text-[10px] text-slate-600 hover:text-red-400 mt-1"
-          >
-            <Trash2 className="w-3 h-3" /> 삭제
-          </button>
-        </div>
-      )}
-    </div>
+      </div>
+    </button>
   );
 }
 
-export default function PurchaseAnalysisHistory({ storeId, refreshKey = 0 }: Props) {
+export default function PurchaseAnalysisHistory({
+  storeId,
+  refreshKey = 0,
+  selectedId = null,
+  onSelectEntry,
+}: Props) {
   const [entries, setEntries] = useState<AnalysisHistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -137,24 +124,6 @@ export default function PurchaseAnalysisHistory({ storeId, refreshKey = 0 }: Pro
   }, [storeId]);
 
   useEffect(() => { load(); }, [load, refreshKey]);
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('이 분석 기록을 삭제할까요?')) return;
-    try {
-      const headers = await getAuthHeaders();
-      const res = await fetch(`/api/purchases/analysis-history?id=${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-        headers,
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || '삭제 실패');
-      }
-      setEntries(prev => prev.filter(e => e.id !== id));
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  };
 
   const successCount = entries.filter(e => e.success).length;
 
@@ -194,7 +163,12 @@ export default function PurchaseAnalysisHistory({ storeId, refreshKey = 0 }: Pro
           </p>
         )}
         {entries.map(entry => (
-          <HistoryItem key={entry.id} entry={entry} onDelete={handleDelete} />
+          <HistoryItem
+            key={entry.id}
+            entry={entry}
+            selected={selectedId === entry.id}
+            onSelect={e => onSelectEntry?.(selectedId === e.id ? null : e)}
+          />
         ))}
       </div>
     </div>
@@ -202,6 +176,16 @@ export default function PurchaseAnalysisHistory({ storeId, refreshKey = 0 }: Pro
 }
 
 /** 분석 완료 후 Firestore에 기록 */
+export function sanitizeInvoicesForHistory(invoices: Invoice[]): Invoice[] {
+  return invoices.slice(0, 15).map(inv => {
+    const { _originalAiResult, ...rest } = inv;
+    return {
+      ...rest,
+      items: (rest.items || []).slice(0, 200),
+    };
+  });
+}
+
 export async function logPurchaseAnalysis(params: {
   storeId: string;
   userMessage: string;
@@ -211,6 +195,7 @@ export async function logPurchaseAnalysis(params: {
   suppliers: string[];
   success: boolean;
   errors?: string[];
+  invoices?: Invoice[];
 }) {
   if (!params.storeId) return;
   try {
@@ -218,7 +203,10 @@ export async function logPurchaseAnalysis(params: {
     await fetch('/api/purchases/analysis-history', {
       method: 'POST',
       headers,
-      body: JSON.stringify(params),
+      body: JSON.stringify({
+        ...params,
+        invoices: params.invoices ? sanitizeInvoicesForHistory(params.invoices) : undefined,
+      }),
     });
   } catch {
     /* non-blocking */

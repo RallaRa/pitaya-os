@@ -356,6 +356,7 @@ export default function PurchaseAIChat({ onInvoicesFound, storeId = '', onAnalys
           suppliers: [...new Set(allInvoices.map(i => i.supplierName).filter(Boolean))],
           success: allInvoices.length > 0,
           errors: batchErrors,
+          invoices: allInvoices,
         });
         onAnalysisLogged?.();
 
