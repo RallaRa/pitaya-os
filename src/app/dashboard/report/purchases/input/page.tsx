@@ -325,20 +325,33 @@ export default function PurchaseInputPage() {
     setTraceInfo(null);
     try {
       const callApi = async (forceRefresh: boolean) => {
-        const token = await user.getIdToken(forceRefresh);
+        const headers = await getAuthHeaders({ forceRefresh });
+        if (!headers.Authorization) {
+          throw new Error('로그인 토큰을 받지 못했습니다. 로그아웃 후 다시 로그인해 주세요.');
+        }
         return fetch(`/api/external/meat-history?traceNo=${encodeURIComponent(no)}`, {
-          headers: { Authorization: `Bearer ${token}` },
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ traceNo: no }),
+          cache: 'no-store',
+          credentials: 'same-origin',
         });
       };
 
       let res = await callApi(false);
       if (res.status === 401) res = await callApi(true);
 
-      const d = await res.json();
+      const d = await res.json().catch(() => ({}));
       if (res.status === 401) {
-        throw new Error('로그인 세션이 만료되었습니다. 로그아웃 후 다시 로그인해 주세요.');
+        throw new Error(
+          typeof d.error === 'string' && d.error !== 'Unauthorized'
+            ? d.error
+            : '로그인 인증에 실패했습니다. 로그아웃 후 다시 로그인해 주세요.',
+        );
       }
-      if (d.error) throw new Error(d.error);
+      if (d.error) {
+        throw new Error(d.error === 'Unauthorized' ? '로그인 인증에 실패했습니다. 로그아웃 후 다시 로그인해 주세요.' : d.error);
+      }
       setTraceInfo(d);
     } catch (e: unknown) {
       setTraceError(e instanceof Error ? e.message : '조회 실패');
