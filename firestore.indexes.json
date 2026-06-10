@@ -213,6 +213,22 @@
       ]
     },
     {
+      "collectionGroup": "purchase_records",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "purchaseDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "purchase_records",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "purchaseDate", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "ocr_corrections",
       "queryScope": "COLLECTION",
       "fields": [

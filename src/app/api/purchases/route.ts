@@ -21,6 +21,7 @@ import {
   type PurchaseAttachment,
 } from '@/lib/purchaseAttachments';
 import { appendStoreBusinessContext } from '@/lib/storeBusinessContext';
+import { fetchPurchaseRecordsForStore } from '@/lib/purchaseRecordsQuery.server';
 
 const SYSTEM_INSTRUCTION = appendStoreBusinessContext(`당신은 매입/구매 문서 전문 분석 AI입니다.
 거래명세서, 세금계산서, 매입전표, 영수증 이미지 또는 데이터를 분석하여 정확한 JSON을 반환합니다.
@@ -107,12 +108,11 @@ export async function GET(req: Request) {
       return NextResponse.json({ record: { id: doc.id, ...doc.data() } });
     }
 
-    let q = adminDb.collection('purchase_records').where('storeId', '==', storeId);
-    if (startDate) q = q.where('purchaseDate', '>=', startDate) as any;
-    if (endDate)   q = q.where('purchaseDate', '<=', endDate) as any;
-
-    const snap = await (q as any).orderBy('purchaseDate', 'desc').limit(100).get();
-    const records = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+    const records = await fetchPurchaseRecordsForStore(storeId, {
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+      limit: 100,
+    });
     return NextResponse.json({ records });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

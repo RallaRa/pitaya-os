@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
-import type { QuerySnapshot } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
 import { getKSTTodayYMD } from '@/lib/dateUtils';
+import { fetchPurchaseRecordsForStore } from '@/lib/purchaseRecordsQuery.server';
 import {
   buildItemPriceHistory,
   buildItemPriceListRows,
@@ -10,12 +10,7 @@ import {
   extractItemLinesFromRecords,
   itemPriceDocId,
   type PurchaseLineEntry,
-  type PurchaseRecordLike,
 } from '@/lib/purchaseUnitPriceHistory';
-
-function mapRecords(snap: QuerySnapshot): PurchaseRecordLike[] {
-  return snap.docs.map(d => ({ id: d.id, ...d.data() } as PurchaseRecordLike));
-}
 
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
@@ -32,12 +27,7 @@ export async function GET(req: Request) {
 
   try {
     if (itemName) {
-      const snap = await adminDb.collection('purchase_records')
-        .where('storeId', '==', storeId)
-        .orderBy('purchaseDate', 'desc')
-        .limit(500)
-        .get();
-      const records = mapRecords(snap);
+      const records = await fetchPurchaseRecordsForStore(storeId, { limit: 500 });
 
       let allLines = extractItemLinesFromRecords(records, itemName);
       const docSnap = await adminDb.collection('item_prices').doc(itemPriceDocId(storeId, itemName)).get();
@@ -52,12 +42,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ mode: 'item', ...history });
     }
 
-    const snap = await adminDb.collection('purchase_records')
-      .where('storeId', '==', storeId)
-      .orderBy('purchaseDate', 'desc')
-      .limit(500)
-      .get();
-    const records = mapRecords(snap);
+    const records = await fetchPurchaseRecordsForStore(storeId, { limit: 500 });
 
     const allLines = extractAllItemLinesFromRecords(records);
     const items = buildItemPriceListRows(allLines, startDate, endDate, today);
