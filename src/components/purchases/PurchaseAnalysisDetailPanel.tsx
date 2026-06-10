@@ -98,8 +98,8 @@ export default function PurchaseAnalysisDetailPanel({
   const hasInvoices = (entry.invoices?.length || 0) > 0;
 
   return (
-    <div className="mb-3 bg-slate-900 border border-teal-700/40 rounded-2xl overflow-hidden shadow-lg">
-      <div className="flex items-start gap-2 px-3 py-2.5 bg-teal-950/30 border-b border-teal-800/40">
+    <div className="h-full flex flex-col bg-slate-900 border border-teal-700/40 rounded-2xl overflow-hidden shadow-lg">
+      <div className="flex items-start gap-2 px-3 py-2.5 bg-teal-950/30 border-b border-teal-800/40 shrink-0">
         {entry.success
           ? <CheckCircle className="w-4 h-4 text-teal-400 shrink-0 mt-0.5" />
           : <XCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />}
@@ -139,15 +139,16 @@ export default function PurchaseAnalysisDetailPanel({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-500 hover:text-slate-200 rounded-lg hover:bg-slate-800 transition-colors"
-            title="닫기"
+            className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-200 px-2 py-1 rounded-lg hover:bg-slate-800 transition-colors"
+            title="매입 시트로 돌아가기"
           >
             <X className="w-3.5 h-3.5" />
+            시트로
           </button>
         </div>
       </div>
 
-      <div className="px-3 py-3 space-y-3 max-h-[min(52vh,520px)] overflow-y-auto">
+      <div className="flex-1 px-3 py-3 space-y-3 overflow-y-auto min-h-0">
         {entry.userMessage && entry.userMessage !== '파일을 분석해 주세요.' && (
           <div className="text-[10px] text-slate-400">
             <span className="text-slate-500">요청: </span>{entry.userMessage}

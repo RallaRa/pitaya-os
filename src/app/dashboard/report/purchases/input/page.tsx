@@ -8,7 +8,7 @@ import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import {
   ShoppingCart, Save, Loader2, CheckCircle, AlertCircle, Plus, X,
   Search, Beef, Bot, ChevronLeft, ChevronRight, GripVertical,
-  FileSpreadsheet, MessageSquare,
+  FileSpreadsheet, MessageSquare, History,
 } from 'lucide-react';
 import type { Invoice, InvoiceGroup, AttachedFile } from '@/components/purchases/PurchaseSheet';
 import type { AnalysisHistoryEntry } from '@/components/purchases/PurchaseAnalysisHistory';
@@ -80,6 +80,7 @@ export default function PurchaseInputPage() {
   const [aiWidth, setAiWidth] = useState(280);
   /** 모바일: 시트 vs AI 분석 (데스크탑은 우측 패널) */
   const [mobileTab, setMobileTab] = useState<'sheet' | 'ai'>('sheet');
+  const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false);
   const resizingRef = useRef(false);
 
   useEffect(() => {
@@ -269,15 +270,25 @@ export default function PurchaseInputPage() {
   const loadHistoryToSheet = useCallback((invoices: Invoice[]) => {
     if (!invoices.length) return;
     handleInvoicesFound(invoices, []);
+    setSelectedHistoryEntry(null);
+    setMobileHistoryOpen(false);
     setMobileTab('sheet');
   }, [handleInvoicesFound]);
+
+  const handleSelectHistoryEntry = useCallback((entry: AnalysisHistoryEntry | null) => {
+    setSelectedHistoryEntry(entry);
+    if (entry) {
+      setMobileTab('sheet');
+      setMobileHistoryOpen(false);
+    }
+  }, []);
 
   return (
     <div className="flex flex-1 min-h-0 h-full bg-slate-950 text-slate-100 overflow-hidden">
 
       {/* ── 좌측 분석 히스토리 (축소) ── */}
       {historyOpen ? (
-        <div className="hidden lg:flex flex-col w-44 shrink-0 h-full relative">
+        <div className="hidden md:flex flex-col w-44 shrink-0 h-full relative">
           <button
             type="button"
             onClick={() => setHistoryOpen(false)}
@@ -290,14 +301,14 @@ export default function PurchaseInputPage() {
             storeId={currentStore?.storeId || ''}
             refreshKey={historyRefresh}
             selectedId={selectedHistoryEntry?.id ?? null}
-            onSelectEntry={setSelectedHistoryEntry}
+            onSelectEntry={handleSelectHistoryEntry}
           />
         </div>
       ) : (
         <button
           type="button"
           onClick={() => setHistoryOpen(true)}
-          className="hidden lg:flex flex-col items-center justify-center w-7 shrink-0 h-full bg-slate-900 border-r border-slate-800 text-slate-500 hover:text-teal-400 hover:bg-slate-800/80 transition-colors"
+          className="hidden md:flex flex-col items-center justify-center w-7 shrink-0 h-full bg-slate-900 border-r border-slate-800 text-slate-500 hover:text-teal-400 hover:bg-slate-800/80 transition-colors"
           title="분석 히스토리 펼치기"
         >
           <ChevronRight className="w-3.5 h-3.5" />
@@ -346,6 +357,20 @@ export default function PurchaseInputPage() {
               <p className="text-[9px] text-slate-500 truncate">{currentStore.storeName}</p>
             )}
           </div>
+
+          {/* 분석 기록 (모바일·태블릿) */}
+          <button
+            type="button"
+            onClick={() => setMobileHistoryOpen(true)}
+            className={`md:hidden flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg transition-colors ${
+              selectedHistoryEntry
+                ? 'bg-teal-900/30 text-teal-300'
+                : 'text-slate-400 hover:text-teal-300 hover:bg-slate-800'
+            }`}
+          >
+            <History className="w-3.5 h-3.5" />
+            기록
+          </button>
 
           {/* 이력번호 조회 토글 */}
           <button
@@ -480,25 +505,26 @@ export default function PurchaseInputPage() {
         )}
         </div>
 
-        {/* 시트 영역 */}
+        {/* 시트 / 분석 상세 */}
         <div className={`flex-1 overflow-y-auto px-3 py-3 min-h-0 ${
           mobileTab === 'ai' ? 'hidden md:block' : ''
         }`}>
-          {selectedHistoryEntry && (
+          {selectedHistoryEntry ? (
             <PurchaseAnalysisDetailPanel
               entry={selectedHistoryEntry}
               onClose={() => setSelectedHistoryEntry(null)}
               onLoadToSheet={loadHistoryToSheet}
               onDelete={deleteHistoryEntry}
             />
+          ) : (
+            <PurchaseSheet
+              groups={groups}
+              onGroupsChange={setGroups}
+              onSaveGroup={saveGroup}
+              savingGroupIds={savingGroupIds}
+              storeId={currentStore?.storeId}
+            />
           )}
-          <PurchaseSheet
-            groups={groups}
-            onGroupsChange={setGroups}
-            onSaveGroup={saveGroup}
-            savingGroupIds={savingGroupIds}
-            storeId={currentStore?.storeId}
-          />
         </div>
 
         {/* 모바일: AI 분석 전체 화면 */}
@@ -558,6 +584,36 @@ export default function PurchaseInputPage() {
           <Bot className="w-4 h-4" />
           <span className="text-[9px] writing-mode-vertical" style={{ writingMode: 'vertical-rl' }}>AI</span>
         </button>
+      )}
+
+      {/* 모바일 분석 기록 전체 화면 */}
+      {mobileHistoryOpen && (
+        <div className="fixed inset-0 z-50 md:hidden flex flex-col bg-slate-950">
+          <div className="flex items-center justify-between px-3 py-2.5 border-b border-slate-800 shrink-0">
+            <div className="flex items-center gap-2">
+              <History className="w-4 h-4 text-teal-400" />
+              <h2 className="text-sm font-bold text-slate-100">분석 기록</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMobileHistoryOpen(false)}
+              className="p-1.5 text-slate-500 hover:text-slate-200 rounded-lg hover:bg-slate-800"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <PurchaseAnalysisHistory
+              storeId={currentStore?.storeId || ''}
+              refreshKey={historyRefresh}
+              selectedId={selectedHistoryEntry?.id ?? null}
+              onSelectEntry={handleSelectHistoryEntry}
+            />
+          </div>
+          <p className="shrink-0 px-3 py-2 text-[10px] text-slate-500 border-t border-slate-800 text-center">
+            항목을 탭하면 중앙 화면에 분석 상세가 표시됩니다
+          </p>
+        </div>
       )}
 
     </div>

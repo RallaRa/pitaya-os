@@ -135,7 +135,7 @@ export default function PurchaseAnalysisHistory({
           <div className="min-w-0">
             <h2 className="text-[10px] font-bold text-slate-200">분석 기록</h2>
             <p className="text-[8px] text-slate-500 truncate">
-              {entries.length > 0 ? `${successCount}/${entries.length}` : 'AI 비교'}
+              {entries.length > 0 ? `${successCount}/${entries.length} · 클릭→상세` : 'AI 비교'}
             </p>
           </div>
         </div>
@@ -159,7 +159,7 @@ export default function PurchaseAnalysisHistory({
         )}
         {storeId && !loading && entries.length === 0 && !error && (
           <p className="text-[9px] text-slate-600 text-center py-6 leading-relaxed px-1">
-            분석 시<br />AI·결과 기록
+            AI 분석 후<br />기록이 여기 표시됩니다
           </p>
         )}
         {entries.map(entry => (
