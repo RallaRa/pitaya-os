@@ -5,12 +5,14 @@ export interface PosAlertSettings {
   realtimeSaleEnabled: boolean;
   dailyCloseEnabled: boolean;
   goodsSyncNotifyEnabled: boolean;
+  itemSpeedAlertEnabled: boolean;
 }
 
 export const DEFAULT_POS_ALERT_SETTINGS: PosAlertSettings = {
   realtimeSaleEnabled: true,
   dailyCloseEnabled: true,
   goodsSyncNotifyEnabled: true,
+  itemSpeedAlertEnabled: true,
 };
 
 export async function getPosAlertSettings(storeId: string): Promise<PosAlertSettings> {

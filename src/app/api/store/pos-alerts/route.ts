@@ -36,6 +36,7 @@ export async function PATCH(req: Request) {
   if (typeof settings.realtimeSaleEnabled === 'boolean') patch.realtimeSaleEnabled = settings.realtimeSaleEnabled;
   if (typeof settings.dailyCloseEnabled === 'boolean') patch.dailyCloseEnabled = settings.dailyCloseEnabled;
   if (typeof settings.goodsSyncNotifyEnabled === 'boolean') patch.goodsSyncNotifyEnabled = settings.goodsSyncNotifyEnabled;
+  if (typeof settings.itemSpeedAlertEnabled === 'boolean') patch.itemSpeedAlertEnabled = settings.itemSpeedAlertEnabled;
 
   const merged = await savePosAlertSettings(storeId, patch);
   return NextResponse.json({ success: true, settings: merged });

@@ -41,6 +41,7 @@ const CUSTOMERS_API_URL  = `${API_BASE}/api/pos/sync-customers`;
 const EMPLOYEES_API_URL  = `${API_BASE}/api/pos/sync-employees`;
 const GOODS_API_URL      = `${API_BASE}/api/pos/sync-goods`;
 const SALE_EVENTS_API_URL = `${API_BASE}/api/pos/sale-events`;
+const ITEM_SPEED_API_URL = `${API_BASE}/api/pos/item-speed-check`;
 const API_KEY  = process.env.POS_BRIDGE_KEY || '';
 const STORE_ID = process.env.STORE_ID       || '';
 
@@ -61,6 +62,7 @@ const DB_CONFIG = {
 const REALTIME_INTERVAL_MS = parseInt(process.env.REALTIME_INTERVAL_MS || '300000', 10); // 기본 5분
 const SALE_EVENTS_INTERVAL_MS = parseInt(process.env.SALE_EVENTS_INTERVAL_MS || '30000', 10);
 const GOODS_SYNC_INTERVAL_MS = parseInt(process.env.GOODS_SYNC_INTERVAL_MS || '300000', 10);
+const ITEM_SPEED_INTERVAL_MS = parseInt(process.env.ITEM_SPEED_INTERVAL_MS || '1800000', 10);
 const CUSTOMER_SYNC_EVERY_MS = parseInt(process.env.CUSTOMER_SYNC_EVERY_MS || String(6 * 60 * 60 * 1000), 10);
 const FINGERPRINT_CACHE_PATH = path.join(__dirname, '.sync-fingerprint-cache.json');
 const SALE_EVENTS_CACHE_PATH = path.join(__dirname, '.sale-events-cache.json');
@@ -1374,6 +1376,109 @@ async function pollSaleEvents(dateStr, dryRun) {
   }
 }
 
+function getKSTMinutesSinceMidnight(date = new Date()) {
+  const fmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Seoul',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const [h, m] = fmt.format(date).split(':').map(v => parseInt(v, 10) || 0);
+  return h * 60 + m;
+}
+
+function formatMinutesAsHHmm(mins) {
+  const h = Math.floor(((mins % (24 * 60)) + (24 * 60)) % (24 * 60) / 60);
+  const m = ((mins % 60) + 60) % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function parseSaleTimeMinutes(saleTime) {
+  const digits = String(saleTime || '').replace(/\D/g, '');
+  if (digits.length < 4) return null;
+  const h = parseInt(digits.slice(0, 2), 10);
+  const m = parseInt(digits.slice(2, 4), 10);
+  if (Number.isNaN(h) || Number.isNaN(m) || h > 23 || m > 59) return null;
+  return h * 60 + m;
+}
+
+async function fetchItemSpeedWindow(dateStr, windowStartMin, windowEndMin) {
+  const headers = await fetchTodaySaleHeaders(dateStr);
+  const inWindow = headers.filter(h => {
+    const mins = parseSaleTimeMinutes(h.saleTime);
+    return mins !== null && mins > windowStartMin && mins <= windowEndMin;
+  });
+  if (!inWindow.length) return [];
+
+  const detailsMap = await fetchDetailsForSaleNums(dateStr, inWindow.map(h => h.saleNum));
+  const agg = {};
+  for (const h of inWindow) {
+    for (const line of detailsMap[h.saleNum] || []) {
+      const name = String(line.goodsName || '').trim();
+      if (!name) continue;
+      agg[name] = (agg[name] || 0) + toInt(line.saleCount);
+    }
+  }
+  return Object.entries(agg).map(([name, qty]) => ({ name, qty }));
+}
+
+async function sendItemSpeedToApi(payload) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await axios.post(ITEM_SPEED_API_URL, payload, {
+        headers: { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
+        timeout: 30000,
+      });
+      if (res.data?.success) {
+        log(`⚡ 품목속도 ${payload.items?.length || 0}건 → 알림 ${res.data.notified ?? 0}`);
+        return res.data;
+      }
+    } catch (e) {
+      warn(`item-speed (${attempt}/3): ${e.message}`);
+      if (attempt < 3) await sleep(3000);
+    }
+  }
+  return null;
+}
+
+async function pollItemSpeed(dateStr, dryRun) {
+  try {
+    const endMin = getKSTMinutesSinceMidnight();
+    const startMin = endMin - 60;
+    if (startMin < 0) {
+      log('품목속도: 자정 직후 1시간은 스킵');
+      return { sent: 0, skipped: 'midnight' };
+    }
+
+    const windowEnd = formatMinutesAsHHmm(endMin);
+    const windowStart = formatMinutesAsHHmm(startMin);
+    const items = await fetchItemSpeedWindow(dateStr, startMin, endMin);
+    if (!items.length) return { sent: 0, items: 0 };
+
+    if (dryRun) {
+      log(`[DRY-RUN] 품목속도 ${windowStart}~${windowEnd} ${items.length}품목`);
+      return { sent: 0, dryRun: items.length };
+    }
+
+    const result = await sendItemSpeedToApi({
+      storeId: STORE_ID,
+      date: dateStr,
+      windowStart,
+      windowEnd,
+      items,
+    });
+    return {
+      sent: result ? 1 : 0,
+      items: items.length,
+      notified: result?.notified ?? 0,
+      alerts: result?.alerts?.length ?? 0,
+    };
+  } catch (e) {
+    warn(`품목속도 폴링: ${e.message}`);
+    return { sent: 0 };
+  }
+}
+
 // ── 변경 감지 (Firestore 쓰기·읽기 절감) ─────────────────────────
 function loadFingerprintCache() {
   try {
@@ -1550,16 +1655,18 @@ async function runToday(dryRun, opts = {}) {
   return ok;
 }
 
-// 실시간 반복 (5분 매출 + 30초 결제 + 5분 품목)
+// 실시간 반복 (5분 매출 + 30초 결제 + 5분 품목 + 30분 품목속도)
 async function runRealtime(dryRun) {
   const intervalLabel = REALTIME_INTERVAL_MS >= 60000 ? `${REALTIME_INTERVAL_MS / 60000}분` : `${REALTIME_INTERVAL_MS / 1000}초`;
   const saleLabel = SALE_EVENTS_INTERVAL_MS >= 60000 ? `${SALE_EVENTS_INTERVAL_MS / 60000}분` : `${SALE_EVENTS_INTERVAL_MS / 1000}초`;
   const goodsLabel = GOODS_SYNC_INTERVAL_MS >= 60000 ? `${GOODS_SYNC_INTERVAL_MS / 60000}분` : `${GOODS_SYNC_INTERVAL_MS / 1000}초`;
-  log(`======== 실시간 모드 (매출 ${intervalLabel} / 결제 ${saleLabel} / 품목 ${goodsLabel}) ========`);
+  const speedLabel = ITEM_SPEED_INTERVAL_MS >= 60000 ? `${ITEM_SPEED_INTERVAL_MS / 60000}분` : `${ITEM_SPEED_INTERVAL_MS / 1000}초`;
+  log(`======== 실시간 모드 (매출 ${intervalLabel} / 결제 ${saleLabel} / 품목 ${goodsLabel} / 속도 ${speedLabel}) ========`);
   let lastCustomerSyncAt = 0;
   let lastFullSyncAt = 0;
   let lastSaleEventsAt = 0;
   let lastGoodsSyncAt = 0;
+  let lastItemSpeedAt = 0;
   while (true) {
     const nowMs = Date.now();
     const dateStr = getKSTTodayYMD();
@@ -1570,6 +1677,10 @@ async function runRealtime(dryRun) {
     if (nowMs - lastGoodsSyncAt >= GOODS_SYNC_INTERVAL_MS) {
       try { await pollGoodsSync(dryRun); } catch (e) { warn(`goods-sync: ${e.message}`); }
       lastGoodsSyncAt = nowMs;
+    }
+    if (nowMs - lastItemSpeedAt >= ITEM_SPEED_INTERVAL_MS) {
+      try { await pollItemSpeed(dateStr, dryRun); } catch (e) { warn(`item-speed: ${e.message}`); }
+      lastItemSpeedAt = nowMs;
     }
     if (lastFullSyncAt === 0 || nowMs - lastFullSyncAt >= REALTIME_INTERVAL_MS) {
       const syncCustomers = nowMs - lastCustomerSyncAt >= CUSTOMER_SYNC_EVERY_MS;
