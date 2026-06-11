@@ -18,7 +18,10 @@ const WIDGET_LIST = [
   { key: 'today_sales',        label: '당일 매출 현황',    desc: '실시간 POS 매출' },
   { key: 'sales_compare',      label: '매출 목표',         desc: '주·월 목표 달성·진도율' },
   { key: 'customer_visit',     label: '고객 방문 · 전월대비', desc: '방문 고객·방문률 전월 대비' },
+  { key: 'sales_heatmap',      label: '시간대 히트맵',        desc: '요일×시간 평균 매출 (축약)' },
+  { key: 'dow_profitability',  label: '요일별 수익성',        desc: '요일별 매출·수익 랭킹' },
   { key: 'sales_category',     label: '카테고리별 매출',    desc: '소고기·돼지·닭·양념 파이차트' },
+  { key: 'time_slot_aov',      label: '시간대별 객단가',    desc: '오전·오후·저녁·야간 객단가' },
 ];
 
 const ROLE_COLS: { key: string; label: string; locked?: boolean }[] = [
@@ -42,7 +45,10 @@ const DEFAULT_PERMS: Permissions = {
   today_sales:        { master: true, admin: true,  user: true,  staff: true  },
   sales_compare:      { master: true, admin: true,  user: true,  staff: false },
   customer_visit:     { master: true, admin: true,  user: true,  staff: false },
+  sales_heatmap:      { master: true, admin: true,  user: true,  staff: false },
+  dow_profitability:  { master: true, admin: true,  user: true,  staff: false },
   sales_category:     { master: true, admin: true,  user: true,  staff: true  },
+  time_slot_aov:      { master: true, admin: true,  user: true,  staff: true  },
 };
 
 export default function WidgetPermissionsPage() {

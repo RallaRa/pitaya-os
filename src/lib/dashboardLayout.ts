@@ -70,16 +70,34 @@ export const WIDGET_META: WidgetMeta[] = [
     permKey: 'customer_visit',
   },
   {
+    id: 'sales_heatmap',
+    title: '시간대 히트맵',
+    defaultItem: { i: 'sales_heatmap', x: 4, y: 22, w: 4, h: 4, minW: 3, minH: 3, maxW: 8, maxH: 6 },
+    permKey: 'sales_heatmap',
+  },
+  {
     id: 'cost_ratio',
     title: '원가율 모니터',
     defaultItem: { i: 'cost_ratio', x: 8, y: 22, w: 4, h: 4, minW: 3, minH: 3, maxW: 6, maxH: 6 },
     permKey: 'cost_ratio',
   },
   {
+    id: 'dow_profitability',
+    title: '요일별 수익성',
+    defaultItem: { i: 'dow_profitability', x: 0, y: 26, w: 4, h: 4, minW: 3, minH: 3, maxW: 8, maxH: 6 },
+    permKey: 'dow_profitability',
+  },
+  {
     id: 'sales_category',
     title: '카테고리별 매출',
     defaultItem: { i: 'sales_category', x: 4, y: 26, w: 4, h: 4, minW: 3, minH: 3, maxW: 8, maxH: 8 },
     permKey: 'sales_category',
+  },
+  {
+    id: 'time_slot_aov',
+    title: '시간대별 객단가',
+    defaultItem: { i: 'time_slot_aov', x: 8, y: 26, w: 4, h: 4, minW: 3, minH: 3, maxW: 8, maxH: 8 },
+    permKey: 'time_slot_aov',
   },
   {
     id: 'ai_insight',

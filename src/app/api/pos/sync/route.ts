@@ -7,6 +7,8 @@ import { runSalesHourlyAlertsForStore } from '@/lib/salesHourlyAlertRunner';
 import { upsertStoreDailyItemStats } from '@/lib/storeDailyItemStats';
 import { replaceCustomerPurchaseLinesForDate, type CustomerPurchaseLineInput } from '@/lib/customerPurchaseLines';
 import { upsertSalesCategoriesForDate } from '@/lib/pos/salesCategoryAggregate.server';
+import { maybeTriggerDailyCloseReport } from '@/lib/pos/dailyCloseNotify.server';
+import { calcTimeSlotAovFromHourly } from '@/lib/pos/timeSlotAov';
 
 // ── 타입 ──────────────────────────────────────────────────────────
 interface CustomerSale {
@@ -140,7 +142,12 @@ async function syncToDailyReports(params: {
   finish: FinishTotal | null;
   timeSlots: Array<{ posNo?: string; hour?: string; totalSale?: number; tranCount?: number }>;
   syncedAt: string;
-}) {
+}): Promise<{
+  isClosed: boolean;
+  netSales: number;
+  customerCount: number;
+  items: Array<{ name: string; amount: number; netSales: number; qty: number; categoryName: string }>;
+}> {
   const { storeId, date, headerDoc, details, finish, timeSlots, syncedAt } = params;
   const posBreakdown: PosBreakdown[] = finish?.perPos ?? [];
 
@@ -289,6 +296,28 @@ async function syncToDailyReports(params: {
   } catch (err) {
     console.error('[pos/sync] sales_categories 저장 실패:', err);
   }
+
+  try {
+    const aov = calcTimeSlotAovFromHourly(timeSlots);
+    await adminDb.collection('pos_time_slot_aov').doc(`${storeId}_${date}`.replace(/[/\\#?]/g, '_').slice(0, 500)).set({
+      storeId, date, ...aov, updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  } catch (err) {
+    console.error('[pos/sync] pos_time_slot_aov 저장 실패:', err);
+  }
+
+  return {
+    isClosed,
+    netSales,
+    customerCount: transCount,
+    items: items.map(it => ({
+      name: it.name,
+      amount: it.amount,
+      netSales: it.netSales,
+      qty: it.qty,
+      categoryName: it.categoryName,
+    })),
+  };
 }
 
 function buildSyncFingerprint(
@@ -539,11 +568,30 @@ export async function POST(req: Request) {
 
   // 5. daily_reports 동시 저장 (실패해도 응답은 성공)
   let dailyReportSaved = false;
+  const reportDocId = `pos_${storeId}_${date}`;
+  const prevReportSnap = await adminDb.collection('daily_reports').doc(reportDocId).get();
+  const wasClosed = prevReportSnap.exists ? !!prevReportSnap.data()?.isClosed : false;
+  let dailyCloseSummary: Awaited<ReturnType<typeof syncToDailyReports>> | null = null;
+
   try {
-    await syncToDailyReports({ storeId, date, headerDoc, details, finish, timeSlots, syncedAt });
+    dailyCloseSummary = await syncToDailyReports({ storeId, date, headerDoc, details, finish, timeSlots, syncedAt });
     dailyReportSaved = true;
   } catch (err) {
     console.error('[pos/sync] daily_reports 저장 실패:', err);
+  }
+
+  if (dailyReportSaved && dailyCloseSummary) {
+    const storeDoc = await adminDb.collection('stores').doc(storeId).get();
+    maybeTriggerDailyCloseReport({
+      storeId,
+      date,
+      isClosed: dailyCloseSummary.isClosed,
+      wasClosed,
+      netSales: dailyCloseSummary.netSales,
+      customerCount: dailyCloseSummary.customerCount,
+      items: dailyCloseSummary.items,
+      storeName: storeDoc.data()?.storeName as string | undefined,
+    }).catch(err => console.error('[pos/sync] daily close notify failed:', err));
   }
 
   if (dailyReportSaved) {

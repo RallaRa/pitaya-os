@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2, Tag, Package, CalendarDays, UserCircle, Target } from 'lucide-react';
+import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2, Tag, Package, CalendarDays, UserCircle, Target, Bell } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -155,6 +155,13 @@ export default function SettingsPage() {
       icon: <Tag className="w-5 h-5 text-rose-400" />,
       label: '매출 카테고리 키워드',
       description: 'POS 품목명 → 소고기·돼지·닭·양념 자동 분류 키워드',
+      show: isAdminLevelGroup(storeRole),
+    },
+    {
+      href: '/dashboard/settings/pos-alerts',
+      icon: <Bell className="w-5 h-5 text-teal-400" />,
+      label: 'POS 알림 설정',
+      description: '실시간 매출·일 마감 알림 ON/OFF',
       show: isAdminLevelGroup(storeRole),
     },
   ].filter(m => m.show);

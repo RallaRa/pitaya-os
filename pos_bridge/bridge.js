@@ -40,6 +40,7 @@ const API_URL  = `${API_BASE}/api/pos/sync`;
 const CUSTOMERS_API_URL  = `${API_BASE}/api/pos/sync-customers`;
 const EMPLOYEES_API_URL  = `${API_BASE}/api/pos/sync-employees`;
 const GOODS_API_URL      = `${API_BASE}/api/pos/sync-goods`;
+const SALE_EVENTS_API_URL = `${API_BASE}/api/pos/sale-events`;
 const API_KEY  = process.env.POS_BRIDGE_KEY || '';
 const STORE_ID = process.env.STORE_ID       || '';
 
@@ -58,9 +59,10 @@ const DB_CONFIG = {
 };
 
 const REALTIME_INTERVAL_MS = parseInt(process.env.REALTIME_INTERVAL_MS || '300000', 10); // 기본 5분
-/** realtime 모드에서 고객 전체 동기화 간격 (기본 6시간). 매출은 REALTIME_INTERVAL_MS마다 전송 */
+const SALE_EVENTS_INTERVAL_MS = parseInt(process.env.SALE_EVENTS_INTERVAL_MS || '30000', 10);
 const CUSTOMER_SYNC_EVERY_MS = parseInt(process.env.CUSTOMER_SYNC_EVERY_MS || String(6 * 60 * 60 * 1000), 10);
 const FINGERPRINT_CACHE_PATH = path.join(__dirname, '.sync-fingerprint-cache.json');
+const SALE_EVENTS_CACHE_PATH = path.join(__dirname, '.sale-events-cache.json');
 
 // ── 유틸 ──────────────────────────────────────────────────────────
 const toInt = v => (v == null ? 0 : parseInt(v, 10) || 0);
@@ -1233,6 +1235,128 @@ async function fetchTimeSlots(dateStr) {
   }
 }
 
+// ── 실시간 결제 감지 (SaT Sale_Num 증분) ─────────────────────────
+function loadSaleEventsCache() {
+  try { return JSON.parse(fs.readFileSync(SALE_EVENTS_CACHE_PATH, 'utf8')); } catch { return {}; }
+}
+
+function saveSaleEventsCache(cache) {
+  try { fs.writeFileSync(SALE_EVENTS_CACHE_PATH, JSON.stringify(cache, null, 2)); } catch (e) {
+    warn(`sale-events 캐시 저장 실패: ${e.message}`);
+  }
+}
+
+async function fetchTodaySaleHeaders(dateStr) {
+  const table = `SaT_${ym(dateStr)}`;
+  try {
+    const result = await (await getPool()).request()
+      .input('date', sql.VarChar(10), dateStr)
+      .query(`SELECT Sale_Num, Sale_Time, TSell_Pri FROM ${table} WHERE Sale_Date = @date ORDER BY Sale_Num`);
+    return result.recordset.map(r => ({
+      saleNum: String(r.Sale_Num || ''),
+      saleTime: String(r.Sale_Time || '').trim(),
+      totalSale: toInt(r.TSell_Pri),
+    })).filter(r => r.saleNum);
+  } catch (e) {
+    warn(`SaT 헤더 조회 실패: ${e.message}`);
+    return [];
+  }
+}
+
+async function fetchDetailsForSaleNums(dateStr, saleNums) {
+  const map = {};
+  if (!saleNums.length) return map;
+  const table = `SaD_${ym(dateStr)}`;
+  const unique = [...new Set(saleNums.map(String))];
+  for (let i = 0; i < unique.length; i += 80) {
+    const chunk = unique.slice(i, i + 80);
+    const placeholders = chunk.map((_, idx) => `@sn${idx}`).join(', ');
+    const request = (await getPool()).request().input('date', sql.VarChar(10), dateStr);
+    chunk.forEach((sn, idx) => request.input(`sn${idx}`, sql.VarChar(30), sn));
+    try {
+      const result = await request.query(`
+        SELECT Sale_Num, G_Name, Sale_Count, TSell_Pri FROM ${table}
+        WHERE Sale_Date = @date AND Sale_YN = 1 AND Sale_Num IN (${placeholders})
+      `);
+      for (const r of result.recordset) {
+        const sn = String(r.Sale_Num || '');
+        if (!map[sn]) map[sn] = [];
+        map[sn].push({ goodsName: String(r.G_Name || ''), saleCount: toInt(r.Sale_Count), totalPrice: toInt(r.TSell_Pri) });
+      }
+    } catch (e) { warn(`SaD chunk 조회 실패: ${e.message}`); }
+  }
+  return map;
+}
+
+async function sendSaleEventsToApi(payload) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await axios.post(SALE_EVENTS_API_URL, payload, {
+        headers: { Authorization: `Bearer ${API_KEY}`, 'Content-Type': 'application/json' },
+        timeout: 30000,
+      });
+      if (res.data?.success) {
+        log(`💳 실시간 결제 ${payload.events?.length || 0}건 → 처리 ${res.data.processed ?? 0}`);
+        return true;
+      }
+    } catch (e) {
+      warn(`sale-events (${attempt}/3): ${e.message}`);
+      if (attempt < 3) await sleep(3000);
+    }
+  }
+  return false;
+}
+
+async function pollSaleEvents(dateStr, dryRun) {
+  try {
+    const headers = await fetchTodaySaleHeaders(dateStr);
+    if (!headers.length) return { sent: 0 };
+    const cache = loadSaleEventsCache();
+    if (!cache[dateStr]) {
+      cache[dateStr] = { seen: headers.map(h => h.saleNum) };
+      Object.keys(cache).forEach(k => { if (k !== dateStr) delete cache[k]; });
+      saveSaleEventsCache(cache);
+      log(`실시간 매출: 기존 ${headers.length}건 스킵 (초기화)`);
+      return { sent: 0 };
+    }
+    const seen = new Set(cache[dateStr].seen || []);
+    const newSales = headers.filter(h => !seen.has(h.saleNum));
+    if (!newSales.length) return { sent: 0 };
+
+    const detailsMap = await fetchDetailsForSaleNums(dateStr, newSales.map(s => s.saleNum));
+    const events = newSales.map(s => {
+      const lines = detailsMap[s.saleNum] || [];
+      return {
+        saleNum: s.saleNum,
+        saleTime: s.saleTime,
+        amount: s.totalSale,
+        items: lines.map(d => ({ name: d.goodsName, qty: d.saleCount, price: d.totalPrice })),
+        itemSummary: lines.length
+          ? lines.map(d => `${d.goodsName} ${d.saleCount > 0 ? d.saleCount + '개' : ''}`.trim()).join(', ')
+          : '품목 정보 없음',
+      };
+    });
+
+    if (dryRun) {
+      log(`[DRY-RUN] 신규 결제 ${events.length}건`);
+      return { sent: 0, dryRun: events.length };
+    }
+
+    const ok = await sendSaleEventsToApi({ storeId: STORE_ID, date: dateStr, events });
+    if (ok) {
+      headers.forEach(h => seen.add(h.saleNum));
+      cache[dateStr] = { seen: [...seen] };
+      Object.keys(cache).forEach(k => { if (k !== dateStr) delete cache[k]; });
+      saveSaleEventsCache(cache);
+      return { sent: events.length };
+    }
+    return { sent: 0 };
+  } catch (e) {
+    warn(`실시간 매출 폴링: ${e.message}`);
+    return { sent: 0 };
+  }
+}
+
 // ── 변경 감지 (Firestore 쓰기·읽기 절감) ─────────────────────────
 function loadFingerprintCache() {
   try {
@@ -1409,23 +1533,28 @@ async function runToday(dryRun, opts = {}) {
   return ok;
 }
 
-// 실시간 반복 (기본 5분)
+// 실시간 반복 (기본 5분 + 30초 결제알림)
 async function runRealtime(dryRun) {
-  const intervalLabel = REALTIME_INTERVAL_MS >= 60000
-    ? `${REALTIME_INTERVAL_MS / 60000}분`
-    : `${REALTIME_INTERVAL_MS / 1000}초`;
-  const customerLabel = CUSTOMER_SYNC_EVERY_MS >= 3600000
-    ? `${CUSTOMER_SYNC_EVERY_MS / 3600000}시간`
-    : `${Math.round(CUSTOMER_SYNC_EVERY_MS / 60000)}분`;
-  log(`======== 실시간 모드 시작 (매출 ${intervalLabel} / 고객 ${customerLabel}) ========`);
-  log('종료하려면 Ctrl+C');
+  const intervalLabel = REALTIME_INTERVAL_MS >= 60000 ? `${REALTIME_INTERVAL_MS / 60000}분` : `${REALTIME_INTERVAL_MS / 1000}초`;
+  const saleLabel = SALE_EVENTS_INTERVAL_MS >= 60000 ? `${SALE_EVENTS_INTERVAL_MS / 60000}분` : `${SALE_EVENTS_INTERVAL_MS / 1000}초`;
+  log(`======== 실시간 모드 (매출 ${intervalLabel} / 결제알림 ${saleLabel}) ========`);
   let lastCustomerSyncAt = 0;
+  let lastFullSyncAt = 0;
+  let lastSaleEventsAt = 0;
   while (true) {
-    const shouldSyncCustomers = Date.now() - lastCustomerSyncAt >= CUSTOMER_SYNC_EVERY_MS;
-    await runToday(dryRun, { syncCustomerData: shouldSyncCustomers });
-    if (shouldSyncCustomers) lastCustomerSyncAt = Date.now();
-    log(`다음 전송까지 ${intervalLabel} 대기...`);
-    await sleep(REALTIME_INTERVAL_MS);
+    const nowMs = Date.now();
+    const dateStr = getKSTTodayYMD();
+    if (nowMs - lastSaleEventsAt >= SALE_EVENTS_INTERVAL_MS) {
+      try { await pollSaleEvents(dateStr, dryRun); } catch (e) { warn(`sale-events: ${e.message}`); }
+      lastSaleEventsAt = nowMs;
+    }
+    if (lastFullSyncAt === 0 || nowMs - lastFullSyncAt >= REALTIME_INTERVAL_MS) {
+      const syncCustomers = nowMs - lastCustomerSyncAt >= CUSTOMER_SYNC_EVERY_MS;
+      await runToday(dryRun, { syncCustomerData: syncCustomers });
+      if (syncCustomers) lastCustomerSyncAt = nowMs;
+      lastFullSyncAt = nowMs;
+    }
+    await sleep(Math.min(SALE_EVENTS_INTERVAL_MS, 5000));
   }
 }
 
