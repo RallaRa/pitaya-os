@@ -116,6 +116,7 @@ export async function POST(req: Request) {
             emailEncrypted: c.email ? encrypt(String(c.email)) : '',
             grade:          String(c.cusClass || ''),
             cusGubun:       String(c.cusGubun || ''),
+            isBusiness:     /사업|법인|업체|도매|기업/.test(`${c.cusGubun || ''}${c.cusClass || ''}`),
             point:          Number(c.point || 0),
             totalPoint:     Number(c.totalPoint || 0),
             usedPoint:      Number(c.usedPoint || 0),

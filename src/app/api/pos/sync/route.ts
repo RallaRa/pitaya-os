@@ -8,6 +8,7 @@ import { upsertStoreDailyItemStats } from '@/lib/storeDailyItemStats';
 import { replaceCustomerPurchaseLinesForDate, type CustomerPurchaseLineInput } from '@/lib/customerPurchaseLines';
 import { upsertSalesCategoriesForDate } from '@/lib/pos/salesCategoryAggregate.server';
 import { maybeTriggerDailyCloseReport } from '@/lib/pos/dailyCloseNotify.server';
+import { checkStockWarnings } from '@/lib/pos/stockWarning.server';
 import { calcTimeSlotAovFromHourly } from '@/lib/pos/timeSlotAov';
 
 // ── 타입 ──────────────────────────────────────────────────────────
@@ -592,6 +593,10 @@ export async function POST(req: Request) {
       items: dailyCloseSummary.items,
       storeName: storeDoc.data()?.storeName as string | undefined,
     }).catch(err => console.error('[pos/sync] daily close notify failed:', err));
+
+    checkStockWarnings(storeId, date, dailyCloseSummary.items).catch(err => {
+      console.error('[pos/sync] stock warning failed:', err);
+    });
   }
 
   if (dailyReportSaved) {

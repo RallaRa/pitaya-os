@@ -50,6 +50,11 @@
     { "path": "/api/cron/sales-anomaly-detect", "schedule": "30 14 * * *" },
     { "path": "/api/cron/aggregate-sales-categories", "schedule": "0 15 * * *" },
     { "path": "/api/cron/new-customer-report", "schedule": "0 15 * * *" },
-    { "path": "/api/cron/discount-abuse-report", "schedule": "0 23 * * *" }
+    { "path": "/api/cron/discount-abuse-report", "schedule": "0 23 * * *" },
+    { "path": "/api/cron/weather-order-suggestion", "schedule": "0 22 * * *" },
+    { "path": "/api/cron/birthday-marketing", "schedule": "0 0 * * *" },
+    { "path": "/api/cron/daily-checklist-alert-open", "schedule": "30 0 * * *" },
+    { "path": "/api/cron/daily-checklist-alert-close", "schedule": "0 12 * * *" },
+    { "path": "/api/cron/signage-show-rotate", "schedule": "0 */4 * * *" }
   ]
 }

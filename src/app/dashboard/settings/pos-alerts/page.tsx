@@ -28,6 +28,9 @@ export default function PosAlertsSettingsPage() {
     transactionAnomalyEnabled: true,
     repurchaseReminderEnabled: true,
     signageAutoSwitchEnabled: false,
+    weatherOrderEnabled: true,
+    stockWarningEnabled: true,
+    businessInvoiceEnabled: true,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -96,6 +99,9 @@ export default function PosAlertsSettingsPage() {
             ['transactionAnomalyEnabled', '이상 거래 감지', '마이너스·야간·대량·고할인 거래 🌙야간모니터링'],
             ['repurchaseReminderEnabled', '재구매 주기 알림', '6개월 평균 주기+2일 초과 시 notification_queue 등록 (자정)'],
             ['signageAutoSwitchEnabled', '사이니지 자동 전환', '1시간 TOP1 품목 → signage_content 자동 갱신 (기본 OFF)'],
+            ['weatherOrderEnabled', '날씨 발주 제안', '매일 07:00 Open-Meteo + 과거 매출 패턴 💰매출알림'],
+            ['stockWarningEnabled', '재고 경고', '시작량−당일판매 추정 재고 임계값 이하 알림'],
+            ['businessInvoiceEnabled', '사업자 거래명세서', '사업자 고객 결제 시 invoices 자동 생성'],
           ] as const).map(([key, title, desc]) => (
             <label key={key} className="flex items-start gap-3 p-4 rounded-xl border border-slate-800 bg-slate-900/60 cursor-pointer">
               <input
@@ -114,6 +120,9 @@ export default function PosAlertsSettingsPage() {
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
             {saved ? '저장됨' : '저장'}
           </button>
+          <Link href="/dashboard/settings/pos-stock" className="block text-teal-400 text-sm hover:underline">
+            재고 임계값 품목 설정 →
+          </Link>
         </div>
       )}
     </div>

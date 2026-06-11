@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { processBusinessInvoices } from '@/lib/pos/businessInvoice.server';
 import { processDiscountAbuseEvents } from '@/lib/pos/discountAbuse.server';
 import { processFirstPurchaseEvents } from '@/lib/pos/firstPurchaseNotify.server';
 import { processSaleEvents, type SaleEventInput } from '@/lib/pos/saleEventNotify.server';
@@ -47,12 +48,14 @@ export async function POST(req: Request) {
       vipVisitResult,
       discountResult,
       anomalyResult,
+      invoiceResult,
     ] = await Promise.all([
       processSaleEvents(storeId, date, events),
       processFirstPurchaseEvents(storeId, date, events),
       processVipVisitEvents(storeId, date, events),
       processDiscountAbuseEvents(storeId, date, monitorEvents),
       processTransactionAnomalyEvents(storeId, date, monitorEvents),
+      processBusinessInvoices(storeId, date, events),
     ]);
     return NextResponse.json({
       success: true,
@@ -61,6 +64,7 @@ export async function POST(req: Request) {
       vipVisit: vipVisitResult,
       discountAbuse: discountResult,
       transactionAnomaly: anomalyResult,
+      businessInvoice: invoiceResult,
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'sale-events failed';

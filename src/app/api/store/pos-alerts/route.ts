@@ -44,6 +44,9 @@ export async function PATCH(req: Request) {
   if (typeof settings.transactionAnomalyEnabled === 'boolean') patch.transactionAnomalyEnabled = settings.transactionAnomalyEnabled;
   if (typeof settings.repurchaseReminderEnabled === 'boolean') patch.repurchaseReminderEnabled = settings.repurchaseReminderEnabled;
   if (typeof settings.signageAutoSwitchEnabled === 'boolean') patch.signageAutoSwitchEnabled = settings.signageAutoSwitchEnabled;
+  if (typeof settings.weatherOrderEnabled === 'boolean') patch.weatherOrderEnabled = settings.weatherOrderEnabled;
+  if (typeof settings.stockWarningEnabled === 'boolean') patch.stockWarningEnabled = settings.stockWarningEnabled;
+  if (typeof settings.businessInvoiceEnabled === 'boolean') patch.businessInvoiceEnabled = settings.businessInvoiceEnabled;
 
   const merged = await savePosAlertSettings(storeId, patch);
   return NextResponse.json({ success: true, settings: merged });

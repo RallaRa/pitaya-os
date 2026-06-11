@@ -1,0 +1,19 @@
+import { NextResponse } from 'next/server';
+import { verifyToken, isActiveStoreMember, canManageStore } from '@/lib/authVerify';
+import { listInvoices } from '@/lib/pos/businessInvoice.server';
+
+export async function GET(req: Request) {
+  const authUser = await verifyToken(req);
+  if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const storeId = new URL(req.url).searchParams.get('storeId');
+  if (!storeId) return NextResponse.json({ error: 'storeId 필요' }, { status: 400 });
+
+  const member = await isActiveStoreMember(authUser.uid, storeId);
+  if (!member && !await canManageStore(authUser.uid, storeId, authUser.email)) {
+    return NextResponse.json({ error: '권한 없음' }, { status: 403 });
+  }
+
+  const invoices = await listInvoices(storeId);
+  return NextResponse.json({ storeId, invoices });
+}
