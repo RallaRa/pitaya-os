@@ -18,8 +18,15 @@ export interface SupplierOption {
   id: string;
   supplierName: string;
   businessNumber?: string;
+  /** 업태 (사업자등록증) */
+  businessType?: string;
+  /** 업종/종목 (사업자등록증) */
+  businessItem?: string;
   category?: string;
+  address?: string;
+  contactPerson?: string;
   phone?: string;
+  email?: string;
   active?: boolean;
 }
 
@@ -481,9 +488,13 @@ function NewSupplierModal({
   const [form, setForm] = useState({
     supplierName: initialName || '',
     businessNumber: initialBusinessNumber || '',
+    businessType: '',
+    businessItem: '',
     category: initialCategory || '소고기',
-    phone: initialPhone || '',
+    address: '',
     contactPerson: '',
+    phone: initialPhone || '',
+    email: '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -521,8 +532,13 @@ function NewSupplierModal({
         id: data.id,
         supplierName: form.supplierName.trim(),
         businessNumber: form.businessNumber.trim(),
+        businessType: form.businessType.trim(),
+        businessItem: form.businessItem.trim(),
         category: form.category,
-        phone: form.phone,
+        address: form.address.trim(),
+        contactPerson: form.contactPerson.trim(),
+        phone: form.phone.trim(),
+        email: form.email.trim(),
       });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '등록 실패');
@@ -575,6 +591,32 @@ function NewSupplierModal({
             </select>
           </div>
           <div>
+            <label className="text-[10px] text-slate-500">업태</label>
+            <input
+              value={form.businessType}
+              onChange={e => setForm(f => ({ ...f, businessType: e.target.value }))}
+              placeholder="도매업"
+              className="w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-500">업종</label>
+            <input
+              value={form.businessItem}
+              onChange={e => setForm(f => ({ ...f, businessItem: e.target.value }))}
+              placeholder="육류 도매"
+              className="w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none"
+            />
+          </div>
+          <div className="col-span-2">
+            <label className="text-[10px] text-slate-500">주소</label>
+            <input
+              value={form.address}
+              onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
+              className="w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none"
+            />
+          </div>
+          <div>
             <label className="text-[10px] text-slate-500">담당자</label>
             <input
               value={form.contactPerson}
@@ -587,6 +629,15 @@ function NewSupplierModal({
             <input
               value={form.phone}
               onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+              className="w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none"
+            />
+          </div>
+          <div className="col-span-2">
+            <label className="text-[10px] text-slate-500">이메일</label>
+            <input
+              type="email"
+              value={form.email}
+              onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
               className="w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white outline-none"
             />
           </div>

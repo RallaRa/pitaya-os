@@ -23,7 +23,7 @@ export async function syncItemPricesForPurchase(
     supplyAmount?: number;
     category?: string;
   }>,
-) {
+): Promise<string[]> {
   const today = getKSTTodayYMD();
   const names = new Set<string>();
 
@@ -33,7 +33,9 @@ export async function syncItemPricesForPurchase(
     names.add(name);
   }
 
-  await Promise.all([...names].map(async name => {
+  const syncedItems = [...names];
+
+  await Promise.all(syncedItems.map(async name => {
     const docId = itemPriceDocId(storeId, name);
     const ref = adminDb.collection('item_prices').doc(docId);
     const snap = await ref.get();
@@ -58,4 +60,6 @@ export async function syncItemPricesForPurchase(
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
   }));
+
+  return syncedItems;
 }

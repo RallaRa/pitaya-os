@@ -20,6 +20,10 @@ import {
   savePurchaseInputDraft,
 } from '@/lib/purchaseInputDraftClient';
 import { completePurchaseAnalysis } from '@/components/purchases/PurchaseAnalysisHistory';
+import {
+  appendCorrectionSaveDestinations,
+  type PurchaseSaveDestination,
+} from '@/lib/purchaseSaveDestinations';
 
 const PurchaseAIChat = dynamic(() => import('@/components/purchases/PurchaseAIChat'), { ssr: false });
 const PurchaseSheet = dynamic(() => import('@/components/purchases/PurchaseSheet'), { ssr: false });
@@ -29,6 +33,10 @@ const PurchaseAnalysisHistory = dynamic(
 );
 const PurchaseAnalysisDetailPanel = dynamic(
   () => import('@/components/purchases/PurchaseAnalysisDetailPanel'),
+  { ssr: false },
+);
+const PurchaseSaveDestinationsModal = dynamic(
+  () => import('@/components/purchases/PurchaseSaveDestinationsModal'),
   { ssr: false },
 );
 
@@ -71,6 +79,13 @@ export default function PurchaseInputPage() {
   const [savedCount, setSavedCount] = useState(0);
   const [expiryNotice, setExpiryNotice] = useState('');
   const [error, setError] = useState('');
+  const [saveModal, setSaveModal] = useState<{
+    groupId: string;
+    destinations: PurchaseSaveDestination[];
+    supplierName: string;
+    purchaseRecordId?: string;
+    attachments?: import('@/lib/purchaseAttachments').PurchaseAttachment[];
+  } | null>(null);
 
   // 이력번호 조회
   const [traceOpen, setTraceOpen] = useState(false);
@@ -224,17 +239,27 @@ export default function PurchaseInputPage() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || '저장 실패');
 
+      let saveDestinations: PurchaseSaveDestination[] = data.saveDestinations || [];
+
       if (group.originalAiResult && group.invoice.supplierName) {
-        fetch('/api/purchases/save-correction', {
-          method: 'POST',
-          headers: await getAuthJsonHeaders(),
-          body: JSON.stringify({
-            storeId: currentStore.storeId,
-            supplierName: group.invoice.supplierName,
-            originalResult: group.originalAiResult,
-            correctedResult: group.invoice,
-          }),
-        }).catch(() => {});
+        try {
+          const corrRes = await fetch('/api/purchases/save-correction', {
+            method: 'POST',
+            headers: await getAuthJsonHeaders(),
+            body: JSON.stringify({
+              storeId: currentStore.storeId,
+              supplierName: group.invoice.supplierName,
+              originalResult: group.originalAiResult,
+              correctedResult: group.invoice,
+            }),
+          });
+          const corrData = await corrRes.json();
+          if (corrData.ok) {
+            saveDestinations = appendCorrectionSaveDestinations(saveDestinations, corrData);
+          }
+        } catch {
+          /* OCR 학습 실패는 저장 자체를 막지 않음 */
+        }
       }
 
       setGroups(prev => {
@@ -248,6 +273,7 @@ export default function PurchaseInputPage() {
                 savedAttachments: data.purchaseAttachments?.length
                   ? data.purchaseAttachments
                   : undefined,
+                saveDestinations,
               }
             : g
         );
@@ -262,6 +288,14 @@ export default function PurchaseInputPage() {
         return next;
       });
       setSavedCount(c => c + 1);
+
+      setSaveModal({
+        groupId,
+        destinations: saveDestinations,
+        supplierName: group.invoice.supplierName || '매입',
+        purchaseRecordId: data.id,
+        attachments: data.purchaseAttachments?.length ? data.purchaseAttachments : undefined,
+      });
 
       const er = data.expiryReminders as {
         registered?: number;
@@ -287,6 +321,18 @@ export default function PurchaseInputPage() {
       });
     }
   }, [groups, user?.uid, currentStore?.storeId]);
+
+  const viewSaveDestinations = useCallback((groupId: string) => {
+    const group = groups.find(g => g.id === groupId);
+    if (!group?.saveDestinations?.length) return;
+    setSaveModal({
+      groupId,
+      destinations: group.saveDestinations,
+      supplierName: group.invoice.supplierName || '매입',
+      purchaseRecordId: group.purchaseRecordId,
+      attachments: group.savedAttachments,
+    });
+  }, [groups]);
 
   const saveAll = useCallback(async () => {
     const unsaved = groups.filter(g => !g.isSaved);
@@ -618,8 +664,20 @@ export default function PurchaseInputPage() {
             {savedCount > 0 && !error && (
               <div className="flex items-center gap-2 bg-teal-900/20 border border-teal-500/30 rounded-lg px-3 py-2 text-xs text-teal-300">
                 <CheckCircle className="w-3.5 h-3.5 shrink-0" />
-                {savedCount}건 저장 완료
-                <button onClick={() => { setSavedCount(0); setExpiryNotice(''); }} className="ml-auto text-slate-500 hover:text-slate-300">
+                <span className="flex-1">{savedCount}건 저장 완료</span>
+                {groups.some(g => g.saveDestinations?.length) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const last = [...groups].reverse().find(g => g.saveDestinations?.length);
+                      if (last) viewSaveDestinations(last.id);
+                    }}
+                    className="text-teal-200 hover:text-white underline underline-offset-2 shrink-0"
+                  >
+                    저장 위치 보기
+                  </button>
+                )}
+                <button onClick={() => { setSavedCount(0); setExpiryNotice(''); }} className="text-slate-500 hover:text-slate-300 shrink-0">
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -655,6 +713,7 @@ export default function PurchaseInputPage() {
               onSaveGroup={saveGroup}
               savingGroupIds={savingGroupIds}
               storeId={currentStore?.storeId}
+              onViewSaveDestinations={viewSaveDestinations}
             />
           )}
         </div>
@@ -748,6 +807,17 @@ export default function PurchaseInputPage() {
             항목을 탭하면 중앙 화면에 분석 상세가 표시됩니다
           </p>
         </div>
+      )}
+
+      {saveModal && currentStore?.storeId && (
+        <PurchaseSaveDestinationsModal
+          destinations={saveModal.destinations}
+          supplierName={saveModal.supplierName}
+          storeId={currentStore.storeId}
+          purchaseRecordId={saveModal.purchaseRecordId}
+          attachments={saveModal.attachments}
+          onClose={() => setSaveModal(null)}
+        />
       )}
 
     </div>

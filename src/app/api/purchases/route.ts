@@ -16,6 +16,10 @@ import { sendKakaoNotifySafe, sendKakaoNotifyToStore } from '@/lib/kakao/sendNot
 import { registerExpiryRemindersFromPurchase } from '@/lib/expiryReminder/fromPurchaseTrace';
 import { syncItemPricesForPurchase } from '@/lib/purchaseItemPriceSync';
 import {
+  buildPurchaseSaveDestinations,
+  type ExpiryReminderSaveDetail,
+} from '@/lib/purchaseSaveDestinations';
+import {
   extFromMime,
   mimeFromFileType,
   type PurchaseAttachment,
@@ -198,6 +202,7 @@ export async function POST(req: Request) {
       });
 
       let expiryReminders: Awaited<ReturnType<typeof registerExpiryRemindersFromPurchase>> | undefined;
+      let syncedItems: string[] = [];
       try {
         const items = Array.isArray(extractedData.items) ? extractedData.items : [];
         expiryReminders = await registerExpiryRemindersFromPurchase({
@@ -206,17 +211,27 @@ export async function POST(req: Request) {
           purchaseRecordId: docRef.id,
           items,
         });
-        syncItemPricesForPurchase(
+        syncedItems = await syncItemPricesForPurchase(
           storeId,
           docRef.id,
           String(extractedData.purchaseDate || ''),
           String(extractedData.supplierName || ''),
           extractedData.invoiceNumber,
           items,
-        ).catch(err => console.error('[purchases/save] item_prices sync:', err));
+        );
       } catch (expErr) {
-        console.error('[purchases/save] expiry reminders:', expErr);
+        console.error('[purchases/save] expiry/item_prices:', expErr);
       }
+
+      const saveDestinations = buildPurchaseSaveDestinations({
+        purchaseRecordId: docRef.id,
+        supplierName: String(extractedData.supplierName || ''),
+        totalAmount: Number(extractedData.totalAmount || 0),
+        purchaseAttachments,
+        syncedItems,
+        storeId,
+        expiryDetails: (expiryReminders?.details || []) as ExpiryReminderSaveDetail[],
+      });
 
       return NextResponse.json({
         success: true,
@@ -224,6 +239,8 @@ export async function POST(req: Request) {
         imageUrls,
         purchaseAttachments,
         expiryReminders,
+        syncedItems,
+        saveDestinations,
       });
     }
 

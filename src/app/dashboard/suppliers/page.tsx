@@ -22,6 +22,8 @@ interface Supplier {
   email: string;
   address: string;
   businessNumber: string;
+  businessType: string;
+  businessItem: string;
   orderDays: number[];
   deliveryDays: number[];
   leadTime: number;
@@ -56,7 +58,7 @@ const PAYMENT_TERMS = ['현금', '익월 말일', '익월 15일', '30일 후', '
 
 const EMPTY_FORM: Omit<Supplier, 'id'> = {
   supplierName: '', category: '소고기', contactPerson: '', phone: '',
-  email: '', address: '', businessNumber: '',
+  email: '', address: '', businessNumber: '', businessType: '', businessItem: '',
   orderDays: [], deliveryDays: [], leadTime: 1,
   paymentTerms: '익월 말일', memo: '', active: true, tags: [],
 };
@@ -64,6 +66,7 @@ const EMPTY_FORM: Omit<Supplier, 'id'> = {
 const FIELD_LABELS: Record<string, string> = {
   supplierName:'거래처명', category:'분류', contactPerson:'담당자', phone:'전화번호',
   email:'이메일', address:'주소', businessNumber:'사업자번호',
+  businessType:'업태', businessItem:'업종',
   orderDays:'발주요일', deliveryDays:'수령요일', leadTime:'리드타임',
   paymentTerms:'결제조건', memo:'메모', active:'활성여부',
 };
@@ -188,6 +191,22 @@ function SupplierForm({
             value={form.businessNumber} onChange={e => set('businessNumber', e.target.value)}
             className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-teal-500"
             placeholder="000-00-00000"
+          />
+        </div>
+        <div>
+          <label className="text-[11px] text-slate-400 mb-1 block">업태</label>
+          <input
+            value={form.businessType} onChange={e => set('businessType', e.target.value)}
+            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-teal-500"
+            placeholder="도매업"
+          />
+        </div>
+        <div>
+          <label className="text-[11px] text-slate-400 mb-1 block">업종</label>
+          <input
+            value={form.businessItem} onChange={e => set('businessItem', e.target.value)}
+            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-teal-500"
+            placeholder="육류 도매"
           />
         </div>
         <div>
@@ -663,6 +682,18 @@ function DetailPanel({
                 <div className="flex items-center gap-2 text-sm">
                   <FileText className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                   <span className="text-slate-300">{supplier.businessNumber}</span>
+                </div>
+              )}
+              {supplier.businessType && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-slate-500 shrink-0 w-14">업태</span>
+                  <span className="text-slate-300">{supplier.businessType}</span>
+                </div>
+              )}
+              {supplier.businessItem && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-slate-500 shrink-0 w-14">업종</span>
+                  <span className="text-slate-300">{supplier.businessItem}</span>
                 </div>
               )}
             </section>

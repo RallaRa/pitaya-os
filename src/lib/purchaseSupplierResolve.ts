@@ -2,15 +2,25 @@ export interface SupplierMasterEntry {
   id: string;
   supplierName: string;
   businessNumber?: string;
+  businessType?: string;
+  businessItem?: string;
   category?: string;
+  address?: string;
+  contactPerson?: string;
   phone?: string;
+  email?: string;
   active?: boolean;
 }
 
 export interface SupplierDraftFields {
   businessNumber: string;
+  businessType: string;
+  businessItem: string;
   category: string;
+  address: string;
+  contactPerson: string;
   phone: string;
+  email: string;
 }
 
 export interface InvoiceSupplierInput {
@@ -112,8 +122,13 @@ export function buildSupplierDraft(
 ): SupplierDraftFields {
   return {
     businessNumber: existing?.businessNumber?.trim() || '',
+    businessType: existing?.businessType?.trim() || '',
+    businessItem: existing?.businessItem?.trim() || '',
     category: existing?.category?.trim() || inferSupplierCategoryFromItems(items),
+    address: existing?.address?.trim() || '',
+    contactPerson: existing?.contactPerson?.trim() || '',
     phone: existing?.phone?.trim() || '',
+    email: existing?.email?.trim() || '',
   };
 }
 

@@ -12,6 +12,7 @@ import {
   resolveGroupAttachments,
   type PurchaseAttachment,
 } from '@/lib/purchaseAttachments';
+import type { PurchaseSaveDestination } from '@/lib/purchaseSaveDestinations';
 
 import {
   ALL_ITEM_CATEGORIES,
@@ -100,6 +101,8 @@ export interface InvoiceGroup {
   savedAttachments?: PurchaseAttachment[];
   purchaseRecordId?: string;
   originalAiResult?: Invoice['_originalAiResult'];
+  /** 저장 후 각 저장소(전표·Storage·단가 등) 위치 */
+  saveDestinations?: PurchaseSaveDestination[];
 }
 
 interface Props {
@@ -108,6 +111,7 @@ interface Props {
   onSaveGroup: (groupId: string) => Promise<void>;
   savingGroupIds: Set<string>;
   storeId?: string;
+  onViewSaveDestinations?: (groupId: string) => void;
 }
 
 type OptionalCol = 'traceNo' | 'origin' | 'cut' | 'grade';
@@ -133,6 +137,50 @@ const DEFAULT_ITEM: PurchaseItem = {
 const fmt = (n: number) => (n || 0).toLocaleString('ko-KR');
 
 const SUPPLIER_CATEGORIES = ['소고기', '돼지고기', '닭고기', '수산물', '채소/과일', '공산품', '기타'];
+
+type SupplierDisplaySource = {
+  supplierName?: string;
+  businessNumber?: string;
+  businessType?: string;
+  businessItem?: string;
+  category?: string;
+  address?: string;
+  contactPerson?: string;
+  phone?: string;
+  email?: string;
+};
+
+function SupplierDetailGrid({ source, nameBold }: { source: SupplierDisplaySource; nameBold?: string }) {
+  const rows: { label: string; value: string }[] = [
+    { label: '상호', value: nameBold || source.supplierName?.trim() || '' },
+    { label: '사업자등록번호', value: source.businessNumber?.trim() || '' },
+    { label: '업태', value: source.businessType?.trim() || '' },
+    { label: '업종', value: source.businessItem?.trim() || '' },
+    { label: '주소', value: source.address?.trim() || '' },
+    { label: '분류', value: source.category?.trim() || '' },
+    { label: '담당자', value: source.contactPerson?.trim() || '' },
+    { label: '연락처', value: source.phone?.trim() || '' },
+    { label: '이메일', value: source.email?.trim() || '' },
+  ].filter(r => r.label === '상호' || r.value);
+
+  if (rows.length <= 1 && !rows[0]?.value) return null;
+
+  return (
+    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-[10px]">
+      {rows.map(row => (
+        <div
+          key={row.label}
+          className={`min-w-0 ${row.label === '주소' ? 'sm:col-span-2' : ''}`}
+        >
+          <span className="text-slate-500">{row.label}</span>
+          <p className={`text-slate-200 break-words leading-snug ${row.label === '상호' ? 'font-semibold text-sm text-white mt-0.5' : 'mt-0.5'}`}>
+            {row.value || '—'}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function SupplierInfoSection({
   groupId,
@@ -161,14 +209,6 @@ function SupplierInfoSection({
   const displayName = matched?.supplierName || invoice.supplierName?.trim() || '';
   const isUnregistered = !matched && !!storeId;
 
-  const infoRows: { label: string; value?: string }[] = matched
-    ? [
-        { label: '사업자번호', value: matched.businessNumber?.trim() || undefined },
-        { label: '분류', value: matched.category?.trim() || undefined },
-        { label: '연락처', value: matched.phone?.trim() || undefined },
-      ].filter(r => r.value)
-    : [];
-
   return (
     <div className="border-b border-teal-900/40 bg-gradient-to-r from-slate-950/90 to-teal-950/20 px-3 py-2.5">
       <div className="flex items-center gap-1.5 mb-2">
@@ -184,87 +224,134 @@ function SupplierInfoSection({
         )}
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-start gap-2 mb-2">
-        <div className="flex-1 min-w-0">
-          {storeId ? (
-            <SupplierCodePicker
-              storeId={storeId}
-              supplierId={invoice.supplierId || matched?.id}
-              supplierName={invoice.supplierName}
-              initialCategory={draft.category}
-              initialBusinessNumber={draft.businessNumber}
-              initialPhone={draft.phone}
-              suppliers={suppliers}
-              onReload={onReload}
-              onSelect={s => onUpdateSupplier(groupId, s)}
-            />
-          ) : (
-            <input
-              value={invoice.supplierName}
-              onChange={e => onUpdateHeader(groupId, 'supplierName', e.target.value)}
-              placeholder="공급업체명"
-              className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-2 py-1.5 text-sm text-white font-semibold focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
-            />
-          )}
-        </div>
-        {displayName && (
-          <p className="sm:max-w-[45%] text-sm font-bold text-white leading-snug break-words shrink-0">
-            {displayName}
-          </p>
+      <div className="mb-2">
+        {storeId ? (
+          <SupplierCodePicker
+            storeId={storeId}
+            supplierId={invoice.supplierId || matched?.id}
+            supplierName={invoice.supplierName}
+            initialCategory={draft.category}
+            initialBusinessNumber={draft.businessNumber}
+            initialPhone={draft.phone}
+            suppliers={suppliers}
+            onReload={onReload}
+            onSelect={s => onUpdateSupplier(groupId, s)}
+          />
+        ) : (
+          <input
+            value={invoice.supplierName}
+            onChange={e => onUpdateHeader(groupId, 'supplierName', e.target.value)}
+            placeholder="공급업체명"
+            className="w-full bg-slate-800/60 border border-slate-700 rounded-lg px-2 py-1.5 text-sm text-white font-semibold focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
+          />
         )}
       </div>
 
-      {matched && infoRows.length > 0 && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
-          {infoRows.map(row => (
-            <div key={row.label} className="min-w-0">
-              <span className="text-slate-500">{row.label}: </span>
-              <span className="text-slate-200">{row.value}</span>
-            </div>
-          ))}
-        </div>
+      {matched && (
+        <SupplierDetailGrid source={matched} nameBold={displayName} />
       )}
 
       {isUnregistered && (
-        <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <div className="col-span-2 sm:col-span-1">
-            <label className="text-[9px] text-slate-500">거래처명</label>
-            <input
-              value={invoice.supplierName}
-              onChange={e => onUpdateHeader(groupId, 'supplierName', e.target.value)}
-              placeholder={invoice.items.length ? inferSupplierCategoryFromItems(invoice.items) + ' 거래처' : '공급업체명'}
-              className="w-full mt-0.5 bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
-            />
-          </div>
-          <div>
-            <label className="text-[9px] text-slate-500">분류</label>
-            <select
-              value={draft.category}
-              onChange={e => onUpdateSupplierDraft(groupId, 'category', e.target.value)}
-              className="w-full mt-0.5 bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-teal-600"
-            >
-              {SUPPLIER_CATEGORIES.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-[9px] text-slate-500">사업자번호</label>
-            <input
-              value={draft.businessNumber}
-              onChange={e => onUpdateSupplierDraft(groupId, 'businessNumber', e.target.value)}
-              placeholder="000-00-00000"
-              className="w-full mt-0.5 bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
-            />
-          </div>
-          <div>
-            <label className="text-[9px] text-slate-500">연락처</label>
-            <input
-              value={draft.phone}
-              onChange={e => onUpdateSupplierDraft(groupId, 'phone', e.target.value)}
-              placeholder="010-0000-0000"
-              className="w-full mt-0.5 bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
-            />
+        <div className="mt-2 space-y-2">
+          <SupplierDetailGrid
+            source={{
+              supplierName: displayName,
+              businessNumber: draft.businessNumber,
+              businessType: draft.businessType,
+              businessItem: draft.businessItem,
+              category: draft.category,
+              address: draft.address,
+              contactPerson: draft.contactPerson,
+              phone: draft.phone,
+              email: draft.email,
+            }}
+            nameBold={displayName}
+          />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 border-t border-slate-800/60">
+            <div className="col-span-2 sm:col-span-1">
+              <label className="text-[9px] text-slate-500">거래처명</label>
+              <input
+                value={invoice.supplierName}
+                onChange={e => onUpdateHeader(groupId, 'supplierName', e.target.value)}
+                placeholder={invoice.items.length ? inferSupplierCategoryFromItems(invoice.items) + ' 거래처' : '공급업체명'}
+                className="w-full mt-0.5 bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
+              />
+            </div>
+            <div>
+              <label className="text-[9px] text-slate-500">사업자등록번호</label>
+              <input
+                value={draft.businessNumber}
+                onChange={e => onUpdateSupplierDraft(groupId, 'businessNumber', e.target.value)}
+                placeholder="000-00-00000"
+                className="w-full mt-0.5 bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
+              />
+            </div>
+            <div>
+              <label className="text-[9px] text-slate-500">업태</label>
+              <input
+                value={draft.businessType}
+                onChange={e => onUpdateSupplierDraft(groupId, 'businessType', e.target.value)}
+                placeholder="도매업"
+                className="w-full mt-0.5 bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
+              />
+            </div>
+            <div>
+              <label className="text-[9px] text-slate-500">업종</label>
+              <input
+                value={draft.businessItem}
+                onChange={e => onUpdateSupplierDraft(groupId, 'businessItem', e.target.value)}
+                placeholder="육류 도매"
+                className="w-full mt-0.5 bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="text-[9px] text-slate-500">주소</label>
+              <input
+                value={draft.address}
+                onChange={e => onUpdateSupplierDraft(groupId, 'address', e.target.value)}
+                placeholder="사업장 주소"
+                className="w-full mt-0.5 bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
+              />
+            </div>
+            <div>
+              <label className="text-[9px] text-slate-500">분류</label>
+              <select
+                value={draft.category}
+                onChange={e => onUpdateSupplierDraft(groupId, 'category', e.target.value)}
+                className="w-full mt-0.5 bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-teal-600"
+              >
+                {SUPPLIER_CATEGORIES.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-[9px] text-slate-500">담당자</label>
+              <input
+                value={draft.contactPerson}
+                onChange={e => onUpdateSupplierDraft(groupId, 'contactPerson', e.target.value)}
+                placeholder="담당자명"
+                className="w-full mt-0.5 bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
+              />
+            </div>
+            <div>
+              <label className="text-[9px] text-slate-500">연락처</label>
+              <input
+                value={draft.phone}
+                onChange={e => onUpdateSupplierDraft(groupId, 'phone', e.target.value)}
+                placeholder="010-0000-0000"
+                className="w-full mt-0.5 bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
+              />
+            </div>
+            <div>
+              <label className="text-[9px] text-slate-500">이메일</label>
+              <input
+                value={draft.email}
+                onChange={e => onUpdateSupplierDraft(groupId, 'email', e.target.value)}
+                placeholder="example@email.com"
+                className="w-full mt-0.5 bg-slate-800/60 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-teal-600 placeholder:text-slate-600"
+              />
+            </div>
           </div>
         </div>
       )}
@@ -336,7 +423,7 @@ function applyItemChange(
 }
 
 export default function PurchaseSheet({
-  groups, onGroupsChange, onSaveGroup, savingGroupIds, storeId = '',
+  groups, onGroupsChange, onSaveGroup, savingGroupIds, storeId = '', onViewSaveDestinations,
 }: Props) {
   const [visibleCols, setVisibleCols] = useState<Set<OptionalCol>>(new Set());
   const [viewer, setViewer] = useState<{ groupId: string; index: number } | null>(null);
@@ -655,8 +742,19 @@ export default function PurchaseSheet({
               })()}
 
               {group.isSaved ? (
-                <span className="flex items-center gap-0.5 text-[9px] text-teal-400 shrink-0">
-                  <Check className="w-2.5 h-2.5" /> 저장
+                <span className="flex items-center gap-1 shrink-0">
+                  <span className="flex items-center gap-0.5 text-[9px] text-teal-400">
+                    <Check className="w-2.5 h-2.5" /> 저장
+                  </span>
+                  {group.saveDestinations?.length && onViewSaveDestinations ? (
+                    <button
+                      type="button"
+                      onClick={() => onViewSaveDestinations(group.id)}
+                      className="text-[9px] text-teal-300 hover:text-teal-200 underline underline-offset-2 whitespace-nowrap"
+                    >
+                      저장 위치
+                    </button>
+                  ) : null}
                 </span>
               ) : (
                 <button
