@@ -29,44 +29,50 @@ export default function TraceNumbersPage() {
   const [records, setRecords] = useState<TraceRecord[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const loadFromPurchases = useCallback(async () => {
+    const h = await getAuthHeaders();
+    const p = new URLSearchParams({ storeId, startDate: start, endDate: end });
+    const d = await fetch(`/api/purchases?${p}`, { headers: h }).then(r => r.json());
+    const extracted: TraceRecord[] = [];
+    (d.records || []).forEach((r: any) => {
+      (r.items || []).forEach((it: any, i: number) => {
+        const category = it.category || '';
+        if (category && !isMeatCategory(category)) return;
+        extracted.push({
+          id: `${r.id}_${i}`, date: r.purchaseDate || '',
+          category: it.category || '', name: it.name || '',
+          weight: it.weight || it.qty || 0, origin: it.origin || '',
+          traceNo: it.traceNo || '', supplierName: r.supplierName || '',
+          grade: it.grade || '',
+        });
+      });
+    });
+    setRecords(extracted.sort((a, b) => b.date.localeCompare(a.date)));
+  }, [storeId, start, end]);
+
   const load = useCallback(async () => {
     if (!storeId) return;
     setLoading(true);
     try {
-      const q = query(
-        collection(db, 'trace_records'),
-        where('storeId', '==', storeId),
-        where('date', '>=', start),
-        where('date', '<=', end),
-        orderBy('date', 'desc'),
-      );
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        setRecords(snap.docs.map(d => ({ id: d.id, ...d.data() as any })));
-        return;
+      try {
+        const q = query(
+          collection(db, 'trace_records'),
+          where('storeId', '==', storeId),
+          where('date', '>=', start),
+          where('date', '<=', end),
+          orderBy('date', 'desc'),
+        );
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          setRecords(snap.docs.map(d => ({ id: d.id, ...d.data() as any })));
+          return;
+        }
+      } catch {
+        /* 복합 인덱스 미배포 등 — purchase_records fallback */
       }
-
-      /* Fallback: purchase_records */
-      const h = await getAuthHeaders();
-      const p = new URLSearchParams({ storeId, startDate: start, endDate: end });
-      const d = await fetch(`/api/purchases?${p}`, { headers: h }).then(r => r.json());
-      const extracted: TraceRecord[] = [];
-      (d.records || []).forEach((r: any) => {
-        (r.items || []).forEach((it: any, i: number) => {
-          const category = it.category || '';
-          if (category && !isMeatCategory(category)) return;
-          extracted.push({
-            id: `${r.id}_${i}`, date: r.purchaseDate || '',
-            category: it.category || '', name: it.name || '',
-            weight: it.weight || it.qty || 0, origin: it.origin || '',
-            traceNo: it.traceNo || '', supplierName: r.supplierName || '',
-            grade: it.grade || '',
-          });
-        });
-      });
-      setRecords(extracted.sort((a, b) => b.date.localeCompare(a.date)));
+      await loadFromPurchases();
     } catch { /* ignore */ } finally { setLoading(false); }
-  }, [storeId, start, end]);
+  }, [storeId, start, end, loadFromPurchases]);
 
   useEffect(() => { load(); }, [load]);
 
