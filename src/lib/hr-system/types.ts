@@ -1,3 +1,18 @@
+export interface HrEmployeeRecord {
+  id: string;
+  storeId?: string;
+  empNo?: string;
+  name?: string;
+  department?: string;
+  position?: string;
+  status?: string;
+  hireDate?: string;
+  resignDate?: string;
+  linkedUid?: string;
+  salary?: EmployeeSalaryBase;
+  [key: string]: unknown;
+}
+
 export interface PayrollInsuranceRates {
   nationalPensionEmployee: number;
   nationalPensionEmployer: number;

@@ -26,7 +26,7 @@ export async function requireAccountingAccess(
   }
 
   const access = await resolveMyAccessPayload(authUser.uid, authUser.email, storeId || null);
-  if (access.isSuperuser) {
+  if ('isSuperuser' in access && access.isSuperuser) {
     return { uid: authUser.uid, email: authUser.email, access };
   }
 

@@ -7,18 +7,18 @@ import {
   type AttendanceSummary,
 } from '@/lib/hr-system/payrollCalculator';
 import { leaveRequestOverlapsMonth } from '@/lib/hr/storeAdmin';
-import type { PayrollRun, PayrollSettings, PayrollSlip } from '@/lib/hr-system/types';
+import type { PayrollRun, PayrollSettings, PayrollSlip, HrEmployeeRecord } from '@/lib/hr-system/types';
 
 export async function loadPayrollSettings(storeId: string): Promise<PayrollSettings> {
   const snap = await adminDb.collection('hr_payroll_settings').doc(storeId).get();
   return mergePayrollSettings(storeId, snap.exists ? (snap.data() as PayrollSettings) : null);
 }
 
-export async function loadActiveEmployees(storeId: string) {
+export async function loadActiveEmployees(storeId: string): Promise<HrEmployeeRecord[]> {
   const snap = await adminDb.collection('hr_employees')
     .where('storeId', '==', storeId)
     .get();
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as HrEmployeeRecord));
 }
 
 async function loadAttendanceForMonth(storeId: string, period: string) {
