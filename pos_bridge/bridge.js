@@ -60,6 +60,7 @@ const DB_CONFIG = {
 
 const REALTIME_INTERVAL_MS = parseInt(process.env.REALTIME_INTERVAL_MS || '300000', 10); // 기본 5분
 const SALE_EVENTS_INTERVAL_MS = parseInt(process.env.SALE_EVENTS_INTERVAL_MS || '30000', 10);
+const GOODS_SYNC_INTERVAL_MS = parseInt(process.env.GOODS_SYNC_INTERVAL_MS || '300000', 10);
 const CUSTOMER_SYNC_EVERY_MS = parseInt(process.env.CUSTOMER_SYNC_EVERY_MS || String(6 * 60 * 60 * 1000), 10);
 const FINGERPRINT_CACHE_PATH = path.join(__dirname, '.sync-fingerprint-cache.json');
 const SALE_EVENTS_CACHE_PATH = path.join(__dirname, '.sale-events-cache.json');
@@ -685,6 +686,7 @@ async function sendGoodsToApi(goodsList) {
           synced: res.data.synced || 0,
           pendingGroups: res.data.pendingGroups || 0,
           pendingItems: res.data.pendingItems || 0,
+          changes: res.data.changes || null,
         };
       }
       if (attempt === 3) throw new Error(JSON.stringify(res.data));
@@ -696,16 +698,31 @@ async function sendGoodsToApi(goodsList) {
   return { synced: 0, pendingGroups: 0, pendingItems: 0 };
 }
 
-async function syncGoods(pool) {
-  log('━━━ POS 품목(Goods) → Pitaya 저울코드 동기화 ━━━');
+async function syncGoods(pool, dryRun = false) {
+  log('━━━ POS 품목(Goods) → Pitaya 동기화 ━━━');
   const goods = await fetchGoodsMaster(pool);
   log(`6자리 품목코드 ${goods.length}건 조회`);
   if (!goods.length) {
     warn('동기화할 6자리 BarCode 없음');
-    return;
+    return { synced: 0 };
   }
-  const { synced, pendingGroups, pendingItems } = await sendGoodsToApi(goods);
-  log(`✅ 저울코드 반영 ${synced}건 | 펜딩(뒤3자리 중복) ${pendingGroups}그룹 ${pendingItems}건`);
+  if (dryRun) {
+    log(`[DRY-RUN] 품목 ${goods.length}건 전송 생략`);
+    return { synced: 0, dryRun: goods.length };
+  }
+  const result = await sendGoodsToApi(goods);
+  log(`✅ 저울코드 ${result.synced}건 | 변경 알림:${result.changes?.notified ? 'Y' : 'N'} | 추가:${result.changes?.added ?? 0} 삭제:${result.changes?.removed ?? 0}`);
+  return result;
+}
+
+async function pollGoodsSync(dryRun) {
+  try {
+    const p = await getPool();
+    return await syncGoods(p, dryRun);
+  } catch (e) {
+    warn(`품목 동기화 실패: ${e.message}`);
+    return { synced: 0, error: e.message };
+  }
 }
 
 // ── 사원 정보 동기화 ──────────────────────────────────────────────
@@ -1533,20 +1550,26 @@ async function runToday(dryRun, opts = {}) {
   return ok;
 }
 
-// 실시간 반복 (기본 5분 + 30초 결제알림)
+// 실시간 반복 (5분 매출 + 30초 결제 + 5분 품목)
 async function runRealtime(dryRun) {
   const intervalLabel = REALTIME_INTERVAL_MS >= 60000 ? `${REALTIME_INTERVAL_MS / 60000}분` : `${REALTIME_INTERVAL_MS / 1000}초`;
   const saleLabel = SALE_EVENTS_INTERVAL_MS >= 60000 ? `${SALE_EVENTS_INTERVAL_MS / 60000}분` : `${SALE_EVENTS_INTERVAL_MS / 1000}초`;
-  log(`======== 실시간 모드 (매출 ${intervalLabel} / 결제알림 ${saleLabel}) ========`);
+  const goodsLabel = GOODS_SYNC_INTERVAL_MS >= 60000 ? `${GOODS_SYNC_INTERVAL_MS / 60000}분` : `${GOODS_SYNC_INTERVAL_MS / 1000}초`;
+  log(`======== 실시간 모드 (매출 ${intervalLabel} / 결제 ${saleLabel} / 품목 ${goodsLabel}) ========`);
   let lastCustomerSyncAt = 0;
   let lastFullSyncAt = 0;
   let lastSaleEventsAt = 0;
+  let lastGoodsSyncAt = 0;
   while (true) {
     const nowMs = Date.now();
     const dateStr = getKSTTodayYMD();
     if (nowMs - lastSaleEventsAt >= SALE_EVENTS_INTERVAL_MS) {
       try { await pollSaleEvents(dateStr, dryRun); } catch (e) { warn(`sale-events: ${e.message}`); }
       lastSaleEventsAt = nowMs;
+    }
+    if (nowMs - lastGoodsSyncAt >= GOODS_SYNC_INTERVAL_MS) {
+      try { await pollGoodsSync(dryRun); } catch (e) { warn(`goods-sync: ${e.message}`); }
+      lastGoodsSyncAt = nowMs;
     }
     if (lastFullSyncAt === 0 || nowMs - lastFullSyncAt >= REALTIME_INTERVAL_MS) {
       const syncCustomers = nowMs - lastCustomerSyncAt >= CUSTOMER_SYNC_EVERY_MS;

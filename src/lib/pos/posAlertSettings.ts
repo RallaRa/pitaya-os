@@ -4,11 +4,13 @@ import { FieldValue } from 'firebase-admin/firestore';
 export interface PosAlertSettings {
   realtimeSaleEnabled: boolean;
   dailyCloseEnabled: boolean;
+  goodsSyncNotifyEnabled: boolean;
 }
 
 export const DEFAULT_POS_ALERT_SETTINGS: PosAlertSettings = {
   realtimeSaleEnabled: true,
   dailyCloseEnabled: true,
+  goodsSyncNotifyEnabled: true,
 };
 
 export async function getPosAlertSettings(storeId: string): Promise<PosAlertSettings> {

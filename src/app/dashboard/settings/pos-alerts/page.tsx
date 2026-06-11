@@ -16,7 +16,11 @@ export default function PosAlertsSettingsPage() {
   const canManage = isSuperuserEmail(user?.email)
     || ['owner', 'admin', 'master', 'superuser'].includes(currentStore?.role || '');
 
-  const [settings, setSettings] = useState<PosAlertSettings>({ realtimeSaleEnabled: true, dailyCloseEnabled: true });
+  const [settings, setSettings] = useState<PosAlertSettings>({
+    realtimeSaleEnabled: true,
+    dailyCloseEnabled: true,
+    goodsSyncNotifyEnabled: true,
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -75,6 +79,7 @@ export default function PosAlertsSettingsPage() {
           {([
             ['realtimeSaleEnabled', '실시간 매출 알림', '신규 결제(SaT) 감지 시 💰매출알림 채널로 즉시 알림'],
             ['dailyCloseEnabled', '일 마감 리포트', 'Finish 마감 확정 시 AI 코멘트 + 💰매출알림 발송'],
+            ['goodsSyncNotifyEnabled', '품목 변경 알림', 'Goods 추가·삭제·가격변경 시 💰매출알림 (5분 주기)'],
           ] as const).map(([key, title, desc]) => (
             <label key={key} className="flex items-start gap-3 p-4 rounded-xl border border-slate-800 bg-slate-900/60 cursor-pointer">
               <input

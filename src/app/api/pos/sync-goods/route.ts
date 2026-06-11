@@ -5,6 +5,7 @@ import {
   classifyPosGoods,
   type PosGoodInput,
 } from '@/lib/posBarCode';
+import { processGoodsSyncChanges } from '@/lib/pos/goodsSync.server';
 
 function getCategory(name: string, categoryName?: string): string {
   const n = `${name} ${categoryName || ''}`;
@@ -61,6 +62,7 @@ export async function POST(req: Request) {
           categoryName: g.categoryName || '',
           scaleUse: g.scaleUse || '',
           sellPri: g.sellPri ?? 0,
+          active: true,
           source: 'pos_sync',
           syncedAt,
           updatedAt: FieldValue.serverTimestamp(),
@@ -109,11 +111,25 @@ export async function POST(req: Request) {
   const pendingItems = pending.reduce((s, p) => s + p.items.length, 0);
   const processed = unique.length + pendingItems;
 
+  let changeResult = null;
+  try {
+    changeResult = await processGoodsSyncChanges(storeId, goods, syncedAt);
+  } catch (err) {
+    console.error('[pos/sync-goods] change detection failed:', err);
+  }
+
   return NextResponse.json({
     success: true,
     synced,
     pendingGroups,
     pendingItems,
     skipped: Math.max(0, goods.length - processed),
+    changes: changeResult ? {
+      initialized: changeResult.changes.initialized,
+      added: changeResult.changes.added.length,
+      removed: changeResult.changes.removed.length,
+      priceChanged: changeResult.changes.priceChanged.length,
+      notified: changeResult.notified,
+    } : null,
   });
 }
