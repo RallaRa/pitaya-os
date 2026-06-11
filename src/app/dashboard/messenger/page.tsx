@@ -1,7 +1,9 @@
 'use client';
 
+import { overlay } from '@/components/overlay';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import { db, storage } from '@/lib/firebase/firebase';
@@ -12,9 +14,18 @@ import {
 import { ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import {
   MessageCircle, Send, Search, ChevronLeft, X,
-  MoreVertical, Edit2, Trash2, Paperclip, ChevronUp, ChevronDown,
+  MoreVertical, Edit2, Trash2, Paperclip, ChevronUp, ChevronDown, BarChart3,
 } from 'lucide-react';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
+import MessageCard from '@/components/messenger/MessageCard';
+import PollCard from '@/components/messenger/PollCard';
+import type {
+  MessengerActionState,
+  MessengerCardAction,
+  MessengerCardData,
+  MessengerMessageType,
+} from '@/lib/messenger/types';
+import { isCardMessageType } from '@/lib/messenger/types';
 
 /* ── Types ── */
 interface UserProfile { uid: string; name: string; email: string; role: string; }
@@ -25,6 +36,9 @@ interface Room {
   lastMessage: string;
   lastMessageAt: any;
   unreadCount: Record<string, number>;
+  name?: string;
+  channelType?: string;
+  type?: string;
 }
 
 interface ReplyTo {
@@ -42,6 +56,10 @@ interface Message {
   text: string;
   createdAt: any;
   readBy: string[];
+  type?: MessengerMessageType;
+  cardData?: MessengerCardData;
+  actions?: MessengerCardAction[];
+  actionState?: MessengerActionState;
   replyTo?: ReplyTo;
   reactions?: Record<string, string[]>;
   deletedAt?: any;
@@ -50,6 +68,8 @@ interface Message {
   fileUrl?: string;
   fileName?: string;
   fileType?: string;
+  calendarKey?: string;
+  pollId?: string;
 }
 
 /* ── Constants & Helpers ── */
@@ -78,9 +98,21 @@ const formatDateLabel = (ts: any): string => {
 };
 
 /* ════════════════════════════════════════════════════════ */
-export default function MessengerPage() {
+export default async function MessengerPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-64 text-slate-500 text-sm">로딩 중…</div>
+    }>
+      <MessengerPageInner />
+    </Suspense>
+  );
+}
+
+function MessengerPageInner() {
   const { user } = useAuth();
   const { currentStore } = useStore();
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
   /* ── Base state ── */
   const [users,         setUsers]         = useState<UserProfile[]>([]);
@@ -106,6 +138,20 @@ export default function MessengerPage() {
 
   /* ── C: Room menu ── */
   const [showRoomMenu, setShowRoomMenu] = useState(false);
+
+  /* ── Poll create ── */
+  const [showPollForm, setShowPollForm] = useState(false);
+  const [pollSaving, setPollSaving] = useState(false);
+  const [pollForm, setPollForm] = useState({
+    question: '',
+    type: 'multiple' as 'multiple' | 'yesno' | 'date',
+    options: '',
+    isAnonymous: false,
+    endsAt: '',
+  });
+  const [msgContextMenu, setMsgContextMenu] = useState<{ x: number; y: number; msg: Message } | null>(null);
+  const [convertingTask, setConvertingTask] = useState(false);
+  const [creatingDoc, setCreatingDoc] = useState(false);
 
   /* ── D: Message search ── */
   const [showMsgSearch,      setShowMsgSearch]      = useState(false);
@@ -140,7 +186,7 @@ export default function MessengerPage() {
   }, [messages, msgSearchQuery]);
 
   /* ── Helpers ── */
-  const formatTime = (ts: any) => {
+  const formatTime = async (ts: any) => {
     if (!ts) return '';
     const d = ts?.toDate?.() || new Date(ts);
     return d.toDateString() === new Date().toDateString()
@@ -149,9 +195,26 @@ export default function MessengerPage() {
   };
 
   const getPartner = (room: Room) => {
+    if (room.name || room.channelType === 'schedule' || room.channelType === 'tasks') {
+      return {
+        uid: '',
+        name: room.name || (room.channelType === 'tasks' ? '📋 업무태스크' : '👥 직원일정'),
+        email: '',
+        role: '채널',
+      };
+    }
     const uid = room.members.find(m => m !== user?.uid);
     return users.find(u => u.uid === uid) || { uid: uid || '', name: '알 수 없음', email: '', role: '' };
   };
+
+  const sortedRooms = useMemo(() => [...rooms].sort((a, b) => {
+    const rank = (r: Room) => {
+      if (r.channelType === 'schedule') return 0;
+      if (r.channelType === 'tasks') return 1;
+      return 2;
+    };
+    return rank(a) - rank(b);
+  }), [rooms]);
 
   /* D: text highlight */
   const highlightText = (text: string): React.ReactNode => {
@@ -205,6 +268,17 @@ export default function MessengerPage() {
       setRooms(snap.docs.map(d => ({ id: d.id, ...d.data() })) as Room[]);
     });
   }, [user]);
+
+  /* Deep-link: ?roomId= → 채팅방 자동 열기 */
+  useEffect(() => {
+    const roomId = searchParams.get('roomId');
+    if (!roomId || rooms.length === 0) return;
+    const room = rooms.find(r => r.id === roomId);
+    if (room) {
+      setCurrentRoom(room);
+      setView('chat');
+    }
+  }, [searchParams, rooms]);
 
   /* Messages + read receipt */
   useEffect(() => {
@@ -351,14 +425,152 @@ export default function MessengerPage() {
     }).catch(console.error);
   };
 
+  const handleCardAction = async (messageId: string, actionId: MessengerCardAction['id']) => {
+    if (!user?.uid || !currentRoom) return;
+    const msg = messages.find(m => m.id === messageId);
+    if (actionId === 'detail' && msg?.type === 'calendar_event') {
+      if (msg.calendarKey?.startsWith('task_done_')) {
+        router.push('/dashboard/messenger/tasks');
+      } else {
+        router.push('/dashboard/messenger/calendar');
+      }
+    }
+    let rejectReason: string | undefined;
+    if (actionId === 'reject') {
+      rejectReason = prompt('거절 사유를 입력하세요 (선택)') || undefined;
+    }
+    await fetch('/api/messenger/messages', {
+      method: 'PUT',
+      headers: await getAuthJsonHeaders(),
+      body: JSON.stringify({
+        action: 'cardAction',
+        messageId,
+        roomId: currentRoom.id,
+        actionId,
+        uid: user.uid,
+        senderName: user.displayName || user.email || '나',
+        rejectReason,
+      }),
+    }).catch(console.error);
+  };
+
   /* B: Delete */
   const handleDeleteMsg = async (messageId: string) => {
-    if (!confirm('메시지를 삭제하시겠습니까?')) return;
+    if (!(await overlay.confirm('메시지를 삭제하시겠습니까?'))) return;
     await fetch('/api/messenger/messages', {
       method: 'PUT', headers: await getAuthJsonHeaders(),
       body: JSON.stringify({ action: 'delete', messageId }),
     }).catch(console.error);
   };
+
+  const handleCreateDocFromMessage = async (msg: Message) => {
+    if (!currentStore?.storeId || !currentRoom || creatingDoc) return;
+    const text = msg.text?.trim() || msg.fileName || '(첨부 메시지)';
+    setCreatingDoc(true);
+    setMsgContextMenu(null);
+    try {
+      const res = await fetch('/api/messenger/docs', {
+        method: 'POST',
+        headers: await getAuthJsonHeaders(),
+        body: JSON.stringify({
+          storeId: currentStore.storeId,
+          title: text.slice(0, 60),
+          type: '자유양식',
+          content: text,
+          roomId: currentRoom.id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '문서 생성 실패');
+      const docId = data.document?.id;
+      if (docId) {
+        router.push(`/dashboard/messenger/docs?roomId=${encodeURIComponent(currentRoom.id)}&docId=${encodeURIComponent(docId)}`);
+      } else {
+        router.push(`/dashboard/messenger/docs?roomId=${encodeURIComponent(currentRoom.id)}`);
+      }
+    } catch (e: unknown) {
+      await overlay.alert(e instanceof Error ? e.message : '문서 생성 실패');
+    } finally {
+      setCreatingDoc(false);
+    }
+  };
+
+  const handleConvertToTask = async (msg: Message) => {
+    if (!currentStore?.storeId || !currentRoom || convertingTask) return;
+    const text = msg.text?.trim() || msg.fileName || '(첨부 메시지)';
+    setConvertingTask(true);
+    setMsgContextMenu(null);
+    try {
+      const res = await fetch('/api/messenger/tasks', {
+        method: 'POST',
+        headers: await getAuthJsonHeaders(),
+        body: JSON.stringify({
+          storeId: currentStore.storeId,
+          fromMessage: true,
+          messageId: msg.id,
+          roomId: currentRoom.id,
+          text,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '태스크 생성 실패');
+      overlay.toast('태스크로 변환했습니다. 칸반에서 확인하세요.', { variant: 'success' });
+    } catch (e: unknown) {
+      await overlay.alert(e instanceof Error ? e.message : '태스크 생성 실패');
+    } finally {
+      setConvertingTask(false);
+    }
+  };
+
+  const handleCreatePoll = async () => {
+    if (!currentStore?.storeId || !currentRoom || pollSaving) return;
+    if (!pollForm.question.trim() || !pollForm.endsAt) {
+      await overlay.alert('질문과 마감 시간을 입력하세요.');
+      return;
+    }
+    const options = pollForm.type === 'yesno'
+      ? ['찬성', '반대']
+      : pollForm.options.split('\n').map(s => s.trim()).filter(Boolean);
+    if (pollForm.type !== 'yesno' && options.length < 2) {
+      await overlay.alert('선택지를 2개 이상 입력하세요. (한 줄에 하나)');
+      return;
+    }
+    setPollSaving(true);
+    try {
+      const res = await fetch('/api/messenger/polls', {
+        method: 'POST',
+        headers: await getAuthJsonHeaders(),
+        body: JSON.stringify({
+          storeId: currentStore.storeId,
+          roomId: currentRoom.id,
+          question: pollForm.question.trim(),
+          type: pollForm.type,
+          options,
+          isAnonymous: pollForm.isAnonymous,
+          endsAt: new Date(pollForm.endsAt).toISOString(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setShowPollForm(false);
+      setPollForm({ question: '', type: 'multiple', options: '', isAnonymous: false, endsAt: '' });
+    } catch (e: unknown) {
+      await overlay.alert(e instanceof Error ? e.message : '투표 생성 실패');
+    } finally {
+      setPollSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!msgContextMenu) return;
+    const close = () => setMsgContextMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [msgContextMenu]);
 
   /* B: Save edit */
   const handleSaveEdit = async (messageId: string) => {
@@ -372,7 +584,7 @@ export default function MessengerPage() {
   };
 
   /* Export chat as text */
-  const handleExportChat = () => {
+  const handleExportChat = async () => {
     if (!currentRoom || !messages.length) return;
     const partner = getPartner(currentRoom).name;
     const lines = messages
@@ -406,7 +618,7 @@ export default function MessengerPage() {
   /* C: Archive (superuser) */
   const handleArchiveRoom = async () => {
     if (!currentRoom || myRole !== 'superuser') return;
-    if (!confirm('대화방을 아카이브 처리하시겠습니까?')) return;
+    if (!(await overlay.confirm('대화방을 아카이브 처리하시겠습니까?'))) return;
     await fetch('/api/messenger/rooms', {
       method: 'PUT', headers: await getAuthJsonHeaders(),
       body: JSON.stringify({ action: 'delete', roomId: currentRoom.id }),
@@ -423,7 +635,7 @@ export default function MessengerPage() {
     e.target.value = '';
 
     if (file.size > 10 * 1024 * 1024) {
-      alert('파일 크기는 10MB 이하여야 합니다.');
+      overlay.toast('파일 크기는 10MB 이하여야 합니다.', { variant: 'success' });
       return;
     }
 
@@ -450,12 +662,28 @@ export default function MessengerPage() {
                 text: file.name, fileUrl: url, fileName: file.name, fileType: file.type,
               }),
             });
+            if (currentStore?.storeId) {
+      const headers = await getAuthJsonHeaders();
+              fetch('/api/messenger/files/from-chat', {
+                method: 'POST',
+                headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  storeId: currentStore.storeId,
+                  roomId: currentRoom.id,
+                  name: file.name,
+                  url,
+                  type: file.type,
+                  size: file.size,
+                  storagePath: path,
+                }),
+              }).catch(console.error);
+            }
             resolve();
           },
         );
       });
     } catch {
-      alert('파일 업로드에 실패했습니다.');
+      await overlay.alert('파일 업로드에 실패했습니다.');
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
@@ -540,7 +768,7 @@ export default function MessengerPage() {
               <p className="text-slate-500 text-sm">대화가 없습니다.</p>
               <p className="text-slate-600 text-xs mt-1">위 아이콘을 눌러 새 대화를 시작하세요.</p>
             </div>
-          ) : rooms.map(room => {
+          ) : sortedRooms.map(room => {
             const partner = getPartner(room);
             const unread  = room.unreadCount?.[user?.uid || ''] || 0;
             const isActive = currentRoom?.id === room.id;
@@ -641,6 +869,17 @@ export default function MessengerPage() {
                 {showRoomMenu && (
                   <div className="absolute right-0 top-full mt-1 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 min-w-36 overflow-hidden">
                     <button
+                      onClick={() => {
+                        setShowRoomMenu(false);
+                        if (currentRoom?.id) {
+                          router.push(`/dashboard/messenger/docs?roomId=${encodeURIComponent(currentRoom.id)}`);
+                        }
+                      }}
+                      className="w-full text-left px-4 py-3 text-sm text-slate-200 hover:bg-slate-700 transition-colors"
+                    >
+                      📄 협업 문서 열기
+                    </button>
+                    <button
                       onClick={handleExportChat}
                       className="w-full text-left px-4 py-3 text-sm text-teal-400 hover:bg-slate-700 transition-colors"
                     >
@@ -739,6 +978,8 @@ export default function MessengerPage() {
                 const isSearchHit = searchHighlightId === msg.id;
                 const isSearchMatch = !!msgSearchQuery.trim() && !msg.deletedAt
                   && msg.text?.toLowerCase().includes(msgSearchQuery.toLowerCase());
+                const isPollMsg = !msg.deletedAt && msg.type === 'poll' && !!msg.pollId;
+                const isCardMsg = !msg.deletedAt && !!msg.cardData && !isPollMsg;
 
                 return (
                   <React.Fragment key={msg.id}>
@@ -757,6 +998,11 @@ export default function MessengerPage() {
                       className={`flex ${isMine ? 'justify-end' : 'justify-start'} py-0.5 rounded-lg transition-colors duration-300 ${isSearchHit ? 'bg-yellow-400/10' : ''}`}
                       onMouseEnter={() => setHoveredMsgId(msg.id)}
                       onMouseLeave={() => { if (!reactionPickerMsgId) setHoveredMsgId(null); }}
+                      onContextMenu={e => {
+                        if (msg.deletedAt) return;
+                        e.preventDefault();
+                        setMsgContextMenu({ x: e.clientX, y: e.clientY, msg });
+                      }}
                     >
                       {/* isMine: action buttons LEFT of bubble */}
                       {isMine && (
@@ -823,10 +1069,11 @@ export default function MessengerPage() {
                               <p className="text-slate-600 text-xs mb-0.5 flex-shrink-0">{formatTime(msg.createdAt)}</p>
                             )}
 
-                            <div className={`px-3 py-2 rounded-2xl text-sm max-w-full break-words
-                              ${isMine ? 'bg-teal-600 text-white rounded-tr-sm' : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-tl-sm'}
-                              ${isSearchMatch ? 'ring-1 ring-yellow-400/30' : ''}
-                            `}>
+                            <div className={`text-sm max-w-full break-words ${
+                              isCardMsg || isPollMsg
+                                ? 'p-0 bg-transparent border-0'
+                                : `px-3 py-2 rounded-2xl ${isMine ? 'bg-teal-600 text-white rounded-tr-sm' : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-tl-sm'}`
+                            } ${isSearchMatch ? 'ring-1 ring-yellow-400/30' : ''}`}>
                               {/* Reply quote */}
                               {msg.replyTo && (
                                 <button
@@ -861,6 +1108,30 @@ export default function MessengerPage() {
                                 </a>
                               )}
 
+                              {/* Poll message */}
+                              {isPollMsg && currentStore?.storeId && (
+                                <PollCard
+                                  pollId={msg.pollId!}
+                                  storeId={currentStore.storeId}
+                                  title={msg.cardData?.title || msg.text}
+                                  subtitle={msg.cardData?.subtitle}
+                                  footer={msg.cardData?.footer}
+                                  isMine={isMine}
+                                />
+                              )}
+
+                              {/* Card message */}
+                              {!msg.deletedAt && isCardMsg && msg.type && (
+                                <MessageCard
+                                  type={msg.type}
+                                  cardData={msg.cardData}
+                                  actions={msg.actions}
+                                  actionState={msg.actionState}
+                                  isMine={isMine}
+                                  onAction={(actionId) => handleCardAction(msg.id, actionId)}
+                                />
+                              )}
+
                               {/* B: Message content */}
                               {msg.deletedAt ? (
                                 <p className="text-slate-400 italic text-sm">삭제된 메시지입니다.</p>
@@ -887,8 +1158,9 @@ export default function MessengerPage() {
                                   </div>
                                 </div>
                               ) : (
-                                /* Normal text — hide if file-only (text === fileName) */
-                                (!msg.fileUrl || msg.text !== msg.fileName) && (
+                                /* Normal text — hide if file-only or card-only */
+                                (!msg.fileUrl || msg.text !== msg.fileName)
+                                && !isCardMessageType(msg.type) && (
                                   <span>
                                     {highlightText(msg.text)}
                                     {msg.editedAt && (
@@ -979,6 +1251,31 @@ export default function MessengerPage() {
               <div ref={messagesEndRef} />
             </div>
 
+            {msgContextMenu && (
+              <div
+                className="fixed z-[100] min-w-[160px] py-1 bg-slate-900 border border-slate-700 rounded-lg shadow-xl"
+                style={{ left: msgContextMenu.x, top: msgContextMenu.y }}
+                onClick={e => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  disabled={creatingDoc}
+                  onClick={() => handleCreateDocFromMessage(msgContextMenu.msg)}
+                  className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                >
+                  📄 협업 문서로 만들기
+                </button>
+                <button
+                  type="button"
+                  disabled={convertingTask}
+                  onClick={() => handleConvertToTask(msgContextMenu.msg)}
+                  className="w-full text-left px-3 py-2 text-sm text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+                >
+                  📋 태스크로 변환
+                </button>
+              </div>
+            )}
+
             {/* Reply preview */}
             {replyingTo && (
               <div className="bg-slate-800/80 border-t border-slate-700 px-4 py-2 flex items-center gap-2">
@@ -994,6 +1291,60 @@ export default function MessengerPage() {
             )}
 
             {/* Input area */}
+            {showPollForm && (
+              <div className="bg-slate-900 border-t border-violet-500/30 p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium text-violet-300 flex items-center gap-1">
+                    <BarChart3 className="w-4 h-4" /> 투표 만들기
+                  </p>
+                  <button type="button" onClick={() => setShowPollForm(false)}><X className="w-4 h-4 text-slate-400" /></button>
+                </div>
+                <input
+                  value={pollForm.question}
+                  onChange={e => setPollForm(f => ({ ...f, question: e.target.value }))}
+                  placeholder="질문"
+                  className="w-full px-3 py-2 text-sm bg-slate-950 border border-slate-700 rounded-lg"
+                />
+                <select
+                  value={pollForm.type}
+                  onChange={e => setPollForm(f => ({ ...f, type: e.target.value as typeof f.type }))}
+                  className="w-full px-3 py-2 text-sm bg-slate-950 border border-slate-700 rounded-lg"
+                >
+                  <option value="multiple">객관식</option>
+                  <option value="yesno">찬반</option>
+                  <option value="date">날짜선택</option>
+                </select>
+                {pollForm.type !== 'yesno' && (
+                  <textarea
+                    value={pollForm.options}
+                    onChange={e => setPollForm(f => ({ ...f, options: e.target.value }))}
+                    placeholder={pollForm.type === 'date' ? '날짜 선택지 (한 줄에 하나)\n2026-06-10\n2026-06-11' : '선택지 (한 줄에 하나)'}
+                    rows={3}
+                    className="w-full px-3 py-2 text-sm bg-slate-950 border border-slate-700 rounded-lg resize-none"
+                  />
+                )}
+                <input
+                  type="datetime-local"
+                  value={pollForm.endsAt}
+                  onChange={e => setPollForm(f => ({ ...f, endsAt: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm bg-slate-950 border border-slate-700 rounded-lg"
+                />
+                <label className="flex items-center gap-2 text-xs text-slate-400">
+                  <input
+                    type="checkbox"
+                    checked={pollForm.isAnonymous}
+                    onChange={e => setPollForm(f => ({ ...f, isAnonymous: e.target.checked }))}
+                  />
+                  익명 투표
+                </label>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setShowPollForm(false)} className="px-3 py-1.5 text-sm rounded-lg hover:bg-slate-800">취소</button>
+                  <button type="button" onClick={handleCreatePoll} disabled={pollSaving} className="px-3 py-1.5 text-sm bg-violet-600 rounded-lg disabled:opacity-50">
+                    {pollSaving ? '생성 중…' : '투표 시작'}
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="bg-slate-900 border-t border-slate-700 p-3">
               {/* A: hidden file input */}
               <input
@@ -1026,6 +1377,15 @@ export default function MessengerPage() {
                     title="파일 첨부 (최대 10MB)"
                   >
                     <Paperclip className="w-5 h-5" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowPollForm(true)}
+                    className="text-slate-400 hover:text-violet-400 transition-colors p-2 flex-shrink-0"
+                    title="투표 만들기"
+                  >
+                    <BarChart3 className="w-5 h-5" />
                   </button>
 
                   <textarea

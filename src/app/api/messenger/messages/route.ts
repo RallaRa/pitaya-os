@@ -2,28 +2,55 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
+import {
+  buildCardMessagePayload,
+  cardLastMessagePreview,
+  handleMessengerCardAction,
+} from '@/lib/messenger/cardActions.server';
+import { isCardMessageType } from '@/lib/messenger/types';
 
 export async function POST(req: Request) {
   const authUser = await verifyToken(req);
   if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
+    const body = await req.json();
     const { roomId, senderUid, text, senderName, replyTo,
-            fileUrl, fileName, fileType } = await req.json();
-    if (!roomId || !senderUid || !text) {
+            fileUrl, fileName, fileType, type, cardData, actions } = body;
+
+    const msgType = type || 'text';
+    const isCard = isCardMessageType(msgType);
+
+    if (!roomId || !senderUid || (!text && !isCard)) {
       return NextResponse.json({ error: '필수 항목 누락' }, { status: 400 });
     }
 
-    const msgData: Record<string, any> = {
-      roomId,
-      senderUid,
-      senderName: senderName || '',
-      text,
-      createdAt: FieldValue.serverTimestamp(),
-      readBy: [senderUid],
-    };
+    const msgData: Record<string, unknown> = isCard
+      ? buildCardMessagePayload({
+          roomId,
+          senderUid,
+          senderName: senderName || '',
+          type: msgType,
+          cardData: cardData || {},
+          actions: actions || [],
+          text,
+        })
+      : {
+          roomId,
+          senderUid,
+          senderName: senderName || '',
+          text,
+          type: 'text',
+          createdAt: FieldValue.serverTimestamp(),
+          readBy: [senderUid],
+        };
+
     if (replyTo) msgData.replyTo = replyTo;
-    if (fileUrl) { msgData.fileUrl = fileUrl; msgData.fileName = fileName || ''; msgData.fileType = fileType || ''; }
+    if (fileUrl) {
+      msgData.fileUrl = fileUrl;
+      msgData.fileName = fileName || '';
+      msgData.fileType = fileType || '';
+    }
 
     await adminDb.collection('chat_messages').add(msgData);
 
@@ -33,7 +60,9 @@ export async function POST(req: Request) {
 
     const lastMessage = fileUrl
       ? (fileType?.startsWith('image/') ? '📷 이미지' : `📎 ${(fileName || '파일').slice(0, 40)}`)
-      : text.slice(0, 50);
+      : isCard
+        ? cardLastMessagePreview(msgType, cardData)
+        : String(text).slice(0, 50);
 
     const roomUpdate: Record<string, any> = {
       lastMessage,
@@ -154,6 +183,23 @@ export async function PUT(req: Request) {
       }
 
       return NextResponse.json({ success: true });
+    }
+
+    // ── cardAction: 카드 버튼 처리 ──
+    if (action === 'cardAction') {
+      const { messageId, roomId, actionId, uid, senderName, rejectReason } = body;
+      if (!messageId || !roomId || !actionId || !uid) {
+        return NextResponse.json({ error: '잘못된 요청' }, { status: 400 });
+      }
+      const result = await handleMessengerCardAction({
+        messageId,
+        roomId,
+        actionId,
+        uid,
+        senderName: senderName || '',
+        rejectReason,
+      });
+      return NextResponse.json(result);
     }
 
     return NextResponse.json({ error: '알 수 없는 action' }, { status: 400 });

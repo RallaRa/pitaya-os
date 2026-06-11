@@ -4,6 +4,8 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken } from '@/lib/authVerify';
 import { isHrStoreAdmin } from '@/lib/hr/storeAdmin';
 import { notifyUser } from '@/lib/notifications/notifyUser';
+import { notifyAbsenceIfToday } from '@/lib/messenger/calendarMessenger.server';
+import { getKSTTodayYMD } from '@/lib/dateUtils';
 
 const SUPERUSER_EMAIL = process.env.SUPERUSER_EMAIL || process.env.NEXT_PUBLIC_SUPERUSER_EMAIL || '';
 
@@ -167,6 +169,14 @@ export async function PUT(req: Request) {
       `${dateStr} ${typeLabel} 신청이 ${label}되었습니다.`,
       '/dashboard/hr/calendar?tab=leave',
     );
+
+    if (status === 'approved' && data.storeId && Array.isArray(data.dates)) {
+      const today = getKSTTodayYMD();
+      const userName = String(data.userName || '');
+      if (userName && data.dates.some((d: string) => String(d).slice(0, 10) === today)) {
+        notifyAbsenceIfToday(String(data.storeId), userName, today, today, 'dayoff').catch(console.error);
+      }
+    }
 
     return NextResponse.json({ success: true });
   } catch (e: any) {

@@ -50,7 +50,9 @@
     "recharts": "^3.8.1",
     "sharp": "^0.34.5",
     "tailwindcss-animate": "^1.0.7",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.31"
   },
   "devDependencies": {
     "@kr-yeon/kisa-seed": "^1.0.5",

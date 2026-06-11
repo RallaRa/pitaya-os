@@ -7,7 +7,7 @@ import {
   Settings, MessageCircle, ShoppingCart, ShoppingBag, Sparkles,
   BarChart2, ClipboardCheck, X,
   Circle, CalendarDays, Tag, Scale, LineChart, SlidersHorizontal, Users, Crown, ChevronRight, ChevronDown,
-  FileText, TrendingUp, Truck, BookOpen, LayoutGrid, PenLine, Clock, Tv, ListTodo,
+  FileText, TrendingUp, Truck, BookOpen, LayoutGrid, PenLine, Clock, Tv, ListTodo, FolderOpen,
   BookOpenCheck, UsersRound,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -45,7 +45,10 @@ import {
   type MenuAccess,
   menuAccessForGroup,
 } from '@/lib/menuAccessKeys';
-import { flattenAccountingMenu } from '@/lib/accounting/menuStructure';
+import {
+  ACCOUNTING_MENU_SECTIONS,
+  canAccessAccountingSection,
+} from '@/lib/accounting/menuStructure';
 import {
   PURCHASE_MENU_SECTIONS,
   canAccessPurchaseSection,
@@ -435,16 +438,15 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     '/dashboard/settings/prediction-variables': 'predictionVariables',
   };
 
-  const accountingSubMenus = flattenAccountingMenu().map(item => ({
-    href: item.href,
-    icon: <BookOpenCheck className="w-3.5 h-3.5" />,
-    label: item.label,
-  }));
-
   const mainMenus = [
     { key: 'ai' as const,        href: '/dashboard/ai',                    icon: <Sparkles className="w-4 h-4" />,       label: 'AI 대화모드' },
     { key: 'ai' as const,        href: '/dashboard/manual',                icon: <BookOpen className="w-4 h-4" />,       label: 'AI 매장 백과' },
     { key: 'messenger' as const, href: '/dashboard/messenger',             icon: <MessageCircle className="w-4 h-4" />,  label: '메신저',      badge: unreadCount },
+    { key: 'messenger' as const, href: '/dashboard/messenger/wiki',       icon: <BookOpen           className="w-4 h-4" />,  label: '메신저 위키' },
+    { key: 'messenger' as const, href: '/dashboard/messenger/files',      icon: <FolderOpen         className="w-4 h-4" />,  label: '메신저 파일' },
+    { key: 'messenger' as const, href: '/dashboard/messenger/calendar',   icon: <CalendarDays       className="w-4 h-4" />,  label: '메신저 캘린더' },
+    { key: 'messenger' as const, href: '/dashboard/messenger/tasks',      icon: <LayoutGrid         className="w-4 h-4" />,  label: '메신저 칸반' },
+    { key: 'messenger' as const, href: '/dashboard/messenger/docs',       icon: <FileText           className="w-4 h-4" />,  label: '메신저 문서' },
     { key: 'hygiene' as const,   href: '/dashboard/hygiene',               icon: <ClipboardCheck className="w-4 h-4" />, label: '위생 점검일지' },
     { key: 'hrCalendar' as const,         href: '/dashboard/hr/calendar',                    icon: <CalendarDays className="w-4 h-4" />,  label: '캘린더' },
     { key: 'hrCalendar' as const,         href: '/dashboard/hr/attendance',                  icon: <Clock className="w-4 h-4" />,         label: '출퇴근' },
@@ -453,6 +455,16 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
   const isSuperuser = isSuperuserEmail(user?.email);
   const effectiveAccess = isSuperuser ? ALL_TRUE : menuAccess;
+
+  const accountingSubMenus = ACCOUNTING_MENU_SECTIONS.flatMap(section =>
+    (isSuperuser || canAccessAccountingSection(effectiveAccess, section.permission))
+      ? section.items.map(item => ({
+          href: item.href,
+          icon: <BookOpenCheck className="w-3.5 h-3.5" />,
+          label: item.label,
+        }))
+      : [],
+  );
 
   const moduleAllowed = (menuKey: string) => {
     if (isSuperuser) return true;
@@ -998,18 +1010,18 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
           aria-hidden="true"
         />
         <aside
-          className={`fixed top-0 left-0 h-full w-64 flex flex-col bg-slate-900 border-r border-slate-800/60 z-50 transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
+          className={`fixed top-0 left-0 h-full w-[min(17.5rem,88vw)] flex flex-col bg-slate-900 border-r border-slate-800/60 z-50 transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}
         >
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800/60">
-            <Link href="/dashboard" onClick={onClose} className="flex items-center gap-2 group">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800/60 safe-top">
+            <Link href="/dashboard" onClick={onClose} className="flex items-center gap-2 group min-w-0">
               <div className="w-7 h-7 bg-teal-500 group-hover:bg-teal-400 rounded-lg flex items-center justify-center shrink-0 transition-colors">
                 <span className="text-black font-black text-xs">P</span>
               </div>
-              <h2 className="text-lg font-bold text-slate-100 group-hover:text-teal-300 tracking-tight transition-colors">Pitaya OS</h2>
+              <h2 className="text-lg font-bold text-slate-100 group-hover:text-teal-300 tracking-tight transition-colors truncate">Pitaya OS</h2>
             </Link>
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition-colors"
+              className="touch-target flex items-center justify-center text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors shrink-0"
               aria-label="메뉴 닫기"
             >
               <X className="w-5 h-5" />

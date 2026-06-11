@@ -5,6 +5,7 @@ import { verifyToken } from '@/lib/authVerify';
 import { recalculateUsedLeave } from '@/lib/hr/leaveBalance';
 import { isHrStoreAdmin, leaveRequestOverlapsMonth } from '@/lib/hr/storeAdmin';
 import { notifyUser } from '@/lib/notifications/notifyUser';
+import { notifyAbsenceIfToday } from '@/lib/messenger/calendarMessenger.server';
 
 const LEAVE_TYPE_LABEL: Record<string, string> = {
   annual: '연차',
@@ -235,6 +236,15 @@ export async function PUT(req: Request) {
         '/dashboard/hr/calendar?tab=leave',
         notifType,
       );
+      if (status === 'approved' && data.storeId) {
+        notifyAbsenceIfToday(
+          String(data.storeId),
+          String(updates.userName ?? data.userName ?? ''),
+          String(updates.startDate ?? data.startDate ?? ''),
+          String(updates.endDate ?? data.endDate ?? data.startDate ?? ''),
+          'leave',
+        ).catch(console.error);
+      }
     }
 
     return NextResponse.json({

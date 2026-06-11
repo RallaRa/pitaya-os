@@ -7,7 +7,8 @@ export type MessengerMessageType =
   | 'stock_alert'
   | 'customer_alert'
   | 'cctv_alert'
-  | 'calendar_event';
+  | 'calendar_event'
+  | 'poll';
 
 export type MessengerCardActionId = 'approve' | 'reject' | 'detail' | 'dismiss';
 
@@ -47,6 +48,7 @@ export const CARD_TYPE_LABELS: Record<MessengerMessageType, string> = {
   customer_alert: '고객 알림',
   cctv_alert: 'CCTV 알림',
   calendar_event: '일정',
+  poll: '투표',
 };
 
 export function isCardMessageType(type?: string): type is MessengerMessageType {

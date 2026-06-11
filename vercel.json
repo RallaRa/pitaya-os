@@ -40,6 +40,11 @@
     { "path": "/api/cron/generate-partner-analysis","schedule": "0 21 * * *" },
     { "path": "/api/cron/backfill-store-item-stats", "schedule": "0 17 * * *" },
     { "path": "/api/cron/pos-sync-check",           "schedule": "0 12 * * *" },
-    { "path": "/api/cron/customer-automation",      "schedule": "0 15 * * *" }
+    { "path": "/api/cron/customer-automation",      "schedule": "0 15 * * *" },
+    { "path": "/api/cron/messenger-calendar-notify", "schedule": "0 23 * * *" },
+    { "path": "/api/cron/messenger-poll-close", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/customer-reminders", "schedule": "0 0 * * *" },
+    { "path": "/api/cron/break-even-business-days", "schedule": "0 15 * * *" },
+    { "path": "/api/cron/sales-anomaly-detect", "schedule": "30 14 * * *" }
   ]
 }
