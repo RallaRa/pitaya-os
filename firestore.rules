@@ -333,6 +333,22 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if false;
     }
+    match /order_templates/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /anomaly_logs/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /monthly_reports/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /customer_export_logs/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
     match /purchase_chat_logs/{docId} {
       allow read: if request.auth != null;
       allow write: if false;

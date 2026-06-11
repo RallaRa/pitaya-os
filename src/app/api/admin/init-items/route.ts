@@ -3,7 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken, getActualGroupId } from '@/lib/authVerify';
 import { isSuperOrMaster } from '@/lib/auth/permissions';
-import { calcItemPrices } from '@/app/api/items/route';
+import { calcItemPrices } from '@/lib/items/calcItemPrices';
 
 /* ── 초기 품목 시드 데이터 (187개) ── */
 type SeedItem = {

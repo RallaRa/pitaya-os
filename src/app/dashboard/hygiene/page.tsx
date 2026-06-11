@@ -31,6 +31,7 @@ function HygieneChecklistContent() {
   const [isSavingFinal, setIsSavingFinal]   = useState(false);
   const [loadInfo, setLoadInfo]             = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
 
   const showToast = (msg: string, type: 'success' | 'error') => {
     setToast({ msg, type });
@@ -254,6 +255,7 @@ function HygieneChecklistContent() {
         passedItems,
         saveType,
         savedSections: nextSections,
+        ...(saveType === 'final' && signatureDataUrl ? { signatureDataUrl } : {}),
       }),
     });
     return res.ok;
@@ -501,6 +503,54 @@ function HygieneChecklistContent() {
             </div>
           );
         })}
+      </div>
+
+      {/* 디지털 서명 */}
+      <div className="mt-6 bg-slate-900 border border-slate-700 rounded-xl p-4">
+        <p className="text-slate-300 text-sm font-medium mb-2">점검자 서명 (최종저장 시 포함)</p>
+        <canvas
+          id="hygiene-signature"
+          width={400}
+          height={120}
+          className="w-full max-w-md bg-white rounded-lg cursor-crosshair touch-none"
+          onMouseDown={e => {
+            const canvas = e.currentTarget;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            const rect = canvas.getBoundingClientRect();
+            const draw = (ev: MouseEvent | TouchEvent) => {
+              const pt = 'touches' in ev ? ev.touches[0] : ev;
+              ctx.lineWidth = 2;
+              ctx.lineCap = 'round';
+              ctx.strokeStyle = '#111';
+              ctx.lineTo(pt.clientX - rect.left, pt.clientY - rect.top);
+              ctx.stroke();
+              ctx.beginPath();
+              ctx.moveTo(pt.clientX - rect.left, pt.clientY - rect.top);
+            };
+            ctx.beginPath();
+            ctx.moveTo(e.nativeEvent.offsetX, e.nativeEvent.offsetY);
+            const up = () => {
+              setSignatureDataUrl(canvas.toDataURL('image/png'));
+              window.removeEventListener('mousemove', draw as EventListener);
+              window.removeEventListener('mouseup', up);
+            };
+            window.addEventListener('mousemove', draw as EventListener);
+            window.addEventListener('mouseup', up);
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => {
+            const canvas = document.getElementById('hygiene-signature') as HTMLCanvasElement | null;
+            if (!canvas) return;
+            canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+            setSignatureDataUrl(null);
+          }}
+          className="mt-2 text-xs text-slate-500 hover:text-slate-300"
+        >
+          서명 지우기
+        </button>
       </div>
 
       {/* 하단 버튼 */}

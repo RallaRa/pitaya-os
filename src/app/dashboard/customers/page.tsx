@@ -14,7 +14,7 @@ import {
   BarChart2, PieChart as PieIcon, List, Download, ArrowUp, ArrowDown, ArrowUpDown,
   History, Eye, EyeOff, ClipboardList, Send, UserSearch,
 } from 'lucide-react';
-import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import * as XLSX from 'xlsx';
 import type { CustomerSortField } from '@/lib/customerQuery';
 import type { VisitCycleStatus } from '@/lib/customerVisitCycle';
@@ -533,6 +533,13 @@ function CustomersPageContent() {
       XLSX.utils.book_append_sheet(wb, ws, '고객목록');
       const suffix = new Date().toISOString().slice(0, 10);
       XLSX.writeFile(wb, `고객목록_${suffix}.xlsx`);
+      getAuthJsonHeaders().then(headers =>
+        fetch('/api/customers/export-log', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ storeId, mode: 'masked', rowCount: rows.length, filters: buildFilterBody() }),
+        }),
+      ).catch(() => {});
     } catch (e) {
       console.error('[customers] export error:', e);
       alert('엑셀 다운로드에 실패했습니다.');
@@ -604,7 +611,15 @@ function CustomersPageContent() {
     }
   };
 
-  const exportDecryptedExcel = () => {
+  const exportDecryptedExcel = async () => {
+    const uid = user?.uid || '';
+    const token = stepUpToken || loadPiiUnlockToken(uid, storeId);
+    if (!token || !isPiiUnlockTokenValid(uid, storeId)) {
+      pendingDecryptRef.current = false;
+      setPiiUnlockOpen(true);
+      return;
+    }
+
     const sourceRows = decryptedRows.length > 0
       ? decryptedRows
       : Object.values(decryptedMap).map(d => ({
@@ -641,6 +656,12 @@ function CustomersPageContent() {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, '고객목록_복호화');
       XLSX.writeFile(wb, `고객목록_복호화_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      const headers = await getAuthJsonHeaders();
+      await fetch('/api/customers/export-log', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ storeId, mode: 'decrypted', rowCount: rows.length, filters: buildFilterBody() }),
+      });
     } catch (e) {
       console.error('[customers] decrypted export error:', e);
       alert('복호화 엑셀 다운로드에 실패했습니다.');

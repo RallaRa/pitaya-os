@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { formatDateShortWithDow } from '@/lib/dateUtils';
 import { calcAvgTicket, calcChange, getCompareDates, getComparisonFetchBounds } from '@/lib/reportCompare';
+import { HOLIDAYS } from '@/components/calendar/CalendarTypes';
 
 interface DayReport {
   id: string;
@@ -301,6 +302,12 @@ export default function SalesCalendarPage() {
               const isToday = cell.date === todayYMD;
               const isFuture = cell.date > todayYMD;
               const dow = new Date(`${cell.date}T00:00:00`).getDay();
+              const holidayName = HOLIDAYS[cell.date];
+              const salesTone = report && stats.avgSales > 0
+                ? report.netSales >= stats.avgSales * 1.05 ? 'ring-1 ring-inset ring-emerald-500/25'
+                : report.netSales <= stats.avgSales * 0.95 ? 'ring-1 ring-inset ring-red-500/20'
+                : ''
+                : '';
 
               return (
                 <button
@@ -311,16 +318,19 @@ export default function SalesCalendarPage() {
                     ${report ? 'hover:bg-slate-800/80 cursor-pointer' : 'cursor-default'}
                     ${isToday ? 'bg-teal-950/30 ring-1 ring-inset ring-teal-500/30' : ''}
                     ${selected?.reportDate === cell.date ? 'bg-teal-900/40' : ''}
+                    ${holidayName ? 'bg-red-950/20' : ''}
+                    ${salesTone}
                   `}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className={`text-xs font-semibold ${
                       isToday ? 'text-teal-400' :
-                      dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : 'text-slate-400'
+                      holidayName || dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : 'text-slate-400'
                     }`}>
                       {cell.day}
                     </span>
-                    {report && (report.source === 'pos_bridge' || report.source === 'pos_bridge_migration') && (
+                    {holidayName && <span className="text-[8px] text-red-400 truncate max-w-[3rem]" title={holidayName}>휴</span>}
+                    {!holidayName && report && (report.source === 'pos_bridge' || report.source === 'pos_bridge_migration') && (
                       <span className="text-[8px] text-red-400">POS</span>
                     )}
                   </div>

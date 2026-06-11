@@ -31,6 +31,8 @@ export const SALES_MENU_SECTIONS: SalesMenuSection[] = [
     items: [
       { href: '/dashboard/report/view', label: '일마감내역' },
       { href: '/dashboard/report/calendar', label: '달력매출' },
+      { href: '/dashboard/report/anomalies', label: '매출 이상 탐지' },
+      { href: '/dashboard/report/monthly', label: '월간 리포트' },
     ],
   },
   {
@@ -68,6 +70,7 @@ export const SALES_MENU_SECTIONS: SalesMenuSection[] = [
     items: [
       { href: '/dashboard/coupons', label: '쿠폰·할인' },
       { href: '/dashboard/public-orders', label: '공개 주문' },
+      { href: '/dashboard/orders/templates', label: '발주 템플릿' },
       { href: '/dashboard/signage', label: '사이니지' },
     ],
   },
@@ -158,7 +161,9 @@ export function isSalesPath(pathname: string): boolean {
   if (pathname.startsWith('/dashboard/report/view')
     || pathname.startsWith('/dashboard/report/calendar')
     || pathname.startsWith('/dashboard/report/input')
-    || pathname.startsWith('/dashboard/report/sales_ai')) {
+    || pathname.startsWith('/dashboard/report/sales_ai')
+    || pathname.startsWith('/dashboard/report/anomalies')
+    || pathname.startsWith('/dashboard/report/monthly')) {
     return true;
   }
   return pathname.startsWith('/dashboard/sales-forecast')
@@ -168,6 +173,7 @@ export function isSalesPath(pathname: string): boolean {
     || pathname.startsWith('/dashboard/marketing')
     || pathname.startsWith('/dashboard/coupons')
     || pathname.startsWith('/dashboard/public-orders')
+    || pathname.startsWith('/dashboard/orders/templates')
     || pathname.startsWith('/dashboard/signage')
     || pathname.startsWith('/dashboard/scale')
     || pathname.startsWith('/dashboard/settings/prediction-variables');

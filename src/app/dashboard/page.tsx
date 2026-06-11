@@ -28,7 +28,7 @@ const WeeklyAnalysisWidget = dynamic(
 
 /** 모바일·태블릿·가로폰 — 그리드 대신 세로 스택 (Chrome Android/iOS 겹침 방지) */
 const DASHBOARD_STACK_BREAKPOINT = 1024;
-import { Plus, LayoutGrid, Lock, RotateCcw, Crown } from 'lucide-react';
+import { Plus, LayoutGrid, Lock, RotateCcw, Crown, Maximize2, Printer } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import NewsWidget           from '@/components/widgets/NewsWidget';
@@ -38,6 +38,10 @@ import QuickMenuWidget      from '@/components/widgets/QuickMenuWidget';
 import TodaySalesWidget       from '@/components/widgets/TodaySalesWidget';
 import SalesCompareWidget     from '@/components/widgets/SalesCompareWidget';
 import CustomerVisitWidget    from '@/components/widgets/CustomerVisitWidget';
+import CostRatioWidget        from '@/components/widgets/CostRatioWidget';
+import DailyBriefingBar       from '@/components/dashboard/DailyBriefingBar';
+import { useDashboardChrome } from '@/components/dashboard/DashboardChromeContext';
+import { fetchDashboardPrintSnapshot, openDashboardPrintWindow } from '@/lib/dashboardPrintData';
 import LazyWidgetMount from '@/components/dashboard/LazyWidgetMount';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import {
@@ -127,6 +131,7 @@ export default function DashboardPage() {
   const uid     = user?.uid || '';
   const storeId = currentStore?.storeId || '';
   const isSuperuser = isSuperuserEmail(user?.email);
+  const chrome = useDashboardChrome();
 
   const [editMode,      setEditMode]      = useState(false);
   const [activeWidgets, setActiveWidgets] = useState<string[]>(DEFAULT_ACTIVE);
@@ -322,6 +327,7 @@ export default function DashboardPage() {
       case 'today_sales':        return wrapLazyWidget(id, <TodaySalesWidget       editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'sales_compare':      return wrapLazyWidget(id, <SalesCompareWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'customer_visit':     return wrapLazyWidget(id, <CustomerVisitWidget    editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'cost_ratio':         return wrapLazyWidget(id, <CostRatioWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       default:                   return null;
     }
   };
@@ -338,13 +344,25 @@ export default function DashboardPage() {
     );
   }
 
+  const handlePrintDashboard = async () => {
+    if (!storeId) return;
+    const snapshot = await fetchDashboardPrintSnapshot(
+      storeId,
+      currentStore?.storeName || '매장',
+      visibleActive,
+    );
+    openDashboardPrintWindow(snapshot);
+  };
+
   /* 모바일·태블릿 세로 스택 (그리드 겹침 없음) */
   if (isMobile) {
     return (
       <div className="dashboard-mobile-stack flex flex-col min-h-full bg-slate-950 p-3 pb-8 gap-4 w-full max-w-full overflow-x-hidden box-border touch-pan-y [-webkit-overflow-scrolling:touch]">
-        <div className="flex items-center px-1 shrink-0">
+        <div className="flex items-center gap-2 px-1 shrink-0">
           <h1 className="text-slate-300 font-semibold text-sm flex-1">대시보드</h1>
+          <button onClick={handlePrintDashboard} className="p-1.5 text-slate-500 hover:text-teal-400" title="PDF/인쇄"><Printer className="w-4 h-4" /></button>
         </div>
+        <DailyBriefingBar storeId={storeId} />
         {visibleActive.map(id => (
           <section
             key={id}
@@ -369,8 +387,23 @@ export default function DashboardPage() {
       )}
 
       {/* 툴바 */}
+      <DailyBriefingBar storeId={storeId} />
       <div className="flex items-center gap-2 px-6 py-3 border-b border-slate-800/60 shrink-0 flex-wrap">
         <h1 className="text-slate-400 text-xs font-semibold uppercase tracking-widest flex-1">대시보드</h1>
+
+        <button
+          onClick={() => chrome?.toggleDashboardFullscreen()}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-lg text-xs transition-colors"
+          title="대시보드 전체화면"
+        >
+          <Maximize2 className="w-3.5 h-3.5" /> 전체화면
+        </button>
+        <button
+          onClick={handlePrintDashboard}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 rounded-lg text-xs transition-colors"
+        >
+          <Printer className="w-3.5 h-3.5" /> PDF/인쇄
+        </button>
 
         {editMode && isSuperuser && (
           <>

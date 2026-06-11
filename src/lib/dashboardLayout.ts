@@ -70,15 +70,21 @@ export const WIDGET_META: WidgetMeta[] = [
     permKey: 'customer_visit',
   },
   {
+    id: 'cost_ratio',
+    title: '원가율 모니터',
+    defaultItem: { i: 'cost_ratio', x: 8, y: 22, w: 4, h: 4, minW: 3, minH: 3, maxW: 6, maxH: 6 },
+    permKey: 'cost_ratio',
+  },
+  {
     id: 'ai_insight',
     title: 'AI 오늘 브리핑',
-    defaultItem: { i: 'ai_insight', x: 4, y: 22, w: 8, h: 6, minW: 6, minH: 5, maxW: 12, maxH: 10 },
+    defaultItem: { i: 'ai_insight', x: 0, y: 26, w: 12, h: 6, minW: 6, minH: 5, maxW: 12, maxH: 10 },
     permKey: 'ai_insight',
   },
   {
     id: 'total_partner',
     title: 'AI 운영 파트너',
-    defaultItem: { i: 'total_partner', x: 0, y: 28, w: 12, h: 6, minW: 6, minH: 5, maxW: 12, maxH: 10 },
+    defaultItem: { i: 'total_partner', x: 0, y: 32, w: 12, h: 6, minW: 6, minH: 5, maxW: 12, maxH: 10 },
     permKey: 'total_partner',
   },
 ];

@@ -84,6 +84,10 @@ export interface AccountingSettings {
   voucherApprovalRequired: boolean;
   autoVoucherFromPurchase: boolean;
   autoVoucherFromSales: boolean;
+  /** ERP 회사코드 (더존 등) */
+  erpCompanyCode?: string;
+  /** ERP 사업장코드 (영림원·더존) */
+  erpBusinessPlaceCode?: string;
 }
 
 export const ACCOUNT_TYPE_ORDER: AccountType[] = [

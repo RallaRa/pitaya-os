@@ -9,10 +9,23 @@ import { useStore } from '@/context/StoreContext';
 import Sidebar from '@/components/Sidebar';
 import NotificationHub from '@/components/NotificationHub';
 import PhoneCallToast from '@/components/PhoneCallToast';
+import { DashboardChromeProvider, useDashboardChrome } from '@/components/dashboard/DashboardChromeContext';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { isSuperuser } from '@/lib/auth/permissions';
 
 export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <DashboardChromeProvider>
+      <DashboardLayoutInner>{children}</DashboardLayoutInner>
+    </DashboardChromeProvider>
+  );
+}
+
+function DashboardLayoutInner({
   children,
 }: {
   children: React.ReactNode;
@@ -24,6 +37,8 @@ export default function DashboardLayout({
   const router = useRouter();
   const pathname = usePathname();
   const isAiFullscreen = pathname === '/dashboard/ai';
+  const chrome = useDashboardChrome();
+  const isDashboardFullscreen = chrome?.hideChrome && pathname === '/dashboard';
 
   useEffect(() => {
     if (!loading && !user) {
@@ -73,6 +88,17 @@ export default function DashboardLayout({
   }
 
   const isSuperuserMode = isSuperuser(user?.email, userRole || undefined);
+
+  if (isDashboardFullscreen) {
+    return (
+      <div className="flex flex-col h-app bg-slate-950 text-slate-100 overflow-hidden font-sans">
+        <PhoneCallToast />
+        <main className="flex-1 min-h-0 overflow-hidden flex flex-col">
+          {children}
+        </main>
+      </div>
+    );
+  }
 
   if (isAiFullscreen) {
     return (

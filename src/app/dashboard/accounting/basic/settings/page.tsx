@@ -16,6 +16,8 @@ export default function AccountingSettingsPage() {
   const [voucherApprovalRequired, setVoucherApprovalRequired] = useState(true);
   const [autoVoucherFromPurchase, setAutoVoucherFromPurchase] = useState(false);
   const [autoVoucherFromSales, setAutoVoucherFromSales] = useState(false);
+  const [erpCompanyCode, setErpCompanyCode] = useState('1000');
+  const [erpBusinessPlaceCode, setErpBusinessPlaceCode] = useState('1000');
   const [msg, setMsg] = useState('');
 
   const load = useCallback(async () => {
@@ -35,6 +37,8 @@ export default function AccountingSettingsPage() {
       setVoucherApprovalRequired(s.voucherApprovalRequired !== false);
       setAutoVoucherFromPurchase(!!s.autoVoucherFromPurchase);
       setAutoVoucherFromSales(!!s.autoVoucherFromSales);
+      setErpCompanyCode(s.erpCompanyCode || '1000');
+      setErpBusinessPlaceCode(s.erpBusinessPlaceCode || '1000');
     } finally {
       setLoading(false);
     }
@@ -59,6 +63,8 @@ export default function AccountingSettingsPage() {
           voucherApprovalRequired,
           autoVoucherFromPurchase,
           autoVoucherFromSales,
+          erpCompanyCode,
+          erpBusinessPlaceCode,
         }),
       });
       const data = await res.json();
@@ -121,6 +127,29 @@ export default function AccountingSettingsPage() {
               <option key={i + 1} value={i + 1}>{i + 1}월</option>
             ))}
           </select>
+        </div>
+        <div className="pt-2 border-t border-slate-800">
+          <p className="text-xs font-semibold text-slate-400 mb-3">ERP 전표 연동</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] text-slate-500">회사코드 (더존)</label>
+              <input
+                value={erpCompanyCode}
+                onChange={e => setErpCompanyCode(e.target.value)}
+                placeholder="1000"
+                className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-slate-500">사업장코드 (영림원·더존)</label>
+              <input
+                value={erpBusinessPlaceCode}
+                onChange={e => setErpBusinessPlaceCode(e.target.value)}
+                placeholder="1000"
+                className="mt-1 w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100"
+              />
+            </div>
+          </div>
         </div>
         <label className="flex items-center gap-2 text-sm text-slate-300">
           <input

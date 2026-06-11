@@ -3,25 +3,7 @@ import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken, getActualGroupId } from '@/lib/authVerify';
 import { isAdminOrAbove } from '@/lib/auth/permissions';
-
-export function calcItemPrices(
-  buyPrice: number,
-  targetMargin: number,
-  appliedCost: number,
-  lossRate: number,
-) {
-  if (!buyPrice || buyPrice <= 0) {
-    return { kgTargetPrice: 0, kgSalePrice: 0, geunTargetPrice: 0, geunSalePrice: 0 };
-  }
-  const kgTargetPrice = Math.round((buyPrice / (1 - targetMargin)) * (1 + lossRate));
-  const kgSalePrice   = Math.round((buyPrice / (1 - appliedCost))  * (1 + lossRate));
-  return {
-    kgTargetPrice,
-    kgSalePrice,
-    geunTargetPrice: Math.round(kgTargetPrice * 0.6),
-    geunSalePrice:   Math.round(kgSalePrice   * 0.6),
-  };
-}
+import { calcItemPrices } from '@/lib/items/calcItemPrices';
 
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
@@ -74,14 +56,23 @@ export async function PUT(req: Request) {
   const { id, updates } = await req.json();
   if (!id) return NextResponse.json({ error: 'id 필수' }, { status: 400 });
 
-  const prices = calcItemPrices(
-    updates.buyPrice, updates.targetMargin, updates.appliedCost, updates.lossRate,
-  );
-
   const existing = await adminDb.collection('items').doc(id).get();
+  if (!existing.exists) return NextResponse.json({ error: 'not found' }, { status: 404 });
+
+  const current = existing.data() || {};
+  const priceFields = ['buyPrice', 'targetMargin', 'appliedCost', 'lossRate'] as const;
+  const hasPriceUpdate = priceFields.some(k => updates[k] !== undefined);
+  const prices = hasPriceUpdate
+    ? calcItemPrices(
+      Number(updates.buyPrice ?? current.buyPrice ?? 0),
+      Number(updates.targetMargin ?? current.targetMargin ?? 0),
+      Number(updates.appliedCost ?? current.appliedCost ?? 0),
+      Number(updates.lossRate ?? current.lossRate ?? 0),
+    )
+    : {};
   const historyPatch: Record<string, any> = {};
-  if (existing.exists && updates.buyPrice !== undefined) {
-    const oldPrice = existing.data()?.buyPrice;
+  if (updates.buyPrice !== undefined) {
+    const oldPrice = current.buyPrice;
     if (oldPrice !== updates.buyPrice) {
       historyPatch.priceHistory = FieldValue.arrayUnion({
         date: new Date().toISOString(),

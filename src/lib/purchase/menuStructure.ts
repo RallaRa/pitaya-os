@@ -38,6 +38,7 @@ export const PURCHASE_MENU_SECTIONS: PurchaseMenuSection[] = [
       { href: '/dashboard/report/purchases/prices', label: '품목별 단가' },
       { href: '/dashboard/report/purchases/unit-price-detail', label: '매입 단가 상세' },
       { href: '/dashboard/report/purchases/price-analysis', label: '매입단가 분석' },
+      { href: '/dashboard/suppliers/price-compare', label: '거래처 단가 비교' },
     ],
   },
   {

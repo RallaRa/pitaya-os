@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { cronUnauthorizedResponse, getCronSecret, isCronAuthorized } from '@/lib/cronAuth';
+import { postDailyBriefingToMessenger } from '@/lib/briefingMessenger';
 
-/** KST 05:30 전후 — AI 오늘 브리핑 캐시 사전 생성 */
+/** KST 09:00 — AI 오늘 브리핑 캐시 생성 + 메신저 전송 */
 export async function GET(req: Request) {
   if (!isCronAuthorized(req)) return cronUnauthorizedResponse();
 
@@ -11,15 +12,29 @@ export async function GET(req: Request) {
 
   try {
     const storesSnap = await adminDb.collection('stores').where('status', '==', 'active').limit(20).get();
-    const storeIds = storesSnap.empty ? [''] : storesSnap.docs.map(d => d.id);
+    if (storesSnap.empty) {
+      return NextResponse.json({ ok: true, skipped: true, reason: 'no active stores' });
+    }
+    const storeIds = storesSnap.docs.map(d => d.id);
 
     const results = await Promise.allSettled(
-      storeIds.map(sid =>
-        fetch(`${base}/api/dashboard/comprehensive-opinion?storeId=${sid}&force=1`, {
+      storeIds.map(async sid => {
+        const res = await fetch(`${base}/api/dashboard/comprehensive-opinion?storeId=${sid}&force=1`, {
           headers: cronSecret ? { 'x-cron-secret': cronSecret } : {},
           signal: AbortSignal.timeout(90000),
-        }).then(r => r.json()),
-      ),
+        });
+        const data = await res.json();
+        if (sid && (data.summary || data.opinion)) {
+          try {
+            await postDailyBriefingToMessenger(
+              sid,
+              String(data.summary || data.opinion || ''),
+              Array.isArray(data.actions) ? data.actions.map((a: { label?: string; text?: string }) => a.label || a.text || '') : [],
+            );
+          } catch { /* ignore messenger errors */ }
+        }
+        return data;
+      }),
     );
 
     const summary = results.map((r, i) => ({

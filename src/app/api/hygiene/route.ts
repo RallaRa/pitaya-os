@@ -62,6 +62,7 @@ export async function POST(req: Request) {
       items, totalItems, passedItems,
       saveType = 'final',
       savedSections = [],
+      signatureDataUrl,
     } = await req.json();
 
     if (!storeId || !uid || !checkDate) {
@@ -80,6 +81,7 @@ export async function POST(req: Request) {
       status,
       saveType,
       savedSections,
+      ...(signatureDataUrl ? { signatureDataUrl } : {}),
       lastSavedAt: now,
       updatedAt: now,
     };
