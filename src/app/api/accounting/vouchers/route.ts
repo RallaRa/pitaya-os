@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { getKSTTodayYMD } from '@/lib/dateUtils';
-import type { VoucherLine, VoucherType } from '@/lib/accounting/types';
+import type { AccountingVoucher, VoucherLine, VoucherType } from '@/lib/accounting/types';
 import {
   handleAccountingApiError,
   requireAccountingAccess,
@@ -49,7 +49,7 @@ export async function GET(req: Request) {
     if (status) q = q.where('status', '==', status) as typeof q;
 
     const snap = await q.limit(200).get();
-    let vouchers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    let vouchers = snap.docs.map(d => ({ id: d.id, ...d.data() } as AccountingVoucher));
     vouchers.sort((a, b) => String(b.voucherDate).localeCompare(String(a.voucherDate)));
 
     if (startDate) vouchers = vouchers.filter(v => String(v.voucherDate) >= startDate);

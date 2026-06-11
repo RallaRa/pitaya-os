@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
-import type { AccountType } from '@/lib/accounting/types';
+import type { AccountingAccount, AccountType } from '@/lib/accounting/types';
 import {
   handleAccountingApiError,
   requireAccountingAccess,
@@ -46,7 +46,7 @@ export async function GET(req: Request) {
       .get();
 
     const accounts = snap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
+      .map(d => ({ id: d.id, ...d.data() } as AccountingAccount))
       .sort((a, b) => String(a.code).localeCompare(String(b.code)));
     return NextResponse.json({ accounts });
   } catch (e) {
