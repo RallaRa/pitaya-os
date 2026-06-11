@@ -3,10 +3,13 @@
 import dynamic from 'next/dynamic';
 import { useState, useEffect, useCallback } from 'react';
 import { Search, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
+import PurchaseDocumentViewer from '@/components/purchases/PurchaseDocumentViewer';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { useStore } from '@/context/StoreContext';
 import SalesEvidenceLine from '@/components/widgets/SalesEvidenceLine';
+import type { DayPriceSummary } from '@/lib/purchaseUnitPriceHistory';
+import { usePurchaseDocumentViewer } from '@/hooks/usePurchaseDocumentViewer';
 
 const AIPurchasePanel = dynamic(() => import('@/components/purchases/AIPurchasePanel'), { ssr: false });
 
@@ -47,7 +50,19 @@ export default function ItemPricesPage() {
   const [items, setItems] = useState<ItemPrice[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<ItemPrice | null>(null);
+  const [daySummaries, setDaySummaries] = useState<DayPriceSummary[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const {
+    viewDocs,
+    docLoading,
+    openForRecords,
+    closeViewer,
+  } = usePurchaseDocumentViewer(storeId);
+
+  const handleDayDoubleClick = useCallback((day: DayPriceSummary) => {
+    const ids = day.lines.map(l => l.purchaseRecordId).filter(Boolean);
+    if (ids.length) void openForRecords(ids);
+  }, [openForRecords]);
 
   const load = useCallback(async () => {
     if (!storeId) return;
@@ -105,6 +120,7 @@ export default function ItemPricesPage() {
         displayPriceBasis: dJson.displayPriceBasis,
         priceHistory: history,
       });
+      setDaySummaries(dJson.daySummaries || []);
     } finally {
       setDetailLoading(false);
     }
@@ -116,11 +132,14 @@ export default function ItemPricesPage() {
 
   return (
     <div className="flex h-full min-h-0 bg-slate-950">
+      {viewDocs && viewDocs.length > 0 && (
+        <PurchaseDocumentViewer attachments={viewDocs} onClose={closeViewer} />
+      )}
       <div className="flex-1 flex flex-col min-w-0 overflow-auto p-4 md:p-6 space-y-5">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">품목별 단가</h1>
           <p className="text-slate-500 text-sm mt-0.5">
-            매입 단가 현황 · 오늘 기준(당일 중복 시 최고가) · 더블클릭 히스토리는 매입 등록에서
+            매입 단가 현황 · 오늘 기준(당일 중복 시 최고가) · 일자 더블클릭: 매입 원본
           </p>
         </div>
 
@@ -160,7 +179,10 @@ export default function ItemPricesPage() {
                     const isUp = diff > 0;
                     return (
                       <tr key={it.id}
-                        onClick={() => loadItemDetail(it.itemName)}
+                      onClick={() => {
+                        setDaySummaries([]);
+                        loadItemDetail(it.itemName);
+                      }}
                         className={`border-b border-slate-800/50 cursor-pointer transition-colors ${selected?.id === it.id ? 'bg-teal-600/10' : 'hover:bg-slate-800/30'}`}>
                         <td className="px-4 py-3 text-slate-200">{it.itemName}</td>
                         <td className="px-4 py-3 text-right text-slate-200 font-semibold tabular-nums">{it.currentPrice.toLocaleString()}원</td>
@@ -214,6 +236,28 @@ export default function ItemPricesPage() {
                     </div>
                   );
                 })()}
+
+                {daySummaries.length > 0 && (
+                  <div className="mt-4 border-t border-slate-800 pt-3">
+                    <p className="text-[10px] font-semibold text-slate-400 mb-2">일자별 매입 · 더블클릭 원본</p>
+                    <div className="max-h-36 overflow-y-auto space-y-0.5">
+                      {[...daySummaries].reverse().slice(0, 30).map(day => (
+                        <div
+                          key={day.date}
+                          role="button"
+                          tabIndex={0}
+                          onDoubleClick={() => handleDayDoubleClick(day)}
+                          title="더블클릭: 매입 원본 보기"
+                          className={`flex justify-between text-[10px] px-2 py-1 rounded cursor-pointer hover:bg-slate-800/50 ${docLoading ? 'opacity-70' : ''}`}
+                        >
+                          <span className="text-slate-400 tabular-nums">{day.date}</span>
+                          <span className="text-teal-300 tabular-nums font-semibold">{day.displayPrice.toLocaleString()}원</span>
+                          <span className="text-slate-500 tabular-nums">{day.totalQty} · {day.lines.length}건</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             ) : (
               <div className="flex items-center justify-center h-full text-slate-600 text-sm">

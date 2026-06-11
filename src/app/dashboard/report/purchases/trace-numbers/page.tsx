@@ -3,9 +3,18 @@
 import dynamic from 'next/dynamic';
 import { useState, useEffect, useCallback } from 'react';
 import { Search, RefreshCw, CheckCircle, AlertCircle, Hash } from 'lucide-react';
+import PurchaseDocumentViewer from '@/components/purchases/PurchaseDocumentViewer';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { useStore } from '@/context/StoreContext';
 import { isMeatCategory } from '@/lib/purchaseCategories';
+import {
+  normalizeAttachments,
+  type PurchaseAttachment,
+} from '@/lib/purchaseAttachments';
+import {
+  resolvePurchaseRecordId,
+  usePurchaseDocumentViewer,
+} from '@/hooks/usePurchaseDocumentViewer';
 import { db } from '@/lib/firebase/firebase';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 
@@ -15,6 +24,9 @@ interface TraceRecord {
   id: string; date: string; category: string; name: string;
   weight: number; origin: string; traceNo?: string;
   supplierName?: string; grade?: string;
+  purchaseId?: string;
+  purchaseAttachments?: PurchaseAttachment[];
+  imageUrls?: string[];
 }
 
 export default function TraceNumbersPage() {
@@ -28,6 +40,22 @@ export default function TraceNumbersPage() {
   const [search,  setSearch]  = useState('');
   const [records, setRecords] = useState<TraceRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const {
+    viewDocs,
+    docLoading,
+    openFromInline,
+    openForRecord,
+    closeViewer,
+  } = usePurchaseDocumentViewer(storeId);
+
+  const handleRowDoubleClick = useCallback((r: TraceRecord) => {
+    if (normalizeAttachments(r.purchaseAttachments, r.imageUrls).length) {
+      openFromInline(r.purchaseAttachments, r.imageUrls);
+      return;
+    }
+    const pid = resolvePurchaseRecordId(r.purchaseId, r.id);
+    if (pid) void openForRecord(pid);
+  }, [openFromInline, openForRecord]);
 
   const loadFromPurchases = useCallback(async () => {
     const h = await getAuthHeaders();
@@ -44,6 +72,9 @@ export default function TraceNumbersPage() {
           weight: it.weight || it.qty || 0, origin: it.origin || '',
           traceNo: it.traceNo || '', supplierName: r.supplierName || '',
           grade: it.grade || '',
+          purchaseId: r.id,
+          purchaseAttachments: r.purchaseAttachments,
+          imageUrls: r.imageUrls,
         });
       });
     });
@@ -85,10 +116,13 @@ export default function TraceNumbersPage() {
 
   return (
     <div className="flex h-full min-h-0 bg-slate-950">
+      {viewDocs && viewDocs.length > 0 && (
+        <PurchaseDocumentViewer attachments={viewDocs} onClose={closeViewer} />
+      )}
       <div className="flex-1 flex flex-col min-w-0 overflow-auto p-4 md:p-6 space-y-5">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">이력번호 관리</h1>
-          <p className="text-slate-500 text-sm mt-0.5">축산물 이력번호 조회 및 누락 확인</p>
+          <p className="text-slate-500 text-sm mt-0.5">축산물 이력번호 조회 및 누락 확인 · 행 더블클릭: 매입 원본</p>
         </div>
 
         <div className="flex flex-wrap gap-3 items-end">
@@ -164,7 +198,12 @@ export default function TraceNumbersPage() {
                 {filtered.map(r => {
                   const hasTrace = !!(r.traceNo && r.traceNo.trim());
                   return (
-                    <tr key={r.id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
+                    <tr
+                      key={r.id}
+                      onDoubleClick={() => handleRowDoubleClick(r)}
+                      title="더블클릭: 매입 원본 보기"
+                      className={`border-b border-slate-800/50 hover:bg-slate-800/30 cursor-pointer ${docLoading ? 'opacity-70' : ''}`}
+                    >
                       <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{r.date}</td>
                       <td className="px-4 py-3 text-slate-200">{r.name}</td>
                       <td className={`px-4 py-3 font-mono whitespace-nowrap ${hasTrace ? 'text-teal-300' : 'text-amber-400'}`}>

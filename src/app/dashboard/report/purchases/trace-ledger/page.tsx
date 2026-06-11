@@ -3,9 +3,18 @@
 import dynamic from 'next/dynamic';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, RefreshCw, Printer, Download, AlertCircle } from 'lucide-react';
+import PurchaseDocumentViewer from '@/components/purchases/PurchaseDocumentViewer';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { useStore } from '@/context/StoreContext';
 import { isMeatCategory } from '@/lib/purchaseCategories';
+import {
+  normalizeAttachments,
+  type PurchaseAttachment,
+} from '@/lib/purchaseAttachments';
+import {
+  resolvePurchaseRecordId,
+  usePurchaseDocumentViewer,
+} from '@/hooks/usePurchaseDocumentViewer';
 import { db } from '@/lib/firebase/firebase';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 
@@ -16,6 +25,8 @@ interface TraceRecord {
   weight: number; origin: string; cut: string; grade?: string;
   slaughterHouse?: string; traceNo?: string;
   supplierName?: string; purchaseId?: string;
+  purchaseAttachments?: PurchaseAttachment[];
+  imageUrls?: string[];
 }
 
 const REQUIRED_FIELDS: (keyof TraceRecord)[] = ['date', 'category', 'name', 'weight', 'origin', 'cut', 'traceNo', 'supplierName'];
@@ -35,6 +46,22 @@ export default function TraceLedgerPage() {
   const [end,     setEnd]     = useState(today);
   const [records, setRecords] = useState<TraceRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const {
+    viewDocs,
+    docLoading,
+    openFromInline,
+    openForRecord,
+    closeViewer,
+  } = usePurchaseDocumentViewer(storeId);
+
+  const handleRowDoubleClick = useCallback((r: TraceRecord) => {
+    if (normalizeAttachments(r.purchaseAttachments, r.imageUrls).length) {
+      openFromInline(r.purchaseAttachments, r.imageUrls);
+      return;
+    }
+    const pid = resolvePurchaseRecordId(r.purchaseId, r.id);
+    if (pid) void openForRecord(pid);
+  }, [openFromInline, openForRecord]);
 
   const loadFromPurchases = useCallback(async () => {
     const h = await getAuthHeaders();
@@ -59,6 +86,8 @@ export default function TraceLedgerPage() {
           traceNo: it.traceNo || '',
           supplierName: r.supplierName || '',
           purchaseId: r.id,
+          purchaseAttachments: r.purchaseAttachments,
+          imageUrls: r.imageUrls,
         });
       });
     });
@@ -108,11 +137,14 @@ export default function TraceLedgerPage() {
 
   return (
     <div className="flex h-full min-h-0 bg-slate-950">
+      {viewDocs && viewDocs.length > 0 && (
+        <PurchaseDocumentViewer attachments={viewDocs} onClose={closeViewer} />
+      )}
       <div className="flex-1 flex flex-col min-w-0 overflow-auto p-4 md:p-6 space-y-5">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold text-slate-100">축산물 거래내역서</h1>
-            <p className="text-slate-500 text-sm mt-0.5">축산물이력법 법정 기록 서식</p>
+            <p className="text-slate-500 text-sm mt-0.5">축산물이력법 법정 기록 서식 · 행 더블클릭: 매입 원본</p>
           </div>
           <div className="flex gap-2">
             <button onClick={handlePrint} className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-sm transition-colors print:hidden">
@@ -176,7 +208,12 @@ export default function TraceLedgerPage() {
                   const missing = missingFields(r);
                   const hasWarning = missing.length > 0;
                   return (
-                    <tr key={r.id} className={`border-b ${hasWarning ? 'bg-amber-500/5 print:bg-yellow-50' : 'bg-slate-900 even:bg-slate-800/40 print:bg-white print:even:bg-gray-50'} print:border-gray-300`}>
+                    <tr
+                      key={r.id}
+                      onDoubleClick={() => handleRowDoubleClick(r)}
+                      title="더블클릭: 매입 원본 보기"
+                      className={`border-b print:border-gray-300 cursor-pointer ${hasWarning ? 'bg-amber-500/5 print:bg-yellow-50' : 'bg-slate-900 even:bg-slate-800/40 print:bg-white print:even:bg-gray-50'} ${docLoading ? 'opacity-70' : ''}`}
+                    >
                       <td className="px-3 py-2 border border-slate-700 print:border-gray-300 text-slate-300 print:text-gray-900 whitespace-nowrap">{r.date}</td>
                       <td className="px-3 py-2 border border-slate-700 print:border-gray-300 text-slate-300 print:text-gray-900">{r.category}</td>
                       <td className="px-3 py-2 border border-slate-700 print:border-gray-300 text-right text-slate-300 print:text-gray-900 tabular-nums">{r.weight}</td>
