@@ -95,7 +95,7 @@ async function analyzePurchaseDocument(body: {
   });
 }
 
-function normalizePurchaseRecord<T extends Record<string, unknown>>(record: T): T {
+function normalizePurchaseRecord(record: Record<string, unknown>): Record<string, unknown> {
   const att = normalizeAttachments(
     record.purchaseAttachments as PurchaseAttachment[] | undefined,
     record.imageUrls as string[] | undefined,
