@@ -1,5 +1,7 @@
 /** 매입 등록 원본 문서 — Firebase Storage URL + 메타 (보관·조회용) */
 
+import { normalizeStoragePublicUrl } from '@/lib/firebase/storageBucket';
+
 export interface PurchaseAttachment {
   url: string;
   name: string;
@@ -37,6 +39,13 @@ export function isImageAttachment(a: Pick<PurchaseAttachment, 'mimeType'>): bool
   return a.mimeType.startsWith('image/');
 }
 
+function withPublicUrls(list: PurchaseAttachment[]): PurchaseAttachment[] {
+  return list.map(a => ({
+    ...a,
+    url: normalizeStoragePublicUrl(a.url) || a.url,
+  }));
+}
+
 /** Firestore imageUrls만 있는 레거시 → attachments */
 export function legacyUrlsToAttachments(urls: string[]): PurchaseAttachment[] {
   return urls.map((url, i) => ({
@@ -50,8 +59,8 @@ export function normalizeAttachments(
   attachments?: PurchaseAttachment[] | null,
   imageUrls?: string[] | null,
 ): PurchaseAttachment[] {
-  if (attachments?.length) return attachments;
-  if (imageUrls?.length) return legacyUrlsToAttachments(imageUrls);
+  if (attachments?.length) return withPublicUrls(attachments);
+  if (imageUrls?.length) return withPublicUrls(legacyUrlsToAttachments(imageUrls));
   return [];
 }
 
@@ -63,13 +72,13 @@ export interface GroupDocSource {
 }
 
 export function resolveGroupAttachments(group: GroupDocSource): PurchaseAttachment[] {
-  if (group.savedAttachments?.length) return group.savedAttachments;
+  if (group.savedAttachments?.length) return withPublicUrls(group.savedAttachments);
   if (group.savedImageUrls?.length) {
-    return group.savedImageUrls.map((url, i) => ({
+    return withPublicUrls(group.savedImageUrls.map((url, i) => ({
       url,
       name: group.attachedFiles?.[i]?.name || `원본 ${i + 1}`,
       mimeType: group.attachedFiles?.[i]?.type === 'pdf' ? 'application/pdf' : 'image/jpeg',
-    }));
+    })));
   }
   return (group.attachedFiles || [])
     .filter(f => f.type === 'image' || f.type === 'pdf')

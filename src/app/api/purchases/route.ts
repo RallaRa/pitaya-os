@@ -22,10 +22,12 @@ import {
 import {
   extFromMime,
   mimeFromFileType,
+  normalizeAttachments,
   type PurchaseAttachment,
 } from '@/lib/purchaseAttachments';
 import { appendStoreBusinessContext } from '@/lib/storeBusinessContext';
 import { fetchPurchaseRecordsForStore } from '@/lib/purchaseRecordsQuery.server';
+import { buildStoredFileUrl, formatStorageError } from '@/lib/firebase/storageBucket';
 
 const SYSTEM_INSTRUCTION = appendStoreBusinessContext(`당신은 매입/구매 문서 전문 분석 AI입니다.
 거래명세서, 세금계산서, 매입전표, 영수증 이미지 또는 데이터를 분석하여 정확한 JSON을 반환합니다.
@@ -93,6 +95,18 @@ async function analyzePurchaseDocument(body: {
   });
 }
 
+function normalizePurchaseRecord<T extends Record<string, unknown>>(record: T): T {
+  const att = normalizeAttachments(
+    record.purchaseAttachments as PurchaseAttachment[] | undefined,
+    record.imageUrls as string[] | undefined,
+  );
+  if (att.length) {
+    record.purchaseAttachments = att;
+    record.imageUrls = att.map(a => a.url);
+  }
+  return record;
+}
+
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
   if (!authUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -109,14 +123,15 @@ export async function GET(req: Request) {
     if (id) {
       const doc = await adminDb.collection('purchase_records').doc(id).get();
       if (!doc.exists) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-      return NextResponse.json({ record: { id: doc.id, ...doc.data() } });
+      const record = normalizePurchaseRecord({ id: doc.id, ...doc.data() } as Record<string, unknown>);
+      return NextResponse.json({ record });
     }
 
-    const records = await fetchPurchaseRecordsForStore(storeId, {
+    const records = (await fetchPurchaseRecordsForStore(storeId, {
       startDate: startDate || undefined,
       endDate: endDate || undefined,
       limit: 100,
-    });
+    })).map(r => normalizePurchaseRecord({ ...r } as Record<string, unknown>));
     return NextResponse.json({ records });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
@@ -165,7 +180,7 @@ export async function POST(req: Request) {
               },
             });
             const bucketName = bucket.name;
-            const url = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(filePath)}?alt=media&token=${token}`;
+            const url = buildStoredFileUrl(bucketName, filePath, token);
             purchaseAttachments.push({
               url,
               name: String(img.name || `원본.${ext}`).slice(0, 120),
@@ -173,9 +188,21 @@ export async function POST(req: Request) {
             });
           }
         } catch (uploadErr: unknown) {
-          const msg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
+          const msg = formatStorageError(uploadErr);
           console.error('원본 문서 업로드 실패:', msg);
+          return NextResponse.json(
+            { error: `원본 문서 업로드 실패: ${msg}` },
+            { status: 500 },
+          );
         }
+      }
+
+      const hadImages = Array.isArray(images) && images.some((img: { content?: string }) => img.content);
+      if (hadImages && purchaseAttachments.length === 0) {
+        return NextResponse.json(
+          { error: '원본 문서를 업로드하지 못했습니다. 파일을 다시 첨부해 주세요.' },
+          { status: 400 },
+        );
       }
 
       const imageUrls = purchaseAttachments.map(a => a.url);

@@ -1,13 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Image as ImageIcon,
   X,
   ChevronLeft,
   ChevronRight,
   FileText,
+  AlertCircle,
 } from 'lucide-react';
+import { normalizeStoragePublicUrl } from '@/lib/firebase/storageBucket';
 import {
   isImageAttachment,
   isPdfAttachment,
@@ -27,8 +29,15 @@ export default function PurchaseDocumentViewer({
   onClose,
 }: Props) {
   const [idx, setIdx] = useState(initialIndex);
+  const [loadError, setLoadError] = useState(false);
   const total = attachments.length;
   const cur = attachments[idx];
+  const displayUrl = cur ? normalizeStoragePublicUrl(cur.url) || cur.url : '';
+
+  useEffect(() => {
+    setLoadError(false);
+  }, [idx, displayUrl]);
+
   if (!cur) return null;
 
   const prev = () => setIdx(i => (i - 1 + total) % total);
@@ -59,11 +68,25 @@ export default function PurchaseDocumentViewer({
         </div>
 
         <div className="flex-1 overflow-auto flex items-center justify-center bg-slate-950 min-h-[300px] relative">
-          {isImageAttachment(cur) ? (
+          {loadError ? (
+            <div className="flex flex-col items-center gap-3 text-slate-400 p-6 text-center">
+              <AlertCircle className="w-10 h-10 text-amber-400" />
+              <p className="text-sm text-slate-300">원본 이미지를 불러오지 못했습니다.</p>
+              <a
+                href={displayUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-teal-400 hover:text-teal-300 text-xs underline"
+              >
+                새 탭에서 열기
+              </a>
+            </div>
+          ) : isImageAttachment(cur) ? (
             <img
-              src={cur.url}
+              src={displayUrl}
               alt={cur.name}
               className="max-w-full max-h-[70vh] object-contain"
+              onError={() => setLoadError(true)}
             />
           ) : isPdfAttachment(cur) ? (
             <div className="flex flex-col items-center gap-4 text-slate-400 p-6 w-full max-w-2xl">
@@ -71,11 +94,11 @@ export default function PurchaseDocumentViewer({
               <p className="text-sm text-center">{cur.name}</p>
               <iframe
                 title={cur.name}
-                src={cur.url}
+                src={displayUrl}
                 className="w-full h-[60vh] rounded-lg border border-slate-700 bg-white"
               />
               <a
-                href={cur.url}
+                href={displayUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-teal-400 hover:text-teal-300 text-xs underline"
@@ -87,7 +110,7 @@ export default function PurchaseDocumentViewer({
             <div className="flex flex-col items-center gap-3 text-slate-400 p-6">
               <p className="text-sm">{cur.name}</p>
               <a
-                href={cur.url}
+                href={displayUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-teal-400 hover:text-teal-300 text-xs underline"
@@ -118,24 +141,27 @@ export default function PurchaseDocumentViewer({
 
         {total > 1 && (
           <div className="flex gap-2 px-4 py-2 border-t border-slate-700 overflow-x-auto shrink-0">
-            {attachments.map((a, i) => (
-              <button
-                key={`${a.url}-${i}`}
-                type="button"
-                onClick={() => setIdx(i)}
-                className={`shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition-colors ${
-                  i === idx ? 'border-teal-400' : 'border-slate-700 hover:border-slate-500'
-                }`}
-              >
-                {isImageAttachment(a) ? (
-                  <img src={a.url} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full bg-slate-800 flex items-center justify-center">
-                    <FileText className="w-6 h-6 text-red-400" />
-                  </div>
-                )}
-              </button>
-            ))}
+            {attachments.map((a, i) => {
+              const thumbUrl = normalizeStoragePublicUrl(a.url) || a.url;
+              return (
+                <button
+                  key={`${a.url}-${i}`}
+                  type="button"
+                  onClick={() => setIdx(i)}
+                  className={`shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition-colors ${
+                    i === idx ? 'border-teal-400' : 'border-slate-700 hover:border-slate-500'
+                  }`}
+                >
+                  {isImageAttachment(a) ? (
+                    <img src={thumbUrl} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-slate-800 flex items-center justify-center">
+                      <FileText className="w-6 h-6 text-red-400" />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
