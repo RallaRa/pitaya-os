@@ -37,6 +37,9 @@ export async function PATCH(req: Request) {
   if (typeof settings.dailyCloseEnabled === 'boolean') patch.dailyCloseEnabled = settings.dailyCloseEnabled;
   if (typeof settings.goodsSyncNotifyEnabled === 'boolean') patch.goodsSyncNotifyEnabled = settings.goodsSyncNotifyEnabled;
   if (typeof settings.itemSpeedAlertEnabled === 'boolean') patch.itemSpeedAlertEnabled = settings.itemSpeedAlertEnabled;
+  if (typeof settings.firstPurchaseEnabled === 'boolean') patch.firstPurchaseEnabled = settings.firstPurchaseEnabled;
+  if (typeof settings.vipVisitEnabled === 'boolean') patch.vipVisitEnabled = settings.vipVisitEnabled;
+  if (typeof settings.regularVisitEnabled === 'boolean') patch.regularVisitEnabled = settings.regularVisitEnabled;
 
   const merged = await savePosAlertSettings(storeId, patch);
   return NextResponse.json({ success: true, settings: merged });

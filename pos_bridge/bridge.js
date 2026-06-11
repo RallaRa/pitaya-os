@@ -1270,16 +1270,39 @@ async function fetchTodaySaleHeaders(dateStr) {
   try {
     const result = await (await getPool()).request()
       .input('date', sql.VarChar(10), dateStr)
-      .query(`SELECT Sale_Num, Sale_Time, TSell_Pri FROM ${table} WHERE Sale_Date = @date ORDER BY Sale_Num`);
+      .query(`SELECT Sale_Num, Sale_Time, TSell_Pri, Cus_Code FROM ${table} WHERE Sale_Date = @date ORDER BY Sale_Num`);
     return result.recordset.map(r => ({
       saleNum: String(r.Sale_Num || ''),
       saleTime: String(r.Sale_Time || '').trim(),
       totalSale: toInt(r.TSell_Pri),
+      cusCode: String(r.Cus_Code || '').trim(),
     })).filter(r => r.saleNum);
   } catch (e) {
     warn(`SaT 헤더 조회 실패: ${e.message}`);
     return [];
   }
+}
+
+async function fetchCustomerNames(cusCodes) {
+  const map = {};
+  const unique = [...new Set(cusCodes.map(String).filter(Boolean))];
+  if (!unique.length) return map;
+  for (let i = 0; i < unique.length; i += 50) {
+    const chunk = unique.slice(i, i + 50);
+    const placeholders = chunk.map((_, idx) => `@cc${idx}`).join(', ');
+    const request = (await getPool()).request();
+    chunk.forEach((code, idx) => request.input(`cc${idx}`, sql.VarChar(30), code));
+    try {
+      const result = await request.query(`
+        SELECT Cus_Code, Cus_Name FROM Customer_Info
+        WHERE Cus_Code IN (${placeholders})
+      `);
+      for (const r of result.recordset) {
+        map[String(r.Cus_Code || '')] = String(r.Cus_Name || '').trim();
+      }
+    } catch (e) { warn(`고객명 조회 실패: ${e.message}`); }
+  }
+  return map;
 }
 
 async function fetchDetailsForSaleNums(dateStr, saleNums) {
@@ -1343,12 +1366,15 @@ async function pollSaleEvents(dateStr, dryRun) {
     if (!newSales.length) return { sent: 0 };
 
     const detailsMap = await fetchDetailsForSaleNums(dateStr, newSales.map(s => s.saleNum));
+    const nameMap = await fetchCustomerNames(newSales.map(s => s.cusCode).filter(Boolean));
     const events = newSales.map(s => {
       const lines = detailsMap[s.saleNum] || [];
       return {
         saleNum: s.saleNum,
         saleTime: s.saleTime,
         amount: s.totalSale,
+        cusCode: s.cusCode || '',
+        cusName: nameMap[s.cusCode] || '',
         items: lines.map(d => ({ name: d.goodsName, qty: d.saleCount, price: d.totalPrice })),
         itemSummary: lines.length
           ? lines.map(d => `${d.goodsName} ${d.saleCount > 0 ? d.saleCount + '개' : ''}`.trim()).join(', ')

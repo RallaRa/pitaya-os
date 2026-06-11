@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
+import { processFirstPurchaseEvents } from '@/lib/pos/firstPurchaseNotify.server';
 import { processSaleEvents, type SaleEventInput } from '@/lib/pos/saleEventNotify.server';
+import { processVipVisitEvents } from '@/lib/pos/vipVisitNotify.server';
 
 export async function POST(req: Request) {
   const authHeader = req.headers.get('authorization');
@@ -24,8 +26,17 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await processSaleEvents(storeId, date, events);
-    return NextResponse.json({ success: true, ...result });
+    const [saleResult, firstPurchaseResult, vipVisitResult] = await Promise.all([
+      processSaleEvents(storeId, date, events),
+      processFirstPurchaseEvents(storeId, date, events),
+      processVipVisitEvents(storeId, date, events),
+    ]);
+    return NextResponse.json({
+      success: true,
+      ...saleResult,
+      firstPurchase: firstPurchaseResult,
+      vipVisit: vipVisitResult,
+    });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'sale-events failed';
     console.error('[pos/sale-events]', msg);

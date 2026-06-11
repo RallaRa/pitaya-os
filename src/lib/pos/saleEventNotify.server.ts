@@ -15,6 +15,8 @@ export interface SaleEventInput {
   amount: number;
   items?: SaleEventItem[];
   itemSummary?: string;
+  cusCode?: string;
+  cusName?: string;
 }
 
 function formatAmount(amount: number): string {

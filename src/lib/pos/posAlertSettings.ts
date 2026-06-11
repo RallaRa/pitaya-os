@@ -6,6 +6,9 @@ export interface PosAlertSettings {
   dailyCloseEnabled: boolean;
   goodsSyncNotifyEnabled: boolean;
   itemSpeedAlertEnabled: boolean;
+  firstPurchaseEnabled: boolean;
+  vipVisitEnabled: boolean;
+  regularVisitEnabled: boolean;
 }
 
 export const DEFAULT_POS_ALERT_SETTINGS: PosAlertSettings = {
@@ -13,6 +16,9 @@ export const DEFAULT_POS_ALERT_SETTINGS: PosAlertSettings = {
   dailyCloseEnabled: true,
   goodsSyncNotifyEnabled: true,
   itemSpeedAlertEnabled: true,
+  firstPurchaseEnabled: true,
+  vipVisitEnabled: true,
+  regularVisitEnabled: false,
 };
 
 export async function getPosAlertSettings(storeId: string): Promise<PosAlertSettings> {

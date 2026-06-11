@@ -48,6 +48,7 @@
     { "path": "/api/cron/customer-reminders", "schedule": "0 0 * * *" },
     { "path": "/api/cron/break-even-business-days", "schedule": "0 15 * * *" },
     { "path": "/api/cron/sales-anomaly-detect", "schedule": "30 14 * * *" },
-    { "path": "/api/cron/aggregate-sales-categories", "schedule": "0 15 * * *" }
+    { "path": "/api/cron/aggregate-sales-categories", "schedule": "0 15 * * *" },
+    { "path": "/api/cron/new-customer-report", "schedule": "0 15 * * *" }
   ]
 }

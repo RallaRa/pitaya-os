@@ -21,6 +21,9 @@ export default function PosAlertsSettingsPage() {
     dailyCloseEnabled: true,
     goodsSyncNotifyEnabled: true,
     itemSpeedAlertEnabled: true,
+    firstPurchaseEnabled: true,
+    vipVisitEnabled: true,
+    regularVisitEnabled: false,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -82,6 +85,9 @@ export default function PosAlertsSettingsPage() {
             ['dailyCloseEnabled', '일 마감 리포트', 'Finish 마감 확정 시 AI 코멘트 + 💰매출알림 발송'],
             ['goodsSyncNotifyEnabled', '품목 변경 알림', 'Goods 추가·삭제·가격변경 시 💰매출알림 (5분 주기)'],
             ['itemSpeedAlertEnabled', '품목 판매 속도', '최근 1시간 vs 7일 동시간대 평균 200%↑ 시 💰매출알림 (30분 주기)'],
+            ['firstPurchaseEnabled', '신규 고객 방문', '회원번호(Cus_Code) 첫 방문 시 💰매출알림 + 자정 일일 리포트'],
+            ['vipVisitEnabled', 'VIP 고객 방문', 'pitayaGrade VIP 방문 시 09~21시 💰매출알림'],
+            ['regularVisitEnabled', '단골 고객 방문', 'pitayaGrade 단골 방문 시 09~21시 💰매출알림 (기본 OFF)'],
           ] as const).map(([key, title, desc]) => (
             <label key={key} className="flex items-start gap-3 p-4 rounded-xl border border-slate-800 bg-slate-900/60 cursor-pointer">
               <input
