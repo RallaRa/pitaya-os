@@ -88,6 +88,16 @@ export interface AccountingSettings {
   erpCompanyCode?: string;
   /** ERP 사업장코드 (영림원·더존) */
   erpBusinessPlaceCode?: string;
+  /** 매입→전표 자동 분개 패턴 */
+  purchaseVoucherPattern?: {
+    splitVat: boolean;
+    lines: Array<{
+      side: 'debit' | 'credit';
+      accountCode: string;
+      accountName: string;
+      amountKey: 'supply' | 'tax' | 'total';
+    }>;
+  };
 }
 
 export const ACCOUNT_TYPE_ORDER: AccountType[] = [

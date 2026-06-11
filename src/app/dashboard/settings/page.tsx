@@ -150,6 +150,13 @@ export default function SettingsPage() {
       description: '월별 순매출·총객수 목표 (기간별) — 대시보드 매출 목표에 반영',
       show: isAdminLevelGroup(storeRole),
     },
+    {
+      href: '/dashboard/settings/sales-categories',
+      icon: <Tag className="w-5 h-5 text-rose-400" />,
+      label: '매출 카테고리 키워드',
+      description: 'POS 품목명 → 소고기·돼지·닭·양념 자동 분류 키워드',
+      show: isAdminLevelGroup(storeRole),
+    },
   ].filter(m => m.show);
 
   const isSuperuserUser = isSuperuser(user?.email, userRole || undefined);

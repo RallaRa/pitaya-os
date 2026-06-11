@@ -76,6 +76,12 @@ export const WIDGET_META: WidgetMeta[] = [
     permKey: 'cost_ratio',
   },
   {
+    id: 'sales_category',
+    title: '카테고리별 매출',
+    defaultItem: { i: 'sales_category', x: 4, y: 26, w: 4, h: 4, minW: 3, minH: 3, maxW: 8, maxH: 8 },
+    permKey: 'sales_category',
+  },
+  {
     id: 'ai_insight',
     title: 'AI 오늘 브리핑',
     defaultItem: { i: 'ai_insight', x: 0, y: 26, w: 12, h: 6, minW: 6, minH: 5, maxW: 12, maxH: 10 },

@@ -1,0 +1,116 @@
+import type { VoucherLine } from '@/lib/accounting/types';
+
+export interface PurchaseVoucherPatternLine {
+  side: 'debit' | 'credit';
+  accountCode: string;
+  accountName: string;
+  /** supply | tax | total — 금액 기준 */
+  amountKey: 'supply' | 'tax' | 'total';
+}
+
+export interface PurchaseVoucherPattern {
+  lines: PurchaseVoucherPatternLine[];
+  splitVat: boolean;
+}
+
+/** 정육 매입 기본 분개: 원재료(차) + 부가세대급(차) / 외상매입금(대) */
+export const DEFAULT_PURCHASE_VOUCHER_PATTERN: PurchaseVoucherPattern = {
+  splitVat: true,
+  lines: [
+    { side: 'debit', accountCode: '136', accountName: '원재료', amountKey: 'supply' },
+    { side: 'debit', accountCode: '141', accountName: '부가세대급금', amountKey: 'tax' },
+    { side: 'credit', accountCode: '201', accountName: '외상매입금', amountKey: 'total' },
+  ],
+};
+
+export interface PurchaseVoucherSource {
+  id: string;
+  purchaseDate: string;
+  supplierName: string;
+  invoiceNumber?: string;
+  supplyAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  memo?: string;
+}
+
+function resolveAmount(key: 'supply' | 'tax' | 'total', purchase: PurchaseVoucherSource): number {
+  const supply = Number(purchase.supplyAmount || 0);
+  const tax = Number(purchase.taxAmount || 0);
+  const total = Number(purchase.totalAmount || 0) || supply + tax;
+
+  if (key === 'supply') return supply > 0 ? supply : Math.max(total - tax, 0);
+  if (key === 'tax') return tax;
+  return total;
+}
+
+export function buildPurchaseVoucherLines(
+  purchase: PurchaseVoucherSource,
+  pattern: PurchaseVoucherPattern,
+  accountNames?: Map<string, string>,
+): VoucherLine[] {
+  const partnerName = String(purchase.supplierName || '').trim();
+  const description = [
+    purchase.supplierName,
+    purchase.invoiceNumber ? `#${purchase.invoiceNumber}` : '',
+    purchase.memo,
+  ].filter(Boolean).join(' ').trim();
+
+  const activeLines = pattern.splitVat
+    ? pattern.lines
+    : pattern.lines.filter(l => l.amountKey !== 'tax');
+
+  const voucherLines: VoucherLine[] = [];
+  let lineNo = 1;
+
+  for (const pl of activeLines) {
+    const amount = resolveAmount(pl.amountKey, purchase);
+    if (amount <= 0) continue;
+
+    const accountName = accountNames?.get(pl.accountCode) || pl.accountName;
+    voucherLines.push({
+      lineNo: lineNo++,
+      accountCode: pl.accountCode,
+      accountName,
+      partnerCode: pl.side === 'credit' && partnerName ? partnerName.slice(0, 20) : '',
+      partnerName: pl.side === 'credit' ? partnerName : '',
+      debit: pl.side === 'debit' ? amount : 0,
+      credit: pl.side === 'credit' ? amount : 0,
+      memo: description,
+    });
+  }
+
+  if (voucherLines.length < 2) {
+    const total = resolveAmount('total', purchase);
+    return [
+      {
+        lineNo: 1,
+        accountCode: '136',
+        accountName: accountNames?.get('136') || '원재료',
+        partnerName: '',
+        partnerCode: '',
+        debit: total,
+        credit: 0,
+        memo: description,
+      },
+      {
+        lineNo: 2,
+        accountCode: '201',
+        accountName: accountNames?.get('201') || '외상매입금',
+        partnerName,
+        partnerCode: partnerName ? partnerName.slice(0, 20) : '',
+        debit: 0,
+        credit: total,
+        memo: description,
+      },
+    ];
+  }
+
+  return voucherLines;
+}
+
+export function previewPatternSummary(pattern: PurchaseVoucherPattern): string {
+  const debits = pattern.lines.filter(l => l.side === 'debit').map(l => `${l.accountName}(${l.accountCode})`).join(' + ');
+  const credits = pattern.lines.filter(l => l.side === 'credit').map(l => `${l.accountName}(${l.accountCode})`).join(' + ');
+  return `차변 ${debits || '—'} / 대변 ${credits || '—'}`;
+}

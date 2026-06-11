@@ -6,6 +6,7 @@ import { fetchWeather, getStoreCoords } from '@/lib/weather';
 import { runSalesHourlyAlertsForStore } from '@/lib/salesHourlyAlertRunner';
 import { upsertStoreDailyItemStats } from '@/lib/storeDailyItemStats';
 import { replaceCustomerPurchaseLinesForDate, type CustomerPurchaseLineInput } from '@/lib/customerPurchaseLines';
+import { upsertSalesCategoriesForDate } from '@/lib/pos/salesCategoryAggregate.server';
 
 // ── 타입 ──────────────────────────────────────────────────────────
 interface CustomerSale {
@@ -281,6 +282,12 @@ async function syncToDailyReports(params: {
     await upsertStoreDailyItemStats(storeId, date, items, syncedAt);
   } catch (err) {
     console.error('[pos/sync] store_daily_item_stats 저장 실패:', err);
+  }
+
+  try {
+    await upsertSalesCategoriesForDate(storeId, date, items, syncedAt);
+  } catch (err) {
+    console.error('[pos/sync] sales_categories 저장 실패:', err);
   }
 }
 

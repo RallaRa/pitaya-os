@@ -39,6 +39,7 @@ import TodaySalesWidget       from '@/components/widgets/TodaySalesWidget';
 import SalesCompareWidget     from '@/components/widgets/SalesCompareWidget';
 import CustomerVisitWidget    from '@/components/widgets/CustomerVisitWidget';
 import CostRatioWidget        from '@/components/widgets/CostRatioWidget';
+import SalesCategoryWidget    from '@/components/widgets/SalesCategoryWidget';
 import DailyBriefingBar       from '@/components/dashboard/DailyBriefingBar';
 import { useDashboardChrome } from '@/components/dashboard/DashboardChromeContext';
 import { fetchDashboardPrintSnapshot, openDashboardPrintWindow } from '@/lib/dashboardPrintData';
@@ -328,6 +329,7 @@ export default function DashboardPage() {
       case 'sales_compare':      return wrapLazyWidget(id, <SalesCompareWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'customer_visit':     return wrapLazyWidget(id, <CustomerVisitWidget    editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'cost_ratio':         return wrapLazyWidget(id, <CostRatioWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'sales_category':     return wrapLazyWidget(id, <SalesCategoryWidget    editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       default:                   return null;
     }
   };

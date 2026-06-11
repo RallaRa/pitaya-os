@@ -87,7 +87,7 @@ export const ACCOUNTING_MENU_SECTIONS: AccountingMenuSection[] = [
     label: '연동',
     permission: 'accountingVoucher',
     items: [
-      { href: '/dashboard/accounting/integration/purchase', label: '매입→전표', description: 'Pitaya 매입 원장 연동' },
+      { href: '/dashboard/accounting/integration/purchase', label: '매입→전표', description: '매입 원장 선택·분개 패턴·전표 일괄생성' },
       { href: '/dashboard/accounting/integration/sales', label: '매출→전표', description: 'POS 일마감 연동' },
     ],
   },

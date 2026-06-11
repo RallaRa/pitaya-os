@@ -1,53 +1,56 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
-import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import WidgetAsyncBoundary from '@/components/suspense/WidgetAsyncBoundary';
+import EmptyState from '@/components/suspense/EmptyState';
+import { fetchAuthJson } from '@/components/suspense/fetchJson';
+import { useSuspenseInvalidate, useSuspenseResource } from '@/components/suspense/useSuspenseResource';
 
 interface NewsItem { title: string; link: string; pubDate: string; source: string; }
 
-export default function NewsWidget({ editMode, onRemove }: { editMode: boolean; onRemove: () => void }) {
-  const [news,      setNews]      = useState<NewsItem[]>([]);
-  const [loading,   setLoading]   = useState(true);
-  const [error,     setError]     = useState<string | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+const CACHE_KEY = 'dashboard:news';
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res  = await fetch('/api/dashboard/news', { headers: await getAuthHeaders() });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      setNews(data.news || []);
-      setUpdatedAt(new Date());
-    } catch (e: any) {
-      setError('뉴스를 불러오지 못했습니다');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+async function fetchNews() {
+  const data = await fetchAuthJson<{ news?: NewsItem[]; error?: string }>('/api/dashboard/news');
+  if (data.error) throw new Error(data.error);
+  return data.news ?? [];
+}
+
+function NewsWidgetContent({
+  editMode, onRemove,
+}: {
+  editMode: boolean; onRemove: () => void;
+}) {
+  const invalidate = useSuspenseInvalidate(CACHE_KEY);
+  const news = useSuspenseResource(CACHE_KEY, fetchNews);
+  const [updatedAt, setUpdatedAt] = useState(() => new Date());
 
   useEffect(() => {
-    load();
-    const t = setInterval(load, 30 * 60 * 1000);
+    setUpdatedAt(new Date());
+  }, [news]);
+
+  const refresh = useCallback(() => {
+    invalidate();
+  }, [invalidate]);
+
+  useEffect(() => {
+    const t = setInterval(refresh, 30 * 60 * 1000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [refresh]);
 
   return (
     <WidgetWrapper
       title="🗞️ 정육 최신 뉴스"
       editMode={editMode}
       onRemove={onRemove}
-      onRefresh={load}
+      onRefresh={refresh}
       updatedAt={updatedAt}
-      loading={loading}
-      error={error}
     >
       <div className="h-full overflow-y-auto">
         {news.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-slate-600 text-xs">뉴스 없음</div>
+          <EmptyState reason="표시할 뉴스가 없습니다." compact />
         ) : (
           <ul className="divide-y divide-slate-800/60">
             {news.map((n, i) => (
@@ -75,5 +78,13 @@ export default function NewsWidget({ editMode, onRemove }: { editMode: boolean; 
         )}
       </div>
     </WidgetWrapper>
+  );
+}
+
+export default function NewsWidget(props: { editMode: boolean; onRemove: () => void }) {
+  return (
+    <WidgetAsyncBoundary skeleton="table" widgetName="뉴스">
+      <NewsWidgetContent {...props} />
+    </WidgetAsyncBoundary>
   );
 }

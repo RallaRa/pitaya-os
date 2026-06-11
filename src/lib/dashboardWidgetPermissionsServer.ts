@@ -13,6 +13,7 @@ export const DEFAULT_WIDGET_PERMISSIONS = {
   sales_compare:      { master: true, admin: true,  user: true,  staff: false },
   customer_visit:     { master: true, admin: true,  user: true,  staff: false },
   cost_ratio:         { master: true, admin: true,  user: true,  staff: false },
+  sales_category:     { master: true, admin: true,  user: true,  staff: true  },
 };
 
 export async function getDashboardWidgetPermissions(storeId: string) {
