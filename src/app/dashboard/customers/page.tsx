@@ -15,6 +15,8 @@ import {
   History, Eye, EyeOff, ClipboardList, Send, UserSearch,
 } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { overlay } from '@/components/overlay';
+import { CustomerRegistrationFunnel } from '@/components/funnel';
 import * as XLSX from 'xlsx';
 import type { CustomerSortField } from '@/lib/customerQuery';
 import type { VisitCycleStatus } from '@/lib/customerVisitCycle';
@@ -804,6 +806,27 @@ function CustomersPageContent() {
           <h1 className="text-lg font-bold">고객 관리</h1>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (!storeId) return;
+              overlay.open(
+                <CustomerRegistrationFunnel
+                  storeId={storeId}
+                  onClose={() => overlay.close()}
+                  onDone={() => {
+                    void loadCustomerList();
+                    overlay.toast('고객이 등록되었습니다', { variant: 'success' });
+                  }}
+                />,
+                { className: 'max-w-lg w-full', closeOnBackdrop: false },
+              );
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-600 hover:bg-teal-500 text-black"
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            고객 등록
+          </button>
           {canDecrypt && (
             <button
               type="button"

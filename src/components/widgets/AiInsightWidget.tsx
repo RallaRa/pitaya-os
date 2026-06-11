@@ -5,10 +5,15 @@ import {
   TrendingUp, TrendingDown, Minus, RefreshCw,
   ChevronDown, ChevronUp, Newspaper, CheckCircle2,
 } from 'lucide-react';
-import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
 import WidgetWrapper from './WidgetWrapper';
-import WidgetEmptyReason from './WidgetEmptyReason';
+import {
+  WidgetAsyncBoundary,
+  EmptyState,
+  fetchAuthJson,
+  useSuspenseResource,
+  useSuspenseInvalidate,
+} from '@/components/suspense';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 import SalesEvidenceLine from './SalesEvidenceLine';
 import type { BriefingAction, SalesEvidenceLine as SalesEvidenceLineType } from '@/lib/salesEvidence';
@@ -143,49 +148,38 @@ function boldify(text: string) {
   );
 }
 
-export default function AiInsightWidget({
+function cacheKey(storeId: string) {
+  return `dashboard:comprehensive-opinion:${storeId}`;
+}
+
+function AiInsightWidgetContent({
   editMode, onRemove, storeId, mobileLayout = false,
 }: {
   editMode: boolean;
   onRemove: () => void;
-  storeId?: string;
+  storeId: string;
   mobileLayout?: boolean;
 }) {
-  const [data, setData] = useState<ComprehensiveData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const key = cacheKey(storeId);
+  const invalidate = useSuspenseInvalidate(key);
+  const data = useSuspenseResource(key, async () => {
+    const q = new URLSearchParams();
+    q.set('storeId', storeId);
+    const d = await fetchAuthJson<ComprehensiveData & { error?: string }>(
+      `/api/dashboard/comprehensive-opinion?${q}`,
+    );
+    return d;
+  });
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(new Date());
   const [showSources, setShowSources] = useState(false);
 
-  const load = useCallback(async (force = false) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const q = new URLSearchParams();
-      if (storeId) q.set('storeId', storeId);
-      if (force) q.set('force', '1');
-      const headers = await getAuthHeaders();
-      const res = await fetch(`/api/dashboard/comprehensive-opinion?${q}`, { headers });
-      let d: ComprehensiveData;
-      try {
-        d = await res.json();
-      } catch {
-        setError(res.ok ? '응답 파싱 실패' : `서버 오류 (HTTP ${res.status})`);
-        setLoading(false);
-        return;
-      }
-      if (!res.ok && d.error) setError(d.error);
-      else if (d.error && d.aiError) setError(d.error);
-      setData(d);
-      setUpdatedAt(new Date());
-    } catch {
-      setError('오늘 브리핑을 불러오지 못했습니다');
-    } finally {
-      setLoading(false);
-    }
-  }, [storeId]);
+  useEffect(() => {
+    setUpdatedAt(new Date());
+  }, [data]);
 
-  useEffect(() => { load(); }, [load]);
+  const refresh = useCallback(() => {
+    invalidate();
+  }, [invalidate]);
 
   const srcStatus = data?.dataSourceStatus || {};
   const okCount = Object.values(srcStatus).filter(s => s.status === 'ok' || s.status === 'estimate').length;
@@ -198,16 +192,14 @@ export default function AiInsightWidget({
       title="AI 오늘 브리핑"
       editMode={editMode}
       onRemove={onRemove}
-      onRefresh={() => load(true)}
+      onRefresh={refresh}
       updatedAt={updatedAt}
-      loading={loading}
-      error={error}
       autoHeight={mobileLayout}
     >
       <div className={`flex flex-col ${mobileLayout ? 'min-h-[20rem]' : 'h-full overflow-hidden'}`}>
         {data?.noData && !data?.summary && !data?.opinion && !(data?.trends?.length) ? (
           <div className="p-3">
-            <WidgetEmptyReason
+            <EmptyState
               reason={data.emptyReason || '분석할 데이터가 없습니다.'}
               hints={['매장 지역(시·구) 설정', '네이버 키워드 설정', 'POS·일마감(매출 분위기)']}
             />
@@ -373,7 +365,7 @@ export default function AiInsightWidget({
             <button onClick={() => setShowSources(v => !v)} className="flex items-center gap-0.5 hover:text-slate-300">
               출처 {showSources ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
             </button>
-            <button onClick={() => load(true)} className="hover:text-teal-400"><RefreshCw className="w-3 h-3" /></button>
+            <button onClick={refresh} className="hover:text-teal-400"><RefreshCw className="w-3 h-3" /></button>
           </div>
           {showSources && (
             <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5">
@@ -396,5 +388,30 @@ export default function AiInsightWidget({
         </div>
       </div>
     </WidgetWrapper>
+  );
+}
+
+export default function AiInsightWidget({
+  editMode, onRemove, storeId, mobileLayout = false,
+}: {
+  editMode: boolean;
+  onRemove: () => void;
+  storeId?: string;
+  mobileLayout?: boolean;
+}) {
+  if (!storeId) {
+    return (
+      <WidgetWrapper title="AI 오늘 브리핑" editMode={editMode} onRemove={onRemove} autoHeight={mobileLayout}>
+        <div className="p-3">
+          <EmptyState reason="매장이 선택되지 않았습니다." />
+        </div>
+      </WidgetWrapper>
+    );
+  }
+
+  return (
+    <WidgetAsyncBoundary skeleton="card" widgetName="AI 브리핑">
+      <AiInsightWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} mobileLayout={mobileLayout} />
+    </WidgetAsyncBoundary>
   );
 }

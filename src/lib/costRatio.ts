@@ -1,10 +1,35 @@
 import { adminDb } from '@/lib/firebase/admin';
+import {
+  getCostRatioSettings,
+  resolveItemTargetRatio,
+  type CostRatioSettings,
+} from '@/lib/costRatioSettings';
 
 export interface SupplierPriceRow {
   itemName: string;
   suppliers: { name: string; unitPrice: number; lastDate: string }[];
   minPrice: number;
   minSupplier: string;
+}
+
+export interface CostRatioItemRow {
+  id: string;
+  name: string;
+  buyPrice: number;
+  sellPrice: number;
+  actualRatio: number;
+  targetRatio: number;
+  isOverTarget: boolean;
+  isEstimated: boolean;
+  category?: string;
+}
+
+export interface CostRatioDetail {
+  storeAvgRatio: number | null;
+  globalTargetRatio: number;
+  itemCount: number;
+  items: CostRatioItemRow[];
+  offenders: CostRatioItemRow[];
 }
 
 export async function buildSupplierPriceCompare(storeId: string): Promise<SupplierPriceRow[]> {
@@ -51,40 +76,86 @@ export function calcActualCostRatio(buyPrice: number, sellPrice: number): number
   return buyPrice / sellPrice;
 }
 
-export async function loadCostRatioSummary(storeId: string) {
-  const itemsSnap = await adminDb.collection('items').where('storeId', '==', storeId).get();
-  const offenders: Array<{
-    id: string; name: string; actualRatio: number; targetRatio: number; buyPrice: number; sellPrice: number;
-  }> = [];
-  let sumActual = 0;
-  let count = 0;
+/** kg 기준 판매 품목 — 원가율 추정값 표시 */
+export function isWeightBasedItem(data: Record<string, unknown>): boolean {
+  if (data.pricingUnit === 'ea' || data.saleUnit === 'ea') return false;
+  const cat = String(data.category || '');
+  if (['양념', '음료', '반찬', '가공'].some(c => cat.includes(c))) return false;
+  return !!(data.kgSalePrice || data.unit === 'kg');
+}
 
-  for (const doc of itemsSnap.docs) {
-    const d = doc.data();
-    const buyPrice = Number(d.buyPrice || 0);
-    const sellPrice = Number(d.kgSalePrice || d.sellPrice || 0);
-    const targetRatio = Number(d.appliedCost || 0);
-    const actual = calcActualCostRatio(buyPrice, sellPrice);
-    if (actual == null) continue;
-    count++;
-    sumActual += actual;
-    if (targetRatio > 0 && actual > targetRatio + 0.02) {
-      offenders.push({
-        id: doc.id,
-        name: String(d.cut || d.name || '품목'),
-        actualRatio: actual,
-        targetRatio,
-        buyPrice,
-        sellPrice,
-      });
-    }
-  }
+const OVER_TOLERANCE = 0.02;
 
-  offenders.sort((a, b) => (b.actualRatio - b.targetRatio) - (a.actualRatio - a.targetRatio));
+function buildItemRow(
+  id: string,
+  d: Record<string, unknown>,
+  settings: CostRatioSettings,
+): CostRatioItemRow | null {
+  const buyPrice = Number(d.buyPrice || 0);
+  const sellPrice = Number(d.kgSalePrice || d.sellPrice || 0);
+  const actual = calcActualCostRatio(buyPrice, sellPrice);
+  if (actual == null) return null;
+
+  const appliedCost = Number(d.appliedCost || 0);
+  const targetRatio = resolveItemTargetRatio(settings, id, appliedCost);
+  const isOverTarget = targetRatio > 0 && actual > targetRatio + OVER_TOLERANCE;
 
   return {
-    storeAvgRatio: count ? sumActual / count : null,
-    itemCount: count,
-    offenders: offenders.slice(0, 10),
+    id,
+    name: String(d.cut || d.name || '품목'),
+    buyPrice,
+    sellPrice,
+    actualRatio: actual,
+    targetRatio,
+    isOverTarget,
+    isEstimated: isWeightBasedItem(d),
+    category: String(d.category || ''),
+  };
+}
+
+export async function loadCostRatioDetail(storeId: string): Promise<CostRatioDetail> {
+  const settings = await getCostRatioSettings(storeId);
+  const itemsSnap = await adminDb.collection('items').where('storeId', '==', storeId).get();
+  const items: CostRatioItemRow[] = [];
+  let sumActual = 0;
+
+  for (const doc of itemsSnap.docs) {
+    const row = buildItemRow(doc.id, doc.data() as Record<string, unknown>, settings);
+    if (!row) continue;
+    items.push(row);
+    sumActual += row.actualRatio;
+  }
+
+  items.sort((a, b) => b.actualRatio - a.actualRatio);
+  const offenders = items
+    .filter(i => i.isOverTarget)
+    .sort((a, b) => (b.actualRatio - b.targetRatio) - (a.actualRatio - a.targetRatio));
+
+  return {
+    storeAvgRatio: items.length ? sumActual / items.length : null,
+    globalTargetRatio: settings.globalTargetRatio,
+    itemCount: items.length,
+    items,
+    offenders,
+  };
+}
+
+/** @deprecated loadCostRatioDetail 사용 */
+export async function loadCostRatioSummary(storeId: string) {
+  const detail = await loadCostRatioDetail(storeId);
+  return {
+    storeAvgRatio: detail.storeAvgRatio,
+    itemCount: detail.itemCount,
+    globalTargetRatio: detail.globalTargetRatio,
+    offenders: detail.offenders.slice(0, 10).map(o => ({
+      id: o.id,
+      name: o.name,
+      actualRatio: o.actualRatio,
+      targetRatio: o.targetRatio,
+      buyPrice: o.buyPrice,
+      sellPrice: o.sellPrice,
+      isEstimated: o.isEstimated,
+    })),
+    items: detail.items,
   };
 }

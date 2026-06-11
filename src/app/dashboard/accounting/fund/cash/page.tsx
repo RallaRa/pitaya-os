@@ -1,12 +1,13 @@
 'use client';
 
-import AccountingShell from '@/components/accounting/AccountingShell';
-import AccountingPlaceholder from '@/components/accounting/AccountingPlaceholder';
+import VoucherEntryForm from '@/components/accounting/VoucherEntryForm';
 
 export default function Page() {
   return (
-    <AccountingShell>
-      <AccountingPlaceholder feature="입출금전표" />
-    </AccountingShell>
+    <VoucherEntryForm
+      defaultVoucherType="cash"
+      fundMode
+      title="입출금전표"
+    />
   );
 }

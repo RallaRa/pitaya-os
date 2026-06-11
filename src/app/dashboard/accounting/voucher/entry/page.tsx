@@ -75,7 +75,11 @@ export default function VoucherEntryPage() {
             <tbody>
               {rows.map(r => (
                 <tr key={r.id} className="border-t border-slate-800/80">
-                  <td className="px-3 py-2 font-mono text-teal-300/90">{r.voucherNo}</td>
+                  <td className="px-3 py-2 font-mono text-teal-300/90">
+                    <Link href={`/dashboard/accounting/voucher/entry/${r.id}`} className="hover:underline">
+                      {r.voucherNo}
+                    </Link>
+                  </td>
                   <td className="px-3 py-2 text-slate-300">{r.voucherDate}</td>
                   <td className="px-3 py-2 text-slate-400">{VOUCHER_TYPE_LABELS[r.voucherType]}</td>
                   <td className="px-3 py-2 text-slate-300 truncate max-w-[200px]">{r.description || '—'}</td>

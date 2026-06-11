@@ -1,12 +1,7 @@
 'use client';
 
-import AccountingShell from '@/components/accounting/AccountingShell';
-import AccountingPlaceholder from '@/components/accounting/AccountingPlaceholder';
+import { PartnerLedgerPanel } from '@/components/accounting/LedgerPanels';
 
 export default function Page() {
-  return (
-    <AccountingShell>
-      <AccountingPlaceholder feature="거래처원장" />
-    </AccountingShell>
-  );
+  return <PartnerLedgerPanel />;
 }

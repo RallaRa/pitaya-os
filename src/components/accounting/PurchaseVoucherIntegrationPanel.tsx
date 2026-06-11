@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CheckSquare, Loader2, Square, FileCheck } from 'lucide-react';
 import { useStore } from '@/context/StoreContext';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
-import AccountingShell from '@/components/accounting/AccountingShell';
+import VoucherPatternEditor from '@/components/accounting/VoucherPatternEditor';
 import {
   DEFAULT_PURCHASE_VOUCHER_PATTERN,
-  previewPatternSummary,
   type PurchaseVoucherPattern,
 } from '@/lib/accounting/purchaseVoucherPattern';
+import { PURCHASE_AMOUNT_KEYS } from '@/lib/accounting/autoVoucherPattern';
 
 interface PurchaseRow {
   id: string;
@@ -25,6 +25,10 @@ interface PurchaseRow {
   accountingVoucherStatus: string;
 }
 
+interface Props {
+  onActionsChange?: (actions: React.ReactNode) => void;
+}
+
 function monthStartYMD() {
   const d = new Date(Date.now() + 9 * 3600_000);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
@@ -34,7 +38,7 @@ function todayYMD() {
   return new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10);
 }
 
-export default function PurchaseVoucherIntegrationPanel() {
+export default function PurchaseVoucherIntegrationPanel({ onActionsChange }: Props) {
   const { currentStore } = useStore();
   const storeId = currentStore?.storeId || '';
 
@@ -93,17 +97,7 @@ export default function PurchaseVoucherIntegrationPanel() {
     });
   };
 
-  const updatePatternLine = (
-    index: number,
-    patch: Partial<PurchaseVoucherPattern['lines'][number]>,
-  ) => {
-    setPattern(prev => ({
-      ...prev,
-      lines: prev.lines.map((line, i) => (i === index ? { ...line, ...patch } : line)),
-    }));
-  };
-
-  const processSelected = async () => {
+  const processSelected = useCallback(async () => {
     if (!storeId || selected.size === 0 || processing) return;
     setProcessing(true);
     setMsg('');
@@ -128,83 +122,33 @@ export default function PurchaseVoucherIntegrationPanel() {
     } finally {
       setProcessing(false);
     }
-  };
+  }, [storeId, selected, processing, pattern, savePattern, load]);
+
+  useEffect(() => {
+    onActionsChange?.(
+      <button
+        type="button"
+        disabled={processing || selected.size === 0}
+        onClick={processSelected}
+        className="text-xs px-2.5 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-600 text-white inline-flex items-center gap-1 disabled:opacity-40"
+      >
+        {processing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileCheck className="w-3.5 h-3.5" />}
+        선택 전표처리 ({selected.size})
+      </button>,
+    );
+  }, [onActionsChange, processing, selected.size, processSelected]);
 
   return (
-    <AccountingShell
-      actions={(
-        <button
-          type="button"
-          disabled={processing || selected.size === 0}
-          onClick={processSelected}
-          className="text-xs px-2.5 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-600 text-white inline-flex items-center gap-1 disabled:opacity-40"
-        >
-          {processing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileCheck className="w-3.5 h-3.5" />}
-          선택 전표처리 ({selected.size})
-        </button>
-      )}
-    >
-      {/* 분개 패턴 */}
-      <div className="mb-4 p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-3">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div>
-            <p className="text-sm font-semibold text-slate-200">매입 전표 분개 패턴</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">{previewPatternSummary(pattern)}</p>
-          </div>
-          <label className="flex items-center gap-1.5 text-[10px] text-slate-400">
-            <input
-              type="checkbox"
-              checked={pattern.splitVat}
-              onChange={e => setPattern(p => ({ ...p, splitVat: e.target.checked }))}
-              className="rounded border-slate-600"
-            />
-            부가세 분리
-          </label>
-        </div>
+    <>
+      <VoucherPatternEditor
+        title="매입 전표 분개 패턴"
+        pattern={pattern}
+        amountKeys={PURCHASE_AMOUNT_KEYS}
+        savePattern={savePattern}
+        onPatternChange={setPattern}
+        onSavePatternChange={setSavePattern}
+      />
 
-        <div className="grid gap-2">
-          {pattern.lines.map((line, idx) => (
-            <div key={idx} className="grid grid-cols-12 gap-2 items-center text-xs">
-              <span className={`col-span-1 font-semibold ${line.side === 'debit' ? 'text-blue-400' : 'text-amber-400'}`}>
-                {line.side === 'debit' ? '차' : '대'}
-              </span>
-              <input
-                value={line.accountCode}
-                onChange={e => updatePatternLine(idx, { accountCode: e.target.value })}
-                placeholder="코드"
-                className="col-span-2 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-white"
-              />
-              <input
-                value={line.accountName}
-                onChange={e => updatePatternLine(idx, { accountName: e.target.value })}
-                placeholder="계정명"
-                className="col-span-3 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-white"
-              />
-              <select
-                value={line.amountKey}
-                onChange={e => updatePatternLine(idx, { amountKey: e.target.value as 'supply' | 'tax' | 'total' })}
-                className="col-span-3 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-white"
-              >
-                <option value="supply">공급가액</option>
-                <option value="tax">세액</option>
-                <option value="total">합계금액</option>
-              </select>
-            </div>
-          ))}
-        </div>
-
-        <label className="flex items-center gap-1.5 text-[10px] text-slate-500">
-          <input
-            type="checkbox"
-            checked={savePattern}
-            onChange={e => setSavePattern(e.target.checked)}
-            className="rounded border-slate-600"
-          />
-          이 패턴을 회계환경설정에 저장
-        </label>
-      </div>
-
-      {/* 필터 */}
       <div className="flex flex-wrap items-end gap-3 mb-4">
         <label className="text-[10px] text-slate-500">
           시작일
@@ -229,7 +173,7 @@ export default function PurchaseVoucherIntegrationPanel() {
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-teal-400" /></div>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-slate-500 text-center py-12">매입 전표가 없습니다.</p>
+        <p className="text-sm text-slate-500 text-center py-12">매입 전표 대상이 없습니다.</p>
       ) : (
         <div className="border border-slate-800 rounded-xl overflow-x-auto">
           <table className="w-full text-xs min-w-[960px]">
@@ -301,6 +245,6 @@ export default function PurchaseVoucherIntegrationPanel() {
           </table>
         </div>
       )}
-    </AccountingShell>
+    </>
   );
 }

@@ -3,47 +3,45 @@
 import { useState, useEffect, useCallback } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
-import WidgetEmptyReason from './WidgetEmptyReason';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
-import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import {
+  WidgetAsyncBoundary,
+  EmptyState,
+  fetchAuthJson,
+  useSuspenseResource,
+  useSuspenseInvalidate,
+} from '@/components/suspense';
 
 interface Item { name: string; qty: number; amount: number; pctChange?: number | null; }
 interface AnalysisData { top: Item[]; bottom: Item[]; insight: string; emptyReason?: string; ai?: AiMetaDisplay; }
 
-export default function WeeklyAnalysisWidget({
+function cacheKey(storeId: string) {
+  return `dashboard:weekly-analysis:${storeId}`;
+}
+
+function WeeklyAnalysisWidgetContent({
   editMode, onRemove, storeId,
 }: {
-  editMode: boolean; onRemove: () => void; storeId?: string;
+  editMode: boolean; onRemove: () => void; storeId: string;
 }) {
-  const [data,      setData]      = useState<AnalysisData | null>(null);
-  const [loading,   setLoading]   = useState(true);
-  const [error,     setError]     = useState<string | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const key = cacheKey(storeId);
+  const invalidate = useSuspenseInvalidate(key);
+  const data = useSuspenseResource(key, async () => {
+    const d = await fetchAuthJson<AnalysisData & { error?: string }>(
+      `/api/dashboard/weekly-analysis?storeId=${encodeURIComponent(storeId)}`,
+    );
+    if (d.error) throw new Error(d.error);
+    return d;
+  });
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(new Date());
 
-  const load = useCallback(async () => {
-    if (!storeId) {
-      setLoading(false);
-      setError('매장을 선택해주세요');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/dashboard/weekly-analysis?storeId=${storeId}`, {
-        headers: await getAuthHeaders(),
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
-      setData(d);
-      setUpdatedAt(new Date());
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '분석 데이터를 불러오지 못했습니다');
-    } finally {
-      setLoading(false);
-    }
-  }, [storeId]);
+  useEffect(() => {
+    setUpdatedAt(new Date());
+  }, [data]);
 
-  useEffect(() => { load(); }, [load]);
+  const refresh = useCallback(() => {
+    invalidate();
+  }, [invalidate]);
 
   const MEDALS = ['🥇', '🥈', '🥉'];
 
@@ -52,10 +50,8 @@ export default function WeeklyAnalysisWidget({
       title="📊 AI 주간 판매 분석"
       editMode={editMode}
       onRemove={onRemove}
-      onRefresh={load}
+      onRefresh={refresh}
       updatedAt={updatedAt}
-      loading={loading}
-      error={error}
     >
       {data && (
         <div className="h-full overflow-y-auto p-3 space-y-3">
@@ -107,5 +103,27 @@ export default function WeeklyAnalysisWidget({
         </div>
       )}
     </WidgetWrapper>
+  );
+}
+
+export default function WeeklyAnalysisWidget({
+  editMode, onRemove, storeId,
+}: {
+  editMode: boolean; onRemove: () => void; storeId?: string;
+}) {
+  if (!storeId) {
+    return (
+      <WidgetWrapper title="📊 AI 주간 판매 분석" editMode={editMode} onRemove={onRemove}>
+        <div className="p-3">
+          <EmptyState reason="매장이 선택되지 않았습니다." />
+        </div>
+      </WidgetWrapper>
+    );
+  }
+
+  return (
+    <WidgetAsyncBoundary skeleton="table" widgetName="주간 판매 분석">
+      <WeeklyAnalysisWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} />
+    </WidgetAsyncBoundary>
   );
 }

@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { isCronAuthorized, cronUnauthorizedResponse } from '@/lib/cronAuth';
 import { updateAllStoreCustomerGrades, updateStoreCustomerGrades } from '@/lib/customerGrade.server';
+import { updateAllStoreChurnScores, updateStoreChurnScores } from '@/lib/customerChurnScore.server';
 import { runCustomerJourneyAllStores, runCustomerJourneyForStore } from '@/lib/customerJourney.server';
 
 const DEFAULT_STORE = 'STR-1779194754785';
 
-/** 매일 자정 KST — 등급 산정 + 여정 큐 생성 */
+/** 매일 자정 KST — 등급 산정 + 이탈 스코어 + 여정 큐 생성 */
 export async function POST(req: Request) {
   if (!isCronAuthorized(req)) return cronUnauthorizedResponse();
 
@@ -20,6 +21,10 @@ export async function POST(req: Request) {
       ? [await updateStoreCustomerGrades(storeId)]
       : await updateAllStoreCustomerGrades();
 
+    const churnResults = storeId
+      ? [await updateStoreChurnScores(storeId)]
+      : await updateAllStoreChurnScores();
+
     const journeyResults = storeId
       ? [await runCustomerJourneyForStore(storeId)]
       : await runCustomerJourneyAllStores();
@@ -27,6 +32,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       grade: gradeResults,
+      churn: churnResults,
       journey: journeyResults,
       processedAt: new Date().toISOString(),
     });
@@ -39,7 +45,7 @@ export async function POST(req: Request) {
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    message: 'customer-automation cron — grade update + journey queue',
+    message: 'customer-automation cron — grade + churn score + journey queue',
     defaultStore: DEFAULT_STORE,
   });
 }

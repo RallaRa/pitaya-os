@@ -1,7 +1,5 @@
-'use client';
-
-import PurchaseVoucherIntegrationPanel from '@/components/accounting/PurchaseVoucherIntegrationPanel';
+import { redirect } from 'next/navigation';
 
 export default function Page() {
-  return <PurchaseVoucherIntegrationPanel />;
+  redirect('/dashboard/accounting/integration/auto?tab=purchase');
 }

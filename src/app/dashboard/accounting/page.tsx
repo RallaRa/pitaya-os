@@ -55,7 +55,7 @@ export default function AccountingHomePage() {
         <p className="font-semibold mb-1">Pitaya 회계 모듈</p>
         <p className="text-amber-200/70 leading-relaxed">
           기본정보 → 전표 → 장부 → 결산 → 자금 순서로 영림원 ERP와 동일하게 구성되어 있습니다.
-          매입·POS 데이터는 연동 메뉴에서 회계전표로 반영할 수 있습니다 (점진적 구현).
+          매입·POS 데이터는 연동 {'>'} 자동전표에서 회계전표로 반영할 수 있습니다.
         </p>
       </div>
     </AccountingShell>

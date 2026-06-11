@@ -1,13 +1,21 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Tag, Plus, Loader2, ToggleLeft, ToggleRight, Trash2, Sparkles, ImageIcon, CheckCircle,
 } from 'lucide-react';
 import { useStore } from '@/context/StoreContext';
-import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { overlay } from '@/components/overlay';
+import { CouponIssueFunnel } from '@/components/funnel';
 import { discountLabel } from '@/lib/coupons/types';
+import {
+  useCoupons,
+  useCreateCoupon,
+  useToggleCoupon,
+  useDeleteCoupon,
+  type CouponRecord,
+} from '@/lib/queries';
 
 const CouponLayoutManager = dynamic(
   () => import('@/components/coupons/CouponLayoutManager'),
@@ -28,30 +36,20 @@ const CouponAnalyticsPanel = dynamic(
 
 const PAGE_TABS = ['레이아웃', '쿠폰 목록', '효과·이력'] as const;
 
-interface Coupon {
-  id: string;
-  code: string;
-  type: 'percent' | 'fixed';
-  value: number;
+interface Coupon extends CouponRecord {
   minAmount: number;
   maxDiscount: number;
   maxUse: number;
   usedCount: number;
-  startDate?: string;
-  endDate?: string;
   isActive: boolean;
-  title?: string;
-  description?: string;
   imageUrl?: string;
-  barcodeValue?: string;
   includeBarcode?: boolean;
 }
 
 export default function CouponsPage() {
   const { currentStore } = useStore();
+  const storeId = currentStore?.storeId || '';
   const [pageTab, setPageTab] = useState<typeof PAGE_TABS[number]>('쿠폰 목록');
-  const [coupons, setCoupons] = useState<Coupon[]>([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -64,50 +62,33 @@ export default function CouponsPage() {
     minAmount: '0', maxDiscount: '0', maxUse: '0', startDate: '', endDate: '',
   });
 
-  const load = useCallback(async () => {
-    if (!currentStore?.storeId) { setLoading(false); return; }
-    setLoading(true);
-    try {
-      const headers = await getAuthJsonHeaders();
-      const res = await fetch(`/api/coupons?storeId=${currentStore.storeId}`, { headers });
-      const data = await res.json();
-      setCoupons(data.coupons || []);
-    } catch {
-      setError('쿠폰 목록을 불러오지 못했습니다.');
-    } finally {
-      setLoading(false);
-    }
-  }, [currentStore?.storeId]);
+  const { data: coupons = [], isLoading: loading, isError, refetch } = useCoupons(storeId, !!storeId);
+  const createCoupon = useCreateCoupon(storeId);
+  const toggleCoupon = useToggleCoupon(storeId);
+  const deleteCoupon = useDeleteCoupon(storeId);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (isError) setError('쿠폰 목록을 불러오지 못했습니다.');
+  }, [isError]);
 
   const handleCreate = async () => {
-    if (!currentStore?.storeId || !form.code.trim()) return;
+    if (!storeId || !form.code.trim()) return;
     setSaving(true);
     setError('');
     try {
-      const headers = await getAuthJsonHeaders();
-      const res = await fetch('/api/coupons', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          storeId: currentStore.storeId,
-          code: form.code,
-          type: form.type,
-          value: Number(form.value),
-          minAmount: Number(form.minAmount),
-          maxDiscount: Number(form.maxDiscount),
-          maxUse: Number(form.maxUse),
-          startDate: form.startDate || null,
-          endDate: form.endDate || null,
-          includeBarcode: false,
-        }),
+      await createCoupon.mutateAsync({
+        code: form.code,
+        type: form.type,
+        value: Number(form.value),
+        minAmount: Number(form.minAmount),
+        maxDiscount: Number(form.maxDiscount),
+        maxUse: Number(form.maxUse),
+        startDate: form.startDate || null,
+        endDate: form.endDate || null,
+        includeBarcode: false,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
       setShowForm(false);
       setForm({ code: '', type: 'percent', value: '10', minAmount: '0', maxDiscount: '0', maxUse: '0', startDate: '', endDate: '' });
-      await load();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '발행 실패');
     } finally {
@@ -115,21 +96,13 @@ export default function CouponsPage() {
     }
   };
 
-  const toggleActive = async (c: Coupon) => {
-    const headers = await getAuthJsonHeaders();
-    await fetch('/api/coupons', {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify({ id: c.id, storeId: currentStore?.storeId, isActive: !c.isActive }),
-    });
-    await load();
+  const toggleActive = (c: Coupon) => {
+    toggleCoupon.mutate(c);
   };
 
   const handleDelete = async (c: Coupon) => {
-    if (!confirm(`쿠폰 "${c.code}"을(를) 삭제하시겠습니까?`)) return;
-    const headers = await getAuthJsonHeaders();
-    await fetch(`/api/coupons?id=${c.id}&storeId=${currentStore?.storeId}`, { method: 'DELETE', headers });
-    await load();
+    if (!(await overlay.confirm(`쿠폰 "${c.code}"을(를) 삭제하시겠습니까?`))) return;
+    deleteCoupon.mutate(c.id);
   };
 
   if (!currentStore?.storeId) {
@@ -152,6 +125,25 @@ export default function CouponsPage() {
         </div>
         {pageTab === '쿠폰 목록' && (
           <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                overlay.open(
+                  <CouponIssueFunnel
+                    storeId={currentStore.storeId}
+                    onClose={() => overlay.close()}
+                    onDone={() => {
+                      void refetch();
+                      overlay.toast('쿠폰이 발행되었습니다', { variant: 'success' });
+                    }}
+                  />,
+                  { className: 'max-w-lg w-full', closeOnBackdrop: false },
+                );
+              }}
+              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-teal-500/30 text-teal-300 px-4 py-2 rounded-xl text-sm font-bold"
+            >
+              <Plus className="w-4 h-4" />단계별 발행
+            </button>
             <button
               type="button"
               onClick={() => setShowAi(true)}
@@ -239,16 +231,18 @@ export default function CouponsPage() {
             <p className="text-slate-500 text-center py-12">등록된 쿠폰이 없습니다.</p>
           ) : (
             <div className="space-y-2">
-              {coupons.map(c => (
+              {coupons.map(c => {
+                const row = c as Coupon;
+                return (
                 <div key={c.id} className="flex items-center gap-3 bg-slate-900 border border-slate-800 rounded-xl px-4 py-3">
-                  {c.imageUrl ? (
+                  {row.imageUrl ? (
                     <button
                       type="button"
-                      onClick={() => setPreviewImage(c.imageUrl!)}
+                      onClick={() => setPreviewImage(row.imageUrl!)}
                       className="shrink-0 w-14 h-[70px] rounded-lg overflow-hidden border border-slate-700 bg-slate-800"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={c.imageUrl} alt="" className="w-full h-full object-cover" />
+                      <img src={row.imageUrl} alt="" className="w-full h-full object-cover" />
                     </button>
                   ) : (
                     <div className="shrink-0 w-14 h-[70px] rounded-lg border border-dashed border-slate-700 flex items-center justify-center text-slate-600">
@@ -256,33 +250,33 @@ export default function CouponsPage() {
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="font-mono font-bold text-white">{c.code}</p>
-                    {c.title && <p className="text-xs text-slate-300 truncate">{c.title}</p>}
+                    <p className="font-mono font-bold text-white">{row.code}</p>
+                    {row.title && <p className="text-xs text-slate-300 truncate">{row.title}</p>}
                     <p className="text-xs text-slate-400">
-                      {discountLabel(c.type, c.value)}
-                      {' · '}적용 {c.usedCount}/{c.maxUse || '∞'}
-                      {c.endDate && ` · ~${c.endDate}`}
-                      {c.includeBarcode && ' · 바코드'}
+                      {discountLabel(row.type, row.value)}
+                      {' · '}적용 {row.usedCount ?? 0}/{row.maxUse || '∞'}
+                      {row.endDate && ` · ~${row.endDate}`}
+                      {row.includeBarcode && ' · 바코드'}
                     </p>
                   </div>
-                  {c.isActive && (
+                  {row.isActive !== false && (
                     <button
                       type="button"
-                      onClick={() => setApplyCoupon(c)}
+                      onClick={() => setApplyCoupon(row)}
                       className="flex items-center gap-1 px-3 py-1.5 bg-teal-700/50 hover:bg-teal-600/60 border border-teal-600/40 text-teal-200 rounded-lg text-xs font-semibold shrink-0"
                     >
                       <CheckCircle className="w-3.5 h-3.5" />
                       쿠폰 적용
                     </button>
                   )}
-                  <button type="button" onClick={() => toggleActive(c)} className="text-slate-400 hover:text-teal-400">
-                    {c.isActive ? <ToggleRight className="w-6 h-6 text-teal-400" /> : <ToggleLeft className="w-6 h-6" />}
+                  <button type="button" onClick={() => toggleActive(row)} className="text-slate-400 hover:text-teal-400">
+                    {row.isActive !== false ? <ToggleRight className="w-6 h-6 text-teal-400" /> : <ToggleLeft className="w-6 h-6" />}
                   </button>
-                  <button type="button" onClick={() => handleDelete(c)} className="text-slate-500 hover:text-red-400">
+                  <button type="button" onClick={() => handleDelete(row)} className="text-slate-500 hover:text-red-400">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
-              ))}
+              );})}
             </div>
           )}
 
@@ -299,7 +293,7 @@ export default function CouponsPage() {
           storeId={currentStore.storeId}
           storeName={currentStore.storeName || ''}
           layouts={layouts}
-          onPublished={() => load()}
+          onPublished={() => refetch()}
           onClose={() => setShowAi(false)}
         />
       )}
@@ -309,7 +303,7 @@ export default function CouponsPage() {
           coupon={applyCoupon}
           storeId={currentStore.storeId}
           onClose={() => setApplyCoupon(null)}
-          onApplied={load}
+          onApplied={() => refetch()}
         />
       )}
 

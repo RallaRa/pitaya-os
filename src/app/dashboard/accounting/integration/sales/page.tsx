@@ -1,12 +1,5 @@
-'use client';
-
-import AccountingShell from '@/components/accounting/AccountingShell';
-import AccountingPlaceholder from '@/components/accounting/AccountingPlaceholder';
+import { redirect } from 'next/navigation';
 
 export default function Page() {
-  return (
-    <AccountingShell>
-      <AccountingPlaceholder feature="매출→전표" />
-    </AccountingShell>
-  );
+  redirect('/dashboard/accounting/integration/auto?tab=sales');
 }

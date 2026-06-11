@@ -9,6 +9,8 @@ import {
   AlertCircle, CheckCircle2, Settings,
 } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { overlay } from '@/components/overlay';
+import { EmployeeRegistrationFunnel } from '@/components/funnel';
 import EmployeeDocumentsPanel from '@/components/hr/EmployeeDocumentsPanel';
 import type { HrEmployeeDocument } from '@/lib/hrEmployeeDocs';
 import { computeLeaveRemain, formatLeaveRemainLabel, leaveRemainClass } from '@/lib/hr/leaveRemainDisplay';
@@ -301,6 +303,20 @@ export default function EmployeesPage() {
     setSuccess('');
   };
 
+  const handleOpenEmployeeFunnel = () => {
+    overlay.open(
+      <EmployeeRegistrationFunnel
+        storeId={storeId}
+        onClose={() => overlay.close()}
+        onDone={() => {
+          void loadAll();
+          overlay.toast('사원이 등록되었습니다', { variant: 'success' });
+        }}
+      />,
+      { className: 'max-w-lg w-full', closeOnBackdrop: false },
+    );
+  };
+
   const handleLinkAccountChange = (uid: string) => {
     if (!uid) {
       setSelectedAccount(null);
@@ -551,12 +567,21 @@ export default function EmployeesPage() {
               <Users className="w-4 h-4 text-teal-400" />
               <h2 className="text-sm font-bold text-teal-400">사원등록</h2>
             </div>
-            <button
-              onClick={handleNewEmployee}
-              className="flex items-center gap-1 px-2 py-1 text-[10px] bg-teal-600 hover:bg-teal-500 text-black rounded-lg font-semibold"
-            >
-              <UserPlus className="w-3 h-3" /> 신규
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handleOpenEmployeeFunnel}
+                className="flex items-center gap-1 px-2 py-1 text-[10px] bg-slate-800 hover:bg-slate-700 text-teal-300 border border-teal-500/30 rounded-lg font-semibold"
+              >
+                <UserPlus className="w-3 h-3" /> 빠른
+              </button>
+              <button
+                onClick={handleNewEmployee}
+                className="flex items-center gap-1 px-2 py-1 text-[10px] bg-teal-600 hover:bg-teal-500 text-black rounded-lg font-semibold"
+              >
+                <UserPlus className="w-3 h-3" /> 상세
+              </button>
+            </div>
           </div>
           <div className="flex gap-1 mb-2">
             <button

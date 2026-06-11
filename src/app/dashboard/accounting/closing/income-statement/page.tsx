@@ -1,12 +1,7 @@
 'use client';
 
-import AccountingShell from '@/components/accounting/AccountingShell';
-import AccountingPlaceholder from '@/components/accounting/AccountingPlaceholder';
+import { IncomeStatementPanel } from '@/components/accounting/ClosingPanels';
 
 export default function Page() {
-  return (
-    <AccountingShell>
-      <AccountingPlaceholder feature="손익계산서" />
-    </AccountingShell>
-  );
+  return <IncomeStatementPanel />;
 }

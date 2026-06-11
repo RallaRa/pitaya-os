@@ -1,12 +1,7 @@
 'use client';
 
-import AccountingShell from '@/components/accounting/AccountingShell';
-import AccountingPlaceholder from '@/components/accounting/AccountingPlaceholder';
+import { PaymentSchedulePanel } from '@/components/accounting/ClosingPanels';
 
 export default function Page() {
-  return (
-    <AccountingShell>
-      <AccountingPlaceholder feature="지급예정현황" />
-    </AccountingShell>
-  );
+  return <PaymentSchedulePanel />;
 }

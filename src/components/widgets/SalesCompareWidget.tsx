@@ -3,8 +3,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import WidgetWrapper from './WidgetWrapper';
-import WidgetEmptyReason from './WidgetEmptyReason';
-import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import {
+  WidgetAsyncBoundary,
+  EmptyState,
+  fetchAuthJson,
+  useSuspenseResource,
+  useSuspenseInvalidate,
+} from '@/components/suspense';
 import { TrendingUp, TrendingDown, Minus, Target, Settings } from 'lucide-react';
 import type { TargetProgressResult } from '@/lib/salesTargets';
 
@@ -33,35 +38,33 @@ interface SalesCompareData {
   emptyReason?: string | null;
 }
 
-export default function SalesCompareWidget({
+function cacheKey(storeId: string) {
+  return `dashboard:sales-compare:${storeId}`;
+}
+
+function SalesCompareWidgetContent({
   editMode, onRemove, storeId,
 }: {
-  editMode: boolean; onRemove: () => void; storeId?: string;
+  editMode: boolean; onRemove: () => void; storeId: string;
 }) {
-  const [data,      setData]      = useState<SalesCompareData | null>(null);
-  const [loading,   setLoading]   = useState(true);
-  const [error,     setError]     = useState<string | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const key = cacheKey(storeId);
+  const invalidate = useSuspenseInvalidate(key);
+  const data = useSuspenseResource(key, async () => {
+    const d = await fetchAuthJson<SalesCompareData & { error?: string }>(
+      `/api/dashboard/sales-compare?storeId=${encodeURIComponent(storeId)}`,
+    );
+    if (d.error) throw new Error(d.error);
+    return d;
+  });
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(new Date());
 
-  const load = useCallback(async () => {
-    if (!storeId) { setLoading(false); return; }
-    setLoading(true); setError(null);
-    try {
-      const res = await fetch(`/api/dashboard/sales-compare?storeId=${storeId}`, {
-        headers: await getAuthHeaders(),
-      });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
-      setData(d);
-      setUpdatedAt(new Date());
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '매출 목표 데이터를 불러오지 못했습니다');
-    } finally {
-      setLoading(false);
-    }
-  }, [storeId]);
+  useEffect(() => {
+    setUpdatedAt(new Date());
+  }, [data]);
 
-  useEffect(() => { load(); }, [load]);
+  const refresh = useCallback(() => {
+    invalidate();
+  }, [invalidate]);
 
   const fmt = (n: number) => n.toLocaleString('ko-KR');
 
@@ -183,16 +186,10 @@ export default function SalesCompareWidget({
       title="🎯 매출 목표"
       editMode={editMode}
       onRemove={onRemove}
-      onRefresh={load}
+      onRefresh={refresh}
       updatedAt={updatedAt}
-      loading={loading}
-      error={error}
     >
-      {!storeId ? (
-        <div className="p-3">
-          <WidgetEmptyReason reason="매장이 선택되지 않았습니다." />
-        </div>
-      ) : data ? (
+      {data ? (
         <div className="h-full overflow-y-auto p-3 space-y-3">
           {meta?.activePeriod && (
             <div className="text-[9px] text-slate-500 bg-slate-800/40 rounded-lg px-2 py-1.5 leading-relaxed">
@@ -205,13 +202,35 @@ export default function SalesCompareWidget({
               )}
             </div>
           )}
-          {data.emptyReason && <WidgetEmptyReason reason={data.emptyReason} />}
+          {data.emptyReason && <EmptyState reason={data.emptyReason} />}
           <TargetBlockView block={data.week} label="주간" kind="week" />
           <TargetBlockView block={data.month} label="월간" kind="month" />
         </div>
-      ) : !loading && !error ? (
+      ) : (
         <p className="text-slate-500 text-xs text-center mt-4">매출 데이터 없음</p>
-      ) : null}
+      )}
     </WidgetWrapper>
+  );
+}
+
+export default function SalesCompareWidget({
+  editMode, onRemove, storeId,
+}: {
+  editMode: boolean; onRemove: () => void; storeId?: string;
+}) {
+  if (!storeId) {
+    return (
+      <WidgetWrapper title="🎯 매출 목표" editMode={editMode} onRemove={onRemove}>
+        <div className="p-3">
+          <EmptyState reason="매장이 선택되지 않았습니다." />
+        </div>
+      </WidgetWrapper>
+    );
+  }
+
+  return (
+    <WidgetAsyncBoundary skeleton="card" widgetName="매출 목표">
+      <SalesCompareWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} />
+    </WidgetAsyncBoundary>
   );
 }

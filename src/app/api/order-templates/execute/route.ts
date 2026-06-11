@@ -11,7 +11,7 @@ export async function POST(req: Request) {
   const user = cron ? null : await verifyToken(req);
   if (!cron && !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { templateId, storeId } = await req.json();
+  const { templateId, storeId, lines: overrideLines } = await req.json();
   if (!templateId || !storeId) {
     return NextResponse.json({ error: 'templateId and storeId required' }, { status: 400 });
   }
@@ -24,7 +24,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'template store mismatch' }, { status: 403 });
   }
 
-  const lines = Array.isArray(tpl.lines) ? tpl.lines : [];
+  const lines = Array.isArray(overrideLines) && overrideLines.length > 0
+    ? overrideLines
+    : (Array.isArray(tpl.lines) ? tpl.lines : []);
   const summary = lines.map((l: { itemName?: string; qty?: number; unit?: string }) =>
     `· ${l.itemName} ${l.qty}${l.unit || ''}`,
   ).join('\n');

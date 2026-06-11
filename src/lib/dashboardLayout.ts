@@ -1,7 +1,7 @@
 import type { LayoutItem } from 'react-grid-layout';
 
 export const GRID_COLS = 12;
-export const DASHBOARD_LAYOUT_VERSION = 6;
+export const DASHBOARD_LAYOUT_VERSION = 7;
 
 export interface WidgetMeta {
   id: string;
@@ -68,6 +68,12 @@ export const WIDGET_META: WidgetMeta[] = [
     title: '고객 방문 · 전월대비',
     defaultItem: { i: 'customer_visit', x: 0, y: 22, w: 4, h: 4, minW: 3, minH: 3, maxW: 6, maxH: 8 },
     permKey: 'customer_visit',
+  },
+  {
+    id: 'churn_risk',
+    title: '이탈 위험 고객',
+    defaultItem: { i: 'churn_risk', x: 0, y: 30, w: 4, h: 4, minW: 3, minH: 3, maxW: 8, maxH: 6 },
+    permKey: 'churn_risk',
   },
   {
     id: 'sales_heatmap',

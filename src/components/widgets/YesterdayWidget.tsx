@@ -2,55 +2,60 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import WidgetWrapper from './WidgetWrapper';
-import WidgetEmptyReason from './WidgetEmptyReason';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
-import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import {
+  WidgetAsyncBoundary,
+  EmptyState,
+  fetchAuthJson,
+  useSuspenseResource,
+  useSuspenseInvalidate,
+} from '@/components/suspense';
 
 interface Item { name: string; qty: number; amount: number; }
 interface YesterdayData { dateLabel: string; top: Item[]; bottom: Item[]; noData?: boolean; emptyReason?: string; ai?: AiMetaDisplay; }
 
-export default function YesterdayWidget({
+function cacheKey(storeId: string) {
+  return `dashboard:yesterday-analysis:${storeId}`;
+}
+
+function YesterdayWidgetContent({
   editMode, onRemove, storeId,
 }: {
-  editMode: boolean; onRemove: () => void; storeId?: string;
+  editMode: boolean; onRemove: () => void; storeId: string;
 }) {
-  const [data,      setData]      = useState<YesterdayData | null>(null);
-  const [loading,   setLoading]   = useState(true);
-  const [error,     setError]     = useState<string | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const key = cacheKey(storeId);
+  const invalidate = useSuspenseInvalidate(key);
+  const data = useSuspenseResource(key, async () => {
+    const params = new URLSearchParams();
+    params.set('storeId', storeId);
+    const d = await fetchAuthJson<YesterdayData & { error?: string }>(
+      `/api/dashboard/yesterday-analysis?${params}`,
+    );
+    if (d.error) throw new Error(d.error);
+    return d;
+  });
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(new Date());
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const load = useCallback(async (background = false) => {
-    if (!background) setLoading(true); // 초기 로딩만 skeleton 표시
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      if (storeId)    params.set('storeId', storeId);
-      if (background) params.set('refresh', '1'); // 백그라운드 갱신은 캐시 우회
-      const res = await fetch(`/api/dashboard/yesterday-analysis?${params}`, { headers: await getAuthHeaders() });
-      const d   = await res.json();
-      if (d.error) throw new Error(d.error);
-      setData(d);
-      setUpdatedAt(new Date());
-    } catch {
-      setError('전일 데이터를 불러오지 못했습니다');
-    } finally {
-      setLoading(false);
-    }
-  }, [storeId]);
+  useEffect(() => {
+    setUpdatedAt(new Date());
+  }, [data]);
+
+  const refresh = useCallback(() => {
+    invalidate();
+  }, [invalidate]);
 
   useEffect(() => {
-    load(false);
-    timerRef.current = setInterval(() => load(true), 30 * 1000);
+    timerRef.current = setInterval(refresh, 30 * 1000);
 
-    const onVisible = () => { if (document.visibilityState === 'visible') load(true); };
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
     document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [load]);
+  }, [refresh]);
 
   const RANK_COLOR = ['text-yellow-400', 'text-slate-300', 'text-orange-400', 'text-slate-400', 'text-slate-500'];
 
@@ -59,10 +64,8 @@ export default function YesterdayWidget({
       title="📅 전일 판매 분석"
       editMode={editMode}
       onRemove={onRemove}
-      onRefresh={() => load(true)}
+      onRefresh={refresh}
       updatedAt={updatedAt}
-      loading={loading}
-      error={error}
     >
       {data && (
         <div className="h-full overflow-y-auto p-3 space-y-3">
@@ -71,7 +74,7 @@ export default function YesterdayWidget({
           )}
 
           {data.noData ? (
-            <WidgetEmptyReason
+            <EmptyState
               reason={data.emptyReason || '전일 판매 데이터가 없습니다.'}
               hints={['daily_reports에 items 배열 필요', 'POS 브릿지·일마감 입력 확인']}
             />
@@ -118,5 +121,27 @@ export default function YesterdayWidget({
         </div>
       )}
     </WidgetWrapper>
+  );
+}
+
+export default function YesterdayWidget({
+  editMode, onRemove, storeId,
+}: {
+  editMode: boolean; onRemove: () => void; storeId?: string;
+}) {
+  if (!storeId) {
+    return (
+      <WidgetWrapper title="📅 전일 판매 분석" editMode={editMode} onRemove={onRemove}>
+        <div className="p-3">
+          <EmptyState reason="매장이 선택되지 않았습니다." />
+        </div>
+      </WidgetWrapper>
+    );
+  }
+
+  return (
+    <WidgetAsyncBoundary skeleton="table" widgetName="전일 판매 분석">
+      <YesterdayWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} />
+    </WidgetAsyncBoundary>
   );
 }

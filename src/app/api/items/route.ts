@@ -4,6 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { verifyToken, getActualGroupId } from '@/lib/authVerify';
 import { isAdminOrAbove } from '@/lib/auth/permissions';
 import { calcItemPrices } from '@/lib/items/calcItemPrices';
+import { sendCostRatioAlertForItem } from '@/lib/costRatioAlert.server';
 
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);
@@ -71,12 +72,12 @@ export async function PUT(req: Request) {
     )
     : {};
   const historyPatch: Record<string, any> = {};
+  const oldBuyPrice = current.buyPrice;
   if (updates.buyPrice !== undefined) {
-    const oldPrice = current.buyPrice;
-    if (oldPrice !== updates.buyPrice) {
+    if (oldBuyPrice !== updates.buyPrice) {
       historyPatch.priceHistory = FieldValue.arrayUnion({
         date: new Date().toISOString(),
-        oldPrice,
+        oldPrice: oldBuyPrice,
         newPrice: updates.buyPrice,
         changedBy: authUser.uid,
       });
@@ -89,6 +90,14 @@ export async function PUT(req: Request) {
     ...historyPatch,
     updatedAt: FieldValue.serverTimestamp(),
   });
+
+  const storeId = String(current.storeId || updates.storeId || '');
+  if (storeId && updates.buyPrice !== undefined && oldBuyPrice !== updates.buyPrice) {
+    sendCostRatioAlertForItem(storeId, id).catch(err => {
+      console.warn('[items] cost ratio alert failed:', err);
+    });
+  }
+
   return NextResponse.json({ success: true, ...prices });
 }
 

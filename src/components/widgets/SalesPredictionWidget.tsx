@@ -4,10 +4,15 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, ChevronDown, ChevronUp, Target, HelpCircle } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
-import WidgetEmptyReason from './WidgetEmptyReason';
 import SalesEvidenceLine from './SalesEvidenceLine';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
-import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import {
+  WidgetAsyncBoundary,
+  EmptyState,
+  fetchAuthJson,
+  useSuspenseResource,
+  useSuspenseInvalidate,
+} from '@/components/suspense';
 import { isPlaceholderSupporterComment } from '@/lib/salesPredictionBuild';
 import { annotateCompareDatesInComment } from '@/lib/annotateCompareDatesInText';
 import { PREDICTION_POS_REFRESH_MS } from '@/lib/predictionRefreshConfig';
@@ -285,10 +290,45 @@ function ItemRow({
 export default function SalesPredictionWidget({
   editMode, onRemove, storeId, mobileLayout,
 }: { editMode: boolean; onRemove: () => void; storeId?: string; mobileLayout?: boolean }) {
-  const [data,       setData]       = useState<PredictionData | null>(null);
-  const [loading,    setLoading]    = useState(true);
-  const [error,      setError]      = useState<string | null>(null);
-  const [updatedAt,  setUpdatedAt]  = useState<Date | null>(null);
+  if (!storeId) {
+    return (
+      <WidgetWrapper title="📈 AI 매출 예측 분석" editMode={editMode} onRemove={onRemove} autoHeight={mobileLayout}>
+        <div className="p-3">
+          <EmptyState reason="매장이 선택되지 않았습니다." />
+        </div>
+      </WidgetWrapper>
+    );
+  }
+
+  return (
+    <WidgetAsyncBoundary skeleton="table" widgetName="매출 예측">
+      <SalesPredictionWidgetContent
+        editMode={editMode}
+        onRemove={onRemove}
+        storeId={storeId}
+        mobileLayout={mobileLayout}
+      />
+    </WidgetAsyncBoundary>
+  );
+}
+
+function cacheKey(storeId: string) {
+  return `dashboard:sales-prediction:${storeId}`;
+}
+
+function SalesPredictionWidgetContent({
+  editMode, onRemove, storeId, mobileLayout,
+}: { editMode: boolean; onRemove: () => void; storeId: string; mobileLayout?: boolean }) {
+  const key = cacheKey(storeId);
+  const invalidate = useSuspenseInvalidate(key);
+  const primaryData = useSuspenseResource(key, async () => {
+    const params = new URLSearchParams({ storeId });
+    const d = await fetchAuthJson<PredictionData & { error?: string }>(`/api/dashboard/sales-prediction?${params}`);
+    if (d.error) throw new Error(d.error);
+    return d;
+  });
+  const [data,       setData]       = useState<PredictionData | null>(primaryData);
+  const [updatedAt,  setUpdatedAt]  = useState<Date | null>(new Date());
   const [showSource, setShowSource] = useState(false);
   const [orderInfo,  setOrderInfo]  = useState<{
     dDayType?: string;
@@ -307,15 +347,19 @@ export default function SalesPredictionWidget({
   );
 
   const refreshTodayActual = useCallback(async () => {
-    if (!storeId) return;
     setPosRefreshing(true);
     try {
       const params = new URLSearchParams({ storeId });
-      const res = await fetch(`/api/dashboard/sales-prediction/today-actual?${params}`, {
-        headers: await getAuthHeaders(),
-      });
-      const patch = await res.json();
-      if (!res.ok || patch.error) return;
+      const patch = await fetchAuthJson<{
+        error?: string;
+        topItems?: PredictionItem[];
+        baseTopItems?: PredictionItem[];
+        bottomItems?: PredictionItem[];
+        hasTodaySalesData?: boolean;
+        todaySalesAsOf?: string;
+        todayActualUpdatedAt?: string;
+      }>(`/api/dashboard/sales-prediction/today-actual?${params}`);
+      if (patch.error) return;
       setData(prev => {
         if (!prev) return prev;
         return {
@@ -334,36 +378,28 @@ export default function SalesPredictionWidget({
     }
   }, [storeId]);
 
-  const load = useCallback(async (forceRefresh = false) => {
-    setLoading(true); setError(null);
-    try {
-      const params = new URLSearchParams();
-      if (storeId) params.set('storeId', storeId);
-      if (forceRefresh) params.set('refresh', '1');
-      const res = await fetch(`/api/dashboard/sales-prediction?${params}`, { headers: await getAuthHeaders() });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`);
-      if (d.error) throw new Error(d.error);
-
-      setData(d);
-      setUpdatedAt(new Date());
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '예측 데이터를 불러오지 못했습니다');
-    } finally {
-      setLoading(false);
-    }
-  }, [storeId]);
-
   const loadOrderInfo = useCallback(async () => {
     try {
-      const params = new URLSearchParams();
-      if (storeId) params.set('storeId', storeId);
-      const res = await fetch(`/api/order/check-delivery-gap?${params}`, { headers: await getAuthHeaders() });
-      setOrderInfo(await res.json());
+      const params = new URLSearchParams({ storeId });
+      const info = await fetchAuthJson<{
+        dDayType?: string;
+        gaps?: { start: string; end: string }[];
+        holidayOrderAlert?: { message?: string; holidayDate?: string };
+      }>(`/api/order/check-delivery-gap?${params}`);
+      setOrderInfo(info);
     } catch { /* ignore */ }
   }, [storeId]);
 
-  useEffect(() => { load(); loadOrderInfo(); }, [load, loadOrderInfo]);
+  useEffect(() => {
+    setData(primaryData);
+    setUpdatedAt(new Date());
+  }, [primaryData]);
+
+  const refresh = useCallback(() => {
+    invalidate();
+  }, [invalidate]);
+
+  useEffect(() => { loadOrderInfo(); }, [loadOrderInfo]);
 
   useEffect(() => {
     if (!data?.topItems?.length || !storeId) return;
@@ -405,8 +441,7 @@ export default function SalesPredictionWidget({
       editMode={editMode}
       onRemove={onRemove}
       updatedAt={updatedAt}
-      loading={loading}
-      error={error}
+      onRefresh={refresh}
       autoHeight={isMobileView}
       rootRef={widgetRootRef}
     >
@@ -470,7 +505,7 @@ export default function SalesPredictionWidget({
           }
         >
         {showEmptyReason && data?.emptyReason && (
-          <WidgetEmptyReason
+          <EmptyState
             reason={data.emptyReason}
             hints={['POS 브릿지 실행 여부 확인', '일마감에 품목(items) 저장 여부 확인', 'AI 키는 .env.local 확인']}
             className="mx-2 mb-2"
@@ -478,7 +513,7 @@ export default function SalesPredictionWidget({
         )}
 
         {showStaleCommentHint && (
-          <WidgetEmptyReason
+          <EmptyState
             reason="이전 형식의 예측이 저장되어 있습니다. 내일 0시 이후 자동으로 새 예측이 생성됩니다."
             hints={['긴급 시 관리자에게 배포 후 캐시 초기화 요청', 'POS·전일 일마감 데이터 확인']}
             className="mx-2 mb-2"
@@ -486,7 +521,7 @@ export default function SalesPredictionWidget({
         )}
 
         {showAiFailure && (
-          <WidgetEmptyReason
+          <EmptyState
             reason={data!.aiFailureReason!}
             hints={[
               '대시보드 새로고침으로 AI를 다시 순차 시도',

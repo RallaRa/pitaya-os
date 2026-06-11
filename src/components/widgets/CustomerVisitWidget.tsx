@@ -3,9 +3,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { TrendingUp, TrendingDown, Minus, Users } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
-import WidgetEmptyReason from './WidgetEmptyReason';
 import SalesEvidenceLine from './SalesEvidenceLine';
-import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import {
+  WidgetAsyncBoundary,
+  EmptyState,
+  fetchAuthJson,
+  useSuspenseResource,
+  useSuspenseInvalidate,
+} from '@/components/suspense';
 import type { CustomerVisitSummary } from '@/lib/customerVisitStats';
 
 function ChangeBadge({
@@ -34,43 +39,35 @@ function ChangeBadge({
   );
 }
 
-export default function CustomerVisitWidget({
+function cacheKey(storeId: string) {
+  return `dashboard:customer-visit-summary:${storeId}`;
+}
+
+function CustomerVisitWidgetContent({
   editMode, onRemove, storeId,
 }: {
   editMode: boolean;
   onRemove: () => void;
-  storeId?: string;
+  storeId: string;
 }) {
-  const [data, setData] = useState<CustomerVisitSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const key = cacheKey(storeId);
+  const invalidate = useSuspenseInvalidate(key);
+  const data = useSuspenseResource(key, async () => {
+    const json = await fetchAuthJson<CustomerVisitSummary & { error?: string }>(
+      `/api/dashboard/customer-visit-summary?storeId=${encodeURIComponent(storeId)}`,
+    );
+    if (json.error) throw new Error(json.error);
+    return json;
+  });
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(new Date());
 
-  const fetchData = useCallback(async () => {
-    if (!storeId) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const headers = await getAuthHeaders();
-      const res = await fetch(
-        `/api/dashboard/customer-visit-summary?storeId=${encodeURIComponent(storeId)}`,
-        { headers },
-      );
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || '조회 실패');
-      setData(json);
-      setUpdatedAt(new Date());
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '방문 데이터를 불러오지 못했습니다');
-    } finally {
-      setLoading(false);
-    }
-  }, [storeId]);
+  useEffect(() => {
+    setUpdatedAt(new Date());
+  }, [data]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const refresh = useCallback(() => {
+    invalidate();
+  }, [invalidate]);
 
   const DirectionIcon = data?.direction === 'up'
     ? TrendingUp
@@ -88,18 +85,12 @@ export default function CustomerVisitWidget({
       title="고객 방문 · 전월대비"
       editMode={editMode}
       onRemove={onRemove}
-      onRefresh={fetchData}
+      onRefresh={refresh}
       updatedAt={updatedAt}
-      loading={loading}
-      error={error}
     >
-      {!storeId ? (
+      {data.totalCustomers === 0 && data.thisMonthVisitors === 0 ? (
         <div className="p-3">
-          <WidgetEmptyReason reason="매장이 선택되지 않았습니다." />
-        </div>
-      ) : data && data.totalCustomers === 0 && data.thisMonthVisitors === 0 ? (
-        <div className="p-3">
-          <WidgetEmptyReason
+          <EmptyState
             reason="고객·방문 데이터가 없습니다."
             hints={['POS 고객 연동', 'pos_customer_sales 수집']}
           />
@@ -169,5 +160,29 @@ export default function CustomerVisitWidget({
         </div>
       ) : null}
     </WidgetWrapper>
+  );
+}
+
+export default function CustomerVisitWidget({
+  editMode, onRemove, storeId,
+}: {
+  editMode: boolean;
+  onRemove: () => void;
+  storeId?: string;
+}) {
+  if (!storeId) {
+    return (
+      <WidgetWrapper title="고객 방문 · 전월대비" editMode={editMode} onRemove={onRemove}>
+        <div className="p-3">
+          <EmptyState reason="매장이 선택되지 않았습니다." />
+        </div>
+      </WidgetWrapper>
+    );
+  }
+
+  return (
+    <WidgetAsyncBoundary skeleton="card" widgetName="고객 방문">
+      <CustomerVisitWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} />
+    </WidgetAsyncBoundary>
   );
 }

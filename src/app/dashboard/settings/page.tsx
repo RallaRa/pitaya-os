@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2, Tag, Package, CalendarDays, UserCircle, Target, Bell } from 'lucide-react';
+import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2, Tag, Package, CalendarDays, UserCircle, Target, Bell, Percent } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -155,6 +155,13 @@ export default function SettingsPage() {
       icon: <Tag className="w-5 h-5 text-rose-400" />,
       label: '매출 카테고리 키워드',
       description: 'POS 품목명 → 소고기·돼지·닭·양념 자동 분류 키워드',
+      show: isAdminLevelGroup(storeRole),
+    },
+    {
+      href: '/dashboard/settings/cost-ratio-targets',
+      icon: <Percent className="w-5 h-5 text-orange-400" />,
+      label: '원가율 목표',
+      description: '전체·품목별 목표 원가율 — 초과 시 매출알림 경고',
       show: isAdminLevelGroup(storeRole),
     },
     {

@@ -75,3 +75,27 @@
 .dashboard-mobile-widget > * {
   max-width: 100%;
 }
+
+.funnel-step-panel {
+  animation-duration: 220ms;
+  animation-timing-function: ease-out;
+  animation-fill-mode: both;
+}
+
+.funnel-slide-forward {
+  animation-name: funnel-slide-in-forward;
+}
+
+.funnel-slide-back {
+  animation-name: funnel-slide-in-back;
+}
+
+@keyframes funnel-slide-in-forward {
+  from { opacity: 0; transform: translateX(1.25rem); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes funnel-slide-in-back {
+  from { opacity: 0; transform: translateX(-1.25rem); }
+  to { opacity: 1; transform: translateX(0); }
+}

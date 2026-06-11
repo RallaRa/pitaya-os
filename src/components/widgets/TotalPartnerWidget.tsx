@@ -3,9 +3,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AlertTriangle, RefreshCw, TrendingUp, TrendingDown, ChevronDown, ChevronUp, Truck } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
-import WidgetEmptyReason from './WidgetEmptyReason';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
-import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import {
+  WidgetAsyncBoundary,
+  EmptyState,
+  fetchAuthJson,
+  useSuspenseResource,
+  useSuspenseInvalidate,
+} from '@/components/suspense';
 
 interface PartnerItem {
   rank: number; item: string; action: string;
@@ -180,43 +185,32 @@ function partnerHasContent(data: PartnerData | null | undefined): boolean {
 interface Props {
   editMode: boolean;
   onRemove: () => void;
-  storeId: string;
+  storeId?: string;
   mobileLayout?: boolean;
 }
 
-export default function TotalPartnerWidget({ editMode, onRemove, storeId, mobileLayout = false }: Props) {
-  const [data,     setData]     = useState<PartnerData | null>(null);
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState<string | null>(null);
+function cacheKey(storeId: string) {
+  return `dashboard:total-partner:${storeId}`;
+}
+
+function TotalPartnerWidgetContent({ editMode, onRemove, storeId, mobileLayout = false }: Props & { storeId: string }) {
+  const key = cacheKey(storeId);
+  const invalidate = useSuspenseInvalidate(key);
+  const data = useSuspenseResource(key, async () => {
+    const q = new URLSearchParams({ storeId });
+    return fetchAuthJson<PartnerData & { error?: string }>(`/api/dashboard/total-partner?${q}`);
+  });
   const [tab,      setTab]      = useState<'today'|'tomorrow'|'thisWeek'|'thisMonth'>('today');
   const [showSrc,  setShowSrc]  = useState(false);
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(new Date());
 
-  const load = useCallback(async (force = false) => {
-    setLoading(true); setError(null);
-    const q = storeId ? `?storeId=${storeId}` : '';
-    try {
-      const headers = await getAuthHeaders();
-      const res = await fetch(`/api/dashboard/total-partner${q}${force ? (q ? '&' : '?') + 'refresh=1' : ''}`, { headers });
-      let d: PartnerData & { error?: string };
-      try {
-        d = await res.json();
-      } catch {
-        setError(res.ok ? '응답 파싱 실패' : `서버 오류 (HTTP ${res.status})`);
-        setLoading(false);
-        return;
-      }
-      setData(d);
-      setUpdatedAt(new Date());
-      if (!res.ok || d.error) setError(d.error || `요청 실패 (HTTP ${res.status})`);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '데이터 로드 실패');
-    } finally {
-      setLoading(false);
-    }
-  }, [storeId]);
+  useEffect(() => {
+    setUpdatedAt(new Date());
+  }, [data]);
 
-  useEffect(() => { load(); }, [load]);
+  const refresh = useCallback(() => {
+    invalidate();
+  }, [invalidate]);
 
   const order = data?.orderAdvice;
   const orderBg = order?.dDay === '당일' ? 'bg-red-900/40 border-red-700/50 animate-pulse'
@@ -243,10 +237,8 @@ export default function TotalPartnerWidget({ editMode, onRemove, storeId, mobile
       title="AI 운영 파트너"
       editMode={editMode}
       onRemove={onRemove}
-      onRefresh={() => load(true)}
+      onRefresh={refresh}
       updatedAt={updatedAt}
-      loading={loading}
-      error={error}
       autoHeight={mobileLayout}
     >
       <div className={`flex flex-col ${mobileLayout ? 'min-h-[24rem]' : 'h-full overflow-hidden'}`}>
@@ -269,7 +261,7 @@ export default function TotalPartnerWidget({ editMode, onRemove, storeId, mobile
         {/* noData 상태 */}
         {data?.noData && !partnerHasContent(data) ? (
           <div className="p-3">
-            <WidgetEmptyReason
+            <EmptyState
               reason={data.emptyReason || 'POS·일마감 매출 이력이 없어 AI 운영 분석을 생성할 수 없습니다.'}
               hints={['POS 브릿지 동기화', '일마감 입력', 'AI API 키 설정']}
             />
@@ -373,5 +365,23 @@ export default function TotalPartnerWidget({ editMode, onRemove, storeId, mobile
         </div>
       </div>
     </WidgetWrapper>
+  );
+}
+
+export default function TotalPartnerWidget({ editMode, onRemove, storeId, mobileLayout = false }: Props) {
+  if (!storeId) {
+    return (
+      <WidgetWrapper title="AI 운영 파트너" editMode={editMode} onRemove={onRemove} autoHeight={mobileLayout}>
+        <div className="p-3">
+          <EmptyState reason="매장이 선택되지 않았습니다." />
+        </div>
+      </WidgetWrapper>
+    );
+  }
+
+  return (
+    <WidgetAsyncBoundary skeleton="card" widgetName="AI 운영 파트너">
+      <TotalPartnerWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} mobileLayout={mobileLayout} />
+    </WidgetAsyncBoundary>
   );
 }

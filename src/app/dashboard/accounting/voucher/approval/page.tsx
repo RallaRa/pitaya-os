@@ -1,12 +1,7 @@
 'use client';
 
-import AccountingShell from '@/components/accounting/AccountingShell';
-import AccountingPlaceholder from '@/components/accounting/AccountingPlaceholder';
+import VoucherApprovalPanel from '@/components/accounting/VoucherApprovalPanel';
 
 export default function Page() {
-  return (
-    <AccountingShell>
-      <AccountingPlaceholder feature="전표승인" />
-    </AccountingShell>
-  );
+  return <VoucherApprovalPanel />;
 }

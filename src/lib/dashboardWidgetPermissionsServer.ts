@@ -12,6 +12,7 @@ export const DEFAULT_WIDGET_PERMISSIONS = {
   today_sales:        { master: true, admin: true,  user: true,  staff: true  },
   sales_compare:      { master: true, admin: true,  user: true,  staff: false },
   customer_visit:     { master: true, admin: true,  user: true,  staff: false },
+  churn_risk:         { master: true, admin: true,  user: true,  staff: false },
   sales_heatmap:      { master: true, admin: true,  user: true,  staff: false },
   dow_profitability:  { master: true, admin: true,  user: true,  staff: false },
   cost_ratio:         { master: true, admin: true,  user: true,  staff: false },

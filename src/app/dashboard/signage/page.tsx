@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
 import SignageContentPlayer from '@/components/signage/SignageContentPlayer';
+import SignageShowStudio from '@/components/signage/SignageShowStudio';
 import { renderSignageSlideImage, renderSignageVideo } from '@/lib/signage/renderSignageMedia';
 import {
   SIGNAGE_CONTENT_TYPES,
@@ -18,7 +19,7 @@ import {
   type SignageScreenKind,
 } from '@/lib/signage/types';
 
-type TabId = 'pending' | 'approved' | 'screens' | 'create';
+type TabId = 'show' | 'pending' | 'approved' | 'screens' | 'create';
 
 async function signageApi(
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
@@ -43,7 +44,7 @@ export default function SignagePage() {
   const { currentStore } = useStore();
   const storeId = currentStore?.storeId || '';
 
-  const [tab, setTab] = useState<TabId>('create');
+  const [tab, setTab] = useState<TabId>('show');
   const [contents, setContents] = useState<SignageContentDoc[]>([]);
   const [screens, setScreens] = useState<SignageScreenDoc[]>([]);
   const [defaultContentType, setDefaultContentType] = useState<SignageContentType>('text');
@@ -422,9 +423,10 @@ export default function SignagePage() {
         <div className="text-center py-16 text-gray-500">로딩 중...</div>
       ) : (
         <>
-          <div className="flex gap-2 mb-6 overflow-x-auto">
+          <div className="flex gap-2 mb-6 overflow-x-auto scrollbar-thin-x">
             {[
-              { id: 'create' as const, label: '✨ AI 생성' },
+              { id: 'show' as const, label: '🎬 AI 쇼' },
+              { id: 'create' as const, label: '✨ 단건 생성' },
               { id: 'pending' as const, label: `⏳ 펜딩 (${pendingContents.length})` },
               { id: 'approved' as const, label: `✅ 확정 (${approvedContents.length})` },
               { id: 'screens' as const, label: `📺 화면 (${screens.length})` },
@@ -433,15 +435,26 @@ export default function SignagePage() {
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
-                className={`px-4 py-2 rounded-lg text-sm flex-shrink-0 ${tab === t.id ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300'}`}
+                className={`px-4 py-2.5 rounded-lg text-sm flex-shrink-0 touch-target whitespace-nowrap ${tab === t.id ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300'}`}
               >
                 {t.label}
               </button>
             ))}
           </div>
 
+          {tab === 'show' && (
+            <SignageShowStudio
+              storeId={storeId}
+              onSaved={() => { loadAll(); setTab('pending'); }}
+              onError={setError}
+            />
+          )}
+
           {tab === 'create' && (
             <div className="space-y-4 max-w-2xl">
+              <p className="text-xs text-gray-500">
+                단건 생성·업로드는 기존과 동일합니다. 4~5장 자동 쇼는 <button type="button" onClick={() => setTab('show')} className="text-blue-400 hover:underline">AI 쇼</button> 탭을 이용하세요.
+              </p>
               <div className="bg-gray-900 rounded-2xl p-5 space-y-4">
                 <div className="flex items-center justify-between">
                   <h2 className="font-semibold text-blue-300 flex items-center gap-2">

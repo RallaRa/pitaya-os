@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import {
   getSuspenseResourceVersion,
   invalidateSuspenseResource,
@@ -10,7 +10,10 @@ import {
 
 export function useSuspenseResource<T>(key: string, fetcher: () => Promise<T>): T {
   const fetcherRef = useRef(fetcher);
-  fetcherRef.current = fetcher;
+
+  useEffect(() => {
+    fetcherRef.current = fetcher;
+  });
 
   const version = useSyncExternalStore(
     cb => subscribeSuspenseResource(key, cb),
@@ -18,6 +21,7 @@ export function useSuspenseResource<T>(key: string, fetcher: () => Promise<T>): 
     () => 0,
   );
 
+  void version;
   return readSuspenseResource(key, () => fetcherRef.current());
 }
 

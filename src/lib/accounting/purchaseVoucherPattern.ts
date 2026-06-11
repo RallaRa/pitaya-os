@@ -1,20 +1,10 @@
 import type { VoucherLine } from '@/lib/accounting/types';
-
-export interface PurchaseVoucherPatternLine {
-  side: 'debit' | 'credit';
-  accountCode: string;
-  accountName: string;
-  /** supply | tax | total — 금액 기준 */
-  amountKey: 'supply' | 'tax' | 'total';
-}
-
-export interface PurchaseVoucherPattern {
-  lines: PurchaseVoucherPatternLine[];
-  splitVat: boolean;
-}
+import type { AutoVoucherPattern, AutoVoucherPatternLine } from '@/lib/accounting/autoVoucherPattern';
+export type { AutoVoucherPattern as PurchaseVoucherPattern, AutoVoucherPatternLine as PurchaseVoucherPatternLine };
+export { previewAutoPatternSummary as previewPatternSummary, AMOUNT_KEY_LABELS, PURCHASE_AMOUNT_KEYS } from '@/lib/accounting/autoVoucherPattern';
 
 /** 정육 매입 기본 분개: 원재료(차) + 부가세대급(차) / 외상매입금(대) */
-export const DEFAULT_PURCHASE_VOUCHER_PATTERN: PurchaseVoucherPattern = {
+export const DEFAULT_PURCHASE_VOUCHER_PATTERN: AutoVoucherPattern = {
   splitVat: true,
   lines: [
     { side: 'debit', accountCode: '136', accountName: '원재료', amountKey: 'supply' },
@@ -34,19 +24,20 @@ export interface PurchaseVoucherSource {
   memo?: string;
 }
 
-function resolveAmount(key: 'supply' | 'tax' | 'total', purchase: PurchaseVoucherSource): number {
+function resolveAmount(key: AutoVoucherPatternLine['amountKey'], purchase: PurchaseVoucherSource): number {
   const supply = Number(purchase.supplyAmount || 0);
   const tax = Number(purchase.taxAmount || 0);
   const total = Number(purchase.totalAmount || 0) || supply + tax;
 
   if (key === 'supply') return supply > 0 ? supply : Math.max(total - tax, 0);
   if (key === 'tax') return tax;
+  if (key === 'cash' || key === 'card') return 0;
   return total;
 }
 
 export function buildPurchaseVoucherLines(
   purchase: PurchaseVoucherSource,
-  pattern: PurchaseVoucherPattern,
+  pattern: AutoVoucherPattern,
   accountNames?: Map<string, string>,
 ): VoucherLine[] {
   const partnerName = String(purchase.supplierName || '').trim();
@@ -109,8 +100,3 @@ export function buildPurchaseVoucherLines(
   return voucherLines;
 }
 
-export function previewPatternSummary(pattern: PurchaseVoucherPattern): string {
-  const debits = pattern.lines.filter(l => l.side === 'debit').map(l => `${l.accountName}(${l.accountCode})`).join(' + ');
-  const credits = pattern.lines.filter(l => l.side === 'credit').map(l => `${l.accountName}(${l.accountCode})`).join(' + ');
-  return `차변 ${debits || '—'} / 대변 ${credits || '—'}`;
-}

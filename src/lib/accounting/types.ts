@@ -98,6 +98,16 @@ export interface AccountingSettings {
       amountKey: 'supply' | 'tax' | 'total';
     }>;
   };
+  /** 매출→전표 자동 분개 패턴 */
+  salesVoucherPattern?: {
+    splitVat: boolean;
+    lines: Array<{
+      side: 'debit' | 'credit';
+      accountCode: string;
+      accountName: string;
+      amountKey: 'supply' | 'tax' | 'total' | 'cash' | 'card';
+    }>;
+  };
 }
 
 export const ACCOUNT_TYPE_ORDER: AccountType[] = [

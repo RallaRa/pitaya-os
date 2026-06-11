@@ -43,6 +43,7 @@ import SalesCategoryWidget    from '@/components/widgets/SalesCategoryWidget';
 import TimeSlotAovWidget      from '@/components/widgets/TimeSlotAovWidget';
 import SalesHeatmapWidget     from '@/components/widgets/SalesHeatmapWidget';
 import DowProfitabilityWidget from '@/components/widgets/DowProfitabilityWidget';
+import ChurnRiskWidget        from '@/components/widgets/ChurnRiskWidget';
 import DailyBriefingBar       from '@/components/dashboard/DailyBriefingBar';
 import { useDashboardChrome } from '@/components/dashboard/DashboardChromeContext';
 import { fetchDashboardPrintSnapshot, openDashboardPrintWindow } from '@/lib/dashboardPrintData';
@@ -332,6 +333,7 @@ export default function DashboardPage() {
       case 'today_sales':        return wrapLazyWidget(id, <TodaySalesWidget       editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'sales_compare':      return wrapLazyWidget(id, <SalesCompareWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'customer_visit':     return wrapLazyWidget(id, <CustomerVisitWidget    editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'churn_risk':         return wrapLazyWidget(id, <ChurnRiskWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'sales_heatmap':      return wrapLazyWidget(id, <SalesHeatmapWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'dow_profitability':  return wrapLazyWidget(id, <DowProfitabilityWidget editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'cost_ratio':         return wrapLazyWidget(id, <CostRatioWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
