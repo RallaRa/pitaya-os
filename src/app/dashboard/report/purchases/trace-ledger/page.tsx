@@ -181,7 +181,7 @@ export default function TraceLedgerPage() {
         </div>
 
         {/* 법정서식 테이블 */}
-        <div ref={printRef} className="bg-white rounded-xl overflow-hidden print:rounded-none print:shadow-none">
+        <div ref={printRef} className="bg-slate-900 rounded-xl overflow-hidden print:bg-white print:rounded-none print:shadow-none">
           {/* 인쇄 헤더 */}
           <div className="hidden print:block text-center py-4 border-b border-gray-200">
             <h2 className="text-xl font-bold text-gray-900">축산물 거래내역서</h2>
@@ -212,7 +212,7 @@ export default function TraceLedgerPage() {
                       key={r.id}
                       onDoubleClick={() => handleRowDoubleClick(r)}
                       title="더블클릭: 매입 원본 보기"
-                      className={`border-b print:border-gray-300 cursor-pointer ${hasWarning ? 'bg-amber-500/5 print:bg-yellow-50' : 'bg-slate-900 even:bg-slate-800/40 print:bg-white print:even:bg-gray-50'} ${docLoading ? 'opacity-70' : ''}`}
+                      className={`border-b print:border-gray-300 cursor-pointer ${hasWarning ? 'bg-amber-950/40 even:bg-amber-950/60 print:bg-yellow-50' : 'bg-slate-900 even:bg-slate-800 print:bg-white print:even:bg-gray-50'} ${docLoading ? 'opacity-70' : ''}`}
                     >
                       <td className="px-3 py-2 border border-slate-700 print:border-gray-300 text-slate-300 print:text-gray-900 whitespace-nowrap">{r.date}</td>
                       <td className="px-3 py-2 border border-slate-700 print:border-gray-300 text-slate-300 print:text-gray-900">{r.category}</td>
