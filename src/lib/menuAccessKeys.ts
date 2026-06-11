@@ -5,6 +5,20 @@ export const MENU_ACCESS_DEFINITIONS = [
   { key: 'ai',                  label: 'AI',             previewLabel: 'AI 대화모드',         icon: '✨' },
   { key: 'sales',               label: '매출키인',       previewLabel: 'AI 매출관리',         icon: '✍️' },
   { key: 'purchase',            label: '매입',           previewLabel: 'AI 매입관리',         icon: '🛒' },
+  // ── 구매관리 모듈 ──
+  { key: 'purchaseMgmt',        label: '구매관리',       previewLabel: '구매관리 (전체)',     icon: '🛒' },
+  { key: 'purchaseInput',       label: '구매·매입',      previewLabel: '매입 등록·원장',      icon: '📥' },
+  { key: 'purchaseAnalysis',    label: '구매·단가',      previewLabel: '품목별·매입단가',     icon: '📊' },
+  { key: 'purchaseCompliance',  label: '구매·법정',      previewLabel: '거래내역·이력번호',   icon: '📋' },
+  { key: 'purchaseMaster',      label: '구매·마스터',    previewLabel: '거래처·품목',         icon: '🏷️' },
+  // ── 영업관리 모듈 ──
+  { key: 'salesMgmt',           label: '영업관리',       previewLabel: '영업관리 (전체)',     icon: '📈' },
+  { key: 'salesReport',         label: '영업·마감',      previewLabel: '일마감·달력매출',     icon: '📅' },
+  { key: 'salesManual',         label: '영업·키인',      previewLabel: '매출 키인·분석',      icon: '✍️' },
+  { key: 'salesAnalysis',       label: '영업·분석',      previewLabel: '매출추이·예측',       icon: '🔮' },
+  { key: 'salesCustomer',       label: '영업·고객',      previewLabel: '고객·여정',           icon: '🧑‍🤝‍🧑' },
+  { key: 'salesPromotion',      label: '영업·판촉',      previewLabel: '쿠폰·주문·사이니지',  icon: '🏪' },
+  { key: 'salesScale',          label: '영업·저울',      previewLabel: '저울 코드',           icon: '⚖️' },
   { key: 'report',              label: '보고서',         previewLabel: '일마감·달력매출',     icon: '📈' },
   { key: 'messenger',           label: '메신저',         previewLabel: '메신저',             icon: '💬' },
   { key: 'hygiene',             label: '위생',           previewLabel: '위생 점검일지',       icon: '📋' },
@@ -42,6 +56,54 @@ export type MenuAccessKey = typeof MENU_ACCESS_DEFINITIONS[number]['key'];
 export type MenuAccess = Record<MenuAccessKey, boolean>;
 
 export const MENU_ACCESS_KEYS = MENU_ACCESS_DEFINITIONS.map(d => d.key) as MenuAccessKey[];
+
+/** 권한 편집 UI — 모듈별 그룹 */
+export const MENU_ACCESS_UI_GROUPS: {
+  label: string;
+  keys: MenuAccessKey[];
+}[] = [
+  {
+    label: '기본',
+    keys: ['dashboard', 'ai', 'messenger', 'hygiene', 'settings', 'keywords', 'permissionGroup', 'memberGroup'],
+  },
+  {
+    label: '구매관리',
+    keys: ['purchaseMgmt', 'purchaseInput', 'purchaseAnalysis', 'purchaseCompliance', 'purchaseMaster'],
+  },
+  {
+    label: '영업관리',
+    keys: ['salesMgmt', 'salesReport', 'salesManual', 'salesAnalysis', 'salesCustomer', 'salesPromotion', 'salesScale'],
+  },
+  {
+    label: 'HR·캘린더',
+    keys: ['hrCalendar', 'members'],
+  },
+  {
+    label: '회계관리',
+    keys: ['accounting', 'accountingMaster', 'accountingVoucher', 'accountingLedger', 'accountingClosing', 'accountingFund'],
+  },
+  {
+    label: '인사/급여',
+    keys: ['hrSystem', 'hrPersonnel', 'hrAttendanceMgmt', 'hrPayrollMaster', 'hrPayrollCalc', 'hrPayrollReport'],
+  },
+  {
+    label: '레거시 (자동 호환)',
+    keys: ['purchase', 'report', 'sales', 'suppliers', 'items', 'scaleCode', 'salesForecast', 'customers', 'predictionHistory', 'predictionVariables', 'store'],
+  },
+];
+
+/** 테이블 요약 열 — 모듈 단위 */
+export const MENU_ACCESS_TABLE_COLS: [MenuAccessKey, string][] = [
+  ['dashboard', '대시'],
+  ['purchaseMgmt', '구매'],
+  ['salesMgmt', '영업'],
+  ['accounting', '회계'],
+  ['hrSystem', '인사'],
+  ['ai', 'AI'],
+  ['messenger', '메신'],
+  ['hygiene', '위생'],
+  ['settings', '설정'],
+];
 
 export const SYSTEM_GROUP_IDS = ['superuser', 'admin', 'staff'] as const;
 export type SystemGroupId = typeof SYSTEM_GROUP_IDS[number];
@@ -85,6 +147,10 @@ export const DEFAULT_SYSTEM_GROUP_MENUS: Record<SystemGroupId, MenuAccess> = {
     salesForecast: true, suppliers: true, customers: true, predictionHistory: true,
     items: true, dashboard: true, keywords: true, settings: true,
     predictionVariables: true,
+    purchaseMgmt: true, purchaseInput: true, purchaseAnalysis: true,
+    purchaseCompliance: true, purchaseMaster: true,
+    salesMgmt: true, salesReport: true, salesManual: true, salesAnalysis: true,
+    salesCustomer: true, salesPromotion: true, salesScale: true,
     accounting: true, accountingMaster: true, accountingVoucher: true,
     accountingLedger: true, accountingClosing: true, accountingFund: true,
     hrSystem: true, hrPersonnel: true, hrAttendanceMgmt: true,
@@ -97,6 +163,10 @@ export const DEFAULT_SYSTEM_GROUP_MENUS: Record<SystemGroupId, MenuAccess> = {
     members: false, store: false, permissionGroup: false, memberGroup: false,
     scaleCode: false, salesForecast: true, suppliers: false, predictionVariables: true,
     customers: false, predictionHistory: false, keywords: false,
+    purchaseMgmt: true, purchaseInput: true, purchaseAnalysis: true,
+    purchaseCompliance: true, purchaseMaster: false,
+    salesMgmt: true, salesReport: true, salesManual: true, salesAnalysis: true,
+    salesCustomer: false, salesPromotion: false, salesScale: false,
     accounting: false, accountingMaster: false, accountingVoucher: false,
     accountingLedger: false, accountingClosing: false, accountingFund: false,
     hrSystem: false, hrPersonnel: false, hrAttendanceMgmt: true,

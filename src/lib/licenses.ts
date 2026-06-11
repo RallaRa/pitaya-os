@@ -20,11 +20,11 @@ export const LICENSE_MODULE_META: Record<
   { label: string; description: string }
 > = {
   dashboard: { label: '대시보드', description: 'AI 메인 대시보드 (독립 SaaS 모듈)' },
-  purchases: { label: 'AI 매입관리', description: '매입 등록·원장·거래처' },
+  purchases: { label: '구매관리', description: '매입·단가·법정기록·거래처·품목' },
   hr:        { label: 'HR 관리', description: '캘린더·멤버·사원정보·인사/급여' },
   hygiene:   { label: '위생일지', description: '위생 점검일지' },
   messenger: { label: '메신저', description: '매장 내부 메신저' },
-  pos:       { label: 'POS/매출', description: '일마감·매출 보고서' },
+  pos:       { label: '영업관리', description: '매출·마감·고객·판촉·저울' },
   accounting: { label: '회계관리', description: '전표·원장·결산·자금 (영림원형)' },
 };
 
@@ -43,11 +43,23 @@ export function defaultStoreModules(): StoreModules {
 /** permission_groups menuAccess key → license module */
 export const MENU_KEY_TO_MODULE: Partial<Record<string, LicenseModuleKey>> = {
   purchase: 'purchases',
+  purchaseMgmt: 'purchases',
+  purchaseInput: 'purchases',
+  purchaseAnalysis: 'purchases',
+  purchaseCompliance: 'purchases',
+  purchaseMaster: 'purchases',
   messenger: 'messenger',
   hygiene: 'hygiene',
   hrCalendar: 'hr',
   report: 'pos',
   sales: 'pos',
+  salesMgmt: 'pos',
+  salesReport: 'pos',
+  salesManual: 'pos',
+  salesAnalysis: 'pos',
+  salesForecast: 'pos',
+  predictionHistory: 'pos',
+  predictionVariables: 'pos',
   items: 'purchases',
   suppliers: 'purchases',
   members: 'hr',

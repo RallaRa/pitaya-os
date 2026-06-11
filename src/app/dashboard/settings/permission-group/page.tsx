@@ -10,6 +10,8 @@ import {
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import {
   MENU_ACCESS_DEFINITIONS,
+  MENU_ACCESS_UI_GROUPS,
+  MENU_ACCESS_TABLE_COLS,
   createAllFalseMenuAccess,
   menuAccessForGroup,
   type MenuAccess,
@@ -32,7 +34,7 @@ interface StoreUser {
   photoURL?: string;
 }
 
-const MENU_COLS = MENU_ACCESS_DEFINITIONS.map(d => [d.key, d.label] as [MenuAccessKey, string]);
+const MENU_COLS = MENU_ACCESS_TABLE_COLS;
 const MENU_PREVIEW = MENU_ACCESS_DEFINITIONS.map(d => ({
   key: d.key,
   label: d.previewLabel,
@@ -540,30 +542,44 @@ export default function PermissionGroupPage() {
                           {isExpanded && (
                             <tr className="bg-slate-900/60 border-b border-slate-800/60">
                               <td colSpan={MENU_COLS.length + 3} className="px-4 py-3">
-                                <div className="flex items-center gap-4 flex-wrap">
-                                  <span className="text-xs text-slate-400 font-medium w-20 flex-shrink-0">권한 편집</span>
-                                  {MENU_COLS.map(([key, label]) => (
-                                    <label key={key} className="flex items-center gap-1.5 cursor-pointer min-w-[88px]">
-                                      <div
-                                        className={`relative w-8 h-4 rounded-full transition-colors flex-shrink-0 ${draft[key] ? 'bg-teal-600' : 'bg-slate-700'}`}
-                                        onClick={() => handleToggle(group.groupId, key)}
-                                      >
-                                        <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${draft[key] ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                <div className="space-y-4">
+                                  {MENU_ACCESS_UI_GROUPS.map(section => (
+                                    <div key={section.label}>
+                                      <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                                        {section.label}
+                                      </p>
+                                      <div className="flex items-center gap-4 flex-wrap">
+                                        {section.keys.map(key => {
+                                          const def = MENU_ACCESS_DEFINITIONS.find(d => d.key === key);
+                                          const label = def?.label || key;
+                                          return (
+                                            <label key={key} className="flex items-center gap-1.5 cursor-pointer min-w-[100px]">
+                                              <div
+                                                className={`relative w-8 h-4 rounded-full transition-colors flex-shrink-0 ${draft[key] ? 'bg-teal-600' : 'bg-slate-700'}`}
+                                                onClick={() => handleToggle(group.groupId, key)}
+                                              >
+                                                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${draft[key] ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                              </div>
+                                              <span className="text-xs text-slate-300">{label}</span>
+                                            </label>
+                                          );
+                                        })}
                                       </div>
-                                      <span className="text-xs text-slate-300">{label}</span>
-                                    </label>
+                                    </div>
                                   ))}
-                                  <button
-                                    onClick={() => handleSaveAccess(group.groupId)}
-                                    disabled={isSaving}
-                                    className="ml-auto flex items-center gap-1 bg-teal-600 hover:bg-teal-500 disabled:bg-slate-600 text-white px-3 py-1 rounded-lg text-xs font-bold transition-colors"
-                                  >
-                                    {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                                    저장
-                                  </button>
-                                  <button onClick={() => setExpandedId(null)} className="text-slate-400 hover:text-slate-200 p-1">
-                                    <X className="w-3.5 h-3.5" />
-                                  </button>
+                                  <div className="flex items-center gap-2 pt-1">
+                                    <button
+                                      onClick={() => handleSaveAccess(group.groupId)}
+                                      disabled={isSaving}
+                                      className="ml-auto flex items-center gap-1 bg-teal-600 hover:bg-teal-500 disabled:bg-slate-600 text-white px-3 py-1 rounded-lg text-xs font-bold transition-colors"
+                                    >
+                                      {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                      저장
+                                    </button>
+                                    <button onClick={() => setExpandedId(null)} className="text-slate-400 hover:text-slate-200 p-1">
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
                                 </div>
                               </td>
                             </tr>
@@ -840,21 +856,30 @@ export default function PermissionGroupPage() {
                 className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-2.5 text-slate-100 text-sm placeholder:text-slate-500 focus:outline-none focus:border-teal-500"
               />
             </div>
-            <div className="mb-5">
+            <div className="mb-5 max-h-64 overflow-y-auto space-y-3">
               <p className="text-slate-400 text-xs mb-2">메뉴 접근 권한</p>
-              <div className="grid grid-cols-2 gap-y-1.5 gap-x-2">
-                {MENU_COLS.map(([key, label]) => (
-                  <label key={key} className="flex items-center gap-2 cursor-pointer">
-                    <div
-                      className={`relative w-8 h-4 rounded-full transition-colors flex-shrink-0 ${newGroupAccess[key] ? 'bg-teal-600' : 'bg-slate-700'}`}
-                      onClick={() => setNewGroupAccess(prev => ({ ...prev, [key]: !prev[key] }))}
-                    >
-                      <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${newGroupAccess[key] ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                    </div>
-                    <span className="text-slate-300 text-xs">{label}</span>
-                  </label>
-                ))}
-              </div>
+              {MENU_ACCESS_UI_GROUPS.map(section => (
+                <div key={section.label}>
+                  <p className="text-[10px] font-semibold text-slate-500 mb-1.5">{section.label}</p>
+                  <div className="grid grid-cols-2 gap-y-1.5 gap-x-2">
+                    {section.keys.map(key => {
+                      const def = MENU_ACCESS_DEFINITIONS.find(d => d.key === key);
+                      const label = def?.label || key;
+                      return (
+                        <label key={key} className="flex items-center gap-2 cursor-pointer">
+                          <div
+                            className={`relative w-8 h-4 rounded-full transition-colors flex-shrink-0 ${newGroupAccess[key] ? 'bg-teal-600' : 'bg-slate-700'}`}
+                            onClick={() => setNewGroupAccess(prev => ({ ...prev, [key]: !prev[key] }))}
+                          >
+                            <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${newGroupAccess[key] ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                          </div>
+                          <span className="text-slate-300 text-xs">{label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <button onClick={() => setShowAddModal(false)} className="bg-slate-800 hover:bg-slate-700 text-slate-300 py-2.5 rounded-xl text-sm font-medium transition-colors">취소</button>

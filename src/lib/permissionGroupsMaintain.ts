@@ -211,9 +211,62 @@ async function migrateAccountingMenuForSystemGroups() {
   await metaRef.set({ accountingMenuV1: true }, { merge: true });
 }
 
+async function migratePurchaseSalesModuleV1() {
+  const metaRef = adminDb.collection('system_meta').doc('permissions');
+  const metaSnap = await metaRef.get();
+  if (metaSnap.data()?.purchaseSalesModuleV1) return;
+
+  const snap = await adminDb.collection('permission_groups').get();
+  const batch = adminDb.batch();
+  let writes = 0;
+
+  for (const doc of snap.docs) {
+    const access = (doc.data().menuAccess || {}) as Record<string, boolean>;
+    const patch: Record<string, boolean> = {};
+
+    const purchaseOn = !!(access.purchase || access.purchaseMgmt || access.purchaseInput
+      || access.purchaseAnalysis || access.purchaseCompliance || access.purchaseMaster
+      || access.suppliers || access.items);
+    if (purchaseOn && !access.purchaseMgmt) patch.purchaseMgmt = true;
+    if ((access.purchase || access.purchaseMgmt) && !access.purchaseInput) patch.purchaseInput = true;
+    if ((access.purchase || access.purchaseMgmt) && !access.purchaseAnalysis) patch.purchaseAnalysis = true;
+    if ((access.purchase || access.purchaseMgmt) && !access.purchaseCompliance) patch.purchaseCompliance = true;
+    if ((access.suppliers || access.items || access.purchase) && !access.purchaseMaster) {
+      patch.purchaseMaster = !!(access.suppliers || access.items || access.purchase);
+    }
+
+    const salesOn = !!(access.report || access.sales || access.salesMgmt || access.salesReport
+      || access.salesManual || access.salesAnalysis || access.salesCustomer || access.salesPromotion
+      || access.salesScale || access.salesForecast || access.customers || access.predictionHistory
+      || access.predictionVariables || access.store || access.scaleCode);
+    if (salesOn && !access.salesMgmt) patch.salesMgmt = true;
+    if (access.report && !access.salesReport) patch.salesReport = true;
+    if (access.sales && !access.salesManual) patch.salesManual = true;
+    if ((access.salesForecast || access.predictionHistory || access.predictionVariables) && !access.salesAnalysis) {
+      patch.salesAnalysis = !!(access.salesForecast || access.predictionHistory || access.predictionVariables);
+    }
+    if (access.customers && !access.salesCustomer) patch.salesCustomer = true;
+    if (access.store && !access.salesPromotion) patch.salesPromotion = true;
+    if (access.scaleCode && !access.salesScale) patch.salesScale = true;
+
+    if (Object.keys(patch).length) {
+      const update: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
+      for (const [k, v] of Object.entries(patch)) {
+        update[`menuAccess.${k}`] = v;
+      }
+      batch.update(doc.ref, update);
+      writes += 1;
+    }
+  }
+
+  if (writes > 0) await batch.commit();
+  await metaRef.set({ purchaseSalesModuleV1: true }, { merge: true });
+}
+
 /** myAccess 조회 전 시스템 그룹·메뉴 마이그레이션 */
 export async function ensurePermissionSystemGroups() {
   await ensureSystemGroups();
   await migratePredictionVariablesMenuForSystemGroups();
   await migrateAccountingMenuForSystemGroups();
+  await migratePurchaseSalesModuleV1();
 }
