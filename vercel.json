@@ -39,6 +39,7 @@
     { "path": "/api/cron/generate-market-briefing", "schedule": "30 20 * * *" },
     { "path": "/api/cron/generate-partner-analysis","schedule": "0 21 * * *" },
     { "path": "/api/cron/backfill-store-item-stats", "schedule": "0 17 * * *" },
-    { "path": "/api/cron/pos-sync-check",           "schedule": "0 12 * * *" }
+    { "path": "/api/cron/pos-sync-check",           "schedule": "0 12 * * *" },
+    { "path": "/api/cron/customer-automation",      "schedule": "0 15 * * *" }
   ]
 }

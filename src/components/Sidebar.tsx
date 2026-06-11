@@ -6,8 +6,8 @@ import { usePathname } from 'next/navigation';
 import {
   Settings, MessageCircle, ShoppingCart, ShoppingBag, Sparkles,
   BarChart2, ClipboardCheck, X,
-  Circle, CalendarDays, Tag, Scale, LineChart, Building2, SlidersHorizontal, Users, Crown, History, ChevronRight, ChevronDown,
-  FileText, TrendingUp, Truck, BookOpen, Hash, Code, LayoutGrid, PenLine, Clock, Tv, ListTodo,
+  Circle, CalendarDays, Tag, Scale, LineChart, SlidersHorizontal, Users, Crown, ChevronRight, ChevronDown,
+  FileText, TrendingUp, Truck, BookOpen, LayoutGrid, PenLine, Clock, Tv, ListTodo,
   BookOpenCheck, UsersRound,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -46,6 +46,18 @@ import {
   menuAccessForGroup,
 } from '@/lib/menuAccessKeys';
 import { flattenAccountingMenu } from '@/lib/accounting/menuStructure';
+import {
+  PURCHASE_MENU_SECTIONS,
+  canAccessPurchaseSection,
+  hasPurchaseMenu,
+  isPurchasePath,
+} from '@/lib/purchase/menuStructure';
+import {
+  SALES_MENU_SECTIONS,
+  canAccessSalesSection,
+  hasSalesMenu,
+  isSalesPath,
+} from '@/lib/sales/menuStructure';
 
 const ALL_FALSE = createAllFalseMenuAccess();
 const ALL_TRUE = createAllTrueMenuAccess();
@@ -84,6 +96,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const [unreadCount,   setUnreadCount]   = useState(0);
   const [showProfile,   setShowProfile]   = useState(false);
   const [purchaseOpen,  setPurchaseOpen]  = useState(false);
+  const [salesOpen,     setSalesOpen]     = useState(false);
   const [hrSystemOpen,  setHrSystemOpen]  = useState(false);
   const [accountingOpen, setAccountingOpen] = useState(false);
   const { hasModule } = useLicense();
@@ -388,16 +401,39 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  const purchaseSubMenus = [
-    { href: '/dashboard/report/purchases/input',        icon: <ShoppingCart className="w-3.5 h-3.5" />, label: '매입 등록' },
-    { href: '/dashboard/report/purchases/ledger',       icon: <BookOpen className="w-3.5 h-3.5" />,     label: '매입 원장' },
-    { href: '/dashboard/report/purchases/by-supplier',  icon: <Truck className="w-3.5 h-3.5" />,        label: '거래처별 매입' },
-    { href: '/dashboard/report/purchases/prices',       icon: <TrendingUp className="w-3.5 h-3.5" />,   label: '품목별 단가' },
-    { href: '/dashboard/report/purchases/unit-price-detail', icon: <History className="w-3.5 h-3.5" />, label: '매입 단가 상세' },
-    { href: '/dashboard/report/purchases/price-analysis', icon: <BarChart2 className="w-3.5 h-3.5" />, label: '매입단가 분석' },
-    { href: '/dashboard/report/purchases/trace-ledger', icon: <FileText className="w-3.5 h-3.5" />,     label: '거래내역서(법정)' },
-    { href: '/dashboard/report/purchases/trace-numbers',icon: <Hash className="w-3.5 h-3.5" />,         label: '이력번호 관리' },
-  ];
+  const purchaseIcon = (href: string) => {
+    if (href.includes('/input')) return <ShoppingCart className="w-3.5 h-3.5" />;
+    if (href.includes('/ledger') || href.includes('/by-supplier')) return <BookOpen className="w-3.5 h-3.5" />;
+    if (href.includes('/prices') || href.includes('/price')) return <TrendingUp className="w-3.5 h-3.5" />;
+    if (href.includes('/trace')) return <FileText className="w-3.5 h-3.5" />;
+    if (href.includes('/suppliers')) return <Truck className="w-3.5 h-3.5" />;
+    if (href.includes('/items')) return <Tag className="w-3.5 h-3.5" />;
+    return <ShoppingCart className="w-3.5 h-3.5" />;
+  };
+
+  const salesIcon = (href: string) => {
+    if (href.includes('/report/view') || href.includes('/report/calendar')) return <BarChart2 className="w-3.5 h-3.5" />;
+    if (href.includes('/report/input')) return <PenLine className="w-3.5 h-3.5" />;
+    if (href.includes('/sales_ai')) return <Sparkles className="w-3.5 h-3.5" />;
+    if (href.includes('/sales-forecast') || href.includes('/prediction')) return <LineChart className="w-3.5 h-3.5" />;
+    if (href.includes('/customers') || href.includes('/marketing')) return <Users className="w-3.5 h-3.5" />;
+    if (href.includes('/coupons') || href.includes('/public-orders') || href.includes('/signage')) {
+      return href.includes('/signage') ? <Tv className="w-3.5 h-3.5" /> : <ShoppingBag className="w-3.5 h-3.5" />;
+    }
+    if (href.includes('/scale')) return <Scale className="w-3.5 h-3.5" />;
+    if (href.includes('/prediction-variables')) return <SlidersHorizontal className="w-3.5 h-3.5" />;
+    return <BarChart2 className="w-3.5 h-3.5" />;
+  };
+
+  const SALES_ITEM_MODULE: Record<string, string> = {
+    '/dashboard/report/view': 'report',
+    '/dashboard/report/calendar': 'report',
+    '/dashboard/report/input': 'sales',
+    '/dashboard/report/sales_ai': 'sales',
+    '/dashboard/sales-forecast': 'salesForecast',
+    '/dashboard/prediction-analysis': 'predictionHistory',
+    '/dashboard/settings/prediction-variables': 'predictionVariables',
+  };
 
   const accountingSubMenus = flattenAccountingMenu().map(item => ({
     href: item.href,
@@ -405,40 +441,54 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     label: item.label,
   }));
 
-  const manualSalesMenus = [
-    { href: '/dashboard/report/input',    icon: <PenLine className="w-3.5 h-3.5" />,   label: '매출 키인' },
-    { href: '/dashboard/report/sales_ai', icon: <Sparkles className="w-3.5 h-3.5" />, label: '판매내역 분석' },
-  ];
-
   const mainMenus = [
     { key: 'ai' as const,        href: '/dashboard/ai',                    icon: <Sparkles className="w-4 h-4" />,       label: 'AI 대화모드' },
     { key: 'ai' as const,        href: '/dashboard/manual',                icon: <BookOpen className="w-4 h-4" />,       label: 'AI 매장 백과' },
     { key: 'messenger' as const, href: '/dashboard/messenger',             icon: <MessageCircle className="w-4 h-4" />,  label: '메신저',      badge: unreadCount },
     { key: 'hygiene' as const,   href: '/dashboard/hygiene',               icon: <ClipboardCheck className="w-4 h-4" />, label: '위생 점검일지' },
-    { key: 'report' as const,      href: '/dashboard/report/view',           icon: <BarChart2 className="w-4 h-4" />,      label: '일마감내역' },
-    { key: 'report' as const,      href: '/dashboard/report/calendar',     icon: <CalendarDays className="w-4 h-4" />,   label: '달력매출' },
     { key: 'hrCalendar' as const,         href: '/dashboard/hr/calendar',                    icon: <CalendarDays className="w-4 h-4" />,  label: '캘린더' },
     { key: 'hrCalendar' as const,         href: '/dashboard/hr/attendance',                  icon: <Clock className="w-4 h-4" />,         label: '출퇴근' },
     { key: 'members' as const,            href: '/dashboard/hr/employee-register',           icon: <Users className="w-4 h-4" />,         label: '사원등록' },
-    { key: 'scaleCode' as const,          href: '/dashboard/scale',                          icon: <Scale className="w-4 h-4" />,         label: '저울 코드 관리' },
-    { key: 'salesForecast' as const,         href: '/dashboard/sales-forecast',                      icon: <LineChart          className="w-4 h-4" />, label: '품목별 매출 추이' },
-    { key: 'suppliers' as const,             href: '/dashboard/suppliers',                           icon: <Building2          className="w-4 h-4" />, label: '거래처 관리' },
-    { key: 'predictionVariables' as const,   href: '/dashboard/settings/prediction-variables',       icon: <SlidersHorizontal  className="w-4 h-4" />, label: 'AI 예측 변수' },
-    { key: 'customers' as const,             href: '/dashboard/customers',                            icon: <Users              className="w-4 h-4" />, label: '고객 관리' },
-    { key: 'predictionHistory' as const,     href: '/dashboard/prediction-analysis',                    icon: <TrendingUp         className="w-4 h-4" />, label: '예측분석' },
-    { key: 'items' as const,                 href: '/dashboard/items',                                icon: <Tag                className="w-4 h-4" />, label: '품목관리' },
-    { key: 'store' as const,                 href: '/dashboard/coupons',                              icon: <Tag                className="w-4 h-4" />, label: '쿠폰·할인' },
-    { key: 'store' as const,                 href: '/dashboard/public-orders',                        icon: <ShoppingBag        className="w-4 h-4" />, label: '공개 주문' },
-    { key: 'store' as const,                 href: '/dashboard/signage',                              icon: <Tv                 className="w-4 h-4" />, label: '사이니지' },
   ];
 
   const isSuperuser = isSuperuserEmail(user?.email);
   const effectiveAccess = isSuperuser ? ALL_TRUE : menuAccess;
+
+  const moduleAllowed = (menuKey: string) => {
+    if (isSuperuser) return true;
+    const mod = MENU_KEY_TO_MODULE[menuKey];
+    if (!mod) return true;
+    return hasModule(mod);
+  };
+
   const showManualSales = !accessLoading
-    && effectiveAccess.sales
+    && canAccessSalesSection(effectiveAccess, 'salesManual')
     && isStoreMember
     && !hasPosBridge
     && hasModule('pos');
+
+  const hasPurchaseModuleMenu = !accessLoading && hasModule('purchases') && (
+    isSuperuser || hasPurchaseMenu(effectiveAccess)
+  );
+
+  const hasSalesModuleMenu = !accessLoading && (
+    isSuperuser || hasSalesMenu(effectiveAccess)
+  );
+
+  const salesSectionsVisible = SALES_MENU_SECTIONS.filter(section =>
+    canAccessSalesSection(effectiveAccess, section.permission),
+  ).map(section => ({
+    ...section,
+    items: section.items.filter(item => {
+      if (item.manualOnly && !showManualSales) return false;
+      const modKey = SALES_ITEM_MODULE[item.href];
+      return !modKey || moduleAllowed(modKey);
+    }),
+  })).filter(section => section.items.length > 0);
+
+  const purchaseSectionsVisible = PURCHASE_MENU_SECTIONS.filter(section =>
+    canAccessPurchaseSection(effectiveAccess, section.permission),
+  );
 
   const hasAccountingMenu = !accessLoading && hasModule('accounting') && (
     isSuperuser
@@ -459,13 +509,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     || effectiveAccess.hrPayrollCalc
     || effectiveAccess.hrPayrollReport
   );
-
-  const moduleAllowed = (menuKey: string) => {
-    if (isSuperuser) return true;
-    const mod = MENU_KEY_TO_MODULE[menuKey];
-    if (!mod) return true;
-    return hasModule(mod);
-  };
 
   const visibleMenus = accessLoading ? [] : mainMenus.filter(m =>
     effectiveAccess[m.key] && moduleAllowed(m.key),
@@ -502,9 +545,9 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                 </Link>
               )}
 
-              {/* AI 매입관리 아코디언 (purchase 권한) */}
-              {(effectiveAccess.purchase || isSuperuser) && hasModule('purchases') && (() => {
-                const purchaseActive = pathname.startsWith('/dashboard/report/purchases');
+              {/* 구매관리 */}
+              {hasPurchaseModuleMenu && purchaseSectionsVisible.length > 0 && (() => {
+                const purchaseActive = isPurchasePath(pathname);
                 return (
                   <div>
                     <button
@@ -516,29 +559,86 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                       }`}
                     >
                       <span className={`shrink-0 ${purchaseActive ? 'text-teal-400' : ''}`}><ShoppingCart className="w-4 h-4" /></span>
-                      <span className="flex-1 text-left">AI 매입관리</span>
+                      <span className="flex-1 text-left">구매관리</span>
                       <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${purchaseOpen || purchaseActive ? 'rotate-180' : ''}`} />
                     </button>
                     {(purchaseOpen || purchaseActive) && (
-                      <div className="ml-4 mt-0.5 space-y-0.5 border-l border-slate-700/60 pl-3">
-                        {purchaseSubMenus.map(sub => {
-                          const subActive = pathname === sub.href;
-                          return (
-                            <Link
-                              key={sub.href}
-                              href={sub.href}
-                              onClick={onClose}
-                              className={`flex items-center gap-2.5 px-2 py-2 rounded-lg transition-all text-xs ${
-                                subActive
-                                  ? 'bg-teal-600/20 text-teal-300 font-semibold'
-                                  : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'
-                              }`}
-                            >
-                              <span className={subActive ? 'text-teal-400' : ''}>{sub.icon}</span>
-                              {sub.label}
-                            </Link>
-                          );
-                        })}
+                      <div className="ml-4 mt-0.5 space-y-2 border-l border-slate-700/60 pl-3 max-h-72 overflow-y-auto">
+                        {purchaseSectionsVisible.map(section => (
+                          <div key={section.id}>
+                            <p className="text-[9px] font-semibold text-slate-600 uppercase tracking-wider px-2 pt-1">{section.label}</p>
+                            <div className="space-y-0.5">
+                              {section.items.map(sub => {
+                                const subActive = pathname === sub.href || pathname.startsWith(`${sub.href}/`);
+                                return (
+                                  <Link
+                                    key={sub.href}
+                                    href={sub.href}
+                                    onClick={onClose}
+                                    className={`flex items-center gap-2.5 px-2 py-2 rounded-lg transition-all text-xs ${
+                                      subActive
+                                        ? 'bg-teal-600/20 text-teal-300 font-semibold'
+                                        : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'
+                                    }`}
+                                  >
+                                    <span className={subActive ? 'text-teal-400' : ''}>{purchaseIcon(sub.href)}</span>
+                                    {sub.label}
+                                  </Link>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* 영업관리 */}
+              {hasSalesModuleMenu && salesSectionsVisible.length > 0 && (() => {
+                const salesActive = isSalesPath(pathname);
+                return (
+                  <div>
+                    <button
+                      onClick={() => setSalesOpen(o => !o)}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm w-full ${
+                        salesActive
+                          ? 'bg-indigo-600/20 text-indigo-300 font-semibold border border-indigo-500/20'
+                          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      <span className={`shrink-0 ${salesActive ? 'text-indigo-400' : ''}`}><BarChart2 className="w-4 h-4" /></span>
+                      <span className="flex-1 text-left">영업관리</span>
+                      <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${salesOpen || salesActive ? 'rotate-180' : ''}`} />
+                    </button>
+                    {(salesOpen || salesActive) && (
+                      <div className="ml-4 mt-0.5 space-y-2 border-l border-slate-700/60 pl-3 max-h-72 overflow-y-auto">
+                        {salesSectionsVisible.map(section => (
+                          <div key={section.id}>
+                            <p className="text-[9px] font-semibold text-slate-600 uppercase tracking-wider px-2 pt-1">{section.label}</p>
+                            <div className="space-y-0.5">
+                              {section.items.map(sub => {
+                                const subActive = pathname === sub.href || pathname.startsWith(`${sub.href}/`);
+                                return (
+                                  <Link
+                                    key={sub.href}
+                                    href={sub.href}
+                                    onClick={onClose}
+                                    className={`flex items-center gap-2.5 px-2 py-2 rounded-lg transition-all text-xs ${
+                                      subActive
+                                        ? 'bg-indigo-600/20 text-indigo-300 font-semibold'
+                                        : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'
+                                    }`}
+                                  >
+                                    <span className={subActive ? 'text-indigo-400' : ''}>{salesIcon(sub.href)}</span>
+                                    {sub.label}
+                                  </Link>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -646,26 +746,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                   </div>
                 );
               })()}
-
-              {/* POS 미연동 매장 — 매출 키인 (sales 권한 + 매장 소속) */}
-              {showManualSales && manualSalesMenus.map(sub => {
-                const subActive = pathname === sub.href || pathname.startsWith(`${sub.href}/`);
-                return (
-                  <Link
-                    key={sub.href}
-                    href={sub.href}
-                    onClick={onClose}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm ${
-                      subActive
-                        ? 'bg-teal-600/20 text-teal-300 font-semibold border border-teal-500/20'
-                        : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                    }`}
-                  >
-                    <span className={`shrink-0 ${subActive ? 'text-teal-400' : ''}`}>{sub.icon}</span>
-                    <span className="flex-1">{sub.label}</span>
-                  </Link>
-                );
-              })}
 
               {visibleMenus.map(item => {
                 const active = pathname.startsWith(item.href);
