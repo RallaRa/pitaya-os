@@ -22,6 +22,20 @@ export const MENU_ACCESS_DEFINITIONS = [
   { key: 'settings',            label: '설정',           previewLabel: '설정',               icon: '⚙️' },
   { key: 'permissionGroup',     label: '권한그룹',       previewLabel: '권한 그룹 관리',     icon: '🛡️' },
   { key: 'memberGroup',         label: '멤버그룹',       previewLabel: '멤버-그룹 연결',     icon: '🔗' },
+  // ── 회계 (영림원 SystemEver 구조) ──
+  { key: 'accounting',          label: '회계',           previewLabel: '회계관리 개요',       icon: '📒' },
+  { key: 'accountingMaster',    label: '회계·기본',      previewLabel: '계정과목·환경설정',   icon: '📋' },
+  { key: 'accountingVoucher',   label: '회계·전표',      previewLabel: '전표입력·승인',       icon: '📝' },
+  { key: 'accountingLedger',    label: '회계·장부',      previewLabel: '원장·분개장',         icon: '📖' },
+  { key: 'accountingClosing',   label: '회계·결산',      previewLabel: '월마감·재무제표',     icon: '📊' },
+  { key: 'accountingFund',      label: '회계·자금',      previewLabel: '입출금·지급예정',     icon: '💰' },
+  // ── 인사/급여 (영림원 SystemEver 구조) ──
+  { key: 'hrSystem',            label: '인사/급여',      previewLabel: '인사·급여 개요',       icon: '👔' },
+  { key: 'hrPersonnel',         label: '인사·인사관리',  previewLabel: '사원·발령·인사현황',   icon: '🪪' },
+  { key: 'hrAttendanceMgmt',    label: '인사·근태',      previewLabel: '출퇴근·근태집계',     icon: '⏱️' },
+  { key: 'hrPayrollMaster',     label: '인사·급여기준',  previewLabel: '급여환경·기준급',     icon: '📋' },
+  { key: 'hrPayrollCalc',       label: '인사·급여계산',  previewLabel: '급여계산·마감',       icon: '🧮' },
+  { key: 'hrPayrollReport',     label: '인사·급여조회',  previewLabel: '명세·대장·4대보험',   icon: '💵' },
 ] as const;
 
 export type MenuAccessKey = typeof MENU_ACCESS_DEFINITIONS[number]['key'];
@@ -71,6 +85,10 @@ export const DEFAULT_SYSTEM_GROUP_MENUS: Record<SystemGroupId, MenuAccess> = {
     salesForecast: true, suppliers: true, customers: true, predictionHistory: true,
     items: true, dashboard: true, keywords: true, settings: true,
     predictionVariables: true,
+    accounting: true, accountingMaster: true, accountingVoucher: true,
+    accountingLedger: true, accountingClosing: true, accountingFund: true,
+    hrSystem: true, hrPersonnel: true, hrAttendanceMgmt: true,
+    hrPayrollMaster: true, hrPayrollCalc: true, hrPayrollReport: true,
     permissionGroup: false, memberGroup: false,
   }),
   staff: mergeMenuAccess(null, {
@@ -79,6 +97,10 @@ export const DEFAULT_SYSTEM_GROUP_MENUS: Record<SystemGroupId, MenuAccess> = {
     members: false, store: false, permissionGroup: false, memberGroup: false,
     scaleCode: false, salesForecast: true, suppliers: false, predictionVariables: true,
     customers: false, predictionHistory: false, keywords: false,
+    accounting: false, accountingMaster: false, accountingVoucher: false,
+    accountingLedger: false, accountingClosing: false, accountingFund: false,
+    hrSystem: false, hrPersonnel: false, hrAttendanceMgmt: true,
+    hrPayrollMaster: false, hrPayrollCalc: false, hrPayrollReport: false,
   }),
 };
 

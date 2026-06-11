@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2, ShoppingBag, X } from 'lucide-react';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import { formatApproxWeight } from '@/lib/scalePriceBarcodeWeight';
 
 interface TopItem {
   name: string;
@@ -10,6 +11,8 @@ interface TopItem {
   amount: number;
   categoryName: string;
   lastDate: string;
+  qtyUnit?: 'kg' | 'ea';
+  qtyApprox?: boolean;
 }
 
 interface Receipt {
@@ -23,6 +26,8 @@ interface Receipt {
     categoryName: string;
     saleCount: number;
     totalPrice: number;
+    qtyUnit?: 'kg' | 'ea';
+    qtyApprox?: boolean;
   }>;
 }
 
@@ -69,6 +74,13 @@ export default function CustomerPurchaseHistoryPanel({
     return () => { cancelled = true; };
   }, [storeId, cusCode]);
 
+  const fmtQty = (item: { qty: number; qtyUnit?: 'kg' | 'ea'; qtyApprox?: boolean }) => {
+    if (item.qtyUnit === 'kg' && item.qty > 0) {
+      return item.qtyApprox ? formatApproxWeight(item.qty) : `${item.qty.toFixed(2)}kg`;
+    }
+    return `${item.qty}회`;
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}>
       <div
@@ -112,7 +124,7 @@ export default function CustomerPurchaseHistoryPanel({
                     <div key={item.name} className="flex items-center justify-between gap-2 bg-slate-800/50 rounded-lg px-3 py-2">
                       <div className="min-w-0">
                         <p className="text-sm text-slate-200 truncate">{item.name}</p>
-                        <p className="text-[10px] text-slate-500">{item.categoryName || '—'} · {item.qty}회 · 최근 {item.lastDate}</p>
+                        <p className="text-[10px] text-slate-500">{item.categoryName || '—'} · {fmtQty(item)} · 최근 {item.lastDate}</p>
                       </div>
                       <span className="text-xs text-teal-300 shrink-0">{item.amount.toLocaleString()}원</span>
                     </div>
@@ -131,9 +143,16 @@ export default function CustomerPurchaseHistoryPanel({
                       </div>
                       <div className="space-y-1">
                         {r.items.map((it, idx) => (
-                          <div key={`${r.saleNum}-${idx}`} className="flex justify-between text-xs">
-                            <span className="text-slate-300 truncate pr-2">{it.goodsName}</span>
-                            <span className="text-slate-500 shrink-0">{it.totalPrice.toLocaleString()}원</span>
+                          <div key={`${r.saleNum}-${idx}`} className="flex justify-between text-xs gap-2">
+                            <span className="text-slate-300 truncate">{it.goodsName}</span>
+                            <span className="text-slate-500 shrink-0 text-right">
+                              {it.qtyUnit === 'kg' && it.saleCount > 0 && (
+                                <span className="text-slate-400 mr-1.5">
+                                  {it.qtyApprox ? formatApproxWeight(it.saleCount) : `${it.saleCount.toFixed(2)}kg`}
+                                </span>
+                              )}
+                              {it.totalPrice.toLocaleString()}원
+                            </span>
                           </div>
                         ))}
                       </div>

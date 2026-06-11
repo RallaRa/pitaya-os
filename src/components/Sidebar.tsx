@@ -8,12 +8,14 @@ import {
   BarChart2, ClipboardCheck, X,
   Circle, CalendarDays, Tag, Scale, LineChart, Building2, SlidersHorizontal, Users, Crown, History, ChevronRight, ChevronDown,
   FileText, TrendingUp, Truck, BookOpen, Hash, Code, LayoutGrid, PenLine, Clock, Tv, ListTodo,
+  BookOpenCheck, UsersRound,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import { isSuperuserEmail } from '@/lib/auth/permissions';
 import { useLicense } from '@/hooks/useLicense';
 import { MENU_KEY_TO_MODULE } from '@/lib/licenses';
+import { HR_SYSTEM_SIDEBAR_LINKS } from '@/lib/hr-system/menuStructure';
 import NotificationHub from '@/components/NotificationHub';
 import ResourceMonitor from '@/components/ResourceMonitor';
 import UserProfileModal from '@/components/UserProfileModal';
@@ -43,6 +45,7 @@ import {
   type MenuAccess,
   menuAccessForGroup,
 } from '@/lib/menuAccessKeys';
+import { flattenAccountingMenu } from '@/lib/accounting/menuStructure';
 
 const ALL_FALSE = createAllFalseMenuAccess();
 const ALL_TRUE = createAllTrueMenuAccess();
@@ -81,6 +84,8 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const [unreadCount,   setUnreadCount]   = useState(0);
   const [showProfile,   setShowProfile]   = useState(false);
   const [purchaseOpen,  setPurchaseOpen]  = useState(false);
+  const [hrSystemOpen,  setHrSystemOpen]  = useState(false);
+  const [accountingOpen, setAccountingOpen] = useState(false);
   const { hasModule } = useLicense();
 
   interface SalesSummary { todayNet: number; todaySource: string; weekNet: number; }
@@ -394,6 +399,12 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { href: '/dashboard/report/purchases/trace-numbers',icon: <Hash className="w-3.5 h-3.5" />,         label: '이력번호 관리' },
   ];
 
+  const accountingSubMenus = flattenAccountingMenu().map(item => ({
+    href: item.href,
+    icon: <BookOpenCheck className="w-3.5 h-3.5" />,
+    label: item.label,
+  }));
+
   const manualSalesMenus = [
     { href: '/dashboard/report/input',    icon: <PenLine className="w-3.5 h-3.5" />,   label: '매출 키인' },
     { href: '/dashboard/report/sales_ai', icon: <Sparkles className="w-3.5 h-3.5" />, label: '판매내역 분석' },
@@ -428,6 +439,26 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     && isStoreMember
     && !hasPosBridge
     && hasModule('pos');
+
+  const hasAccountingMenu = !accessLoading && hasModule('accounting') && (
+    isSuperuser
+    || effectiveAccess.accounting
+    || effectiveAccess.accountingMaster
+    || effectiveAccess.accountingVoucher
+    || effectiveAccess.accountingLedger
+    || effectiveAccess.accountingClosing
+    || effectiveAccess.accountingFund
+  );
+
+  const hasHrSystemMenu = !accessLoading && hasModule('hr') && (
+    isSuperuser
+    || effectiveAccess.hrSystem
+    || effectiveAccess.hrPersonnel
+    || effectiveAccess.hrAttendanceMgmt
+    || effectiveAccess.hrPayrollMaster
+    || effectiveAccess.hrPayrollCalc
+    || effectiveAccess.hrPayrollReport
+  );
 
   const moduleAllowed = (menuKey: string) => {
     if (isSuperuser) return true;
@@ -504,6 +535,108 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                               }`}
                             >
                               <span className={subActive ? 'text-teal-400' : ''}>{sub.icon}</span>
+                              {sub.label}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* 회계관리 (영림원 구조) */}
+              {hasAccountingMenu && (() => {
+                const accountingActive = pathname.startsWith('/dashboard/accounting');
+                return (
+                  <div>
+                    <button
+                      onClick={() => setAccountingOpen(o => !o)}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm w-full ${
+                        accountingActive
+                          ? 'bg-teal-600/20 text-teal-300 font-semibold border border-teal-500/20'
+                          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      <span className={`shrink-0 ${accountingActive ? 'text-teal-400' : ''}`}>
+                        <BookOpenCheck className="w-4 h-4" />
+                      </span>
+                      <span className="flex-1 text-left">회계관리</span>
+                      <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${accountingOpen || accountingActive ? 'rotate-180' : ''}`} />
+                    </button>
+                    {(accountingOpen || accountingActive) && (
+                      <div className="ml-4 mt-0.5 space-y-0.5 border-l border-slate-700/60 pl-3 max-h-64 overflow-y-auto">
+                        <Link
+                          href="/dashboard/accounting"
+                          onClick={onClose}
+                          className={`flex items-center gap-2.5 px-2 py-2 rounded-lg transition-all text-xs ${
+                            pathname === '/dashboard/accounting'
+                              ? 'bg-teal-600/20 text-teal-300 font-semibold'
+                              : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'
+                          }`}
+                        >
+                          <BookOpenCheck className="w-3.5 h-3.5" />
+                          회계 개요
+                        </Link>
+                        {accountingSubMenus.map(sub => {
+                          const subActive = pathname === sub.href;
+                          return (
+                            <Link
+                              key={sub.href}
+                              href={sub.href}
+                              onClick={onClose}
+                              className={`flex items-center gap-2.5 px-2 py-2 rounded-lg transition-all text-xs ${
+                                subActive
+                                  ? 'bg-teal-600/20 text-teal-300 font-semibold'
+                                  : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'
+                              }`}
+                            >
+                              <span className={subActive ? 'text-teal-400' : ''}>{sub.icon}</span>
+                              {sub.label}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* 인사/급여관리 (영림원 구조) */}
+              {hasHrSystemMenu && (() => {
+                const hrSystemActive = pathname.startsWith('/dashboard/hr-system');
+                return (
+                  <div>
+                    <button
+                      onClick={() => setHrSystemOpen(o => !o)}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm w-full ${
+                        hrSystemActive
+                          ? 'bg-cyan-600/20 text-cyan-300 font-semibold border border-cyan-500/20'
+                          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      <span className={`shrink-0 ${hrSystemActive ? 'text-cyan-400' : ''}`}>
+                        <UsersRound className="w-4 h-4" />
+                      </span>
+                      <span className="flex-1 text-left">인사/급여</span>
+                      <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${hrSystemOpen || hrSystemActive ? 'rotate-180' : ''}`} />
+                    </button>
+                    {(hrSystemOpen || hrSystemActive) && (
+                      <div className="ml-4 mt-0.5 space-y-0.5 border-l border-slate-700/60 pl-3">
+                        {HR_SYSTEM_SIDEBAR_LINKS.map(sub => {
+                          const subActive = pathname === sub.href || pathname.startsWith(`${sub.href}/`);
+                          return (
+                            <Link
+                              key={sub.href}
+                              href={sub.href}
+                              onClick={onClose}
+                              className={`flex items-center gap-2.5 px-2 py-2 rounded-lg transition-all text-xs ${
+                                subActive
+                                  ? 'bg-cyan-600/20 text-cyan-300 font-semibold'
+                                  : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'
+                              }`}
+                            >
+                              <UsersRound className="w-3.5 h-3.5" />
                               {sub.label}
                             </Link>
                           );

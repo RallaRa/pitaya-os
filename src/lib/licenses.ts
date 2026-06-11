@@ -4,7 +4,8 @@ export type LicenseModuleKey =
   | 'hr'
   | 'hygiene'
   | 'messenger'
-  | 'pos';
+  | 'pos'
+  | 'accounting';
 
 export interface ModuleLicense {
   enabled: boolean;
@@ -20,10 +21,11 @@ export const LICENSE_MODULE_META: Record<
 > = {
   dashboard: { label: '대시보드', description: 'AI 메인 대시보드 (독립 SaaS 모듈)' },
   purchases: { label: 'AI 매입관리', description: '매입 등록·원장·거래처' },
-  hr:        { label: 'HR 관리', description: '캘린더·멤버·사원정보' },
+  hr:        { label: 'HR 관리', description: '캘린더·멤버·사원정보·인사/급여' },
   hygiene:   { label: '위생일지', description: '위생 점검일지' },
   messenger: { label: '메신저', description: '매장 내부 메신저' },
   pos:       { label: 'POS/매출', description: '일마감·매출 보고서' },
+  accounting: { label: '회계관리', description: '전표·원장·결산·자금 (영림원형)' },
 };
 
 export function defaultStoreModules(): StoreModules {
@@ -34,6 +36,7 @@ export function defaultStoreModules(): StoreModules {
     hygiene:   { enabled: true },
     messenger: { enabled: true },
     pos:       { enabled: true },
+    accounting: { enabled: false },
   };
 }
 
@@ -48,6 +51,18 @@ export const MENU_KEY_TO_MODULE: Partial<Record<string, LicenseModuleKey>> = {
   items: 'purchases',
   suppliers: 'purchases',
   members: 'hr',
+  hrSystem: 'hr',
+  hrPersonnel: 'hr',
+  hrAttendanceMgmt: 'hr',
+  hrPayrollMaster: 'hr',
+  hrPayrollCalc: 'hr',
+  hrPayrollReport: 'hr',
+  accounting: 'accounting',
+  accountingMaster: 'accounting',
+  accountingVoucher: 'accounting',
+  accountingLedger: 'accounting',
+  accountingClosing: 'accounting',
+  accountingFund: 'accounting',
 };
 
 export function pathToModule(pathname: string): LicenseModuleKey | null {
@@ -59,7 +74,8 @@ export function pathToModule(pathname: string): LicenseModuleKey | null {
     return 'dashboard';
   }
   if (pathname.startsWith('/dashboard/report/purchases')) return 'purchases';
-  if (pathname.startsWith('/dashboard/hr') || pathname.startsWith('/dashboard/settings/employees') ||
+  if (pathname.startsWith('/dashboard/hr-system') || pathname.startsWith('/dashboard/hr') ||
+      pathname.startsWith('/dashboard/settings/employees') ||
       pathname.startsWith('/dashboard/settings/departments') ||
       pathname.startsWith('/dashboard/settings/leave-status')) {
     return 'hr';
@@ -70,5 +86,6 @@ export function pathToModule(pathname: string): LicenseModuleKey | null {
   if (pathname.startsWith('/dashboard/items') || pathname.startsWith('/dashboard/suppliers')) {
     return 'purchases';
   }
+  if (pathname.startsWith('/dashboard/accounting')) return 'accounting';
   return null;
 }

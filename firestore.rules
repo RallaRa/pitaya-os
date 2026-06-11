@@ -294,6 +294,22 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if false;
     }
+    match /hr_payroll_settings/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /hr_payroll_runs/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /hr_payroll_slips/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /hr_appointments/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
     match /kakao_oauth_state/{docId} {
       allow read, write: if false;
     }
@@ -401,6 +417,26 @@ service cloud.firestore {
       allow write: if request.auth != null;
     }
     match /signage_settings/{storeId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    // ──────────────────────────────────────────
+    // 회계관리 (accounting module)
+    // ──────────────────────────────────────────
+    match /accounting_accounts/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /accounting_vouchers/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /accounting_settings/{storeId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /accounting_periods/{docId} {
       allow read: if request.auth != null;
       allow write: if false;
     }

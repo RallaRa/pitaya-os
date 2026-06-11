@@ -53,6 +53,8 @@ interface SadDetail {
   saleTime?: string;
   posNo?: string;
   saleNum?: string;
+  qtyUnit?: 'kg' | 'ea';
+  qtyApprox?: boolean;
   [key: string]: any;
 }
 
@@ -302,6 +304,9 @@ function buildSyncFingerprint(
   return createHash('sha256').update(JSON.stringify(sig)).digest('hex').slice(0, 16);
 }
 
+// TODO: 매입단가→판매단가 설정 완료 후 기간별 Pitaya 판가로
+// resolvePosLineQuantityWithCatalogPrice 적용 (POS sellPrice 사용 금지)
+
 // ── POST /api/pos/sync ────────────────────────────────────────────
 export async function POST(req: Request) {
   const authHeader = req.headers.get('authorization');
@@ -415,6 +420,8 @@ export async function POST(req: Request) {
         totalPrice:   d.totalPrice    ?? 0,
         purPrice:     d.purPrice      ?? 0,
         profitPrice:  d.profitPrice   ?? 0,
+        qtyUnit:      d.qtyUnit       ?? 'ea',
+        qtyApprox:    d.qtyApprox     ?? false,
         syncedAt,
         updatedAt: FieldValue.serverTimestamp(),
       },
@@ -508,6 +515,8 @@ export async function POST(req: Request) {
           totalPrice: line.totalPrice,
           purPrice: line.purPrice,
           profitPrice: line.profitPrice,
+          qtyUnit: line.qtyUnit,
+          qtyApprox: line.qtyApprox,
         })),
         syncedAt,
       );

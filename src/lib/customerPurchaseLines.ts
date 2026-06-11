@@ -18,6 +18,10 @@ export interface CustomerPurchaseLineInput {
   totalPrice?: number;
   purPrice?: number;
   profitPrice?: number;
+  /** kg(저울 역산) | ea(개) */
+  qtyUnit?: 'kg' | 'ea';
+  /** 금액 바코드 역산 중량 */
+  qtyApprox?: boolean;
 }
 
 export interface CustomerPurchaseLineDoc extends CustomerPurchaseLineInput {
@@ -31,6 +35,8 @@ export interface CustomerTopItem {
   amount: number;
   categoryName: string;
   lastDate: string;
+  qtyUnit?: 'kg' | 'ea';
+  qtyApprox?: boolean;
 }
 
 export interface CustomerPurchaseReceipt {
@@ -45,6 +51,8 @@ export interface CustomerPurchaseReceipt {
     categoryName: string;
     saleCount: number;
     totalPrice: number;
+    qtyUnit?: 'kg' | 'ea';
+    qtyApprox?: boolean;
   }>;
 }
 
@@ -114,6 +122,8 @@ export async function replaceCustomerPurchaseLinesForDate(
           totalPrice: Number(line.totalPrice ?? 0),
           purPrice: Number(line.purPrice ?? 0),
           profitPrice: Number(line.profitPrice ?? 0),
+          qtyUnit: line.qtyUnit ?? 'ea',
+          qtyApprox: line.qtyApprox ?? false,
           syncedAt,
           updatedAt: FieldValue.serverTimestamp(),
         },
@@ -155,7 +165,13 @@ export async function fetchCustomerTopItems(
         amount: 0,
         categoryName: String(d.categoryName || ''),
         lastDate: String(d.date || ''),
+        qtyUnit: d.qtyUnit === 'kg' ? 'kg' : 'ea',
+        qtyApprox: !!d.qtyApprox,
       };
+    }
+    if (d.qtyUnit === 'kg') {
+      map[name].qtyUnit = 'kg';
+      if (d.qtyApprox) map[name].qtyApprox = true;
     }
     map[name].qty += Number(d.saleCount || 0);
     map[name].amount += Number(d.totalPrice || 0);
@@ -203,6 +219,8 @@ export async function fetchCustomerPurchaseReceipts(
       categoryName: String(d.categoryName || ''),
       saleCount: Number(d.saleCount || 0),
       totalPrice: Number(d.totalPrice || 0),
+      qtyUnit: d.qtyUnit === 'kg' ? 'kg' : 'ea',
+      qtyApprox: !!d.qtyApprox,
     });
     if (!receipt.receiptTotal) {
       receipt.receiptTotal = receipt.items.reduce((s, it) => s + it.totalPrice, 0);

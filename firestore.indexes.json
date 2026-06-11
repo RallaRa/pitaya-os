@@ -363,6 +363,38 @@
         { "fieldPath": "targetUid", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "hr_payroll_runs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "period", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "hr_payroll_slips",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "period", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "hr_appointments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "effectiveDate", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "hr_attendance",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "storeId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

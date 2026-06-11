@@ -177,8 +177,43 @@ async function migratePredictionVariablesMenuForSystemGroups() {
   await metaRef.set({ predictionVariablesStaffV1: true, adminPredictionVariablesV1: true }, { merge: true });
 }
 
+async function migrateAccountingMenuForSystemGroups() {
+  const metaRef = adminDb.collection('system_meta').doc('permissions');
+  const metaSnap = await metaRef.get();
+  if (metaSnap.data()?.accountingMenuV1) return;
+
+  const batch = adminDb.batch();
+  const adminPatch = {
+    'menuAccess.accounting': true,
+    'menuAccess.accountingMaster': true,
+    'menuAccess.accountingVoucher': true,
+    'menuAccess.accountingLedger': true,
+    'menuAccess.accountingClosing': true,
+    'menuAccess.accountingFund': true,
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  const staffPatch = {
+    'menuAccess.accounting': false,
+    'menuAccess.accountingMaster': false,
+    'menuAccess.accountingVoucher': false,
+    'menuAccess.accountingLedger': false,
+    'menuAccess.accountingClosing': false,
+    'menuAccess.accountingFund': false,
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+
+  for (const [groupId, patch] of [['admin', adminPatch], ['staff', staffPatch]] as const) {
+    const ref = adminDb.collection('permission_groups').doc(groupId);
+    const snap = await ref.get();
+    if (snap.exists) batch.update(ref, patch);
+  }
+  await batch.commit();
+  await metaRef.set({ accountingMenuV1: true }, { merge: true });
+}
+
 /** myAccess 조회 전 시스템 그룹·메뉴 마이그레이션 */
 export async function ensurePermissionSystemGroups() {
   await ensureSystemGroups();
   await migratePredictionVariablesMenuForSystemGroups();
+  await migrateAccountingMenuForSystemGroups();
 }

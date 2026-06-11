@@ -178,6 +178,12 @@ export default function SettingsPage() {
 
   const hrMenus = isMasterOrAdmin ? [
     {
+      href: '/dashboard/hr-system',
+      icon: <Users className="w-5 h-5 text-cyan-400" />,
+      label: '인사/급여관리',
+      description: '영림원형 인사·근태·급여 (발령·계산·명세)',
+    },
+    {
       href: '/dashboard/hr/employee-register',
       icon: <UserSquare className="w-5 h-5 text-cyan-400" />,
       label: '사원등록',
