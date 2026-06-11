@@ -11,6 +11,8 @@ export interface PosAlertSettings {
   regularVisitEnabled: boolean;
   discountAbuseEnabled: boolean;
   transactionAnomalyEnabled: boolean;
+  repurchaseReminderEnabled: boolean;
+  signageAutoSwitchEnabled: boolean;
 }
 
 export const DEFAULT_POS_ALERT_SETTINGS: PosAlertSettings = {
@@ -23,6 +25,8 @@ export const DEFAULT_POS_ALERT_SETTINGS: PosAlertSettings = {
   regularVisitEnabled: false,
   discountAbuseEnabled: true,
   transactionAnomalyEnabled: true,
+  repurchaseReminderEnabled: true,
+  signageAutoSwitchEnabled: false,
 };
 
 export async function getPosAlertSettings(storeId: string): Promise<PosAlertSettings> {

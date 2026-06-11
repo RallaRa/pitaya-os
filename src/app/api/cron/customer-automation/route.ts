@@ -3,6 +3,7 @@ import { isCronAuthorized, cronUnauthorizedResponse } from '@/lib/cronAuth';
 import { updateAllStoreCustomerGrades, updateStoreCustomerGrades } from '@/lib/customerGrade.server';
 import { updateAllStoreChurnScores, updateStoreChurnScores } from '@/lib/customerChurnScore.server';
 import { runCustomerJourneyAllStores, runCustomerJourneyForStore } from '@/lib/customerJourney.server';
+import { runRepurchaseCycleAllStores, runRepurchaseCycleForStore } from '@/lib/pos/repurchaseCycle.server';
 
 const DEFAULT_STORE = 'STR-1779194754785';
 
@@ -29,11 +30,16 @@ export async function POST(req: Request) {
       ? [await runCustomerJourneyForStore(storeId)]
       : await runCustomerJourneyAllStores();
 
+    const repurchaseResults = storeId
+      ? [await runRepurchaseCycleForStore(storeId)]
+      : await runRepurchaseCycleAllStores();
+
     return NextResponse.json({
       ok: true,
       grade: gradeResults,
       churn: churnResults,
       journey: journeyResults,
+      repurchase: repurchaseResults,
       processedAt: new Date().toISOString(),
     });
   } catch (e: unknown) {
@@ -45,7 +51,7 @@ export async function POST(req: Request) {
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    message: 'customer-automation cron — grade + churn score + journey queue',
+    message: 'customer-automation cron — grade + churn score + journey + repurchase queue',
     defaultStore: DEFAULT_STORE,
   });
 }

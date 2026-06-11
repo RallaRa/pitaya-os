@@ -41,6 +41,7 @@ import CustomerVisitWidget    from '@/components/widgets/CustomerVisitWidget';
 import CostRatioWidget        from '@/components/widgets/CostRatioWidget';
 import SalesCategoryWidget    from '@/components/widgets/SalesCategoryWidget';
 import TimeSlotAovWidget      from '@/components/widgets/TimeSlotAovWidget';
+import RepurchaseDueWidget    from '@/components/widgets/RepurchaseDueWidget';
 import SalesHeatmapWidget     from '@/components/widgets/SalesHeatmapWidget';
 import DowProfitabilityWidget from '@/components/widgets/DowProfitabilityWidget';
 import ChurnRiskWidget        from '@/components/widgets/ChurnRiskWidget';
@@ -49,6 +50,8 @@ import { useDashboardChrome } from '@/components/dashboard/DashboardChromeContex
 import { fetchDashboardPrintSnapshot, openDashboardPrintWindow } from '@/lib/dashboardPrintData';
 import LazyWidgetMount from '@/components/dashboard/LazyWidgetMount';
 import { SkeletonWidget } from '@/components/suspense';
+import { WidgetErrorBoundary } from '@/components/error-boundary';
+import { overlay } from '@/components/overlay';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import {
   WIDGET_META,
@@ -90,8 +93,8 @@ function applyResolvedLayout(
   return { widgets: normalizedWidgets, layout, repaired };
 }
 
-/* ── 위젯 추가 모달 ── */
-function WidgetAddModal({
+/* ── 위젯 추가 패널 ── */
+function WidgetAddPanel({
   availableWidgets, onAdd, onClose,
 }: {
   availableWidgets: WidgetMeta[];
@@ -99,30 +102,28 @@ function WidgetAddModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/60" />
-      <div className="relative bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-4 border-b border-slate-800">
-          <h3 className="text-slate-200 font-semibold text-sm">위젯 추가</h3>
-          <button onClick={onClose} className="text-slate-500 hover:text-white text-xl leading-none">&times;</button>
-        </div>
-        <div className="p-3 space-y-1.5">
-          {availableWidgets.length === 0 ? (
-            <p className="text-slate-600 text-sm text-center py-6">추가할 수 있는 위젯이 없습니다</p>
-          ) : availableWidgets.map(w => (
-            <button
-              key={w.id}
-              onClick={() => { onAdd(w.id); onClose(); }}
-              className="w-full flex items-center gap-3 px-3 py-2.5 bg-slate-800/50 hover:bg-slate-700 rounded-xl transition-colors text-left"
-            >
-              <LayoutGrid className="w-4 h-4 text-teal-400 shrink-0" />
-              <div>
-                <p className="text-slate-200 text-sm font-medium">{w.title}</p>
-                <p className="text-slate-500 text-xs">{w.defaultItem.w}×{w.defaultItem.h} 기본 크기</p>
-              </div>
-            </button>
-          ))}
-        </div>
+    <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="flex items-center justify-between p-4 border-b border-slate-800">
+        <h3 className="text-slate-200 font-semibold text-sm">위젯 추가</h3>
+        <button type="button" onClick={onClose} className="text-slate-500 hover:text-white text-xl leading-none">&times;</button>
+      </div>
+      <div className="p-3 space-y-1.5">
+        {availableWidgets.length === 0 ? (
+          <p className="text-slate-600 text-sm text-center py-6">추가할 수 있는 위젯이 없습니다</p>
+        ) : availableWidgets.map(w => (
+          <button
+            key={w.id}
+            type="button"
+            onClick={() => { onAdd(w.id); onClose(); }}
+            className="w-full flex items-center gap-3 px-3 py-2.5 bg-slate-800/50 hover:bg-slate-700 rounded-xl transition-colors text-left"
+          >
+            <LayoutGrid className="w-4 h-4 text-teal-400 shrink-0" />
+            <div>
+              <p className="text-slate-200 text-sm font-medium">{w.title}</p>
+              <p className="text-slate-500 text-xs">{w.defaultItem.w}×{w.defaultItem.h} 기본 크기</p>
+            </div>
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -144,7 +145,6 @@ export default function DashboardPage() {
   const [layouts,       setLayouts]       = useState<ResponsiveLayouts>({ lg: makeDefaultLayout(DEFAULT_ACTIVE) });
   const [widgetPerms,   setWidgetPerms]   = useState<Record<string, Record<string, boolean>>>({});
   const [userRole,      setUserRole]      = useState('user');
-  const [showAddModal,  setShowAddModal]  = useState(false);
   const [isMobile,      setIsMobile]      = useState(
     () => (typeof window !== 'undefined' ? window.innerWidth < DASHBOARD_STACK_BREAKPOINT : false),
   );
@@ -316,29 +316,48 @@ export default function DashboardPage() {
 
   const LAZY_WIDGET_IDS = new Set(['ai_insight', 'sales_prediction', 'total_partner', 'weekly_analysis']);
 
-  const wrapLazyWidget = (id: string, node: React.ReactNode) =>
-    LAZY_WIDGET_IDS.has(id) ? <LazyWidgetMount>{node}</LazyWidgetMount> : node;
+  const wrapWidget = (id: string, node: React.ReactNode) => {
+    const meta = WIDGET_META.find(m => m.id === id);
+    const content = LAZY_WIDGET_IDS.has(id) ? <LazyWidgetMount>{node}</LazyWidgetMount> : node;
+    return (
+      <WidgetErrorBoundary widgetName={meta?.title} userId={user?.uid ?? null}>
+        {content}
+      </WidgetErrorBoundary>
+    );
+  };
+
+  const openAddWidgetPanel = () => {
+    overlay.open(
+      <WidgetAddPanel
+        availableWidgets={addableWidgets}
+        onAdd={addWidget}
+        onClose={() => overlay.close()}
+      />,
+      { className: 'max-w-sm w-full' },
+    );
+  };
 
   /* 위젯 렌더 */
   const renderWidget = (id: string) => {
     switch (id) {
-      case 'news':               return wrapLazyWidget(id, <NewsWidget           editMode={editMode} onRemove={() => removeWidget(id)} />);
-      case 'weather':            return wrapLazyWidget(id, <WeatherWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
-      case 'weekly_analysis':    return wrapLazyWidget(id, <WeeklyAnalysisWidget editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
-      case 'yesterday_analysis': return wrapLazyWidget(id, <YesterdayWidget      editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
-      case 'quick_menu':         return wrapLazyWidget(id, <QuickMenuWidget      editMode={editMode} onRemove={() => removeWidget(id)} />);
-      case 'ai_insight':         return wrapLazyWidget(id, <AiInsightWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} mobileLayout={isMobile} />);
-      case 'sales_prediction':   return wrapLazyWidget(id, <SalesPredictionWidget  editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} mobileLayout={isMobile} />);
-      case 'total_partner':      return wrapLazyWidget(id, <TotalPartnerWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} mobileLayout={isMobile} />);
-      case 'today_sales':        return wrapLazyWidget(id, <TodaySalesWidget       editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
-      case 'sales_compare':      return wrapLazyWidget(id, <SalesCompareWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
-      case 'customer_visit':     return wrapLazyWidget(id, <CustomerVisitWidget    editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
-      case 'churn_risk':         return wrapLazyWidget(id, <ChurnRiskWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
-      case 'sales_heatmap':      return wrapLazyWidget(id, <SalesHeatmapWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
-      case 'dow_profitability':  return wrapLazyWidget(id, <DowProfitabilityWidget editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
-      case 'cost_ratio':         return wrapLazyWidget(id, <CostRatioWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
-      case 'sales_category':     return wrapLazyWidget(id, <SalesCategoryWidget    editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
-      case 'time_slot_aov':      return wrapLazyWidget(id, <TimeSlotAovWidget      editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'news':               return wrapWidget(id, <NewsWidget           editMode={editMode} onRemove={() => removeWidget(id)} />);
+      case 'weather':            return wrapWidget(id, <WeatherWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'weekly_analysis':    return wrapWidget(id, <WeeklyAnalysisWidget editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'yesterday_analysis': return wrapWidget(id, <YesterdayWidget      editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'quick_menu':         return wrapWidget(id, <QuickMenuWidget      editMode={editMode} onRemove={() => removeWidget(id)} />);
+      case 'ai_insight':         return wrapWidget(id, <AiInsightWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} mobileLayout={isMobile} />);
+      case 'sales_prediction':   return wrapWidget(id, <SalesPredictionWidget  editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} mobileLayout={isMobile} />);
+      case 'total_partner':      return wrapWidget(id, <TotalPartnerWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} mobileLayout={isMobile} />);
+      case 'today_sales':        return wrapWidget(id, <TodaySalesWidget       editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'sales_compare':      return wrapWidget(id, <SalesCompareWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'customer_visit':     return wrapWidget(id, <CustomerVisitWidget    editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'churn_risk':         return wrapWidget(id, <ChurnRiskWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'sales_heatmap':      return wrapWidget(id, <SalesHeatmapWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'dow_profitability':  return wrapWidget(id, <DowProfitabilityWidget editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'cost_ratio':         return wrapWidget(id, <CostRatioWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'sales_category':     return wrapWidget(id, <SalesCategoryWidget    editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'time_slot_aov':      return wrapWidget(id, <TimeSlotAovWidget      editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'repurchase_due':     return wrapWidget(id, <RepurchaseDueWidget    editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       default:                   return null;
     }
   };
@@ -419,7 +438,7 @@ export default function DashboardPage() {
         {editMode && isSuperuser && (
           <>
             <button
-              onClick={() => setShowAddModal(true)}
+              onClick={openAddWidgetPanel}
               disabled={addableWidgets.length === 0}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-teal-600/20 hover:bg-teal-600/30 border border-teal-500/30 text-teal-300 rounded-lg text-xs disabled:opacity-40 transition-colors"
             >
@@ -466,7 +485,7 @@ export default function DashboardPage() {
             <LayoutGrid className="w-10 h-10 opacity-30" />
             <p className="text-sm">위젯이 없습니다</p>
             <button
-              onClick={() => { setEditMode(true); setShowAddModal(true); }}
+              onClick={() => { setEditMode(true); openAddWidgetPanel(); }}
               className="flex items-center gap-1.5 px-4 py-2 bg-teal-600/20 border border-teal-500/30 text-teal-300 rounded-lg text-sm"
             >
               <Plus className="w-4 h-4" /> 위젯 추가
@@ -505,15 +524,6 @@ export default function DashboardPage() {
           </ResponsiveGridLayout>
         )}
       </div>
-
-      {/* 위젯 추가 모달 */}
-      {showAddModal && (
-        <WidgetAddModal
-          availableWidgets={addableWidgets}
-          onAdd={addWidget}
-          onClose={() => setShowAddModal(false)}
-        />
-      )}
     </div>
   );
 }

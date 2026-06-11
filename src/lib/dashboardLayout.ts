@@ -106,6 +106,12 @@ export const WIDGET_META: WidgetMeta[] = [
     permKey: 'time_slot_aov',
   },
   {
+    id: 'repurchase_due',
+    title: '재구매 주기 임박',
+    defaultItem: { i: 'repurchase_due', x: 4, y: 30, w: 4, h: 4, minW: 3, minH: 3, maxW: 8, maxH: 6 },
+    permKey: 'repurchase_due',
+  },
+  {
     id: 'ai_insight',
     title: 'AI 오늘 브리핑',
     defaultItem: { i: 'ai_insight', x: 0, y: 26, w: 12, h: 6, minW: 6, minH: 5, maxW: 12, maxH: 10 },

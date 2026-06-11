@@ -42,6 +42,8 @@ export async function PATCH(req: Request) {
   if (typeof settings.regularVisitEnabled === 'boolean') patch.regularVisitEnabled = settings.regularVisitEnabled;
   if (typeof settings.discountAbuseEnabled === 'boolean') patch.discountAbuseEnabled = settings.discountAbuseEnabled;
   if (typeof settings.transactionAnomalyEnabled === 'boolean') patch.transactionAnomalyEnabled = settings.transactionAnomalyEnabled;
+  if (typeof settings.repurchaseReminderEnabled === 'boolean') patch.repurchaseReminderEnabled = settings.repurchaseReminderEnabled;
+  if (typeof settings.signageAutoSwitchEnabled === 'boolean') patch.signageAutoSwitchEnabled = settings.signageAutoSwitchEnabled;
 
   const merged = await savePosAlertSettings(storeId, patch);
   return NextResponse.json({ success: true, settings: merged });

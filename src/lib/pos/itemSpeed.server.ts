@@ -3,6 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { addDaysYMD } from '@/lib/dateUtils';
 import { ensureSalesAlertChannel, postMessengerCard } from '@/lib/messenger/channels.server';
 import { getPosAlertSettings } from '@/lib/pos/posAlertSettings';
+import { updateSignageTopSeller } from '@/lib/pos/signageAutoSwitch.server';
 
 export interface ItemSpeedRow {
   name: string;
@@ -159,6 +160,7 @@ export async function processItemSpeedCheck(
   alerts: ItemSpeedAlertCandidate[];
   notified: number;
   disabled?: boolean;
+  signageUpdated?: boolean;
 }> {
   if (!storeId || !input.date || !input.windowEnd) {
     return { saved: false, alerts: [], notified: 0 };
@@ -170,15 +172,23 @@ export async function processItemSpeedCheck(
 
   await saveItemSpeedWindow(storeId, { ...input, items: normalizedItems });
 
+  let signageUpdated = false;
+  try {
+    const signage = await updateSignageTopSeller(storeId, normalizedItems);
+    signageUpdated = signage.updated;
+  } catch (err) {
+    console.error('[itemSpeed] signage auto switch failed:', err);
+  }
+
   const settings = await getPosAlertSettings(storeId);
   if (!settings.itemSpeedAlertEnabled) {
-    return { saved: true, alerts: [], notified: 0, disabled: true };
+    return { saved: true, alerts: [], notified: 0, disabled: true, signageUpdated };
   }
 
   const historical = await fetchHistoricalWindows(storeId, input.windowEnd, input.date);
   const alerts = detectFastMovingItems(normalizedItems, historical);
   if (!alerts.length) {
-    return { saved: true, alerts: [], notified: 0 };
+    return { saved: true, alerts: [], notified: 0, signageUpdated };
   }
 
   const roomId = await ensureSalesAlertChannel(storeId);
@@ -230,5 +240,5 @@ export async function processItemSpeedCheck(
     notified += 1;
   }
 
-  return { saved: true, alerts, notified };
+  return { saved: true, alerts, notified, signageUpdated };
 }

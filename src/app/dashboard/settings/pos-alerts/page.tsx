@@ -26,6 +26,8 @@ export default function PosAlertsSettingsPage() {
     regularVisitEnabled: false,
     discountAbuseEnabled: true,
     transactionAnomalyEnabled: true,
+    repurchaseReminderEnabled: true,
+    signageAutoSwitchEnabled: false,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -92,6 +94,8 @@ export default function PosAlertsSettingsPage() {
             ['regularVisitEnabled', '단골 고객 방문', 'pitayaGrade 단골 방문 시 09~21시 💰매출알림 (기본 OFF)'],
             ['discountAbuseEnabled', '할인 중복 감지', '같은 영수증 할인 2회↑ 시 🌙야간모니터링 즉시 알림'],
             ['transactionAnomalyEnabled', '이상 거래 감지', '마이너스·야간·대량·고할인 거래 🌙야간모니터링'],
+            ['repurchaseReminderEnabled', '재구매 주기 알림', '6개월 평균 주기+2일 초과 시 notification_queue 등록 (자정)'],
+            ['signageAutoSwitchEnabled', '사이니지 자동 전환', '1시간 TOP1 품목 → signage_content 자동 갱신 (기본 OFF)'],
           ] as const).map(([key, title, desc]) => (
             <label key={key} className="flex items-start gap-3 p-4 rounded-xl border border-slate-800 bg-slate-900/60 cursor-pointer">
               <input
