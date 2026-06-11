@@ -9,6 +9,8 @@ export interface PosAlertSettings {
   firstPurchaseEnabled: boolean;
   vipVisitEnabled: boolean;
   regularVisitEnabled: boolean;
+  discountAbuseEnabled: boolean;
+  transactionAnomalyEnabled: boolean;
 }
 
 export const DEFAULT_POS_ALERT_SETTINGS: PosAlertSettings = {
@@ -19,6 +21,8 @@ export const DEFAULT_POS_ALERT_SETTINGS: PosAlertSettings = {
   firstPurchaseEnabled: true,
   vipVisitEnabled: true,
   regularVisitEnabled: false,
+  discountAbuseEnabled: true,
+  transactionAnomalyEnabled: true,
 };
 
 export async function getPosAlertSettings(storeId: string): Promise<PosAlertSettings> {

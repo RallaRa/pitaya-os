@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
+import { processDiscountAbuseEvents } from '@/lib/pos/discountAbuse.server';
 import { processFirstPurchaseEvents } from '@/lib/pos/firstPurchaseNotify.server';
 import { processSaleEvents, type SaleEventInput } from '@/lib/pos/saleEventNotify.server';
+import { processTransactionAnomalyEvents } from '@/lib/pos/transactionAnomaly.server';
 import { processVipVisitEvents } from '@/lib/pos/vipVisitNotify.server';
 
 export async function POST(req: Request) {
@@ -26,16 +28,39 @@ export async function POST(req: Request) {
   }
 
   try {
-    const [saleResult, firstPurchaseResult, vipVisitResult] = await Promise.all([
+    const monitorEvents = events.map(e => ({
+      saleNum: e.saleNum,
+      saleTime: e.saleTime,
+      amount: e.amount,
+      lines: (e.items || []).map(it => ({
+        name: it.name,
+        qty: it.qty,
+        sellPrice: it.sellPrice,
+        totalPrice: it.totalPrice ?? it.price,
+        discountAmount: it.discountAmount,
+      })),
+    }));
+
+    const [
+      saleResult,
+      firstPurchaseResult,
+      vipVisitResult,
+      discountResult,
+      anomalyResult,
+    ] = await Promise.all([
       processSaleEvents(storeId, date, events),
       processFirstPurchaseEvents(storeId, date, events),
       processVipVisitEvents(storeId, date, events),
+      processDiscountAbuseEvents(storeId, date, monitorEvents),
+      processTransactionAnomalyEvents(storeId, date, monitorEvents),
     ]);
     return NextResponse.json({
       success: true,
       ...saleResult,
       firstPurchase: firstPurchaseResult,
       vipVisit: vipVisitResult,
+      discountAbuse: discountResult,
+      transactionAnomaly: anomalyResult,
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : 'sale-events failed';

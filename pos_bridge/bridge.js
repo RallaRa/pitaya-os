@@ -1315,15 +1315,34 @@ async function fetchDetailsForSaleNums(dateStr, saleNums) {
     const placeholders = chunk.map((_, idx) => `@sn${idx}`).join(', ');
     const request = (await getPool()).request().input('date', sql.VarChar(10), dateStr);
     chunk.forEach((sn, idx) => request.input(`sn${idx}`, sql.VarChar(30), sn));
+    const sadQueries = [
+      `SELECT Sale_Num, G_Name, Sale_Count, Sell_Pri, TSell_Pri, Dec_Pri FROM ${table}
+       WHERE Sale_Date = @date AND Sale_YN = 1 AND Sale_Num IN (${placeholders})`,
+      `SELECT Sale_Num, G_Name, Sale_Count, Sell_Pri, TSell_Pri FROM ${table}
+       WHERE Sale_Date = @date AND Sale_YN = 1 AND Sale_Num IN (${placeholders})`,
+      `SELECT Sale_Num, G_Name, Sale_Count, TSell_Pri FROM ${table}
+       WHERE Sale_Date = @date AND Sale_YN = 1 AND Sale_Num IN (${placeholders})`,
+    ];
+    let rows = null;
+    for (const q of sadQueries) {
+      try {
+        const result = await request.query(q);
+        rows = result.recordset;
+        break;
+      } catch { /* try next query shape */ }
+    }
     try {
-      const result = await request.query(`
-        SELECT Sale_Num, G_Name, Sale_Count, TSell_Pri FROM ${table}
-        WHERE Sale_Date = @date AND Sale_YN = 1 AND Sale_Num IN (${placeholders})
-      `);
-      for (const r of result.recordset) {
+      if (!rows) throw new Error('SaD detail columns unavailable');
+      for (const r of rows) {
         const sn = String(r.Sale_Num || '');
         if (!map[sn]) map[sn] = [];
-        map[sn].push({ goodsName: String(r.G_Name || ''), saleCount: toInt(r.Sale_Count), totalPrice: toInt(r.TSell_Pri) });
+        map[sn].push({
+          goodsName: String(r.G_Name || ''),
+          saleCount: toInt(r.Sale_Count),
+          sellPrice: toInt(r.Sell_Pri),
+          totalPrice: toInt(r.TSell_Pri),
+          discountAmount: toInt(r.Dec_Pri),
+        });
       }
     } catch (e) { warn(`SaD chunk 조회 실패: ${e.message}`); }
   }
@@ -1375,7 +1394,14 @@ async function pollSaleEvents(dateStr, dryRun) {
         amount: s.totalSale,
         cusCode: s.cusCode || '',
         cusName: nameMap[s.cusCode] || '',
-        items: lines.map(d => ({ name: d.goodsName, qty: d.saleCount, price: d.totalPrice })),
+        items: lines.map(d => ({
+          name: d.goodsName,
+          qty: d.saleCount,
+          price: d.totalPrice,
+          sellPrice: d.sellPrice,
+          totalPrice: d.totalPrice,
+          discountAmount: d.discountAmount,
+        })),
         itemSummary: lines.length
           ? lines.map(d => `${d.goodsName} ${d.saleCount > 0 ? d.saleCount + '개' : ''}`.trim()).join(', ')
           : '품목 정보 없음',

@@ -7,6 +7,9 @@ export interface SaleEventItem {
   name: string;
   qty?: number;
   price?: number;
+  sellPrice?: number;
+  totalPrice?: number;
+  discountAmount?: number;
 }
 
 export interface SaleEventInput {

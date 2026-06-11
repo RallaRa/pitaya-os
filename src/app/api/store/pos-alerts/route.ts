@@ -40,6 +40,8 @@ export async function PATCH(req: Request) {
   if (typeof settings.firstPurchaseEnabled === 'boolean') patch.firstPurchaseEnabled = settings.firstPurchaseEnabled;
   if (typeof settings.vipVisitEnabled === 'boolean') patch.vipVisitEnabled = settings.vipVisitEnabled;
   if (typeof settings.regularVisitEnabled === 'boolean') patch.regularVisitEnabled = settings.regularVisitEnabled;
+  if (typeof settings.discountAbuseEnabled === 'boolean') patch.discountAbuseEnabled = settings.discountAbuseEnabled;
+  if (typeof settings.transactionAnomalyEnabled === 'boolean') patch.transactionAnomalyEnabled = settings.transactionAnomalyEnabled;
 
   const merged = await savePosAlertSettings(storeId, patch);
   return NextResponse.json({ success: true, settings: merged });
