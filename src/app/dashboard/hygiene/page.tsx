@@ -351,6 +351,12 @@ function HygieneChecklistContent() {
             <Eye className="w-4 h-4" />
             조회
           </Link>
+          <Link
+            href="/dashboard/hygiene/report"
+            className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-teal-400 transition-colors shrink-0 mt-1 ml-3"
+          >
+            자동화
+          </Link>
         </div>
 
         {/* 점검일 / 점검자 */}

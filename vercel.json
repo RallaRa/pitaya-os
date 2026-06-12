@@ -55,6 +55,10 @@
     { "path": "/api/cron/birthday-marketing", "schedule": "0 0 * * *" },
     { "path": "/api/cron/daily-checklist-alert-open", "schedule": "30 0 * * *" },
     { "path": "/api/cron/daily-checklist-alert-close", "schedule": "0 12 * * *" },
+    { "path": "/api/cron/payroll-profit-share", "schedule": "0 15 25 * *" },
+    { "path": "/api/cron/weekly-coaching", "schedule": "0 23 * * 0" },
+    { "path": "/api/cron/hygiene-followup", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/hygiene-monthly-report", "schedule": "0 16 1 * *" },
     { "path": "/api/cron/signage-show-rotate", "schedule": "0 */4 * * *" }
   ]
 }

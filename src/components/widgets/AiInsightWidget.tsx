@@ -7,15 +7,13 @@ import {
 } from 'lucide-react';
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
 import WidgetWrapper from './WidgetWrapper';
-import {
-  WidgetAsyncBoundary,
-  EmptyState,
-  fetchAuthJson,
-  useSuspenseResource,
-  useSuspenseInvalidate,
-} from '@/components/suspense';
+import EmptyState from '@/components/suspense/EmptyState';
+import SkeletonCard from '@/components/suspense/SkeletonCard';
+import { useAiInsight } from '@/lib/queries';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 import SalesEvidenceLine from './SalesEvidenceLine';
+import WidgetAnalysisPanel from './WidgetAnalysisPanel';
+import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 import type { BriefingAction, SalesEvidenceLine as SalesEvidenceLineType } from '@/lib/salesEvidence';
 
 interface TrendItem {
@@ -55,6 +53,7 @@ interface ComprehensiveData {
   error?: string;
   aiError?: boolean;
   ai?: AiMetaDisplay;
+  livestockDisease?: { diseaseName?: string; region?: string; reportDate?: string }[];
 }
 
 function normalizeActions(actions: ComprehensiveData['actions']): BriefingAction[] {
@@ -148,10 +147,6 @@ function boldify(text: string) {
   );
 }
 
-function cacheKey(storeId: string) {
-  return `dashboard:comprehensive-opinion:${storeId}`;
-}
-
 function AiInsightWidgetContent({
   editMode, onRemove, storeId, mobileLayout = false,
 }: {
@@ -160,26 +155,39 @@ function AiInsightWidgetContent({
   storeId: string;
   mobileLayout?: boolean;
 }) {
-  const key = cacheKey(storeId);
-  const invalidate = useSuspenseInvalidate(key);
-  const data = useSuspenseResource(key, async () => {
-    const q = new URLSearchParams();
-    q.set('storeId', storeId);
-    const d = await fetchAuthJson<ComprehensiveData & { error?: string }>(
-      `/api/dashboard/comprehensive-opinion?${q}`,
-    );
-    return d;
-  });
+  const { data: rawData, isLoading, isError, refetch, dataUpdatedAt } = useAiInsight(storeId);
+  const data = rawData as ComprehensiveData | undefined;
   const [updatedAt, setUpdatedAt] = useState<Date | null>(new Date());
   const [showSources, setShowSources] = useState(false);
 
   useEffect(() => {
-    setUpdatedAt(new Date());
-  }, [data]);
+    if (dataUpdatedAt) setUpdatedAt(new Date(dataUpdatedAt));
+  }, [dataUpdatedAt]);
 
   const refresh = useCallback(() => {
-    invalidate();
-  }, [invalidate]);
+    void refetch();
+  }, [refetch]);
+  const analysis = useWidgetAnalysis('ai_insight', storeId, data ? {
+    actions: data.actions,
+    highlights: data.highlights,
+    livestockDisease: data.livestockDisease,
+  } : undefined);
+
+  if (isLoading && !data) {
+    return (
+      <WidgetWrapper title="AI 오늘 브리핑" editMode={editMode} onRemove={onRemove} autoHeight={mobileLayout}>
+        <div className="p-3"><SkeletonCard /></div>
+      </WidgetWrapper>
+    );
+  }
+
+  if (isError && !data) {
+    return (
+      <WidgetWrapper title="AI 오늘 브리핑" editMode={editMode} onRemove={onRemove} onRefresh={refresh} autoHeight={mobileLayout}>
+        <div className="p-3"><EmptyState reason="AI 브리핑을 불러오지 못했습니다." /></div>
+      </WidgetWrapper>
+    );
+  }
 
   const srcStatus = data?.dataSourceStatus || {};
   const okCount = Object.values(srcStatus).filter(s => s.status === 'ok' || s.status === 'estimate').length;
@@ -308,6 +316,23 @@ function AiInsightWidgetContent({
               </div>
             )}
 
+            {/* 가축질병 리스크 */}
+            {data?.livestockDisease && data.livestockDisease.length > 0 && (
+              <div className="bg-rose-950/30 border border-rose-700/35 rounded-xl p-3">
+                <p className="text-[10px] font-semibold text-rose-300 mb-1.5">🐄 가축질병·수급 리스크 (180일)</p>
+                <ul className="space-y-1">
+                  {data.livestockDisease.slice(0, 4).map((row, i) => (
+                    <li key={i} className="text-[10px] text-rose-100/80 leading-snug">
+                      {row.diseaseName || '질병'}
+                      {row.region ? ` · ${row.region}` : ''}
+                      {row.reportDate ? ` (${row.reportDate})` : ''}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-[9px] text-rose-400/70 mt-1.5">→ 안심·국내산 강조 진열, 원료가 변동 모니터</p>
+              </div>
+            )}
+
             {/* 네이버 트렌드 */}
             {data?.trends && data.trends.length > 0 && (
               <div>
@@ -354,6 +379,7 @@ function AiInsightWidgetContent({
                 <p className="text-[11px] text-slate-400 leading-relaxed whitespace-pre-wrap">{boldify(data.opinion)}</p>
               </div>
             )}
+            <WidgetAnalysisPanel analysis={analysis} className="mx-0 px-1" />
           </div>
         )}
 
@@ -409,9 +435,5 @@ export default function AiInsightWidget({
     );
   }
 
-  return (
-    <WidgetAsyncBoundary skeleton="card" widgetName="AI 브리핑">
-      <AiInsightWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} mobileLayout={mobileLayout} />
-    </WidgetAsyncBoundary>
-  );
+  return <AiInsightWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} mobileLayout={mobileLayout} />;
 }

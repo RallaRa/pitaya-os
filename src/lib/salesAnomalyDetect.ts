@@ -1,4 +1,5 @@
 import { adminDb } from '@/lib/firebase/admin';
+import { analyzeSalesAnomalyWithAi, formatAnomalyMessengerText } from '@/lib/salesAnomalyAi';
 
 export type AnomalyType = 'spike' | 'drop';
 
@@ -77,11 +78,18 @@ export function detectSalesAnomaly(
 export async function runSalesAnomalyForStore(storeId: string, date: string) {
   const history = await loadDailyNetSales(storeId, 40);
   const result = detectSalesAnomaly(history, date);
-  if (!result.detected) return { storeId, ...result, saved: false };
+  if (!result.detected || !result.type) return { storeId, ...result, saved: false };
 
-  const aiSummary = result.type === 'spike'
-    ? `매출 급증: ${result.todaySales.toLocaleString()}원 (평균 ${Math.round(result.mean).toLocaleString()}원 대비 +${result.deviation.toFixed(1)}σ)`
-    : `매출 급감: ${result.todaySales.toLocaleString()}원 (평균 ${Math.round(result.mean).toLocaleString()}원 대비 ${result.deviation.toFixed(1)}σ)`;
+  const ai = await analyzeSalesAnomalyWithAi(storeId, { ...result, type: result.type });
+  const messengerText = formatAnomalyMessengerText({
+    date,
+    type: result.type,
+    todaySales: result.todaySales,
+    mean: result.mean,
+    deviation: result.deviation,
+    aiAnalysis: ai.aiAnalysis,
+    aiActions: ai.aiActions,
+  });
 
   const docId = `${storeId}_${date}`;
   await adminDb.collection('anomaly_logs').doc(docId).set({
@@ -92,9 +100,13 @@ export async function runSalesAnomalyForStore(storeId: string, date: string) {
     mean: result.mean,
     stdDev: result.stdDev,
     deviation: result.deviation,
-    aiSummary,
+    aiSummary: ai.aiSummary,
+    aiAnalysis: ai.aiAnalysis,
+    aiActions: ai.aiActions,
+    aiProvider: ai.provider || null,
+    messengerText,
     createdAt: new Date(),
   }, { merge: true });
 
-  return { storeId, ...result, aiSummary, saved: true };
+  return { storeId, ...result, ...ai, messengerText, saved: true };
 }

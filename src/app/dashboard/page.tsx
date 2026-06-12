@@ -45,8 +45,11 @@ import RepurchaseDueWidget    from '@/components/widgets/RepurchaseDueWidget';
 import SalesHeatmapWidget     from '@/components/widgets/SalesHeatmapWidget';
 import DowProfitabilityWidget from '@/components/widgets/DowProfitabilityWidget';
 import MarginRankingWidget  from '@/components/widgets/MarginRankingWidget';
+import InventoryTurnoverWidget from '@/components/widgets/InventoryTurnoverWidget';
+import BreakEvenWidget        from '@/components/widgets/BreakEvenWidget';
 import ChurnRiskWidget        from '@/components/widgets/ChurnRiskWidget';
 import DailyBriefingBar       from '@/components/dashboard/DailyBriefingBar';
+import WeeklyCoachingBar      from '@/components/dashboard/WeeklyCoachingBar';
 import { useDashboardChrome } from '@/components/dashboard/DashboardChromeContext';
 import { fetchDashboardPrintSnapshot, openDashboardPrintWindow } from '@/lib/dashboardPrintData';
 import LazyWidgetMount from '@/components/dashboard/LazyWidgetMount';
@@ -341,7 +344,7 @@ export default function DashboardPage() {
   /* 위젯 렌더 */
   const renderWidget = (id: string) => {
     switch (id) {
-      case 'news':               return wrapWidget(id, <NewsWidget           editMode={editMode} onRemove={() => removeWidget(id)} />);
+      case 'news':               return wrapWidget(id, <NewsWidget           editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'weather':            return wrapWidget(id, <WeatherWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'weekly_analysis':    return wrapWidget(id, <WeeklyAnalysisWidget editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'yesterday_analysis': return wrapWidget(id, <YesterdayWidget      editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
@@ -356,6 +359,8 @@ export default function DashboardPage() {
       case 'sales_heatmap':      return wrapWidget(id, <SalesHeatmapWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'dow_profitability':  return wrapWidget(id, <DowProfitabilityWidget editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'cost_ratio':         return wrapWidget(id, <CostRatioWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'inventory_turnover': return wrapWidget(id, <InventoryTurnoverWidget editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'break_even':         return wrapWidget(id, <BreakEvenWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'margin_ranking':     return wrapWidget(id, <MarginRankingWidget    editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'sales_category':     return wrapWidget(id, <SalesCategoryWidget    editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'time_slot_aov':      return wrapWidget(id, <TimeSlotAovWidget      editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
@@ -395,6 +400,7 @@ export default function DashboardPage() {
           <button onClick={handlePrintDashboard} className="p-1.5 text-slate-500 hover:text-teal-400" title="PDF/인쇄"><Printer className="w-4 h-4" /></button>
         </div>
         <DailyBriefingBar storeId={storeId} />
+        <WeeklyCoachingBar storeId={storeId} />
         {visibleActive.map(id => (
           <section
             key={id}
@@ -420,6 +426,7 @@ export default function DashboardPage() {
 
       {/* 툴바 */}
       <DailyBriefingBar storeId={storeId} />
+      <WeeklyCoachingBar storeId={storeId} />
       <div className="flex items-center gap-2 px-6 py-3 border-b border-slate-800/60 shrink-0 flex-wrap">
         <h1 className="text-slate-400 text-xs font-semibold uppercase tracking-widest flex-1">대시보드</h1>
 

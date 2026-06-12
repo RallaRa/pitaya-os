@@ -21,10 +21,10 @@ export async function GET(req: Request) {
   const results = [];
   for (const storeId of storeIds) {
     const r = await runSalesAnomalyForStore(storeId, date);
-    if ('saved' in r && r.saved && 'aiSummary' in r && r.aiSummary) {
+    if ('saved' in r && r.saved && 'messengerText' in r && r.messengerText) {
       try {
         const roomId = await ensureSalesAlertChannel(storeId);
-        await postMessengerText({ roomId, text: `📊 매출 이상 탐지\n${r.aiSummary}` });
+        await postMessengerText({ roomId, text: r.messengerText });
       } catch { /* ignore */ }
     }
     results.push(r);

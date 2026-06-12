@@ -1,61 +1,49 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import WidgetWrapper from './WidgetWrapper';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
-import {
-  WidgetAsyncBoundary,
-  EmptyState,
-  fetchAuthJson,
-  useSuspenseResource,
-  useSuspenseInvalidate,
-} from '@/components/suspense';
+import EmptyState from '@/components/suspense/EmptyState';
+import SkeletonTable from '@/components/suspense/SkeletonTable';
+import { useYesterdayAnalysis } from '@/lib/queries';
+import WidgetAnalysisPanel from './WidgetAnalysisPanel';
+import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 
 interface Item { name: string; qty: number; amount: number; }
 interface YesterdayData { dateLabel: string; top: Item[]; bottom: Item[]; noData?: boolean; emptyReason?: string; ai?: AiMetaDisplay; }
-
-function cacheKey(storeId: string) {
-  return `dashboard:yesterday-analysis:${storeId}`;
-}
 
 function YesterdayWidgetContent({
   editMode, onRemove, storeId,
 }: {
   editMode: boolean; onRemove: () => void; storeId: string;
 }) {
-  const key = cacheKey(storeId);
-  const invalidate = useSuspenseInvalidate(key);
-  const data = useSuspenseResource(key, async () => {
-    const params = new URLSearchParams();
-    params.set('storeId', storeId);
-    const d = await fetchAuthJson<YesterdayData & { error?: string }>(
-      `/api/dashboard/yesterday-analysis?${params}`,
-    );
-    if (d.error) throw new Error(d.error);
-    return d;
-  });
+  const { data, isLoading, isError, refetch, dataUpdatedAt } = useYesterdayAnalysis(storeId);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(new Date());
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    setUpdatedAt(new Date());
-  }, [data]);
+    if (dataUpdatedAt) setUpdatedAt(new Date(dataUpdatedAt));
+  }, [dataUpdatedAt]);
 
   const refresh = useCallback(() => {
-    invalidate();
-  }, [invalidate]);
+    void refetch();
+  }, [refetch]);
+  const analysis = useWidgetAnalysis('yesterday_analysis', storeId, data);
 
-  useEffect(() => {
-    timerRef.current = setInterval(refresh, 30 * 1000);
+  if (isLoading && !data) {
+    return (
+      <WidgetWrapper title="📅 전일 판매 분석" editMode={editMode} onRemove={onRemove}>
+        <SkeletonTable />
+      </WidgetWrapper>
+    );
+  }
 
-    const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
-    document.addEventListener('visibilitychange', onVisible);
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, [refresh]);
+  if (isError || !data) {
+    return (
+      <WidgetWrapper title="📅 전일 판매 분석" editMode={editMode} onRemove={onRemove} onRefresh={refresh}>
+        <div className="p-3"><EmptyState reason="전일 판매 데이터를 불러오지 못했습니다." /></div>
+      </WidgetWrapper>
+    );
+  }
 
   const RANK_COLOR = ['text-yellow-400', 'text-slate-300', 'text-orange-400', 'text-slate-400', 'text-slate-500'];
 
@@ -117,7 +105,8 @@ function YesterdayWidgetContent({
               </div>
             </>
           )}
-          <AiUsedBadge ai={data.ai} className="pt-2 border-t border-slate-800/60" />
+          <AiUsedBadge ai={data.ai as AiMetaDisplay | undefined} className="pt-2 border-t border-slate-800/60" />
+          <WidgetAnalysisPanel analysis={analysis} />
         </div>
       )}
     </WidgetWrapper>
@@ -139,9 +128,5 @@ export default function YesterdayWidget({
     );
   }
 
-  return (
-    <WidgetAsyncBoundary skeleton="table" widgetName="전일 판매 분석">
-      <YesterdayWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} />
-    </WidgetAsyncBoundary>
-  );
+  return <YesterdayWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} />;
 }

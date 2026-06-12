@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Droplets } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
-import WidgetAsyncBoundary from '@/components/suspense/WidgetAsyncBoundary';
 import EmptyState from '@/components/suspense/EmptyState';
-import { fetchAuthJson } from '@/components/suspense/fetchJson';
-import { useSuspenseInvalidate, useSuspenseResource } from '@/components/suspense/useSuspenseResource';
+import SkeletonWidget from '@/components/suspense/SkeletonWidget';
+import { useWeather } from '@/lib/queries';
+import WidgetAnalysisPanel from './WidgetAnalysisPanel';
+import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 
 const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -74,30 +75,34 @@ function DayCard({ day, isYesterday, isToday, currentTemp }: {
   );
 }
 
-function cacheKey(storeId: string) {
-  return `dashboard:weather:${storeId}`;
-}
-
 function WeatherContent({
   editMode, onRemove, storeId,
 }: { editMode: boolean; onRemove: () => void; storeId: string }) {
-  const key = cacheKey(storeId);
-  const invalidate = useSuspenseInvalidate(key);
-  const data = useSuspenseResource(key, () =>
-    fetchAuthJson<WeatherData>(`/api/dashboard/weather?storeId=${encodeURIComponent(storeId)}`),
-  );
+  const { data, isLoading, isError, refetch, dataUpdatedAt } = useWeather(storeId);
   const [updatedAt, setUpdatedAt] = useState(() => new Date());
 
   useEffect(() => {
-    setUpdatedAt(new Date());
-  }, [data]);
+    if (dataUpdatedAt) setUpdatedAt(new Date(dataUpdatedAt));
+  }, [dataUpdatedAt]);
 
-  const refresh = useCallback(() => invalidate(), [invalidate]);
+  const refresh = useCallback(() => void refetch(), [refetch]);
+  const analysis = useWidgetAnalysis('weather', storeId, data);
 
-  useEffect(() => {
-    const t = setInterval(refresh, 60 * 60 * 1000);
-    return () => clearInterval(t);
-  }, [refresh]);
+  if (isLoading && !data) {
+    return (
+      <WidgetWrapper title="🌤️ 날씨 예보" editMode={editMode} onRemove={onRemove}>
+        <SkeletonWidget />
+      </WidgetWrapper>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <WidgetWrapper title="🌤️ 날씨 예보" editMode={editMode} onRemove={onRemove} onRefresh={refresh}>
+        <div className="p-3"><EmptyState reason="날씨 데이터를 불러오지 못했습니다." compact /></div>
+      </WidgetWrapper>
+    );
+  }
 
   const todayStr = new Date().toISOString().split('T')[0];
   const yesterdayStr = new Date(Date.now() - 86400000).toISOString().split('T')[0];
@@ -126,6 +131,7 @@ function WeatherContent({
               />
             ))}
           </div>
+          <WidgetAnalysisPanel analysis={analysis} />
         </div>
       )}
     </WidgetWrapper>
@@ -143,9 +149,5 @@ export default function WeatherWidget({
     );
   }
 
-  return (
-    <WidgetAsyncBoundary skeleton="chart" widgetName="날씨">
-      <WeatherContent editMode={editMode} onRemove={onRemove} storeId={storeId} />
-    </WidgetAsyncBoundary>
-  );
+  return <WeatherContent editMode={editMode} onRemove={onRemove} storeId={storeId} />;
 }

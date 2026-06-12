@@ -23,6 +23,8 @@ const WIDGET_LIST = [
   { key: 'dow_profitability',  label: '요일별 수익성',        desc: '요일별 매출·수익 랭킹' },
   { key: 'cost_ratio',         label: '원가율 모니터',        desc: '품목별 원가율·목표 초과' },
   { key: 'margin_ranking',     label: '마진율 랭킹',          desc: 'TOP/BOTTOM 마진·목표 달성률' },
+  { key: 'break_even',         label: '실시간 손익분기',      desc: '고정비·원가율 기반 일 BEP 게이지' },
+  { key: 'inventory_turnover', label: '재고 회전율',          desc: '품목별 주간 회전·발주 제안' },
   { key: 'sales_category',     label: '카테고리별 매출',    desc: '소고기·돼지·닭·양념 파이차트' },
   { key: 'time_slot_aov',      label: '시간대별 객단가',    desc: '오전·오후·저녁·야간 객단가' },
 ];
@@ -53,6 +55,8 @@ const DEFAULT_PERMS: Permissions = {
   dow_profitability:  { master: true, admin: true,  user: true,  staff: false },
   cost_ratio:         { master: true, admin: true,  user: true,  staff: false },
   margin_ranking:     { master: true, admin: true,  user: true,  staff: false },
+  break_even:         { master: true, admin: true,  user: true,  staff: false },
+  inventory_turnover: { master: true, admin: true,  user: true,  staff: false },
   sales_category:     { master: true, admin: true,  user: true,  staff: true  },
   time_slot_aov:      { master: true, admin: true,  user: true,  staff: true  },
 };

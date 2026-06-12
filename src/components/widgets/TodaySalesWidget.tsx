@@ -8,6 +8,8 @@ import { useSalesData } from '@/lib/queries';
 import { getKSTTodayYMD } from '@/lib/dateUtils';
 import { getDisplayNetSales, getDisplayReturnAmount } from '@/lib/posDailySales';
 import { RefreshCw } from 'lucide-react';
+import WidgetAnalysisPanel from './WidgetAnalysisPanel';
+import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 
 function TodaySalesContent({
   editMode, onRemove, storeId,
@@ -28,6 +30,9 @@ function TodaySalesContent({
   const yesterdayNet = getDisplayNetSales(yesterdayDoc);
   const isClosed = todayDoc?.isClosed ?? data?.isClosed ?? false;
   const syncedAt = data?.syncedAt ?? (todayDoc as { syncedAt?: string } | null)?.syncedAt;
+  const analysis = useWidgetAnalysis('today_sales', storeId, data ? {
+    todayNet, yesterdayNet, isClosed,
+  } : undefined);
 
   if (isLoading && !data) {
     return (
@@ -88,6 +93,7 @@ function TodaySalesContent({
             POS 동기화 {new Date(syncedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
           </p>
         )}
+        <WidgetAnalysisPanel analysis={analysis} />
       </div>
     </WidgetWrapper>
   );

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2, Tag, Package, CalendarDays, UserCircle, Target, Bell, Percent, Cake, BarChart3 } from 'lucide-react';
+import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2, Tag, Package, CalendarDays, UserCircle, Target, Bell, Percent, Cake, BarChart3, CircleDollarSign } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -169,6 +169,13 @@ export default function SettingsPage() {
       icon: <BarChart3 className="w-5 h-5 text-teal-400" />,
       label: '마진율 목표',
       description: '전체·품목별 목표 마진율 — 랭킹 달성률',
+      show: isAdminLevelGroup(storeRole),
+    },
+    {
+      href: '/dashboard/settings/fixed-costs',
+      icon: <CircleDollarSign className="w-5 h-5 text-emerald-400" />,
+      label: '고정비 · 손익분기',
+      description: '임대·인건비·관리비 — 실시간 BEP 계산',
       show: isAdminLevelGroup(storeRole),
     },
     {

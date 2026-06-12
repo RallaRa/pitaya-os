@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import WidgetWrapper from './WidgetWrapper';
-import WidgetAsyncBoundary from '@/components/suspense/WidgetAsyncBoundary';
 import EmptyState from '@/components/suspense/EmptyState';
-import { fetchAuthJson } from '@/components/suspense/fetchJson';
-import { useSuspenseInvalidate, useSuspenseResource } from '@/components/suspense/useSuspenseResource';
+import SkeletonWidget from '@/components/suspense/SkeletonWidget';
+import { useCostRatio } from '@/lib/queries';
 import { Settings } from 'lucide-react';
+import WidgetAnalysisPanel from './WidgetAnalysisPanel';
+import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 
 interface CostRatioItemRow {
   id: string;
@@ -25,38 +26,36 @@ interface CostRatioData {
   offenders: CostRatioItemRow[];
 }
 
-function cacheKey(storeId: string) {
-  return `dashboard:cost-ratio:${storeId}`;
-}
-
-async function fetchCostRatio(storeId: string): Promise<CostRatioData> {
-  const data = await fetchAuthJson<CostRatioData>(
-    `/api/dashboard/cost-ratio?storeId=${encodeURIComponent(storeId)}`,
-  );
-  return {
-    storeAvgRatio: data.storeAvgRatio ?? null,
-    globalTargetRatio: data.globalTargetRatio ?? 0.65,
-    items: data.items ?? [],
-    offenders: data.offenders ?? [],
-  };
-}
-
 function CostRatioContent({
   editMode, onRemove, storeId,
 }: { editMode: boolean; onRemove: () => void; storeId: string }) {
-  const key = cacheKey(storeId);
-  const invalidate = useSuspenseInvalidate(key);
-  const { storeAvgRatio, globalTargetRatio, items, offenders } = useSuspenseResource(
-    key,
-    () => fetchCostRatio(storeId),
-  );
+  const { data, isLoading, isError, refetch, dataUpdatedAt } = useCostRatio(storeId);
   const [updatedAt, setUpdatedAt] = useState(() => new Date());
 
   useEffect(() => {
-    setUpdatedAt(new Date());
-  }, [storeAvgRatio, items]);
+    if (dataUpdatedAt) setUpdatedAt(new Date(dataUpdatedAt));
+  }, [dataUpdatedAt]);
 
-  const refresh = useCallback(() => invalidate(), [invalidate]);
+  const refresh = useCallback(() => void refetch(), [refetch]);
+  const analysis = useWidgetAnalysis('cost_ratio', storeId, data);
+
+  if (isLoading && !data) {
+    return (
+      <WidgetWrapper title="⚠️ 원가율 모니터" editMode={editMode} onRemove={onRemove}>
+        <SkeletonWidget />
+      </WidgetWrapper>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <WidgetWrapper title="⚠️ 원가율 모니터" editMode={editMode} onRemove={onRemove} onRefresh={refresh}>
+        <div className="p-4"><EmptyState reason="원가율 데이터를 불러오지 못했습니다." compact /></div>
+      </WidgetWrapper>
+    );
+  }
+
+  const { storeAvgRatio, globalTargetRatio, items, offenders } = data;
   const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 
   const displayItems = [...items]
@@ -128,6 +127,7 @@ function CostRatioContent({
         >
           <Settings className="w-3 h-3" /> 목표 설정
         </Link>
+        <WidgetAnalysisPanel analysis={analysis} />
       </div>
     </WidgetWrapper>
   );
@@ -144,9 +144,5 @@ export default function CostRatioWidget({
     );
   }
 
-  return (
-    <WidgetAsyncBoundary skeleton="widget" widgetName="원가율">
-      <CostRatioContent editMode={editMode} onRemove={onRemove} storeId={storeId} />
-    </WidgetAsyncBoundary>
-  );
+  return <CostRatioContent editMode={editMode} onRemove={onRemove} storeId={storeId} />;
 }

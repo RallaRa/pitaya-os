@@ -1,14 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Send, Loader2, AlertTriangle } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
 import WidgetEmptyReason from './WidgetEmptyReason';
-import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { useChurnRisk } from '@/lib/queries';
 import type { ChurnScoreFactors } from '@/lib/customerChurnScore';
 import { VISIT_TREND_LABELS } from '@/lib/customerVisitTrend';
 import type { VisitTrendSegment } from '@/lib/customerVisitTrend';
+import WidgetAnalysisPanel from './WidgetAnalysisPanel';
+import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 
 interface ChurnRow {
   cusCode: string;
@@ -32,39 +35,13 @@ export default function ChurnRiskWidget({
 }: {
   editMode: boolean; onRemove: () => void; storeId?: string;
 }) {
-  const [items, setItems] = useState<ChurnRow[]>([]);
-  const [totalAtRisk, setTotalAtRisk] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const { data, isLoading, isError, refetch, dataUpdatedAt, error } = useChurnRisk(storeId || '', 10, !!storeId);
+  const items = (data?.items || []) as ChurnRow[];
+  const totalAtRisk = data?.totalAtRisk ?? 0;
+  const updatedAt = dataUpdatedAt ? new Date(dataUpdatedAt) : null;
   const [queueing, setQueueing] = useState<string | null>(null);
   const [queueMsg, setQueueMsg] = useState('');
-
-  const load = useCallback(async () => {
-    if (!storeId) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/dashboard/churn-risk?storeId=${encodeURIComponent(storeId)}&limit=10`,
-        { headers: await getAuthHeaders() },
-      );
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || '조회 실패');
-      setItems(d.items || []);
-      setTotalAtRisk(d.totalAtRisk ?? 0);
-      setUpdatedAt(new Date());
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '이탈 위험 데이터를 불러오지 못했습니다');
-    } finally {
-      setLoading(false);
-    }
-  }, [storeId]);
-
-  useEffect(() => { load(); }, [load]);
+  const analysis = useWidgetAnalysis('churn_risk', storeId || undefined, data ? { totalAtRisk, items } : undefined);
 
   const enqueue = async (cusCode: string) => {
     if (!storeId) return;
@@ -92,14 +69,14 @@ export default function ChurnRiskWidget({
       title="⚠️ 이탈 위험 고객"
       editMode={editMode}
       onRemove={onRemove}
-      onRefresh={load}
+      onRefresh={() => void refetch()}
       updatedAt={updatedAt}
-      loading={loading}
-      error={error}
+      loading={isLoading}
+      error={isError ? (error instanceof Error ? error.message : '이탈 위험 데이터를 불러오지 못했습니다') : null}
     >
       {!storeId ? (
         <div className="p-3"><WidgetEmptyReason reason="매장이 선택되지 않았습니다." /></div>
-      ) : items.length === 0 && !loading ? (
+      ) : items.length === 0 && !isLoading ? (
         <div className="p-3">
           <WidgetEmptyReason reason="이탈 위험(70점+) 고객이 없습니다." />
         </div>
@@ -166,6 +143,7 @@ export default function ChurnRiskWidget({
               외 {totalAtRisk - 10}명 — 상세 페이지에서 확인
             </p>
           )}
+          <WidgetAnalysisPanel analysis={analysis} />
         </div>
       )}
     </WidgetWrapper>

@@ -67,6 +67,7 @@ export const HR_SYSTEM_MENU_SECTIONS: HrSystemMenuSection[] = [
     permission: 'hrPayrollCalc',
     items: [
       { href: '/dashboard/hr-system/payroll/calculate', label: '급여계산', description: '월별 급여 산출·검토' },
+      { href: '/dashboard/hr-system/payroll/profit-share', label: '영업이익 분배', description: '매출 기반 이익분배·자동 급여' },
       { href: '/dashboard/hr-system/payroll/runs', label: '급여마감', description: '마감·확정·취소' },
       { href: '/dashboard/hr-system/payroll/adjustments', label: '급여조정', description: '특별수당·공제 반영' },
     ],

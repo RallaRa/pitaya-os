@@ -4,13 +4,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { AlertTriangle, RefreshCw, TrendingUp, TrendingDown, ChevronDown, ChevronUp, Truck } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
-import {
-  WidgetAsyncBoundary,
-  EmptyState,
-  fetchAuthJson,
-  useSuspenseResource,
-  useSuspenseInvalidate,
-} from '@/components/suspense';
+import EmptyState from '@/components/suspense/EmptyState';
+import SkeletonCard from '@/components/suspense/SkeletonCard';
+import { useTotalPartner } from '@/lib/queries';
+import WidgetAnalysisPanel from './WidgetAnalysisPanel';
+import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 
 interface PartnerItem {
   rank: number; item: string; action: string;
@@ -189,28 +187,40 @@ interface Props {
   mobileLayout?: boolean;
 }
 
-function cacheKey(storeId: string) {
-  return `dashboard:total-partner:${storeId}`;
-}
-
 function TotalPartnerWidgetContent({ editMode, onRemove, storeId, mobileLayout = false }: Props & { storeId: string }) {
-  const key = cacheKey(storeId);
-  const invalidate = useSuspenseInvalidate(key);
-  const data = useSuspenseResource(key, async () => {
-    const q = new URLSearchParams({ storeId });
-    return fetchAuthJson<PartnerData & { error?: string }>(`/api/dashboard/total-partner?${q}`);
-  });
+  const { data: rawData, isLoading, isError, refetch, dataUpdatedAt } = useTotalPartner(storeId);
+  const data = rawData as unknown as PartnerData | undefined;
   const [tab,      setTab]      = useState<'today'|'tomorrow'|'thisWeek'|'thisMonth'>('today');
   const [showSrc,  setShowSrc]  = useState(false);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(new Date());
 
   useEffect(() => {
-    setUpdatedAt(new Date());
-  }, [data]);
+    if (dataUpdatedAt) setUpdatedAt(new Date(dataUpdatedAt));
+  }, [dataUpdatedAt]);
 
   const refresh = useCallback(() => {
-    invalidate();
-  }, [invalidate]);
+    void refetch();
+  }, [refetch]);
+  const analysis = useWidgetAnalysis('total_partner', storeId, data ? {
+    today: data.today,
+    orderAdvice: data.orderAdvice,
+  } : undefined);
+
+  if (isLoading && !data) {
+    return (
+      <WidgetWrapper title="AI 운영 파트너" editMode={editMode} onRemove={onRemove} autoHeight={mobileLayout}>
+        <div className="p-3"><SkeletonCard /></div>
+      </WidgetWrapper>
+    );
+  }
+
+  if (isError && !data) {
+    return (
+      <WidgetWrapper title="AI 운영 파트너" editMode={editMode} onRemove={onRemove} onRefresh={refresh} autoHeight={mobileLayout}>
+        <div className="p-3"><EmptyState reason="AI 운영 파트너 데이터를 불러오지 못했습니다." /></div>
+      </WidgetWrapper>
+    );
+  }
 
   const order = data?.orderAdvice;
   const orderBg = order?.dDay === '당일' ? 'bg-red-900/40 border-red-700/50 animate-pulse'
@@ -329,6 +339,9 @@ function TotalPartnerWidgetContent({ editMode, onRemove, storeId, mobileLayout =
             </div>
           </>
         )}
+        <div className="shrink-0 px-3">
+          <WidgetAnalysisPanel analysis={analysis} />
+        </div>
 
         {/* 하단 정보 바 */}
         <div className="shrink-0 border-t border-slate-800 px-3 py-1.5">
@@ -379,9 +392,5 @@ export default function TotalPartnerWidget({ editMode, onRemove, storeId, mobile
     );
   }
 
-  return (
-    <WidgetAsyncBoundary skeleton="card" widgetName="AI 운영 파트너">
-      <TotalPartnerWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} mobileLayout={mobileLayout} />
-    </WidgetAsyncBoundary>
-  );
+  return <TotalPartnerWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} mobileLayout={mobileLayout} />;
 }

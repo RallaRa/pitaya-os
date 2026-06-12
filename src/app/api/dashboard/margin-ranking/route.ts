@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/authVerify';
-import { computeMarginRanking } from '@/lib/marginRanking';
+import { computeMarginRanking } from '@/lib/marginRanking.server';
 
 export async function GET(req: Request) {
   const authUser = await verifyToken(req);

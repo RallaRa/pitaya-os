@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import WidgetWrapper from './WidgetWrapper';
-import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import { useRepurchaseDue } from '@/lib/queries';
+import WidgetAnalysisPanel from './WidgetAnalysisPanel';
+import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 
 interface DueCustomer {
   cusCode: string;
@@ -17,41 +18,26 @@ interface DueCustomer {
 export default function RepurchaseDueWidget({
   editMode, onRemove, storeId,
 }: { editMode: boolean; onRemove: () => void; storeId?: string }) {
-  const [customers, setCustomers] = useState<DueCustomer[]>([]);
-  const [count, setCount] = useState(0);
-  const [date, setDate] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchData = useCallback(async () => {
-    if (!storeId) { setLoading(false); return; }
-    try {
-      const headers = await getAuthHeaders();
-      const res = await fetch(`/api/dashboard/repurchase-due?storeId=${encodeURIComponent(storeId)}`, { headers });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '조회 실패');
-      setCustomers(data.customers || []);
-      setCount(data.count || 0);
-      setDate(data.date || '');
-      setError(null);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '조회 실패');
-    } finally {
-      setLoading(false);
-    }
-  }, [storeId]);
-
-  useEffect(() => {
-    setLoading(true);
-    fetchData();
-    const t = setInterval(fetchData, 300000);
-    return () => clearInterval(t);
-  }, [fetchData]);
+  const { data, isLoading, isError, refetch, error } = useRepurchaseDue(storeId || '', !!storeId);
+  const customers = (data?.customers || []) as DueCustomer[];
+  const count = data?.count ?? 0;
+  const date = data?.date ?? '';
+  const analysis = useWidgetAnalysis('repurchase_due', storeId || undefined, data ? { count, customers } : undefined);
 
   return (
-    <WidgetWrapper title="재구매 주기 임박" editMode={editMode} onRemove={onRemove} loading={loading} error={error} onRefresh={fetchData}>
+    <WidgetWrapper
+      title="재구매 주기 임박"
+      editMode={editMode}
+      onRemove={onRemove}
+      loading={isLoading}
+      error={isError ? (error instanceof Error ? error.message : '조회 실패') : null}
+      onRefresh={() => void refetch()}
+    >
       {count === 0 ? (
-        <p className="text-slate-500 text-xs">평균 주기+2일 초과 고객 없음 ({date || '오늘'})</p>
+        <div className="space-y-2">
+          <p className="text-slate-500 text-xs">평균 주기+2일 초과 고객 없음 ({date || '오늘'})</p>
+          <WidgetAnalysisPanel analysis={analysis} />
+        </div>
       ) : (
         <div className="space-y-2">
           <p className="text-amber-400/90 text-xs">{count}명 · 알림톡 큐 등록 대상 (notification_queue)</p>
@@ -66,6 +52,7 @@ export default function RepurchaseDueWidget({
           <Link href="/dashboard/marketing/journey" className="text-teal-400 text-xs hover:underline">
             알림 큐 확인 →
           </Link>
+          <WidgetAnalysisPanel analysis={analysis} />
         </div>
       )}
     </WidgetWrapper>

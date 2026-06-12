@@ -3,26 +3,28 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { MessageCircle, BookOpen, FolderOpen, CalendarDays, LayoutGrid, FileText } from 'lucide-react';
+import {
+  MESSENGER_SIDEBAR_LINKS,
+  isMessengerSubLinkActive,
+} from '@/lib/messenger/menuStructure';
 
-const TABS = [
-  { href: '/dashboard/messenger', label: '채팅', icon: MessageCircle, exact: true },
-  { href: '/dashboard/messenger/wiki', label: '위키', icon: BookOpen, exact: false },
-  { href: '/dashboard/messenger/files', label: '파일', icon: FolderOpen, exact: false },
-  { href: '/dashboard/messenger/calendar', label: '캘린더', icon: CalendarDays, exact: false },
-  { href: '/dashboard/messenger/tasks', label: '칸반', icon: LayoutGrid, exact: false },
-  { href: '/dashboard/messenger/docs', label: '문서', icon: FileText, exact: false },
-] as const;
+const TAB_ICONS: Record<string, typeof MessageCircle> = {
+  '/dashboard/messenger': MessageCircle,
+  '/dashboard/messenger/wiki': BookOpen,
+  '/dashboard/messenger/files': FolderOpen,
+  '/dashboard/messenger/calendar': CalendarDays,
+  '/dashboard/messenger/tasks': LayoutGrid,
+  '/dashboard/messenger/docs': FileText,
+};
 
 export default function MessengerSubNav() {
   const pathname = usePathname();
 
   return (
     <nav className="flex items-center gap-1 px-2 sm:px-3 py-2 border-b border-slate-800 bg-slate-950/90 scrollbar-thin-x safe-top">
-      {TABS.map(tab => {
-        const active = tab.exact
-          ? pathname === tab.href
-          : pathname.startsWith(tab.href);
-        const Icon = tab.icon;
+      {MESSENGER_SIDEBAR_LINKS.map(tab => {
+        const active = isMessengerSubLinkActive(pathname, tab);
+        const Icon = TAB_ICONS[tab.href] || MessageCircle;
         return (
           <Link
             key={tab.href}

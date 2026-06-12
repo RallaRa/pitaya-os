@@ -1,7 +1,7 @@
 import type { LayoutItem } from 'react-grid-layout';
 
 export const GRID_COLS = 12;
-export const DASHBOARD_LAYOUT_VERSION = 8;
+export const DASHBOARD_LAYOUT_VERSION = 10;
 
 export interface WidgetMeta {
   id: string;
@@ -110,6 +110,18 @@ export const WIDGET_META: WidgetMeta[] = [
     title: '시간대별 객단가',
     defaultItem: { i: 'time_slot_aov', x: 8, y: 26, w: 4, h: 4, minW: 3, minH: 3, maxW: 8, maxH: 8 },
     permKey: 'time_slot_aov',
+  },
+  {
+    id: 'inventory_turnover',
+    title: '재고 회전율',
+    defaultItem: { i: 'inventory_turnover', x: 4, y: 34, w: 4, h: 4, minW: 3, minH: 3, maxW: 8, maxH: 6 },
+    permKey: 'inventory_turnover',
+  },
+  {
+    id: 'break_even',
+    title: '실시간 손익분기',
+    defaultItem: { i: 'break_even', x: 0, y: 34, w: 4, h: 4, minW: 3, minH: 3, maxW: 8, maxH: 6 },
+    permKey: 'break_even',
   },
   {
     id: 'repurchase_due',

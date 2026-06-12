@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import WidgetWrapper from './WidgetWrapper';
-import { getAuthHeaders } from '@/lib/getAuthHeaders';
 import { getKSTTodayYMD } from '@/lib/dateUtils';
+import { useSalesCategories } from '@/lib/queries';
+import WidgetAnalysisPanel from './WidgetAnalysisPanel';
+import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 
 interface ChartRow {
   key: string;
@@ -21,52 +22,21 @@ export default function SalesCategoryWidget({
   onRemove: () => void;
   storeId?: string;
 }) {
-  const [chart, setChart] = useState<ChartRow[]>([]);
-  const [totalAmount, setTotalAmount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [emptyReason, setEmptyReason] = useState<string | null>(null);
-
-  const fetchData = useCallback(async () => {
-    if (!storeId) {
-      setLoading(false);
-      return;
-    }
-    try {
-      const headers = await getAuthHeaders();
-      const date = getKSTTodayYMD();
-      const res = await fetch(
-        `/api/dashboard/sales-categories?storeId=${encodeURIComponent(storeId)}&date=${date}`,
-        { headers },
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '조회 실패');
-      setChart(data.chart || []);
-      setTotalAmount(data.totalAmount || 0);
-      setEmptyReason(data.emptyReason || null);
-      setError(null);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '카테고리 매출을 불러오지 못했습니다');
-    } finally {
-      setLoading(false);
-    }
-  }, [storeId]);
-
-  useEffect(() => {
-    setLoading(true);
-    fetchData();
-    const t = setInterval(fetchData, 60000);
-    return () => clearInterval(t);
-  }, [fetchData]);
+  const date = getKSTTodayYMD();
+  const { data, isLoading, isError, refetch, error } = useSalesCategories(storeId || '', date, !!storeId);
+  const chart = (data?.chart || []) as ChartRow[];
+  const totalAmount = data?.totalAmount || 0;
+  const emptyReason = data?.emptyReason || null;
+  const analysis = useWidgetAnalysis('sales_category', storeId || undefined, data ? { chart, totalAmount } : undefined);
 
   return (
     <WidgetWrapper
       title="카테고리별 매출"
       editMode={editMode}
       onRemove={onRemove}
-      loading={loading}
-      error={error}
-      onRefresh={fetchData}
+      loading={isLoading}
+      error={isError ? (error instanceof Error ? error.message : '카테고리 매출을 불러오지 못했습니다') : null}
+      onRefresh={() => void refetch()}
     >
       {emptyReason ? (
         <p className="text-slate-500 text-xs px-1">{emptyReason}</p>
@@ -112,6 +82,7 @@ export default function SalesCategoryWidget({
           <p className="text-xs text-slate-500 border-t border-slate-800 pt-1">
             합계 {totalAmount.toLocaleString()}원
           </p>
+          <WidgetAnalysisPanel analysis={analysis} />
         </div>
       )}
     </WidgetWrapper>

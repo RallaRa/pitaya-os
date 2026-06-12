@@ -17,6 +17,8 @@ export const DEFAULT_WIDGET_PERMISSIONS = {
   dow_profitability:  { master: true, admin: true,  user: true,  staff: false },
   cost_ratio:         { master: true, admin: true,  user: true,  staff: false },
   margin_ranking:     { master: true, admin: true,  user: true,  staff: false },
+  break_even:         { master: true, admin: true,  user: true,  staff: false },
+  inventory_turnover: { master: true, admin: true,  user: true,  staff: false },
   sales_category:     { master: true, admin: true,  user: true,  staff: true  },
   time_slot_aov:      { master: true, admin: true,  user: true,  staff: true  },
 };

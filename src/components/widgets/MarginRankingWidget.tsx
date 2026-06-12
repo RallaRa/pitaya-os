@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { ArrowRight, TrendingDown, TrendingUp } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
 import WidgetEmptyReason from './WidgetEmptyReason';
-import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import { useMarginRanking } from '@/lib/queries';
 import { formatMarginPct, type MarginInsight, type MarginItemRow } from '@/lib/marginRankingShared';
+import WidgetAnalysisPanel from './WidgetAnalysisPanel';
+import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 
 interface MarginData {
   avgMargin: number | null;
@@ -50,59 +51,26 @@ export default function MarginRankingWidget({
 }: {
   editMode: boolean; onRemove: () => void; storeId?: string;
 }) {
-  const [data, setData] = useState<MarginData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
-
-  const load = useCallback(async () => {
-    if (!storeId) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/dashboard/margin-ranking?storeId=${encodeURIComponent(storeId)}`,
-        { headers: await getAuthHeaders() },
-      );
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || '조회 실패');
-      setData({
-        avgMargin: d.avgMargin ?? null,
-        globalTargetMargin: d.globalTargetMargin ?? 0.35,
-        achievementRate: d.achievementRate ?? null,
-        top10: d.top10 || [],
-        bottom5: d.bottom5 || [],
-        insights: d.insights || [],
-      });
-      setUpdatedAt(new Date());
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '마진 데이터를 불러오지 못했습니다');
-    } finally {
-      setLoading(false);
-    }
-  }, [storeId]);
-
-  useEffect(() => { load(); }, [load]);
-
+  const { data: rawData, isLoading, isError, refetch, dataUpdatedAt, error } = useMarginRanking(storeId || '', !!storeId);
+  const data = rawData as MarginData | undefined;
+  const updatedAt = dataUpdatedAt ? new Date(dataUpdatedAt) : null;
   const top5 = data?.top10.slice(0, 5) || [];
   const bottom3 = data?.bottom5.slice(0, 3) || [];
+  const analysis = useWidgetAnalysis('margin_ranking', storeId || undefined, data);
 
   return (
     <WidgetWrapper
       title="📊 마진율 랭킹"
       editMode={editMode}
       onRemove={onRemove}
-      onRefresh={load}
+      onRefresh={() => void refetch()}
       updatedAt={updatedAt}
-      loading={loading}
-      error={error}
+      loading={isLoading}
+      error={isError ? (error instanceof Error ? error.message : '마진 데이터를 불러오지 못했습니다') : null}
     >
       {!storeId ? (
         <div className="p-3"><WidgetEmptyReason reason="매장이 선택되지 않았습니다." /></div>
-      ) : !data?.top10.length && !loading ? (
+      ) : !data?.top10.length && !isLoading ? (
         <div className="p-3"><WidgetEmptyReason reason="마진 계산 가능한 품목이 없습니다." /></div>
       ) : data ? (
         <div className="h-full p-3 flex flex-col gap-2 overflow-hidden">
@@ -153,6 +121,7 @@ export default function MarginRankingWidget({
           >
             전체 랭킹 <ArrowRight className="w-3 h-3" />
           </Link>
+          <WidgetAnalysisPanel analysis={analysis} />
         </div>
       ) : null}
     </WidgetWrapper>

@@ -4,44 +4,47 @@ import { useState, useEffect, useCallback } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
-import {
-  WidgetAsyncBoundary,
-  EmptyState,
-  fetchAuthJson,
-  useSuspenseResource,
-  useSuspenseInvalidate,
-} from '@/components/suspense';
+import EmptyState from '@/components/suspense/EmptyState';
+import SkeletonTable from '@/components/suspense/SkeletonTable';
+import { useWeeklyAnalysis } from '@/lib/queries';
+import WidgetAnalysisPanel from './WidgetAnalysisPanel';
+import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 
 interface Item { name: string; qty: number; amount: number; pctChange?: number | null; }
 interface AnalysisData { top: Item[]; bottom: Item[]; insight: string; emptyReason?: string; ai?: AiMetaDisplay; }
-
-function cacheKey(storeId: string) {
-  return `dashboard:weekly-analysis:${storeId}`;
-}
 
 function WeeklyAnalysisWidgetContent({
   editMode, onRemove, storeId,
 }: {
   editMode: boolean; onRemove: () => void; storeId: string;
 }) {
-  const key = cacheKey(storeId);
-  const invalidate = useSuspenseInvalidate(key);
-  const data = useSuspenseResource(key, async () => {
-    const d = await fetchAuthJson<AnalysisData & { error?: string }>(
-      `/api/dashboard/weekly-analysis?storeId=${encodeURIComponent(storeId)}`,
-    );
-    if (d.error) throw new Error(d.error);
-    return d;
-  });
+  const { data, isLoading, isError, refetch, dataUpdatedAt } = useWeeklyAnalysis(storeId);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(new Date());
 
   useEffect(() => {
-    setUpdatedAt(new Date());
-  }, [data]);
+    if (dataUpdatedAt) setUpdatedAt(new Date(dataUpdatedAt));
+  }, [dataUpdatedAt]);
 
   const refresh = useCallback(() => {
-    invalidate();
-  }, [invalidate]);
+    void refetch();
+  }, [refetch]);
+  const analysis = useWidgetAnalysis('weekly_analysis', storeId, data);
+
+  if (isLoading && !data) {
+    return (
+      <WidgetWrapper title="📊 AI 주간 판매 분석" editMode={editMode} onRemove={onRemove}>
+        <SkeletonTable />
+      </WidgetWrapper>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <WidgetWrapper title="📊 AI 주간 판매 분석" editMode={editMode} onRemove={onRemove} onRefresh={refresh}>
+        <div className="p-3"><EmptyState reason="주간 분석 데이터를 불러오지 못했습니다." /></div>
+      </WidgetWrapper>
+    );
+  }
 
   const MEDALS = ['🥇', '🥈', '🥉'];
 
@@ -97,9 +100,10 @@ function WeeklyAnalysisWidgetContent({
             <div className="bg-teal-900/20 border border-teal-700/30 rounded-lg px-3 py-2">
               <p className="text-[10px] text-teal-400 font-semibold mb-0.5">💡 AI 인사이트</p>
               <p className="text-xs text-slate-300 leading-snug">{data.insight}</p>
-              <AiUsedBadge ai={data.ai} className="mt-2" />
+              <AiUsedBadge ai={data.ai as AiMetaDisplay | undefined} className="mt-2" />
             </div>
           )}
+          <WidgetAnalysisPanel analysis={analysis} />
         </div>
       )}
     </WidgetWrapper>
@@ -121,9 +125,5 @@ export default function WeeklyAnalysisWidget({
     );
   }
 
-  return (
-    <WidgetAsyncBoundary skeleton="table" widgetName="주간 판매 분석">
-      <WeeklyAnalysisWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} />
-    </WidgetAsyncBoundary>
-  );
+  return <WeeklyAnalysisWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} />;
 }

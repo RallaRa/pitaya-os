@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
-import { isCronAuthorized, cronUnauthorizedResponse, getCronSecret } from '@/lib/cronAuth';
+import { isCronAuthorized, cronUnauthorizedResponse } from '@/lib/cronAuth';
 import {
   getReminderKind,
   kstDateParts,
@@ -10,6 +10,7 @@ import {
   REMINDER_MESSAGES,
   type ReminderKind,
 } from '@/lib/hygieneSchedule';
+import { ensureTasksChannel, postMessengerText } from '@/lib/messenger/channels.server';
 
 async function sendNotificationsToStore(
   storeId: string,
@@ -38,6 +39,15 @@ async function sendNotificationsToStore(
     });
   });
   await batch.commit();
+
+  try {
+    const roomId = await ensureTasksChannel(storeId);
+    await postMessengerText({
+      roomId,
+      text: `${title}\n${message}\n/dashboard/hygiene`,
+    });
+  } catch { /* ignore messenger */ }
+
   return membersSnap.size;
 }
 

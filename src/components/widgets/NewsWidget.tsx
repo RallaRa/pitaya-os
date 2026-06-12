@@ -3,42 +3,44 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
-import WidgetAsyncBoundary from '@/components/suspense/WidgetAsyncBoundary';
 import EmptyState from '@/components/suspense/EmptyState';
-import { fetchAuthJson } from '@/components/suspense/fetchJson';
-import { useSuspenseInvalidate, useSuspenseResource } from '@/components/suspense/useSuspenseResource';
-
-interface NewsItem { title: string; link: string; pubDate: string; source: string; }
-
-const CACHE_KEY = 'dashboard:news';
-
-async function fetchNews() {
-  const data = await fetchAuthJson<{ news?: NewsItem[]; error?: string }>('/api/dashboard/news');
-  if (data.error) throw new Error(data.error);
-  return data.news ?? [];
-}
+import SkeletonTable from '@/components/suspense/SkeletonTable';
+import { useNews } from '@/lib/queries';
+import WidgetAnalysisPanel from './WidgetAnalysisPanel';
+import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 
 function NewsWidgetContent({
-  editMode, onRemove,
+  editMode, onRemove, storeId,
 }: {
-  editMode: boolean; onRemove: () => void;
+  editMode: boolean; onRemove: () => void; storeId?: string;
 }) {
-  const invalidate = useSuspenseInvalidate(CACHE_KEY);
-  const news = useSuspenseResource(CACHE_KEY, fetchNews);
+  const { data: news = [], isLoading, isError, refetch, dataUpdatedAt } = useNews();
   const [updatedAt, setUpdatedAt] = useState(() => new Date());
+  const analysis = useWidgetAnalysis('news', storeId, { news });
 
   useEffect(() => {
-    setUpdatedAt(new Date());
-  }, [news]);
+    if (dataUpdatedAt) setUpdatedAt(new Date(dataUpdatedAt));
+  }, [dataUpdatedAt]);
 
   const refresh = useCallback(() => {
-    invalidate();
-  }, [invalidate]);
+    void refetch();
+  }, [refetch]);
 
-  useEffect(() => {
-    const t = setInterval(refresh, 30 * 60 * 1000);
-    return () => clearInterval(t);
-  }, [refresh]);
+  if (isLoading && news.length === 0) {
+    return (
+      <WidgetWrapper title="🗞️ 정육 최신 뉴스" editMode={editMode} onRemove={onRemove}>
+        <SkeletonTable />
+      </WidgetWrapper>
+    );
+  }
+
+  if (isError) {
+    return (
+      <WidgetWrapper title="🗞️ 정육 최신 뉴스" editMode={editMode} onRemove={onRemove} onRefresh={refresh}>
+        <EmptyState reason="뉴스를 불러오지 못했습니다." compact />
+      </WidgetWrapper>
+    );
+  }
 
   return (
     <WidgetWrapper
@@ -76,15 +78,14 @@ function NewsWidgetContent({
             ))}
           </ul>
         )}
+        <div className="px-3 pb-2">
+          <WidgetAnalysisPanel analysis={analysis} />
+        </div>
       </div>
     </WidgetWrapper>
   );
 }
 
-export default function NewsWidget(props: { editMode: boolean; onRemove: () => void }) {
-  return (
-    <WidgetAsyncBoundary skeleton="table" widgetName="뉴스">
-      <NewsWidgetContent {...props} />
-    </WidgetAsyncBoundary>
-  );
+export default function NewsWidget(props: { editMode: boolean; onRemove: () => void; storeId?: string }) {
+  return <NewsWidgetContent {...props} />;
 }

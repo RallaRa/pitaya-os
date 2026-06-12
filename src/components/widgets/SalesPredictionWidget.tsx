@@ -6,13 +6,11 @@ import { AlertTriangle, ChevronDown, ChevronUp, Target, HelpCircle } from 'lucid
 import WidgetWrapper from './WidgetWrapper';
 import SalesEvidenceLine from './SalesEvidenceLine';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
-import {
-  WidgetAsyncBoundary,
-  EmptyState,
-  fetchAuthJson,
-  useSuspenseResource,
-  useSuspenseInvalidate,
-} from '@/components/suspense';
+import EmptyState from '@/components/suspense/EmptyState';
+import SkeletonCard from '@/components/suspense/SkeletonCard';
+import { fetchAuthJson, useOrderDeliveryGap, useSalesPrediction } from '@/lib/queries';
+import WidgetAnalysisPanel from './WidgetAnalysisPanel';
+import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 import { isPlaceholderSupporterComment } from '@/lib/salesPredictionBuild';
 import { annotateCompareDatesInComment } from '@/lib/annotateCompareDatesInText';
 import { PREDICTION_POS_REFRESH_MS } from '@/lib/predictionRefreshConfig';
@@ -301,40 +299,29 @@ export default function SalesPredictionWidget({
   }
 
   return (
-    <WidgetAsyncBoundary skeleton="table" widgetName="매출 예측">
-      <SalesPredictionWidgetContent
-        editMode={editMode}
-        onRemove={onRemove}
-        storeId={storeId}
-        mobileLayout={mobileLayout}
-      />
-    </WidgetAsyncBoundary>
+    <SalesPredictionWidgetContent
+      editMode={editMode}
+      onRemove={onRemove}
+      storeId={storeId}
+      mobileLayout={mobileLayout}
+    />
   );
-}
-
-function cacheKey(storeId: string) {
-  return `dashboard:sales-prediction:${storeId}`;
 }
 
 function SalesPredictionWidgetContent({
   editMode, onRemove, storeId, mobileLayout,
 }: { editMode: boolean; onRemove: () => void; storeId: string; mobileLayout?: boolean }) {
-  const key = cacheKey(storeId);
-  const invalidate = useSuspenseInvalidate(key);
-  const primaryData = useSuspenseResource(key, async () => {
-    const params = new URLSearchParams({ storeId });
-    const d = await fetchAuthJson<PredictionData & { error?: string }>(`/api/dashboard/sales-prediction?${params}`);
-    if (d.error) throw new Error(d.error);
-    return d;
-  });
-  const [data,       setData]       = useState<PredictionData | null>(primaryData);
-  const [updatedAt,  setUpdatedAt]  = useState<Date | null>(new Date());
-  const [showSource, setShowSource] = useState(false);
-  const [orderInfo,  setOrderInfo]  = useState<{
+  const { data: primaryRaw, isLoading, isError, refetch, dataUpdatedAt } = useSalesPrediction(storeId);
+  const primaryData = primaryRaw as unknown as PredictionData | undefined;
+  const { data: orderInfoRaw } = useOrderDeliveryGap(storeId);
+  const orderInfo = orderInfoRaw as {
     dDayType?: string;
     gaps?: { start: string; end: string }[];
     holidayOrderAlert?: { message?: string; holidayDate?: string };
-  } | null>(null);
+  } | undefined;
+  const [data,       setData]       = useState<PredictionData | null>(primaryData ?? null);
+  const [updatedAt,  setUpdatedAt]  = useState<Date | null>(new Date());
+  const [showSource, setShowSource] = useState(false);
   const [posRefreshing, setPosRefreshing] = useState(false);
   const mqMobile = useIsMobileView();
   const isMobileView = mobileLayout ?? mqMobile;
@@ -378,28 +365,23 @@ function SalesPredictionWidgetContent({
     }
   }, [storeId]);
 
-  const loadOrderInfo = useCallback(async () => {
-    try {
-      const params = new URLSearchParams({ storeId });
-      const info = await fetchAuthJson<{
-        dDayType?: string;
-        gaps?: { start: string; end: string }[];
-        holidayOrderAlert?: { message?: string; holidayDate?: string };
-      }>(`/api/order/check-delivery-gap?${params}`);
-      setOrderInfo(info);
-    } catch { /* ignore */ }
-  }, [storeId]);
-
   useEffect(() => {
-    setData(primaryData);
-    setUpdatedAt(new Date());
+    if (primaryData) setData(primaryData);
   }, [primaryData]);
 
-  const refresh = useCallback(() => {
-    invalidate();
-  }, [invalidate]);
+  useEffect(() => {
+    if (dataUpdatedAt) setUpdatedAt(new Date(dataUpdatedAt));
+  }, [dataUpdatedAt]);
 
-  useEffect(() => { loadOrderInfo(); }, [loadOrderInfo]);
+  const refresh = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+  const analysis = useWidgetAnalysis('sales_prediction', storeId, data ? {
+    modelAccuracy: data.modelAccuracy,
+    keyFactors: data.keyFactors,
+    accuracyLabel: data.accuracyLabel,
+    topItems: data.topItems,
+  } : undefined);
 
   useEffect(() => {
     if (!data?.topItems?.length || !storeId) return;
@@ -434,6 +416,22 @@ function SalesPredictionWidgetContent({
     const baseYmd = data.predictionDate || new Date().toISOString().slice(0, 10);
     return annotateCompareDatesInComment(raw, baseYmd);
   }, [data?.supporterComment, data?.predictionDate, slotChangeSummary]);
+
+  if (isLoading && !data) {
+    return (
+      <WidgetWrapper title="📈 AI 매출 예측 분석" editMode={editMode} onRemove={onRemove} autoHeight={isMobileView}>
+        <div className="p-3"><SkeletonCard /></div>
+      </WidgetWrapper>
+    );
+  }
+
+  if (isError && !data) {
+    return (
+      <WidgetWrapper title="📈 AI 매출 예측 분석" editMode={editMode} onRemove={onRemove} onRefresh={refresh} autoHeight={isMobileView}>
+        <div className="p-3"><EmptyState reason="매출 예측 데이터를 불러오지 못했습니다." /></div>
+      </WidgetWrapper>
+    );
+  }
 
   return (
     <WidgetWrapper
@@ -632,6 +630,15 @@ function SalesPredictionWidgetContent({
 
         {data && !data.noData && (
           <div className="px-2 pt-2 mt-1 border-t border-slate-800/60 shrink-0">
+            {data.keyFactors && data.keyFactors.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1">
+                {data.keyFactors.slice(0, 5).map((f, i) => (
+                  <span key={i} className="text-[9px] px-1.5 py-0.5 rounded bg-slate-800/60 text-slate-400 border border-slate-700/50">
+                    {f}
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="flex items-center gap-2 flex-wrap">
               <button
                 type="button"
@@ -665,6 +672,7 @@ function SalesPredictionWidgetContent({
                 </div>
               </div>
             )}
+            <WidgetAnalysisPanel analysis={analysis} />
           </div>
         )}
         </div>

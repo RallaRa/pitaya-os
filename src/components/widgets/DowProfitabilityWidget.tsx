@@ -1,14 +1,16 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import WidgetWrapper from './WidgetWrapper';
 import WidgetEmptyReason from './WidgetEmptyReason';
 import DowProfitabilityChart from '@/components/analytics/DowProfitabilityChart';
-import { getAuthHeaders } from '@/lib/getAuthHeaders';
+import { useDowProfitability } from '@/lib/queries';
 import type { DowPeriod, DowProfitInsight, DowProfitRow } from '@/lib/dowProfitabilityCalc';
 import { DOW_PERIOD_LABELS } from '@/lib/dowProfitabilityCalc';
 import { ArrowRight } from 'lucide-react';
+import WidgetAnalysisPanel from './WidgetAnalysisPanel';
+import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 
 export default function DowProfitabilityWidget({
   editMode, onRemove, storeId,
@@ -16,47 +18,21 @@ export default function DowProfitabilityWidget({
   editMode: boolean; onRemove: () => void; storeId?: string;
 }) {
   const [period, setPeriod] = useState<DowPeriod>('month');
-  const [rows, setRows] = useState<DowProfitRow[]>([]);
-  const [insights, setInsights] = useState<DowProfitInsight[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
-
-  const load = useCallback(async () => {
-    if (!storeId) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(
-        `/api/dashboard/dow-profitability?storeId=${encodeURIComponent(storeId)}&period=${period}`,
-        { headers: await getAuthHeaders() },
-      );
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error || '조회 실패');
-      setRows(d.rows || []);
-      setInsights((d.insights || []).slice(0, 1));
-      setUpdatedAt(new Date());
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '랭킹 데이터를 불러오지 못했습니다');
-    } finally {
-      setLoading(false);
-    }
-  }, [storeId, period]);
-
-  useEffect(() => { load(); }, [load]);
+  const { data, isLoading, isError, refetch, dataUpdatedAt, error } = useDowProfitability(storeId || '', period, !!storeId);
+  const rows = (data?.rows || []) as DowProfitRow[];
+  const insights = ((data?.insights || []) as DowProfitInsight[]).slice(0, 1);
+  const updatedAt = dataUpdatedAt ? new Date(dataUpdatedAt) : null;
+  const analysis = useWidgetAnalysis('dow_profitability', storeId || undefined, data ? { insights, rows } : undefined);
 
   return (
     <WidgetWrapper
       title="🏆 요일별 수익성"
       editMode={editMode}
       onRemove={onRemove}
-      onRefresh={load}
+      onRefresh={() => void refetch()}
       updatedAt={updatedAt}
-      loading={loading}
-      error={error}
+      loading={isLoading}
+      error={isError ? (error instanceof Error ? error.message : '랭킹 데이터를 불러오지 못했습니다') : null}
     >
       {!storeId ? (
         <div className="p-3"><WidgetEmptyReason reason="매장이 선택되지 않았습니다." /></div>
@@ -105,11 +81,12 @@ export default function DowProfitabilityWidget({
             href="/dashboard/analytics/dow-ranking"
             className="flex items-center justify-center gap-1 text-[10px] text-teal-400 hover:text-teal-300"
           >
-            상세 분석 <ArrowRight className="w-3 h-3" />
+            상세 랭킹 <ArrowRight className="w-3 h-3" />
           </Link>
+          <WidgetAnalysisPanel analysis={analysis} />
         </div>
-      ) : !loading && !error ? (
-        <p className="text-slate-500 text-xs text-center p-3">매출 데이터 없음</p>
+      ) : !isLoading && !isError ? (
+        <p className="text-slate-500 text-xs text-center p-3">요일별 데이터 없음</p>
       ) : null}
     </WidgetWrapper>
   );

@@ -3,14 +3,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import WidgetWrapper from './WidgetWrapper';
-import {
-  WidgetAsyncBoundary,
-  EmptyState,
-  fetchAuthJson,
-  useSuspenseResource,
-  useSuspenseInvalidate,
-} from '@/components/suspense';
+import EmptyState from '@/components/suspense/EmptyState';
+import SkeletonCard from '@/components/suspense/SkeletonCard';
+import { useSalesCompare } from '@/lib/queries';
 import { TrendingUp, TrendingDown, Minus, Target, Settings } from 'lucide-react';
+import WidgetAnalysisPanel from './WidgetAnalysisPanel';
+import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 import type { TargetProgressResult } from '@/lib/salesTargets';
 
 interface PeriodStat { label: string; net: number; total: number; customers: number; }
@@ -38,33 +36,38 @@ interface SalesCompareData {
   emptyReason?: string | null;
 }
 
-function cacheKey(storeId: string) {
-  return `dashboard:sales-compare:${storeId}`;
-}
-
 function SalesCompareWidgetContent({
   editMode, onRemove, storeId,
 }: {
   editMode: boolean; onRemove: () => void; storeId: string;
 }) {
-  const key = cacheKey(storeId);
-  const invalidate = useSuspenseInvalidate(key);
-  const data = useSuspenseResource(key, async () => {
-    const d = await fetchAuthJson<SalesCompareData & { error?: string }>(
-      `/api/dashboard/sales-compare?storeId=${encodeURIComponent(storeId)}`,
-    );
-    if (d.error) throw new Error(d.error);
-    return d;
-  });
+  const { data, isLoading, isError, refetch, dataUpdatedAt } = useSalesCompare(storeId);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(new Date());
 
   useEffect(() => {
-    setUpdatedAt(new Date());
-  }, [data]);
+    if (dataUpdatedAt) setUpdatedAt(new Date(dataUpdatedAt));
+  }, [dataUpdatedAt]);
 
   const refresh = useCallback(() => {
-    invalidate();
-  }, [invalidate]);
+    void refetch();
+  }, [refetch]);
+  const analysis = useWidgetAnalysis('sales_compare', storeId, data);
+
+  if (isLoading && !data) {
+    return (
+      <WidgetWrapper title="🎯 매출 목표" editMode={editMode} onRemove={onRemove}>
+        <div className="p-3"><SkeletonCard /></div>
+      </WidgetWrapper>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <WidgetWrapper title="🎯 매출 목표" editMode={editMode} onRemove={onRemove} onRefresh={refresh}>
+        <div className="p-3"><EmptyState reason="매출 목표 데이터를 불러오지 못했습니다." /></div>
+      </WidgetWrapper>
+    );
+  }
 
   const fmt = (n: number) => n.toLocaleString('ko-KR');
 
@@ -179,7 +182,7 @@ function SalesCompareWidgetContent({
     );
   };
 
-  const meta = data?.targetsMeta;
+  const meta = data.targetsMeta as TargetsMeta | undefined;
 
   return (
     <WidgetWrapper
@@ -203,8 +206,9 @@ function SalesCompareWidgetContent({
             </div>
           )}
           {data.emptyReason && <EmptyState reason={data.emptyReason} />}
-          <TargetBlockView block={data.week} label="주간" kind="week" />
-          <TargetBlockView block={data.month} label="월간" kind="month" />
+          <TargetBlockView block={data.week as CompareBlock} label="주간" kind="week" />
+          <TargetBlockView block={data.month as CompareBlock} label="월간" kind="month" />
+          <WidgetAnalysisPanel analysis={analysis} />
         </div>
       ) : (
         <p className="text-slate-500 text-xs text-center mt-4">매출 데이터 없음</p>
@@ -228,9 +232,5 @@ export default function SalesCompareWidget({
     );
   }
 
-  return (
-    <WidgetAsyncBoundary skeleton="card" widgetName="매출 목표">
-      <SalesCompareWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} />
-    </WidgetAsyncBoundary>
-  );
+  return <SalesCompareWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} />;
 }

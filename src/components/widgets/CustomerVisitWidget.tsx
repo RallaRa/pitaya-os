@@ -4,14 +4,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { TrendingUp, TrendingDown, Minus, Users } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
 import SalesEvidenceLine from './SalesEvidenceLine';
-import {
-  WidgetAsyncBoundary,
-  EmptyState,
-  fetchAuthJson,
-  useSuspenseResource,
-  useSuspenseInvalidate,
-} from '@/components/suspense';
-import type { CustomerVisitSummary } from '@/lib/customerVisitStats';
+import EmptyState from '@/components/suspense/EmptyState';
+import SkeletonCard from '@/components/suspense/SkeletonCard';
+import { useCustomerVisitSummary } from '@/lib/queries';
+import WidgetAnalysisPanel from './WidgetAnalysisPanel';
+import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 
 function ChangeBadge({
   value,
@@ -39,10 +36,6 @@ function ChangeBadge({
   );
 }
 
-function cacheKey(storeId: string) {
-  return `dashboard:customer-visit-summary:${storeId}`;
-}
-
 function CustomerVisitWidgetContent({
   editMode, onRemove, storeId,
 }: {
@@ -50,24 +43,33 @@ function CustomerVisitWidgetContent({
   onRemove: () => void;
   storeId: string;
 }) {
-  const key = cacheKey(storeId);
-  const invalidate = useSuspenseInvalidate(key);
-  const data = useSuspenseResource(key, async () => {
-    const json = await fetchAuthJson<CustomerVisitSummary & { error?: string }>(
-      `/api/dashboard/customer-visit-summary?storeId=${encodeURIComponent(storeId)}`,
-    );
-    if (json.error) throw new Error(json.error);
-    return json;
-  });
+  const { data, isLoading, isError, refetch, dataUpdatedAt } = useCustomerVisitSummary(storeId);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(new Date());
 
   useEffect(() => {
-    setUpdatedAt(new Date());
-  }, [data]);
+    if (dataUpdatedAt) setUpdatedAt(new Date(dataUpdatedAt));
+  }, [dataUpdatedAt]);
 
   const refresh = useCallback(() => {
-    invalidate();
-  }, [invalidate]);
+    void refetch();
+  }, [refetch]);
+  const analysis = useWidgetAnalysis('customer_visit', storeId, data);
+
+  if (isLoading && !data) {
+    return (
+      <WidgetWrapper title="고객 방문 · 전월대비" editMode={editMode} onRemove={onRemove}>
+        <div className="p-3"><SkeletonCard /></div>
+      </WidgetWrapper>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <WidgetWrapper title="고객 방문 · 전월대비" editMode={editMode} onRemove={onRemove} onRefresh={refresh}>
+        <div className="p-3"><EmptyState reason="고객 방문 데이터를 불러오지 못했습니다." /></div>
+      </WidgetWrapper>
+    );
+  }
 
   const DirectionIcon = data?.direction === 'up'
     ? TrendingUp
@@ -157,6 +159,7 @@ function CustomerVisitWidgetContent({
               ({data.direction === 'up' ? '증가' : data.direction === 'down' ? '감소' : '유지'})
             </p>
           )}
+          <WidgetAnalysisPanel analysis={analysis} />
         </div>
       ) : null}
     </WidgetWrapper>
@@ -180,9 +183,5 @@ export default function CustomerVisitWidget({
     );
   }
 
-  return (
-    <WidgetAsyncBoundary skeleton="card" widgetName="고객 방문">
-      <CustomerVisitWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} />
-    </WidgetAsyncBoundary>
-  );
+  return <CustomerVisitWidgetContent editMode={editMode} onRemove={onRemove} storeId={storeId} />;
 }

@@ -95,7 +95,12 @@ export async function POST(req: Request) {
 
     if (!existing.empty) {
       await existing.docs[0].ref.update(payload);
-      return NextResponse.json({ success: true, id: existing.docs[0].id });
+      const id = existing.docs[0].id;
+      if (saveType === 'final') {
+        const { syncHygieneLogMirror } = await import('@/lib/hygieneAutomation.server');
+        await syncHygieneLogMirror(storeId, checkDate, { ...payload, id });
+      }
+      return NextResponse.json({ success: true, id });
     }
 
     const ref = await adminDb.collection('hygiene_checklists').add({
@@ -103,6 +108,11 @@ export async function POST(req: Request) {
       ...payload,
       createdAt: now,
     });
+
+    if (saveType === 'final') {
+      const { syncHygieneLogMirror } = await import('@/lib/hygieneAutomation.server');
+      await syncHygieneLogMirror(storeId, checkDate, { ...payload, id: ref.id });
+    }
 
     return NextResponse.json({ success: true, id: ref.id });
   } catch (e: any) {

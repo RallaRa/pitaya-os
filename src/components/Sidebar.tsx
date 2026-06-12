@@ -7,7 +7,7 @@ import {
   Settings, MessageCircle, ShoppingCart, ShoppingBag, Sparkles,
   BarChart2, ClipboardCheck, X,
   Circle, CalendarDays, Tag, Scale, LineChart, SlidersHorizontal, Users, Crown, ChevronRight, ChevronDown,
-  FileText, TrendingUp, Truck, BookOpen, LayoutGrid, PenLine, Clock, Tv, ListTodo, FolderOpen,
+  FileText, TrendingUp, Truck, BookOpen, LayoutGrid, PenLine, Clock, Tv, ListTodo, FolderOpen, Package,
   BookOpenCheck, UsersRound,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -61,6 +61,11 @@ import {
   hasSalesMenu,
   isSalesPath,
 } from '@/lib/sales/menuStructure';
+import {
+  MESSENGER_SIDEBAR_LINKS,
+  isMessengerPath,
+  isMessengerSubLinkActive,
+} from '@/lib/messenger/menuStructure';
 
 const ALL_FALSE = createAllFalseMenuAccess();
 const ALL_TRUE = createAllTrueMenuAccess();
@@ -102,6 +107,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const [salesOpen,     setSalesOpen]     = useState(false);
   const [hrSystemOpen,  setHrSystemOpen]  = useState(false);
   const [accountingOpen, setAccountingOpen] = useState(false);
+  const [messengerOpen, setMessengerOpen] = useState(false);
   const { hasModule } = useLicense();
 
   interface SalesSummary { todayNet: number; todaySource: string; weekNet: number; }
@@ -441,13 +447,9 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const mainMenus = [
     { key: 'ai' as const,        href: '/dashboard/ai',                    icon: <Sparkles className="w-4 h-4" />,       label: 'AI 대화모드' },
     { key: 'ai' as const,        href: '/dashboard/manual',                icon: <BookOpen className="w-4 h-4" />,       label: 'AI 매장 백과' },
-    { key: 'messenger' as const, href: '/dashboard/messenger',             icon: <MessageCircle className="w-4 h-4" />,  label: '메신저',      badge: unreadCount },
-    { key: 'messenger' as const, href: '/dashboard/messenger/wiki',       icon: <BookOpen           className="w-4 h-4" />,  label: '메신저 위키' },
-    { key: 'messenger' as const, href: '/dashboard/messenger/files',      icon: <FolderOpen         className="w-4 h-4" />,  label: '메신저 파일' },
-    { key: 'messenger' as const, href: '/dashboard/messenger/calendar',   icon: <CalendarDays       className="w-4 h-4" />,  label: '메신저 캘린더' },
-    { key: 'messenger' as const, href: '/dashboard/messenger/tasks',      icon: <LayoutGrid         className="w-4 h-4" />,  label: '메신저 칸반' },
-    { key: 'messenger' as const, href: '/dashboard/messenger/docs',       icon: <FileText           className="w-4 h-4" />,  label: '메신저 문서' },
     { key: 'hygiene' as const,   href: '/dashboard/hygiene',               icon: <ClipboardCheck className="w-4 h-4" />, label: '위생 점검일지' },
+    { key: 'hygiene' as const,   href: '/dashboard/hygiene/report',        icon: <ClipboardCheck className="w-4 h-4" />, label: '위생 자동화' },
+    { key: 'report' as const,    href: '/dashboard/inventory/turnover',    icon: <Package className="w-4 h-4" />,        label: '재고 회전율' },
     { key: 'hygiene' as const,   href: '/dashboard/operations/checklist', icon: <ClipboardCheck className="w-4 h-4" />, label: '개폐점 체크리스트' },
     { key: 'hrCalendar' as const,         href: '/dashboard/hr/calendar',                    icon: <CalendarDays className="w-4 h-4" />,  label: '캘린더' },
     { key: 'hrCalendar' as const,         href: '/dashboard/hr/attendance',                  icon: <Clock className="w-4 h-4" />,         label: '출퇴근' },
@@ -523,6 +525,10 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     || effectiveAccess.hrPayrollReport
   );
 
+  const hasMessengerMenu = !accessLoading && moduleAllowed('messenger') && (
+    isSuperuser || effectiveAccess.messenger
+  );
+
   const visibleMenus = accessLoading ? [] : mainMenus.filter(m =>
     effectiveAccess[m.key] && moduleAllowed(m.key),
   );
@@ -557,6 +563,73 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                   <span className="flex-1">대시보드</span>
                 </Link>
               )}
+
+              {/* 메신저 (채팅·위키·파일·캘린더·칸반·문서) */}
+              {hasMessengerMenu && (() => {
+                const messengerActive = isMessengerPath(pathname);
+                return (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setMessengerOpen(o => !o)}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm w-full ${
+                        messengerActive
+                          ? 'bg-sky-600/20 text-sky-300 font-semibold border border-sky-500/20'
+                          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      <span className={`shrink-0 ${messengerActive ? 'text-sky-400' : ''}`}>
+                        <MessageCircle className="w-4 h-4" />
+                      </span>
+                      <span className="flex-1 text-left">메신저</span>
+                      {unreadCount > 0 && (
+                        <span className="bg-sky-500 text-white text-[10px] font-bold rounded-full min-w-[1rem] h-4 px-1 flex items-center justify-center shrink-0">
+                          {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                      )}
+                      <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${messengerOpen || messengerActive ? 'rotate-180' : ''}`} />
+                    </button>
+                    {(messengerOpen || messengerActive) && (
+                      <div className="ml-4 mt-0.5 space-y-0.5 border-l border-slate-700/60 pl-3 max-h-64 overflow-y-auto">
+                        {MESSENGER_SIDEBAR_LINKS.map(sub => {
+                          const subActive = isMessengerSubLinkActive(pathname, sub);
+                          const icon = sub.href === '/dashboard/messenger'
+                            ? <MessageCircle className="w-3.5 h-3.5" />
+                            : sub.href.includes('/wiki')
+                              ? <BookOpen className="w-3.5 h-3.5" />
+                              : sub.href.includes('/files')
+                                ? <FolderOpen className="w-3.5 h-3.5" />
+                                : sub.href.includes('/calendar')
+                                  ? <CalendarDays className="w-3.5 h-3.5" />
+                                  : sub.href.includes('/tasks')
+                                    ? <LayoutGrid className="w-3.5 h-3.5" />
+                                    : <FileText className="w-3.5 h-3.5" />;
+                          return (
+                            <Link
+                              key={sub.href}
+                              href={sub.href}
+                              onClick={onClose}
+                              className={`flex items-center gap-2.5 px-2 py-2 rounded-lg transition-all text-xs ${
+                                subActive
+                                  ? 'bg-sky-600/20 text-sky-300 font-semibold'
+                                  : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'
+                              }`}
+                            >
+                              <span className={subActive ? 'text-sky-400' : ''}>{icon}</span>
+                              {sub.label}
+                              {sub.exact && unreadCount > 0 && (
+                                <span className="ml-auto bg-sky-500/80 text-white text-[9px] font-bold rounded-full min-w-[1rem] h-3.5 px-1 flex items-center justify-center">
+                                  {unreadCount > 9 ? '9+' : unreadCount}
+                                </span>
+                              )}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* 구매관리 */}
               {hasPurchaseModuleMenu && purchaseSectionsVisible.length > 0 && (() => {
@@ -799,11 +872,6 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                   >
                     <span className={`shrink-0 ${active ? 'text-teal-400' : ''}`}>{item.icon}</span>
                     <span className="flex-1">{item.label}</span>
-                    {item.badge != null && item.badge > 0 && (
-                      <span className="bg-teal-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center shrink-0">
-                        {item.badge > 9 ? '9+' : item.badge}
-                      </span>
-                    )}
                   </Link>
                 );
               })}
