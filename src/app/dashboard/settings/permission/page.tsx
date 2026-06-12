@@ -97,14 +97,16 @@ export default function PermissionPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="flex items-center justify-center h-full min-h-[40vh]">
         <Loader2 className="w-6 h-6 text-teal-400 animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
+    <div className="flex flex-col h-full min-h-0">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y [-webkit-overflow-scrolling:touch]">
+        <div className="max-w-5xl mx-auto p-4 md:p-6 pb-12 safe-bottom">
 
       {/* 뒤로가기 */}
       <Link
@@ -116,7 +118,7 @@ export default function PermissionPage() {
       </Link>
 
       {/* 헤더 */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-teal-400 flex items-center gap-2">
             <Shield className="w-6 h-6" />
@@ -155,8 +157,8 @@ export default function PermissionPage() {
       {error && <p className="text-red-400 text-sm mb-4">{error}</p>}
 
       {/* 권한 테이블 */}
-      <div className="bg-slate-900 border border-slate-700 rounded-xl overflow-hidden">
-        <table className="w-full">
+      <div className="bg-slate-900 border border-slate-700 rounded-xl overflow-x-auto">
+        <table className="w-full min-w-[640px]">
           <thead>
             <tr className="border-b border-slate-700">
               <th className="text-left px-6 py-4 text-slate-400 font-medium w-48">메뉴</th>
@@ -240,6 +242,8 @@ export default function PermissionPage() {
         </div>
       </div>
 
+        </div>
+      </div>
     </div>
   );
 }

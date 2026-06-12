@@ -342,11 +342,11 @@ export default function PermissionGroupPage() {
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full min-h-0 bg-slate-950">
 
       {/* ── 모바일 탭 바 (미리보기 열렸을 때만) ── */}
       {previewGroup && (
-        <div className="flex md:hidden border-b border-slate-800 bg-slate-900/90 flex-shrink-0">
+        <div className="flex md:hidden border-b border-slate-800 bg-slate-900/90 shrink-0">
           <button
             onClick={() => setMobileTab('main')}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors ${mobileTab === 'main' ? 'text-teal-400 border-b-2 border-teal-400' : 'text-slate-400'}`}
@@ -362,58 +362,60 @@ export default function PermissionGroupPage() {
         </div>
       )}
 
-      {/* ── 메인 row ── */}
-      <div className="flex flex-1 overflow-hidden">
-
-        {/* ═══ 좌측 메인 영역 ═══ */}
-        <div className={`flex-1 flex-col overflow-hidden min-w-0
-          ${previewGroup && mobileTab === 'preview' ? 'hidden md:flex' : 'flex'}`}
-        >
-          {/* 헤더 */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <Shield className="w-5 h-5 text-teal-400" />
-              <div>
-                <h1 className="text-lg font-bold text-teal-400">권한 그룹 관리</h1>
-                {currentStore?.storeName && (
-                  <p className="text-[11px] text-slate-500 mt-0.5">현재 매장: {currentStore.storeName}</p>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {unsavedCount > 0 && (
-                <span className="hidden sm:inline text-xs text-yellow-400 bg-yellow-900/30 border border-yellow-500/30 px-2 py-1 rounded-lg">
-                  저장하지 않은 변경사항 {unsavedCount}개
-                </span>
-              )}
-              {unsavedCount > 0 && (
-                <button
-                  onClick={handleSaveAll}
-                  disabled={savingId === 'all'}
-                  className="flex items-center gap-1 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm font-bold"
-                >
-                  {savingId === 'all' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                  일괄 저장
-                </button>
-              )}
-              <button
-              onClick={() => { setShowAddModal(true); setNewGroupName(''); setNewGroupAccess({ ...ALL_FALSE }); }}
-              className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white px-3 py-1.5 rounded-lg text-sm font-bold transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />그룹 추가
-            </button>
-            </div>
+      {/* 헤더 */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 shrink-0">
+        <div className="flex items-center gap-2">
+          <Shield className="w-5 h-5 text-teal-400" />
+          <div>
+            <h1 className="text-lg font-bold text-teal-400">권한 그룹 관리</h1>
+            {currentStore?.storeName && (
+              <p className="text-[11px] text-slate-500 mt-0.5">현재 매장: {currentStore.storeName}</p>
+            )}
           </div>
-
-          {error && (
-            <div className="mx-6 mt-3 bg-red-900/30 border border-red-500/30 rounded-lg p-3 text-red-400 text-xs flex-shrink-0">
-              {error}
-              <button className="ml-2 underline" onClick={() => setError('')}>닫기</button>
-            </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {unsavedCount > 0 && (
+            <span className="hidden sm:inline text-xs text-yellow-400 bg-yellow-900/30 border border-yellow-500/30 px-2 py-1 rounded-lg">
+              저장하지 않은 변경사항 {unsavedCount}개
+            </span>
           )}
+          {unsavedCount > 0 && (
+            <button
+              onClick={handleSaveAll}
+              disabled={savingId === 'all'}
+              className="flex items-center gap-1 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm font-bold"
+            >
+              {savingId === 'all' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+              일괄 저장
+            </button>
+          )}
+          <button
+            onClick={() => { setShowAddModal(true); setNewGroupName(''); setNewGroupAccess({ ...ALL_FALSE }); }}
+            className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white px-3 py-1.5 rounded-lg text-sm font-bold transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />그룹 추가
+          </button>
+        </div>
+      </div>
 
+      {error && (
+        <div className="mx-6 mt-3 bg-red-900/30 border border-red-500/30 rounded-lg p-3 text-red-400 text-xs shrink-0">
+          {error}
+          <button className="ml-2 underline" onClick={() => setError('')}>닫기</button>
+        </div>
+      )}
+
+      {/* ── 메인 row ── */}
+      <div className="flex flex-1 min-h-0 flex-col md:flex-row overflow-hidden">
+
+        {/* ═══ 좌측 스크롤 영역 ═══ */}
+        <div
+          className={`flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y [-webkit-overflow-scrolling:touch] ${
+            previewGroup && mobileTab === 'preview' ? 'hidden md:block' : ''
+          }`}
+        >
           {/* ── 권한 그룹 테이블 ── */}
-          <div className="flex-shrink-0 border-b border-slate-800">
+          <div className="border-b border-slate-800">
             <div className="px-6 pt-4 pb-2">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
                 권한 그룹 (기본 3개: 슈퍼유저 · 점장 · 직원 — 삭제 불가, 이름 수정 가능)
@@ -428,8 +430,9 @@ export default function PermissionGroupPage() {
                 <Loader2 className="w-6 h-6 text-teal-400 animate-spin" />
               </div>
             ) : (
-              <div className="overflow-x-auto px-6 pb-4">
-                <table className="w-full text-sm border-collapse">
+              <div className="px-6 pb-4">
+                <div className="overflow-x-auto overscroll-x-contain">
+                <table className="w-full text-sm border-collapse min-w-[720px]">
                   <thead>
                     <tr className="border-b border-slate-700">
                       <th className="text-left py-2 pr-4 text-slate-400 font-medium text-xs w-36">그룹명</th>
@@ -541,7 +544,7 @@ export default function PermissionGroupPage() {
                           {/* 권한 편집 확장 행 */}
                           {isExpanded && (
                             <tr className="bg-slate-900/60 border-b border-slate-800/60">
-                              <td colSpan={MENU_COLS.length + 3} className="px-4 py-3">
+                              <td colSpan={MENU_COLS.length + 3} className="px-4 py-3" onClick={e => e.stopPropagation()}>
                                 <div className="space-y-4">
                                   {MENU_ACCESS_UI_GROUPS.map(section => (
                                     <div key={section.label}>
@@ -556,7 +559,7 @@ export default function PermissionGroupPage() {
                                             <label key={key} className="flex items-center gap-1.5 cursor-pointer min-w-[100px]">
                                               <div
                                                 className={`relative w-8 h-4 rounded-full transition-colors flex-shrink-0 ${draft[key] ? 'bg-teal-600' : 'bg-slate-700'}`}
-                                                onClick={() => handleToggle(group.groupId, key)}
+                                                onClick={e => { e.stopPropagation(); handleToggle(group.groupId, key); }}
                                               >
                                                 <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${draft[key] ? 'translate-x-4' : 'translate-x-0.5'}`} />
                                               </div>
@@ -589,12 +592,13 @@ export default function PermissionGroupPage() {
                     })}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
           </div>
 
           {/* ── 유저 테이블 ── */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="pb-8 safe-bottom">
             <div className="px-6 pt-4 pb-2">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">멤버 목록</p>
             </div>
@@ -609,7 +613,8 @@ export default function PermissionGroupPage() {
                 <p className="text-sm">소속 멤버가 없습니다.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto px-6 pb-6">
+              <div className="px-6 pb-6">
+                <div className="overflow-x-auto overscroll-x-contain">
                 <table className="w-full text-sm border-collapse">
                   <thead>
                     <tr className="border-b border-slate-700">
@@ -641,6 +646,7 @@ export default function PermissionGroupPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )}
           </div>
@@ -648,12 +654,12 @@ export default function PermissionGroupPage() {
 
         {/* ═══ 우측: 미리보기 패널 ═══ */}
         {previewGroup && (
-          <div className={`flex-col overflow-hidden border-l border-slate-700 bg-slate-950/60
-            w-full md:w-64 md:flex-shrink-0
-            ${mobileTab === 'preview' ? 'flex' : 'hidden md:flex'}`}
+          <div className={`flex flex-col min-h-0 min-w-0 border-t md:border-t-0 md:border-l border-slate-700 bg-slate-950/60
+            w-full md:w-64 shrink-0 overflow-hidden
+            ${mobileTab === 'preview' ? 'flex flex-1' : 'hidden md:flex'}`}
           >
             {/* 패널 헤더 */}
-            <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-800 flex-shrink-0">
+            <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-800 shrink-0">
               <div className="flex items-center gap-2">
                 <Eye className="w-4 h-4 text-teal-400" />
                 <div>
@@ -669,7 +675,7 @@ export default function PermissionGroupPage() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-5">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y [-webkit-overflow-scrolling:touch] p-4 space-y-5 pb-8 safe-bottom">
 
               {/* 사이드바 미리보기 */}
               <div>
@@ -769,8 +775,8 @@ export default function PermissionGroupPage() {
 
         {/* ═══ 유저 배정 패널 (더블클릭) ═══ */}
         {selectedGroup && (
-          <div className="hidden md:flex w-64 flex-shrink-0 border-l border-slate-700 flex-col bg-slate-900 overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-800 flex-shrink-0">
+          <div className="hidden md:flex md:flex-col md:min-h-0 md:w-64 shrink-0 md:border-l md:border-slate-700 bg-slate-900 overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-800 shrink-0">
               <div>
                 <p className="text-white font-bold text-sm">{selectedGroup.groupName}</p>
                 <p className="text-slate-400 text-xs mt-0.5">멤버 배정</p>
@@ -780,7 +786,7 @@ export default function PermissionGroupPage() {
               </button>
             </div>
 
-            <div className="px-4 py-3 bg-slate-800/50 border-b border-slate-800 flex-shrink-0 flex gap-4">
+            <div className="px-4 py-3 bg-slate-800/50 border-b border-slate-800 shrink-0 flex gap-4">
               <div className="text-xs text-slate-400">
                 배정됨 <strong className="text-teal-400">{memberCount(selectedGroup.groupId)}명</strong>
               </div>
@@ -791,7 +797,7 @@ export default function PermissionGroupPage() {
               )}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-3 space-y-3">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y [-webkit-overflow-scrolling:touch] p-3 space-y-3 pb-8">
               {storeUsers.length === 0 ? (
                 <p className="text-slate-500 text-xs text-center py-8">소속 멤버가 없습니다.</p>
               ) : (
