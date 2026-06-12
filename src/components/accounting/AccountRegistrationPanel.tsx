@@ -82,9 +82,15 @@ export default function AccountRegistrationPanel() {
     setMsg('');
   };
 
-  const initDefault = async () => {
+  const initDefault = async (replace = false) => {
     if (!currentStore?.storeId) return;
-    if (!confirm('영림원형 표준 계정과목을 등록합니다. 계속할까요?')) return;
+    const merge = !replace && accounts.length > 0;
+    const msg = replace
+      ? `등록된 계정과목 ${accounts.length}건을 모두 삭제하고, 영림원 표준 계정과목을 새로 등록합니다. 계속할까요?`
+      : merge
+        ? '영림원 표준 계정과목 중 누락된 항목만 추가합니다. 기존 계정은 유지됩니다. 계속할까요?'
+        : '영림원 표준 계정과목을 등록합니다. 계속할까요?';
+    if (!confirm(msg)) return;
     setIniting(true);
     setError('');
     try {
@@ -92,12 +98,20 @@ export default function AccountRegistrationPanel() {
       const res = await fetch('/api/accounting/init', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ storeId: currentStore.storeId }),
+        body: JSON.stringify({ storeId: currentStore.storeId, merge, replace }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '초기화 실패');
       await load();
-      setMsg(data.skipped ? data.message : `${data.count}건 계정과목이 등록되었습니다.`);
+      if (data.replaced) {
+        setMsg(`기존 ${data.deleted}건 삭제 후 표준 계정 ${data.count}건을 등록했습니다.`);
+      } else if (data.skipped) {
+        setMsg(data.message);
+      } else if (data.merged) {
+        setMsg(`표준 계정 ${data.count}건이 추가되었습니다. (전체 ${data.total}건)`);
+      } else {
+        setMsg(`${data.count}건 계정과목이 등록되었습니다.`);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : '초기화 실패');
     } finally {
@@ -210,10 +224,16 @@ export default function AccountRegistrationPanel() {
           <button type="button" onClick={remove} disabled={!selectedId || isNew || saving} className="text-xs px-2.5 py-1.5 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-950/40 inline-flex items-center gap-1 disabled:opacity-40">
             <Trash2 className="w-3.5 h-3.5" /> 삭제
           </button>
-          <button type="button" onClick={initDefault} disabled={initing} className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 inline-flex items-center gap-1">
+          <button type="button" onClick={() => initDefault(false)} disabled={initing} className="text-xs px-2.5 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 inline-flex items-center gap-1">
             {initing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-            표준과목
+            {accounts.length > 0 ? '누락 추가' : '표준과목'}
           </button>
+          {accounts.length > 0 && (
+            <button type="button" onClick={() => initDefault(true)} disabled={initing} className="text-xs px-2.5 py-1.5 rounded-lg border border-amber-500/40 text-amber-200 hover:bg-amber-950/40 inline-flex items-center gap-1">
+              {initing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+              표준 재등록
+            </button>
+          )}
         </div>
       )}
     >

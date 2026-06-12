@@ -8,8 +8,8 @@ export interface StockTraderSidebarLink {
 
 export const STOCK_TRADER_SIDEBAR_LINKS: StockTraderSidebarLink[] = [
   { href: '/dashboard/stock-trader', label: '현황', exact: true },
+  { href: '/dashboard/stock-trader/trade', label: 'MTS' },
   { href: '/dashboard/stock-trader/ai', label: 'AI 자동' },
-  { href: '/dashboard/stock-trader/trade', label: '수동 매매' },
   { href: '/dashboard/stock-trader/logs', label: '실행 로그' },
   { href: '/dashboard/stock-trader/settings', label: '연동 설정' },
 ];

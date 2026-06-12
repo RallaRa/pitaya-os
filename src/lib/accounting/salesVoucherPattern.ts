@@ -15,10 +15,29 @@ export interface SalesVoucherSource {
 
 export function resolveSalesAmounts(sale: SalesVoucherSource) {
   const total = Number(sale.netSales || sale.totalSales || 0);
-  const cash = Number(sale.cashSale || 0);
-  const card = Number(sale.cardSale || 0);
+  let cash = Number(sale.cashSale || 0);
+  let card = Number(sale.cardSale || 0);
   const tax = total > 0 ? Math.round(total / 11) : 0;
   const supply = Math.max(total - tax, 0);
+
+  if (total <= 0) return { supply, tax, total, cash, card };
+
+  if (cash <= 0 && card <= 0) {
+    card = total;
+  } else {
+    const payTotal = cash + card;
+    if (payTotal !== total) {
+      if (payTotal < total) {
+        const diff = total - payTotal;
+        if (card >= cash) card += diff;
+        else cash += diff;
+      } else {
+        cash = Math.round((cash / payTotal) * total);
+        card = total - cash;
+      }
+    }
+  }
+
   return { supply, tax, total, cash, card };
 }
 
@@ -39,9 +58,9 @@ export const DEFAULT_SALES_VOUCHER_PATTERN: AutoVoucherPattern = {
   splitVat: true,
   lines: [
     { side: 'debit', accountCode: '101', accountName: '현금', amountKey: 'cash' },
-    { side: 'debit', accountCode: '102', accountName: '보통예금', amountKey: 'card' },
+    { side: 'debit', accountCode: '103', accountName: '보통예금', amountKey: 'card' },
     { side: 'credit', accountCode: '401', accountName: '상품매출', amountKey: 'supply' },
-    { side: 'credit', accountCode: '259', accountName: '부가세예수금', amountKey: 'tax' },
+    { side: 'credit', accountCode: '255', accountName: '부가세예수금', amountKey: 'tax' },
   ],
 };
 
@@ -80,8 +99,8 @@ export function buildSalesVoucherLines(
     return [
       {
         lineNo: 1,
-        accountCode: '102',
-        accountName: accountNames?.get('102') || '보통예금',
+        accountCode: '103',
+        accountName: accountNames?.get('103') || '보통예금',
         debit: total,
         credit: 0,
         partnerCode: '',

@@ -45,6 +45,7 @@ export const ACCOUNTING_MENU_SECTIONS: AccountingMenuSection[] = [
     permission: 'accountingVoucher',
     items: [
       { href: '/dashboard/accounting/voucher/entry', label: '전표입력', description: '일반·매출·구매·입출금 전표' },
+      { href: '/dashboard/accounting/voucher/auto-process', label: '자동전표처리', description: '매입·매출 연동 분개 검토·승인' },
       { href: '/dashboard/accounting/voucher/approval', label: '전표승인', description: '승인대기 전표 검토·승인' },
       { href: '/dashboard/accounting/voucher/inquiry', label: '전표조회', description: '기간·유형·계정별 조회' },
     ],

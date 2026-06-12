@@ -167,7 +167,7 @@ export default function AccountingSettingsPage() {
             onChange={e => setAutoVoucherFromPurchase(e.target.checked)}
             className="rounded border-slate-600"
           />
-          Pitaya 매입 저장 시 구매전표 자동 생성 (예정)
+          Pitaya 매입 저장 시 자동전표처리 대기열 등록 (자동전표처리 메뉴에서 승인)
         </label>
         <label className="flex items-center gap-2 text-sm text-slate-300">
           <input

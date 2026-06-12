@@ -14,9 +14,8 @@ import {
   getKSTTodayYMD,
   subtractMonthsYMD,
   DOW_KO,
-  formatDateShortWithDow,
 } from '@/lib/dateUtils';
-import { getComparisonFetchBounds, getCompareDates, calcAvgTicket } from '@/lib/reportCompare';
+import { getComparisonFetchBounds, getCompareDates, calcAvgTicket, formatCompareDateLabel } from '@/lib/reportCompare';
 import { useManualSalesAccess } from '@/hooks/useManualSalesAccess';
 
 // ── 타입 ──────────────────────────────────────────────────────────
@@ -114,16 +113,25 @@ function CmpCell({
   snap,
   currentNet,
   currentCustomers,
-  dateLabel,
+  dateYmd,
   compareLabel,
 }: {
   snap?: DayCompareSnapshot;
   currentNet: number;
   currentCustomers: number;
-  dateLabel: string;
+  dateYmd: string;
   compareLabel: string;
 }) {
-  if (!snap) return <span className="text-slate-600 text-xs">-</span>;
+  const dateLabel = formatCompareDateLabel(dateYmd);
+  if (!snap) {
+    return (
+      <div>
+        <p className="text-teal-400/90 text-[10px] font-semibold mb-0.5 tabular-nums">{dateLabel || compareLabel}</p>
+        {dateLabel && <p className="text-slate-500 text-[9px] mb-0.5">{compareLabel}</p>}
+        <span className="text-slate-600 text-xs">-</span>
+      </div>
+    );
+  }
   const salesChg = pctChange(currentNet, snap.netSales);
   const custChg  = pctChange(currentCustomers, snap.customerCount);
   const curTicket = calcAvgTicket(currentNet, currentCustomers);
@@ -131,7 +139,8 @@ function CmpCell({
   const ticketChg = curTicket != null && prevTicket != null ? pctChange(curTicket, prevTicket) : null;
   return (
     <div>
-      <p className="text-slate-500 text-[10px] font-medium mb-0.5">{compareLabel}</p>
+      <p className="text-teal-400/90 text-[10px] font-semibold mb-0.5 tabular-nums">{dateLabel}</p>
+      <p className="text-slate-500 text-[9px] mb-0.5">{compareLabel}</p>
       <p className="text-slate-400 text-xs">{snap.netSales.toLocaleString()}원</p>
       {salesChg && <span className={`text-[10px] font-bold ${salesChg.color}`}>{salesChg.text}</span>}
       <p className="text-blue-400/80 text-[10px] mt-0.5">
@@ -144,7 +153,6 @@ function CmpCell({
           {ticketChg && <span className={`ml-1 font-bold ${ticketChg.color}`}>({ticketChg.text})</span>}
         </p>
       )}
-      <p className="text-slate-600 text-[10px]">{dateLabel}</p>
     </div>
   );
 }
@@ -594,9 +602,9 @@ export default function ReportViewPage() {
                     { label: '순매출',        align: 'right'  },
                     { label: '포스별 매출',   align: 'right'  },
                     { label: '전일',           align: 'right', sub: '순매출·객수·객단가' },
-                    { label: '전주동요일',     align: 'right', sub: '7일 전' },
-                    { label: '전월동요일',     align: 'right', sub: '전월 같은 요일' },
-                    { label: '전년동월동요일', align: 'right', sub: '전년 같은 요일' },
+                    { label: '전주동요일',     align: 'right', sub: '기준일(요일)' },
+                    { label: '전월동요일',     align: 'right', sub: '기준일(요일)' },
+                    { label: '전년동월동요일', align: 'right', sub: '기준일(요일)' },
                     { label: '객수',          align: 'right'  },
                     { label: '객단가',        align: 'right'  },
                     { label: '반품',          align: 'right'  },
@@ -701,25 +709,25 @@ export default function ReportViewPage() {
                       {/* 전일 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
                         <CmpCell snap={ySnap} currentNet={report.netSales} currentCustomers={report.customerCount}
-                          compareLabel="전일" dateLabel={formatDateShortWithDow(yDate)} />
+                          compareLabel="전일" dateYmd={yDate} />
                       </td>
 
                       {/* 전주동요일 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
                         <CmpCell snap={lwSnap} currentNet={report.netSales} currentCustomers={report.customerCount}
-                          compareLabel="전주동요일" dateLabel={formatDateShortWithDow(lwDate)} />
+                          compareLabel="전주동요일" dateYmd={lwDate} />
                       </td>
 
                       {/* 전월동요일 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
                         <CmpCell snap={pmDowSnap} currentNet={report.netSales} currentCustomers={report.customerCount}
-                          compareLabel="전월동요일" dateLabel={formatDateShortWithDow(pmDow)} />
+                          compareLabel="전월동요일" dateYmd={pmDow} />
                       </td>
 
                       {/* 전년동월동요일 */}
                       <td className="px-3 py-3 text-right whitespace-nowrap">
                         <CmpCell snap={pySnapW} currentNet={report.netSales} currentCustomers={report.customerCount}
-                          compareLabel="전년동요일" dateLabel={formatDateShortWithDow(pyDateW)} />
+                          compareLabel="전년동요일" dateYmd={pyDateW} />
                       </td>
 
                       {/* 객수 */}

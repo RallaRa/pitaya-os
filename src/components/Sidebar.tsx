@@ -67,10 +67,11 @@ import {
   isMessengerSubLinkActive,
 } from '@/lib/messenger/menuStructure';
 import {
-  STOCK_TRADER_SIDEBAR_LINKS,
-  isStockTraderPath,
-  isStockTraderSubLinkActive,
-} from '@/lib/stock-trader/menuStructure';
+  STOCK_SUPERUSER_LINKS,
+  isStockSuperuserPath,
+  isStockSuperuserLinkActive,
+} from '@/lib/stock/menuStructure';
+import { STOCK_SUPERUSER_EMAIL } from '@/lib/stock/constants';
 
 const ALL_FALSE = createAllFalseMenuAccess();
 const ALL_TRUE = createAllTrueMenuAccess();
@@ -452,7 +453,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
   const mainMenus = [
     { key: 'ai' as const,        href: '/dashboard/ai',                    icon: <Sparkles className="w-4 h-4" />,       label: 'AI 대화모드' },
-    { key: 'ai' as const,        href: '/dashboard/manual',                icon: <BookOpen className="w-4 h-4" />,       label: 'AI 매장 백과' },
+    { key: 'ai' as const,        href: '/dashboard/manual',                icon: <BookOpen className="w-4 h-4" />,       label: 'AI 매장 메뉴얼' },
     { key: 'hygiene' as const,   href: '/dashboard/hygiene',               icon: <ClipboardCheck className="w-4 h-4" />, label: '위생 점검일지' },
     { key: 'hygiene' as const,   href: '/dashboard/hygiene/report',        icon: <ClipboardCheck className="w-4 h-4" />, label: '위생 자동화' },
     { key: 'report' as const,    href: '/dashboard/inventory/turnover',    icon: <Package className="w-4 h-4" />,        label: '재고 회전율' },
@@ -464,6 +465,10 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
   const isSuperuser = isSuperuserEmail(user?.email);
   const effectiveAccess = isSuperuser ? ALL_TRUE : menuAccess;
+  const isStrictStockSuperuser =
+    !!user?.email &&
+    user.email.toLowerCase() === STOCK_SUPERUSER_EMAIL.toLowerCase() &&
+    user.emailVerified === true;
 
   const accountingSubMenus = ACCOUNTING_MENU_SECTIONS.flatMap(section =>
     (isSuperuser || canAccessAccountingSection(effectiveAccess, section.permission))
@@ -637,9 +642,9 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                 );
               })()}
 
-              {/* KIS AI 자동매매 (슈퍼유저 전용) */}
-              {isSuperuser && (effectiveAccess.stockTrader || isSuperuser) && (() => {
-                const stActive = isStockTraderPath(pathname);
+              {/* AI 완전 자동 주식 (슈퍼유저 이메일만 — DOM 미렌더) */}
+              {isStrictStockSuperuser && (() => {
+                const stActive = isStockSuperuserPath(pathname);
                 return (
                   <div>
                     <button
@@ -654,14 +659,14 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                       <span className={`shrink-0 ${stActive ? 'text-amber-400' : ''}`}>
                         <TrendingUp className="w-4 h-4" />
                       </span>
-                      <span className="flex-1 text-left">KIS AI매매</span>
+                      <span className="flex-1 text-left">AI 자동주식</span>
                       <span className="text-[9px] text-amber-500/80 font-medium">SU</span>
                       <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${stockTraderOpen || stActive ? 'rotate-180' : ''}`} />
                     </button>
                     {(stockTraderOpen || stActive) && (
                       <div className="ml-4 mt-0.5 space-y-0.5 border-l border-slate-700/60 pl-3">
-                        {STOCK_TRADER_SIDEBAR_LINKS.map(sub => {
-                          const subActive = isStockTraderSubLinkActive(pathname, sub);
+                        {STOCK_SUPERUSER_LINKS.map(sub => {
+                          const subActive = isStockSuperuserLinkActive(pathname, sub);
                           return (
                             <Link
                               key={sub.href}

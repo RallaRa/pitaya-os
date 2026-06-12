@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireSuperuser } from '@/lib/devAuth';
-import { getStockTraderConfig, stockTraderFetch } from '@/lib/stock-trader/client';
+import { getStockTraderConfig, stockTraderFetch, shouldUseLocalKis } from '@/lib/stock-trader/client';
+import { getTradingStatus } from '@/lib/stock/kisConfig.server';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,19 +15,32 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: false,
       configured: false,
-      error: 'STOCK_TRADER_API_TOKEN 미설정',
+      error: 'KIS 미설정 — Vercel에 KIS_APP_KEY, KIS_APP_SECRET, KIS_ACCOUNT_NO 추가',
       baseUrl: cfg.baseUrl,
+    });
+  }
+
+  if (shouldUseLocalKis()) {
+    const trading = getTradingStatus();
+    return NextResponse.json({
+      ok: true,
+      configured: true,
+      mode: 'direct',
+      baseUrl: 'vercel-builtin-kis',
+      health: { ok: true, service: 'pitaya-os-kis-direct' },
+      status: { ok: true, kis: trading.kis, alpaca: trading.alpaca, trading },
     });
   }
 
   try {
     const health = await stockTraderFetch<{ ok?: boolean; service?: string }>('/health');
     const status = await stockTraderFetch<Record<string, unknown>>('/api/status');
-    return NextResponse.json({ ok: true, configured: true, baseUrl: cfg.baseUrl, health, status });
+    return NextResponse.json({ ok: true, configured: true, mode: 'proxy', baseUrl: cfg.baseUrl, health, status });
   } catch (e: unknown) {
     return NextResponse.json({
       ok: false,
       configured: true,
+      mode: 'proxy',
       baseUrl: cfg.baseUrl,
       error: e instanceof Error ? e.message : String(e),
     }, { status: 502 });

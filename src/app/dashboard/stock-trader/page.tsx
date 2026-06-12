@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react';
 import { Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import StockPortfolioPanel from '@/components/stock-trader/StockPortfolioPanel';
 
 interface HealthPayload {
   ok?: boolean;
   configured?: boolean;
+  mode?: 'direct' | 'proxy';
   baseUrl?: string;
   error?: string;
   status?: {
@@ -82,7 +84,9 @@ export default function StockTraderOverviewPage() {
             <p className="text-xs text-slate-500 mb-2">연동 서버</p>
             <p className="text-sm text-slate-200 font-mono break-all">{data.baseUrl || '—'}</p>
             <p className="text-xs mt-2 text-slate-400">
-              {data.configured ? 'API Token 설정됨' : 'STOCK_TRADER_API_TOKEN 미설정'}
+              {data.configured
+                ? (data.mode === 'direct' ? 'KIS 직접 연동 (Vercel)' : 'API Token 설정됨')
+                : 'KIS env 미설정'}
             </p>
           </div>
           <div className="rounded-xl border border-slate-700/60 bg-slate-900/50 p-4">
@@ -104,6 +108,15 @@ export default function StockTraderOverviewPage() {
           {trading.warnings.map(w => <li key={w}>{w}</li>)}
         </ul>
       ) : null}
+
+      <StockPortfolioPanel />
+
+      <a
+        href="/dashboard/stock-trader/trade"
+        className="block rounded-xl border border-teal-500/30 bg-teal-900/20 p-4 text-center text-teal-300 text-sm font-medium hover:bg-teal-900/30"
+      >
+        MTS 매매 화면 열기 →
+      </a>
     </div>
   );
 }

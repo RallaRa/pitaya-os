@@ -140,3 +140,62 @@ export const VOUCHER_STATUS_LABELS: Record<VoucherStatus, string> = {
   approved: '승인',
   cancelled: '취소',
 };
+
+/** 자동전표처리 큐 — 원천 화면에서 넘어온 미승인 분개 */
+export type AutoVoucherQueueStatus = 'pending' | 'approved' | 'rejected';
+
+export type AutoVoucherSourceType = 'purchase' | 'sales' | 'pos';
+
+export interface AccountingAutoVoucher {
+  id?: string;
+  storeId: string;
+  /** 원천 유형 */
+  sourceType: AutoVoucherSourceType;
+  /** 원천 화면명 (매입입력 등) */
+  sourceScreen: string;
+  /** 원천 문서 ID (purchase_records 등) */
+  sourceId: string;
+  status: AutoVoucherQueueStatus;
+  voucherDate: string;
+  voucherType: VoucherType;
+  description?: string;
+  lines: VoucherLine[];
+  totalDebit: number;
+  totalCredit: number;
+  /** 승인 후 생성된 회계전표 */
+  voucherId?: string;
+  voucherNo?: string;
+  /** 원천 요약 (표시용) */
+  sourceSummary?: {
+    supplierName?: string;
+    invoiceNumber?: string;
+    reportDate?: string;
+    totalAmount?: number;
+    supplyAmount?: number;
+    taxAmount?: number;
+    cashSale?: number;
+    cardSale?: number;
+    customerCount?: number;
+  };
+  createdBy?: string;
+  approvedBy?: string;
+  approvedAt?: unknown;
+  rejectedBy?: string;
+  rejectedAt?: unknown;
+  rejectReason?: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export const AUTO_VOUCHER_QUEUE_STATUS_LABELS: Record<AutoVoucherQueueStatus, string> = {
+  pending: '승인대기',
+  approved: '전표반영',
+  rejected: '반려',
+};
+
+export const AUTO_VOUCHER_SOURCE_SCREEN_LABELS: Record<string, string> = {
+  purchase_input: '매입입력',
+  purchase_import: '매입일괄',
+  sales_daily: '일별매출',
+  pos_sales: 'POS매출',
+};

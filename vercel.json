@@ -24,6 +24,15 @@
     "src/app/api/dashboard/total-partner/route.ts": {
       "maxDuration": 120,
       "memory": 1024
+    },
+    "src/app/api/stock/ai-engine/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/stock/scan/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/cron/stock-ai-cycle/route.ts": {
+      "maxDuration": 120
     }
   },
   "crons": [
@@ -54,11 +63,14 @@
     { "path": "/api/cron/weather-order-suggestion", "schedule": "0 22 * * *" },
     { "path": "/api/cron/birthday-marketing", "schedule": "0 0 * * *" },
     { "path": "/api/cron/daily-checklist-alert-open", "schedule": "30 0 * * *" },
+    { "path": "/api/cron/daily-sales-auto-voucher", "schedule": "30 15 * * *" },
     { "path": "/api/cron/daily-checklist-alert-close", "schedule": "0 12 * * *" },
     { "path": "/api/cron/payroll-profit-share", "schedule": "0 15 25 * *" },
     { "path": "/api/cron/weekly-coaching", "schedule": "0 23 * * 0" },
     { "path": "/api/cron/hygiene-followup", "schedule": "*/15 * * * *" },
     { "path": "/api/cron/hygiene-monthly-report", "schedule": "0 16 1 * *" },
-    { "path": "/api/cron/signage-show-rotate", "schedule": "0 */4 * * *" }
+    { "path": "/api/cron/signage-show-rotate", "schedule": "0 */4 * * *" },
+    { "path": "/api/cron/stock-ai-cycle", "schedule": "*/5 0-6 * * 1-5" },
+    { "path": "/api/cron/stock-ai-cycle", "schedule": "0 7 * * *" }
   ]
 }

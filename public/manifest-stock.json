@@ -1,0 +1,19 @@
+{
+  "name": "Pitaya AI 자동주식",
+  "short_name": "Pitaya Stock",
+  "description": "슈퍼유저 전용 AI 자동매매 대시보드",
+  "start_url": "/dashboard/superuser/stock",
+  "scope": "/dashboard/superuser/stock",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

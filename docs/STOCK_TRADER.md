@@ -16,12 +16,27 @@
 
 ## 환경변수 (Pitaya)
 
+### Vercel (권장 — 외부 8787 서버 불필요)
+
+Vercel Production에 아래를 설정하면 **Pitaya가 KIS API를 직접 호출**합니다 (`localhost` 불필요).
+
+```env
+KIS_APP_KEY=...
+KIS_APP_SECRET=...
+KIS_ACCOUNT_NO=44736181-01
+KIS_IS_PAPER=false
+LIVE_TRADING=true
+STOCK_TRADER_API_TOKEN=dev-token-stock-trader-2026   # optional
+```
+
+### 로컬 개발 (8787 프록시 병행 가능)
+
 ```env
 STOCK_TRADER_API_URL=http://localhost:8787
 STOCK_TRADER_API_TOKEN=dev-token-stock-trader-2026
 ```
 
-Vercel 배포 시 `localhost` 불가 — 공인 IP/VPS URL 사용.
+로컬에서는 8787 서버가 켜져 있으면 프록시, Vercel(`VERCEL=1`)에서는 항상 내장 KIS.
 
 ## 권한
 

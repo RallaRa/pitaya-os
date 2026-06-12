@@ -45,12 +45,19 @@ export function formatCompareDate(ymd: string, fullYear = false): string {
   return ymd.slice(5);
 }
 
+/** YYYY-MM-DD(요) — 비교 기준일 표시용 */
+export function formatCompareDateLabel(ymd: string): string {
+  if (!ymd) return '';
+  const dow = getWeekdayKo(ymd);
+  return `${ymd.slice(0, 10)}${dow ? `(${dow})` : ''}`;
+}
+
 /** 컬럼 헤더: "전일 05-28(수)" */
 export function getCompareColumnLabel(key: CompareKey, baseDate: string): string {
   const col = COMPARE_COLUMNS.find(c => c.key === key);
   if (!col) return key;
   const dates = getCompareDates(baseDate);
-  return `${col.label} ${formatDateShortWithDow(dates[key])}`;
+  return `${col.label} ${formatCompareDateLabel(dates[key])}`;
 }
 
 /** 객단가 (순매출 ÷ 객수) */

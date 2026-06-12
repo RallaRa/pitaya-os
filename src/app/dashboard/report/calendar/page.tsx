@@ -9,7 +9,7 @@ import {
   CalendarDays, ChevronLeft, ChevronRight, Loader2,
   TrendingUp, Users, RotateCcw, X, ExternalLink, Receipt,
 } from 'lucide-react';
-import { formatDateShortWithDow } from '@/lib/dateUtils';
+import { formatCompareDateLabel } from '@/lib/reportCompare';
 import { calcAvgTicket, calcChange, getCompareDates, getComparisonFetchBounds } from '@/lib/reportCompare';
 import { HOLIDAYS } from '@/components/calendar/CalendarTypes';
 
@@ -435,7 +435,7 @@ export default function SalesCalendarPage() {
                           <div key={row.label} className="flex flex-wrap items-center justify-between gap-2 text-xs bg-slate-800/40 rounded-lg px-3 py-2">
                             <div>
                               <span className="text-slate-300 font-medium">{row.label}</span>
-                              <span className="text-slate-600 ml-1.5">{formatDateShortWithDow(row.date)}</span>
+                              <span className="text-teal-500/90 ml-1.5 tabular-nums">{formatCompareDateLabel(row.date)}</span>
                             </div>
                             <div className="text-right">
                               {prev ? (

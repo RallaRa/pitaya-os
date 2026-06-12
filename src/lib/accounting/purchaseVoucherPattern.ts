@@ -3,13 +3,13 @@ import type { AutoVoucherPattern, AutoVoucherPatternLine } from '@/lib/accountin
 export type { AutoVoucherPattern as PurchaseVoucherPattern, AutoVoucherPatternLine as PurchaseVoucherPatternLine };
 export { previewAutoPatternSummary as previewPatternSummary, AMOUNT_KEY_LABELS, PURCHASE_AMOUNT_KEYS } from '@/lib/accounting/autoVoucherPattern';
 
-/** 정육 매입 기본 분개: 원재료(차) + 부가세대급(차) / 외상매입금(대) */
+/** 정육·소매 매입 기본 분개: 상품(차) + 부가세대급(차) / 외상매입금(대) */
 export const DEFAULT_PURCHASE_VOUCHER_PATTERN: AutoVoucherPattern = {
   splitVat: true,
   lines: [
-    { side: 'debit', accountCode: '136', accountName: '원재료', amountKey: 'supply' },
-    { side: 'debit', accountCode: '141', accountName: '부가세대급금', amountKey: 'tax' },
-    { side: 'credit', accountCode: '201', accountName: '외상매입금', amountKey: 'total' },
+    { side: 'debit', accountCode: '146', accountName: '상품', amountKey: 'supply' },
+    { side: 'debit', accountCode: '135', accountName: '부가세대급금', amountKey: 'tax' },
+    { side: 'credit', accountCode: '251', accountName: '외상매입금', amountKey: 'total' },
   ],
 };
 
@@ -76,8 +76,8 @@ export function buildPurchaseVoucherLines(
     return [
       {
         lineNo: 1,
-        accountCode: '136',
-        accountName: accountNames?.get('136') || '원재료',
+        accountCode: '146',
+        accountName: accountNames?.get('146') || '상품',
         partnerName: '',
         partnerCode: '',
         debit: total,
@@ -86,8 +86,8 @@ export function buildPurchaseVoucherLines(
       },
       {
         lineNo: 2,
-        accountCode: '201',
-        accountName: accountNames?.get('201') || '외상매입금',
+        accountCode: '251',
+        accountName: accountNames?.get('251') || '외상매입금',
         partnerName,
         partnerCode: partnerName ? partnerName.slice(0, 20) : '',
         debit: 0,

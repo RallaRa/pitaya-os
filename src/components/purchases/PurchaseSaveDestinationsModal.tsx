@@ -19,6 +19,7 @@ const KIND_ICON: Record<PurchaseSaveDestination['kind'], typeof Database> = {
   ocr_correction: Brain,
   item_alias: Tag,
   kakao_notify: Bell,
+  auto_voucher: FileText,
 };
 
 interface PurchaseRecordDetail {

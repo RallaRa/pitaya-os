@@ -5,7 +5,7 @@ import { db } from '@/lib/firebase/firebase';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { Loader2, RefreshCw, BarChart2, Package } from 'lucide-react';
 import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
-import { getKSTTodayYMD, formatDateShortWithDow } from '@/lib/dateUtils';
+import { getKSTTodayYMD } from '@/lib/dateUtils';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import {
   COMPARE_COLUMNS,
@@ -14,6 +14,7 @@ import {
   aggregateTimeSlotsFromItems,
   calcAvgTicket,
   calcChange,
+  formatCompareDateLabel,
   getCompareDates,
   mapDailyReportDoc,
   normalizePosBreakdown,
@@ -285,8 +286,8 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate, r
                   {analysisColumns.map(c => (
                     <th key={c.key} className={`px-3 py-2 text-right text-xs whitespace-nowrap ${c.color}`}>
                       <div>{c.label}</div>
-                      <div className="text-[10px] font-normal text-slate-500">
-                        {formatDateShortWithDow(compareDates[c.key])}
+                      <div className="text-[10px] font-normal text-teal-500/80 tabular-nums">
+                        {formatCompareDateLabel(compareDates[c.key])}
                       </div>
                     </th>
                   ))}
@@ -398,8 +399,8 @@ export default function ReportDailyAnalysis({ storeId, storeName, initialDate, r
                   {analysisColumns.map(c => (
                     <th key={c.key} className={`px-2 py-2 text-right whitespace-nowrap ${c.color}`}>
                       <div>{c.label}</div>
-                      <div className="text-[9px] font-normal text-slate-500">
-                        {formatDateShortWithDow(compareDates[c.key])}
+                      <div className="text-[9px] font-normal text-teal-500/80 tabular-nums">
+                        {formatCompareDateLabel(compareDates[c.key])}
                       </div>
                     </th>
                   ))}

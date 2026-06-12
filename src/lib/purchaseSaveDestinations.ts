@@ -8,7 +8,8 @@ export type PurchaseSaveDestinationKind =
   | 'expiry_reminder'
   | 'ocr_correction'
   | 'item_alias'
-  | 'kakao_notify';
+  | 'kakao_notify'
+  | 'auto_voucher';
 
 export interface PurchaseSaveDestinationItem {
   name: string;
@@ -46,6 +47,7 @@ export function buildPurchaseSaveDestinations(opts: {
   syncedItems: string[];
   storeId: string;
   expiryDetails?: ExpiryReminderSaveDetail[];
+  autoVoucherId?: string;
 }): PurchaseSaveDestination[] {
   const {
     purchaseRecordId,
@@ -55,6 +57,7 @@ export function buildPurchaseSaveDestinations(opts: {
     syncedItems,
     storeId,
     expiryDetails = [],
+    autoVoucherId,
   } = opts;
 
   const destinations: PurchaseSaveDestination[] = [];
@@ -71,6 +74,18 @@ export function buildPurchaseSaveDestinations(opts: {
       totalAmount: totalAmount ?? 0,
     },
   });
+
+  if (autoVoucherId) {
+    destinations.push({
+      kind: 'auto_voucher',
+      label: '자동전표처리',
+      sublabel: '회계 · 승인대기',
+      docId: autoVoucherId,
+      collection: 'accounting_auto_vouchers',
+      href: '/dashboard/accounting/voucher/auto-process',
+      detail: { supplierName, totalAmount: totalAmount ?? 0 },
+    });
+  }
 
   if (purchaseAttachments.length > 0) {
     destinations.push({

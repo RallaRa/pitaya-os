@@ -1,0 +1,70 @@
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+import { STOCK_AUTH_COOKIE } from '@/lib/stock/constants';
+
+async function verifyViaApi(request: NextRequest, token: string, path: string) {
+  const verifyUrl = new URL('/api/stock/auth/verify', request.url);
+  return fetch(verifyUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'x-forwarded-for': request.headers.get('x-forwarded-for') || '',
+      'user-agent': request.headers.get('user-agent') || '',
+    },
+    body: JSON.stringify({ path }),
+  });
+}
+
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  if (pathname === '/api/stock/auth/verify') {
+    return NextResponse.next();
+  }
+
+  const token =
+    request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ||
+    request.cookies.get(STOCK_AUTH_COOKIE)?.value ||
+    null;
+
+  if (pathname.startsWith('/api/stock')) {
+    if (!token) {
+      return NextResponse.json(
+        { error: 'ACCESS_DENIED', message: '권한이 없습니다', code: 401 },
+        { status: 401 },
+      );
+    }
+    const res = await verifyViaApi(request, token, pathname);
+    if (!res.ok) {
+      const code = res.status === 401 ? 401 : 403;
+      return NextResponse.json(
+        { error: 'ACCESS_DENIED', message: '권한이 없습니다', code },
+        { status: code },
+      );
+    }
+    return NextResponse.next();
+  }
+
+  if (pathname.startsWith('/dashboard/superuser/stock')) {
+    if (!token) {
+      const login = new URL('/login', request.url);
+      login.searchParams.set('next', pathname);
+      return NextResponse.redirect(login);
+    }
+    const res = await verifyViaApi(request, token, pathname);
+    if (!res.ok) {
+      return NextResponse.redirect(new URL('/dashboard', request.url));
+    }
+    return NextResponse.next();
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: [
+    '/dashboard/superuser/stock/:path*',
+    '/api/stock/:path*',
+  ],
+};

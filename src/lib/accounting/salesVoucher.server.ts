@@ -134,6 +134,49 @@ function reportScore(data: Record<string, unknown>): number {
   return net;
 }
 
+/** 해당 일자 최우선 daily_reports 1건 (POS bridge 우선) */
+export async function pickBestDailyReportForDate(
+  storeId: string,
+  reportDate: string,
+): Promise<{ id: string; data: FirebaseFirestore.DocumentData } | null> {
+  const snap = await adminDb.collection('daily_reports')
+    .where('storeId', '==', storeId)
+    .where('reportDate', '==', reportDate)
+    .get();
+
+  let best: { id: string; data: FirebaseFirestore.DocumentData; score: number } | null = null;
+
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    const net = Number(data.netSales ?? data.netSale ?? data.totalSales ?? 0);
+    if (net <= 0) continue;
+    const score = reportScore(data);
+    if (!best || score > best.score) {
+      best = { id: doc.id, data, score };
+    }
+  }
+
+  return best ? { id: best.id, data: best.data } : null;
+}
+
+export function mapDailyReportToSalesSource(
+  id: string,
+  data: FirebaseFirestore.DocumentData,
+): SalesVoucherSource {
+  const netSales = Number(data.netSales ?? data.netSale ?? data.totalSales ?? 0);
+  return {
+    id,
+    reportDate: String(data.reportDate || ''),
+    netSales,
+    totalSales: Number(data.totalSales || 0),
+    cashSale: Number(data.cashSale || 0),
+    cardSale: Number(data.cardSale || 0),
+    customerCount: Number(data.customerCount || 0),
+    source: String(data.source || ''),
+    memo: `일매출 ${data.reportDate || ''}${data.customerCount ? ` · ${data.customerCount}명` : ''}`,
+  };
+}
+
 export async function listSalesForVoucherIntegration(
   storeId: string,
   opts?: { startDate?: string; endDate?: string; linked?: 'all' | 'pending' | 'done' },

@@ -105,8 +105,8 @@ export function buildWikiAiAppendix(index: WikiDocIndexItem[]): string {
   const lines = index.map(d => `- [[${d.slug}|${d.title}]] (${d.category})`).join('\n');
   return appendStoreBusinessContext(`
 
-## AI 매장 백과 (위키 모드)
-당신은 Pitaya OS **매장 백과** 안내 AI입니다. 답변 시 아래 등록된 문서를 참고하고, 관련 내용이 있으면 반드시 위키 링크 형식 **[[slug|표시제목]]** 을 본문에 1~3개 포함하세요.
+## AI 매장 메뉴얼 (위키 모드)
+당신은 Pitaya OS **매장 메뉴얼** 안내 AI입니다. 답변 시 아래 등록된 문서를 참고하고, 관련 내용이 있으면 반드시 위키 링크 형식 **[[slug|표시제목]]** 을 본문에 1~3개 포함하세요.
 - slug는 영문 식별자, 표시제목은 한글 제목
 - 예: [[morning-report|오전 마감 보고서]]
 - 세스코·캡스·외부 방역/보안 인증 업체는 언급하지 마세요. 위생은 **자체 위생 점검일지** 기준으로 안내하세요.

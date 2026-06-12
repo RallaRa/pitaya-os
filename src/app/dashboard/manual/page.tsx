@@ -162,7 +162,7 @@ export default function ManualPage() {
         </Link>
         <BookOpen className="w-5 h-5 text-amber-400" />
         <div className="flex-1 min-w-0">
-          <h1 className="text-white font-bold text-sm truncate">AI 매장 백과</h1>
+          <h1 className="text-white font-bold text-sm truncate">AI 매장 메뉴얼</h1>
           <p className="text-slate-500 text-xs truncate">
             {currentStore?.storeName || '매장'} · Pitaya OS 사용법 위키
           </p>
@@ -191,7 +191,7 @@ export default function ManualPage() {
               : 'text-slate-500'
           }`}
         >
-          백과 문서
+          메뉴얼 문서
         </button>
       </div>
 
@@ -212,7 +212,7 @@ export default function ManualPage() {
                 <BookOpen className="w-12 h-12 text-amber-400/20 mx-auto mb-3" />
                 <p className="text-slate-400 text-sm mb-4">
                   Pitaya OS 메뉴·업무 절차를 물어보세요.<br />
-                  오른쪽 백과 문서와 연결됩니다.
+                  오른쪽 메뉴얼 문서와 연결됩니다.
                 </p>
                 <div className="flex flex-wrap gap-2 justify-center">
                   {SUGGESTED.map(q => (
@@ -309,7 +309,7 @@ export default function ManualPage() {
             >
               <List className="w-4 h-4" />
             </button>
-            <span className="text-xs font-semibold text-amber-400/90">백과 문서</span>
+            <span className="text-xs font-semibold text-amber-400/90">메뉴얼 문서</span>
             {activeDoc && (
               <span className="text-xs text-slate-400 truncate flex-1">{activeDoc.title}</span>
             )}

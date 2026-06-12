@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutGrid, Sparkles, PenLine, ScrollText, Settings } from 'lucide-react';
+import { LayoutGrid, Sparkles, PenLine, ScrollText, Settings, Monitor } from 'lucide-react';
 import {
   STOCK_TRADER_SIDEBAR_LINKS,
   isStockTraderSubLinkActive,
@@ -10,8 +10,8 @@ import {
 
 const TAB_ICONS: Record<string, typeof LayoutGrid> = {
   '/dashboard/stock-trader': LayoutGrid,
+  '/dashboard/stock-trader/trade': Monitor,
   '/dashboard/stock-trader/ai': Sparkles,
-  '/dashboard/stock-trader/trade': PenLine,
   '/dashboard/stock-trader/logs': ScrollText,
   '/dashboard/stock-trader/settings': Settings,
 };
