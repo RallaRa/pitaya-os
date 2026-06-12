@@ -29,7 +29,11 @@ export async function validateStockSession(
   if (data.revoked) return { ok: false, reason: 'SESSION_REVOKED' };
 
   const last = data.lastActiveAt?.toDate?.()?.getTime?.() || 0;
-  if (Date.now() - last > STOCK_SESSION_IDLE_MS) {
+  if (last > 0 && Date.now() - last > STOCK_SESSION_IDLE_MS) {
+    if (!sessionId) {
+      const id = await createStockSession(uid);
+      return { ok: true, sessionId: id };
+    }
     await ref.update({ revoked: true });
     return { ok: false, reason: 'SESSION_IDLE_TIMEOUT' };
   }

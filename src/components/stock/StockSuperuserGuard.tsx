@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { isSuperuserEmail } from '@/lib/auth/permissions';
 import { STOCK_AUTH_COOKIE, STOCK_SESSION_IDLE_MS, STOCK_SUPERUSER_EMAIL } from '@/lib/stock/constants';
@@ -22,6 +23,7 @@ export default function StockSuperuserGuard({ children }: { children: React.Reac
   const { user, loading } = useAuth();
   const router = useRouter();
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [ready, setReady] = useState(false);
 
   const allowed =
     !!user?.email &&
@@ -45,6 +47,8 @@ export default function StockSuperuserGuard({ children }: { children: React.Reac
       router.replace('/dashboard');
       return;
     }
+
+    setReady(false);
 
     void (async () => {
       const token = await user!.getIdToken(true);
@@ -81,6 +85,7 @@ export default function StockSuperuserGuard({ children }: { children: React.Reac
       if (data.sessionId) {
         localStorage.setItem(SESSION_KEY, data.sessionId);
       }
+      setReady(true);
     })();
 
     const events = ['mousemove', 'keydown', 'click', 'scroll'] as const;
@@ -91,10 +96,10 @@ export default function StockSuperuserGuard({ children }: { children: React.Reac
     };
   }, [loading, allowed, user, router, resetIdle]);
 
-  if (loading || !allowed) {
+  if (loading || !allowed || !ready) {
     return (
-      <div className="flex items-center justify-center min-h-[40vh] text-slate-400 text-sm">
-        권한 확인 중…
+      <div className="flex items-center justify-center min-h-[40vh] text-slate-400">
+        <Loader2 className="w-6 h-6 animate-spin" />
       </div>
     );
   }

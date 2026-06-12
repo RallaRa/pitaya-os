@@ -5,7 +5,7 @@ import {
   stockAccessDeniedResponse,
   verifyStockSuperuser,
 } from '@/lib/stock/superuserAuth';
-import { touchStockSession, validateStockSession } from '@/lib/stock/session.server';
+import { touchStockSession, validateStockSession, createStockSession } from '@/lib/stock/session.server';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,10 +45,11 @@ export async function POST(req: Request) {
   }
 
   const sessionToken = req.headers.get('x-stock-session') || undefined;
-  const sessionCheck = await validateStockSession(auth.user.uid, sessionToken);
+  let sessionCheck = await validateStockSession(auth.user.uid, sessionToken);
   if (sessionCheck.ok === false) {
-    await handleStockAccessDenied(req, path, sessionCheck.reason, auth.user.email);
-    return stockAccessDeniedResponse(403);
+    // Firebase 슈퍼유저 인증 통과 후 — 만료/폐기 세션은 새로 발급 (메인 대시보드 튕김 방지)
+    const sessionId = await createStockSession(auth.user.uid);
+    sessionCheck = { ok: true, sessionId };
   }
 
   await touchStockSession(auth.user.uid, sessionCheck.sessionId);
