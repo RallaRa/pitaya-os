@@ -6,7 +6,7 @@ import { ArrowRight, TrendingDown, TrendingUp } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
 import WidgetEmptyReason from './WidgetEmptyReason';
 import { getAuthHeaders } from '@/lib/getAuthHeaders';
-import { formatMarginPct, type MarginInsight, type MarginItemRow } from '@/lib/marginRanking';
+import { formatMarginPct, type MarginInsight, type MarginItemRow } from '@/lib/marginRankingShared';
 
 interface MarginData {
   avgMargin: number | null;
