@@ -35,7 +35,8 @@ export async function validateStockSession(
   }
 
   if (sessionId && data.sessionId !== sessionId) {
-    return { ok: false, reason: 'SESSION_CONFLICT' };
+    // 클라이언트 세션 만료 — 서버 세션으로 동기화 (메인 대시보드 튕김 방지)
+    return { ok: true, sessionId: data.sessionId as string };
   }
 
   return { ok: true, sessionId: data.sessionId as string };

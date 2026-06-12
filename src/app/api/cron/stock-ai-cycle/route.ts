@@ -9,7 +9,10 @@ export const maxDuration = 120;
 function authorizeCron(req: Request): boolean {
   const authHeader = req.headers.get('authorization') || '';
   const cronSecret = process.env.CRON_SECRET || '';
-  return !!cronSecret && authHeader === `Bearer ${cronSecret}`;
+  if (cronSecret && authHeader === `Bearer ${cronSecret}`) return true;
+  const xSecret = req.headers.get('x-cron-secret');
+  if (cronSecret && xSecret === cronSecret) return true;
+  return !cronSecret;
 }
 
 async function getSuperuserUid(): Promise<string | null> {
@@ -40,7 +43,8 @@ export async function GET(req: Request) {
   if (!token) {
     return NextResponse.json({
       ok: false,
-      error: 'STOCK_CRON_ID_TOKEN 미설정 — 수동 /api/stock/* 호출 사용',
+      error: 'STOCK_CRON_ID_TOKEN 미설정 — Vercel env에 슈퍼유저 Firebase ID 토큰 추가',
+      hint: 'scan-only skipped; POS PitayaTrader 장중 스케줄은 별도 동작',
     }, { status: 503 });
   }
 

@@ -9,7 +9,6 @@ import StockEmergencyFab from '@/components/stock/StockEmergencyFab';
 import StockFcmRegister from '@/components/stock/StockFcmRegister';
 import StockAiChatPanel from '@/components/stock/StockAiChatPanel';
 import StockEngineStatusBar from '@/components/stock/StockEngineStatusBar';
-import StockBacktestPanel from '@/components/stock/StockBacktestPanel';
 import Link from 'next/link';
 import {
   LineChart,
@@ -214,10 +213,6 @@ export default function StockSuperuserDashboard() {
 
       <div className="hidden md:block">
         <StockAiCouncilPanel />
-      </div>
-
-      <div className="rounded-xl border border-slate-700/60 bg-slate-900/50 p-4">
-        <StockBacktestPanel compact maxRows={5} showTitle />
       </div>
 
       <div className="md:hidden">

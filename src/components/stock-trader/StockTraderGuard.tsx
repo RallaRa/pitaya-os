@@ -46,19 +46,27 @@ export default function StockTraderGuard({ children }: { children: React.ReactNo
       setAuthCookie(token);
       resetIdle();
 
-      const headers: Record<string, string> = {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
+      const verifyOnce = async (withSession: boolean) => {
+        const h: Record<string, string> = {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        };
+        if (withSession) {
+          const sid = localStorage.getItem(SESSION_KEY);
+          if (sid) h['x-stock-session'] = sid;
+        }
+        return fetch('/api/stock/auth/verify', {
+          method: 'POST',
+          headers: h,
+          body: JSON.stringify({ path: window.location.pathname }),
+        });
       };
-      const existingSession = localStorage.getItem(SESSION_KEY);
-      if (existingSession) headers['x-stock-session'] = existingSession;
 
-      const res = await fetch('/api/stock/auth/verify', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ path: window.location.pathname }),
-      });
-
+      let res = await verifyOnce(true);
+      if (!res.ok) {
+        localStorage.removeItem(SESSION_KEY);
+        res = await verifyOnce(false);
+      }
       if (!res.ok) {
         router.replace('/dashboard');
         return;

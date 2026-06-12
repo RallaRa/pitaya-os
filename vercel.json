@@ -71,6 +71,8 @@
     { "path": "/api/cron/hygiene-monthly-report", "schedule": "0 16 1 * *" },
     { "path": "/api/cron/signage-show-rotate", "schedule": "0 */4 * * *" },
     { "path": "/api/cron/stock-ai-cycle", "schedule": "*/5 0-6 * * 1-5" },
-    { "path": "/api/cron/stock-ai-cycle", "schedule": "0 7 * * *" }
+    { "path": "/api/cron/stock-ai-cycle", "schedule": "30 6 * * 1-5" },
+    { "path": "/api/cron/stock-ai-cycle", "schedule": "30 23 * * 0-4" },
+    { "path": "/api/cron/stock-ai-cycle", "schedule": "35 6 * * 1-5" }
   ]
 }
