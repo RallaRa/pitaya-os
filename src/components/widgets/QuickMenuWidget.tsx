@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import {
   ClipboardCheck, MessageCircle, ShoppingCart,
-  Plus, X, BarChart2, Calendar, Sparkles, LineChart,
+  Plus, X, BarChart2, Calendar, Sparkles, LineChart, Globe,
 } from 'lucide-react';
 import WidgetWrapper from './WidgetWrapper';
 
@@ -18,6 +18,7 @@ const ALL_MENUS: MenuItem[] = [
   { label: '캘린더',        href: '/dashboard/hr/calendar',            icon: 'calendar'  },
   { label: 'AI 대화',       href: '/dashboard/ai',                     icon: 'sparkles'  },
   { label: '매출 추이',     href: '/dashboard/sales-forecast',         icon: 'linechart' },
+  { label: '온라인 언급',   href: '/dashboard/marketing/online-presence', icon: 'globe'   },
 ];
 
 const DEFAULT_ACTIVE = ['clipboard', 'message', 'cart', 'bar'];
@@ -30,6 +31,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   calendar:  <Calendar      className="w-5 h-5" />,
   sparkles:  <Sparkles      className="w-5 h-5" />,
   linechart: <LineChart     className="w-5 h-5" />,
+  globe:     <Globe         className="w-5 h-5" />,
 };
 
 const ICON_COLOR: Record<string, string> = {
@@ -40,6 +42,7 @@ const ICON_COLOR: Record<string, string> = {
   calendar:  'text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20',
   sparkles:  'text-pink-400   bg-pink-500/10   hover:bg-pink-500/20',
   linechart: 'text-green-400  bg-green-500/10  hover:bg-green-500/20',
+  globe:     'text-cyan-400   bg-cyan-500/10   hover:bg-cyan-500/20',
 };
 
 export default function QuickMenuWidget({

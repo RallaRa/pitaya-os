@@ -62,6 +62,7 @@ export const SALES_MENU_SECTIONS: SalesMenuSection[] = [
     items: [
       { href: '/dashboard/customers', label: '고객 관리', description: '회원·포인트 관리' },
       { href: '/dashboard/marketing/journey', label: '고객 여정', description: '마케팅 자동화 흐름' },
+      { href: '/dashboard/marketing/online-presence', label: '온라인 언급', description: '네이버·웹 관련 콘텐츠' },
     ],
   },
   {

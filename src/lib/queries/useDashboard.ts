@@ -5,9 +5,22 @@ import { STALE_TIME, queryKeys } from '@/lib/queries/keys';
 import { fetchAuthJson } from '@/lib/queries/fetchJson';
 import type { CustomerVisitSummary } from '@/lib/customerVisitStats';
 
+function isSoftDashboardError(data: Record<string, unknown>): boolean {
+  if (data.aiError === true || data.noData === true) return true;
+  if ('today' in data || 'news' in data || 'items' in data || 'summary' in data) return true;
+  if ('opinion' in data || 'topItems' in data) return true;
+  return false;
+}
+
 async function fetchDashboard<T>(url: string): Promise<T> {
   const data = await fetchAuthJson<T & { error?: string }>(url);
-  if (data && typeof data === 'object' && 'error' in data && data.error) {
+  if (
+    data
+    && typeof data === 'object'
+    && 'error' in data
+    && data.error
+    && !isSoftDashboardError(data as Record<string, unknown>)
+  ) {
     throw new Error(String(data.error));
   }
   return data as T;

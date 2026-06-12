@@ -12,6 +12,7 @@ import { aiMetaJson } from '@/lib/aiProviderMeta';
 import { getKSTTodayYMD, addDaysYMD, isKstTodayTimestamp } from '@/lib/dateUtils';
 import { sourceStatus, stripUndefinedDeep } from '@/lib/firestoreSanitize';
 import { STORE_BUSINESS_ANALYSIS_RULES, formatStaffingLine } from '@/lib/storeBusinessContext';
+import { fetchMeatMarketBundle } from '@/lib/external/meatMarketData.server';
 
 export const maxDuration = 120;
 
@@ -94,15 +95,9 @@ async function fetchNaverMultiNews() {
   return news.slice(0, 8);
 }
 
-async function fetchMeatData(base: string) {
-  const [priceRes, auctionRes] = await Promise.allSettled([
-    fetch(`${base}/api/external/meat-price`, { signal: AbortSignal.timeout(10000) }).then(r=>r.json()),
-    fetch(`${base}/api/external/meat-auction`, { signal: AbortSignal.timeout(10000) }).then(r=>r.json()),
-  ]);
-  return {
-    prices:  priceRes.status  === 'fulfilled' ? priceRes.value  : null,
-    auction: auctionRes.status === 'fulfilled' ? auctionRes.value : null,
-  };
+async function fetchMeatData() {
+  const { prices, auction } = await fetchMeatMarketBundle();
+  return { prices, auction };
 }
 
 async function fetchNaverTrend(_base: string, storeId: string) {
@@ -307,7 +302,7 @@ export async function GET(req: Request) {
     fetchWeatherMultiDay(coords),
     apiKey ? fetchHolidayRange(apiKey, [thisYM, nextYM]) : Promise.resolve([]),
     fetchNaverMultiNews(),
-    fetchMeatData(base),
+    fetchMeatData(),
     fetchNaverTrend(base, storeId),
     collectFirestoreData(storeId),
   ]);
