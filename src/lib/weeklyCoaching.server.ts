@@ -84,7 +84,7 @@ export async function generateWeeklyCoaching(
   storeId: string,
   options?: { skipMessenger?: boolean; forceWeek?: { start: string; end: string } },
 ): Promise<WeeklyCoachingBriefing> {
-  const week = options?.forceWeek
+  const week: { start: string; end: string; weekId: string } = options?.forceWeek
     ? { ...options.forceWeek, weekId: buildWeekId(options.forceWeek.start) }
     : lastCompletedWeek();
   const prior = priorWeekRange(week.start);
