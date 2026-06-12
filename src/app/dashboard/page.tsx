@@ -48,6 +48,10 @@ import MarginRankingWidget  from '@/components/widgets/MarginRankingWidget';
 import InventoryTurnoverWidget from '@/components/widgets/InventoryTurnoverWidget';
 import BreakEvenWidget        from '@/components/widgets/BreakEvenWidget';
 import ChurnRiskWidget        from '@/components/widgets/ChurnRiskWidget';
+import CoPurchaseWidget       from '@/components/widgets/CoPurchaseWidget';
+import ProcurementGapWidget   from '@/components/widgets/ProcurementGapWidget';
+import RfmPipelineWidget      from '@/components/widgets/RfmPipelineWidget';
+import LostBuyerWidget        from '@/components/widgets/LostBuyerWidget';
 import DailyBriefingBar       from '@/components/dashboard/DailyBriefingBar';
 import WeeklyCoachingBar      from '@/components/dashboard/WeeklyCoachingBar';
 import { useDashboardChrome } from '@/components/dashboard/DashboardChromeContext';
@@ -365,6 +369,10 @@ export default function DashboardPage() {
       case 'sales_category':     return wrapWidget(id, <SalesCategoryWidget    editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'time_slot_aov':      return wrapWidget(id, <TimeSlotAovWidget      editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'repurchase_due':     return wrapWidget(id, <RepurchaseDueWidget    editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'co_purchase':        return wrapWidget(id, <CoPurchaseWidget       editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'procurement_gap':    return wrapWidget(id, <ProcurementGapWidget   editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'rfm_pipeline':       return wrapWidget(id, <RfmPipelineWidget      editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'lost_buyers':        return wrapWidget(id, <LostBuyerWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       default:                   return null;
     }
   };

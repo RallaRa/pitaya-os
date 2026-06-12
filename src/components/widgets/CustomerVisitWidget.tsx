@@ -14,14 +14,16 @@ function ChangeBadge({
   value,
   suffix = '%',
   label,
+  size = 'sm',
 }: {
   value: number | null;
   suffix?: string;
   label: string;
+  size?: 'sm' | 'xs';
 }) {
   if (value == null) {
     return (
-      <p className="text-[10px] text-slate-500">{label} —</p>
+      <p className={`${size === 'xs' ? 'text-[9px]' : 'text-[10px]'} text-slate-500`}>{label} —</p>
     );
   }
   const up = value > 0;
@@ -29,8 +31,8 @@ function ChangeBadge({
   const Icon = up ? TrendingUp : down ? TrendingDown : Minus;
   const color = up ? 'text-green-400' : down ? 'text-red-400' : 'text-slate-400';
   return (
-    <p className={`text-[10px] flex items-center gap-0.5 ${color}`}>
-      <Icon className="w-3 h-3 shrink-0" />
+    <p className={`${size === 'xs' ? 'text-[9px]' : 'text-[10px]'} flex items-center gap-0.5 ${color}`}>
+      <Icon className={`${size === 'xs' ? 'w-2.5 h-2.5' : 'w-3 h-3'} shrink-0`} />
       <span>{label} {up ? '+' : ''}{value}{suffix}</span>
     </p>
   );
@@ -98,7 +100,7 @@ function CustomerVisitWidgetContent({
           />
         </div>
       ) : data ? (
-        <div className="h-full p-3 flex flex-col gap-3 justify-center">
+        <div className="h-full p-3 flex flex-col gap-2.5 justify-center">
           {data.evidenceSummary && (
             <SalesEvidenceLine
               summary={data.evidenceSummary}
@@ -107,23 +109,35 @@ function CustomerVisitWidgetContent({
               compact
             />
           )}
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <p className="text-[10px] text-slate-500">{data.thisMonthLabel} 방문 고객</p>
-              <p className="text-2xl font-bold text-slate-100 tabular-nums">
-                {data.thisMonthVisitors.toLocaleString()}
-                <span className="text-sm font-normal text-slate-500 ml-1">명</span>
-              </p>
-              <p className="text-[10px] text-slate-500 mt-0.5">
-                {data.prevMonthLabel} {data.prevMonthVisitors.toLocaleString()}명
-              </p>
-            </div>
-            <div className={`flex flex-col items-end ${directionColor}`}>
-              <DirectionIcon className="w-5 h-5" />
-              <ChangeBadge
-                value={data.visitorChangePct}
-                label="전월대비"
-              />
+
+          {/* 주 비교: 당월·전월 동일 기간 객수 */}
+          <div className="rounded-xl border border-teal-500/30 bg-teal-950/20 p-3">
+            <p className="text-[10px] font-semibold text-teal-300/90 mb-2">
+              동일 기간 객수 ({data.mtdPeriodLabel})
+            </p>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-[10px] text-slate-500">
+                  {data.thisMonthLabel} {data.mtdPeriodLabel}
+                </p>
+                <p className="text-2xl font-bold text-slate-100 tabular-nums">
+                  {data.thisMonthVisitors.toLocaleString()}
+                  <span className="text-sm font-normal text-slate-500 ml-1">명</span>
+                </p>
+                <p className="text-[10px] text-slate-400 mt-1">
+                  {data.prevMonthLabel} {data.mtdPeriodLabel}{' '}
+                  <strong className="text-slate-300 tabular-nums">
+                    {data.prevMonthSamePeriodVisitors.toLocaleString()}명
+                  </strong>
+                </p>
+              </div>
+              <div className={`flex flex-col items-end ${directionColor}`}>
+                <DirectionIcon className="w-5 h-5" />
+                <ChangeBadge
+                  value={data.visitorChangePct}
+                  label="동일기간"
+                />
+              </div>
             </div>
           </div>
 
@@ -136,9 +150,9 @@ function CustomerVisitWidgetContent({
                 {data.thisMonthVisitRate != null ? `${data.thisMonthVisitRate}%` : '-'}
               </p>
               <p className="text-[9px] text-slate-500">
-                {data.prevMonthLabel} {data.prevMonthVisitRate != null ? `${data.prevMonthVisitRate}%` : '-'}
+                {data.prevMonthLabel} 동일 {data.prevMonthSamePeriodVisitRate != null ? `${data.prevMonthSamePeriodVisitRate}%` : '-'}
               </p>
-              <ChangeBadge value={data.visitRateChangePct} label="전월" />
+              <ChangeBadge value={data.visitRateChangePct} label="동일기간" size="xs" />
             </div>
             <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/40">
               <p className="text-[9px] text-slate-500">방문 횟수</p>
@@ -146,15 +160,31 @@ function CustomerVisitWidgetContent({
                 {data.thisMonthVisits.toLocaleString()}
               </p>
               <p className="text-[9px] text-slate-500">
-                {data.prevMonthLabel} {data.prevMonthVisits.toLocaleString()}회
+                {data.prevMonthLabel} 동일 {data.prevMonthSamePeriodVisits.toLocaleString()}회
               </p>
-              <ChangeBadge value={data.visitTxChangePct} label="전월" />
+              <ChangeBadge value={data.visitTxChangePct} label="동일기간" size="xs" />
+            </div>
+          </div>
+
+          {/* 보조: 전월 전체 (작게) */}
+          <div className="rounded-lg border border-slate-700/30 bg-slate-900/40 px-2.5 py-2">
+            <p className="text-[9px] text-slate-500 mb-1">참고 · 전월 전체</p>
+            <div className="flex items-center justify-between gap-2 text-[10px] text-slate-500">
+              <span>
+                {data.thisMonthLabel} {data.mtdPeriodLabel}{' '}
+                <span className="text-slate-400 tabular-nums">{data.thisMonthVisitors.toLocaleString()}명</span>
+              </span>
+              <span className="text-slate-600">vs</span>
+              <span>
+                {data.prevMonthLabel} 전체{' '}
+                <span className="text-slate-400 tabular-nums">{data.prevMonthFullVisitors.toLocaleString()}명</span>
+              </span>
             </div>
           </div>
 
           {data.visitRateChange != null && (
-            <p className={`text-xs text-center ${directionColor}`}>
-              방문률 {data.visitRateChange > 0 ? '+' : ''}{data.visitRateChange}%p
+            <p className={`text-[10px] text-center ${directionColor}`}>
+              동일기간 방문률 {data.visitRateChange > 0 ? '+' : ''}{data.visitRateChange}%p
               {' '}
               ({data.direction === 'up' ? '증가' : data.direction === 'down' ? '감소' : '유지'})
             </p>

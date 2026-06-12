@@ -17,6 +17,7 @@ export const queryKeys = {
     weather: (storeId: string) => ['dashboard', 'weather', storeId] as const,
     news: () => ['dashboard', 'news'] as const,
     aiInsight: (storeId: string) => ['dashboard', 'ai-insight', storeId] as const,
+    briefingAttribution: (storeId: string) => ['dashboard', 'briefing-attribution', storeId] as const,
     totalPartner: (storeId: string) => ['dashboard', 'total-partner', storeId] as const,
     salesPrediction: (storeId: string) => ['dashboard', 'sales-prediction', storeId] as const,
     salesHeatmap: (storeId: string, range: string) => ['dashboard', 'sales-heatmap', storeId, range] as const,
@@ -27,6 +28,10 @@ export const queryKeys = {
     orderDeliveryGap: (storeId: string) => ['dashboard', 'order-delivery-gap', storeId] as const,
     marginRanking: (storeId: string) => ['dashboard', 'margin-ranking', storeId] as const,
     repurchaseDue: (storeId: string) => ['dashboard', 'repurchase-due', storeId] as const,
+    coPurchase: (storeId: string) => ['dashboard', 'co-purchase', storeId] as const,
+    procurementGap: (storeId: string) => ['dashboard', 'procurement-gap', storeId] as const,
+    rfmPipeline: (storeId: string) => ['dashboard', 'rfm-pipeline', storeId] as const,
+    lostBuyers: (storeId: string) => ['dashboard', 'lost-buyers', storeId] as const,
     performanceContext: (storeId: string) => ['dashboard', 'performance-context', storeId] as const,
   },
 };

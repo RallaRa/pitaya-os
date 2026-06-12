@@ -86,6 +86,7 @@ export async function POST(req: Request) {
           voucherApprovalRequired: true,
           autoVoucherFromPurchase: false,
           autoVoucherFromSales: false,
+          autoVoucherFromExpense: false,
           createdAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
@@ -145,6 +146,7 @@ export async function POST(req: Request) {
         voucherApprovalRequired: true,
         autoVoucherFromPurchase: false,
         autoVoucherFromSales: false,
+        autoVoucherFromExpense: false,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });

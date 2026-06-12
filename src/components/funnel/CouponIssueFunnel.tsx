@@ -38,6 +38,7 @@ const INITIAL: CouponIssueData = {
 
 interface Props {
   storeId: string;
+  initialContext?: Partial<CouponIssueData>;
   onClose?: () => void;
   onDone?: () => void;
 }
@@ -47,7 +48,7 @@ function makeCode(title: string) {
   return `${base || 'CPN'}${Date.now().toString().slice(-4)}`;
 }
 
-export default function CouponIssueFunnel({ storeId, onClose, onDone }: Props) {
+export default function CouponIssueFunnel({ storeId, initialContext, onClose, onDone }: Props) {
   const [submitting, setSubmitting] = useState(false);
 
   const funnel = useFunnel<CouponIssueData>({
@@ -66,7 +67,7 @@ export default function CouponIssueFunnel({ storeId, onClose, onDone }: Props) {
       { id: 'target', title: '대상' },
       { id: 'send', title: '발송' },
     ],
-    initialContext: INITIAL,
+    initialContext: { ...INITIAL, ...initialContext },
   });
 
   const handleIssue = async () => {

@@ -59,6 +59,29 @@ export interface CommercialAreaContext {
   businessSummary: string;
   competitiveLevel: '높음' | '보통' | '낮음';
   source: 'api' | 'estimate';
+  tradeAreaCode?: string;
+  tradeAreaCodeSource?: 'store' | 'sigungu_fallback' | 'none';
+  apiQuery?: 'trdarCdN' | 'signguCd' | 'estimate';
+}
+
+export function getSigunguCode(regionSigungu: string): string | undefined {
+  const key = regionSigungu.replace(/\s/g, '');
+  return SIGUNGU_CODES[key] || SIGUNGU_CODES[regionSigungu];
+}
+
+export function resolveTradeAreaCode(
+  tradeAreaCode?: string | null,
+  regionSigungu?: string,
+): { code: string; source: 'store' | 'sigungu_fallback' | 'none' } {
+  const trimmed = (tradeAreaCode || '').trim();
+  if (/^\d{7,10}$/.test(trimmed)) {
+    return { code: trimmed, source: 'store' };
+  }
+  const sigunguCode = getSigunguCode(regionSigungu || '');
+  if (sigunguCode) {
+    return { code: `${sigunguCode}000`, source: 'sigungu_fallback' };
+  }
+  return { code: '', source: 'none' };
 }
 
 function stripHtml(s: string) {
@@ -151,39 +174,90 @@ export function estimateFootTrafficWithComparisons(
   };
 }
 
+async function fetchStoreListByDiv(
+  apiKey: string,
+  divId: 'trdarCdN' | 'signguCd',
+  key: string,
+): Promise<{ list: Record<string, unknown>[]; query: typeof divId } | null> {
+  try {
+    const url =
+      `http://apis.data.go.kr/B553077/api/open/sd/storeList` +
+      `?serviceKey=${encodeURIComponent(apiKey)}` +
+      `&divId=${divId}&key=${key}&type=json&numOfRows=5&pageNo=1`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const text = await res.text();
+    if (!res.ok || !text.includes('{')) return null;
+    const json = JSON.parse(text);
+    const items = json?.body?.items || json?.response?.body?.items?.item || [];
+    const list = Array.isArray(items) ? items : items ? [items] : [];
+    if (list.length === 0) return null;
+    return { list, query: divId };
+  } catch {
+    return null;
+  }
+}
+
+function commercialFromStoreList(
+  regionSido: string,
+  regionSigungu: string,
+  list: Record<string, unknown>[],
+  apiQuery: 'trdarCdN' | 'signguCd',
+  tradeAreaMeta: Pick<CommercialAreaContext, 'tradeAreaCode' | 'tradeAreaCodeSource'>,
+): CommercialAreaContext {
+  const names = list.slice(0, 3).map(i =>
+    String(i.bizesNm || i.indsLclsNm || '상가'),
+  ).join(', ');
+  const queryLabel = apiQuery === 'trdarCdN' ? '상권코드 API' : '시군구 상가 API';
+  return {
+    region: `${regionSido} ${regionSigungu}`.trim(),
+    storeDensity: `${regionSigungu || regionSido} 상권 활성`,
+    businessSummary: `${queryLabel}·인근 상가 ${list.length}건+ (${names} 등). 정육·식품 유통 밀집`,
+    competitiveLevel: list.length >= 4 ? '높음' : list.length >= 2 ? '보통' : '낮음',
+    source: 'api',
+    apiQuery,
+    ...tradeAreaMeta,
+  };
+}
+
 export async function fetchCommercialArea(
   regionSido: string,
   regionSigungu: string,
+  options?: {
+    tradeAreaCode?: string;
+    tradeAreaCodeSource?: 'store' | 'sigungu_fallback' | 'none';
+  },
 ): Promise<CommercialAreaContext> {
   const apiKey = process.env.PUBLIC_DATA_API_KEY || '';
-  const code = SIGUNGU_CODES[regionSigungu];
-
-  if (apiKey && code) {
-    try {
-      const url =
-        `http://apis.data.go.kr/B553077/api/open/sd/storeList` +
-        `?serviceKey=${encodeURIComponent(apiKey)}` +
-        `&divId=signguCd&key=${code}&type=json&numOfRows=5&pageNo=1`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-      const text = await res.text();
-      if (res.ok && text.includes('{')) {
-        const json = JSON.parse(text);
-        const items = json?.body?.items || json?.response?.body?.items?.item || [];
-        const list = Array.isArray(items) ? items : items ? [items] : [];
-        if (list.length > 0) {
-          const names = list.slice(0, 3).map((i: { bizesNm?: string; indsLclsNm?: string }) =>
-            i.bizesNm || i.indsLclsNm || '상가',
-          ).join(', ');
-          return {
-            region: `${regionSido} ${regionSigungu}`,
-            storeDensity: `${regionSigungu} 상권 활성`,
-            businessSummary: `인근 상가 ${list.length}건+ (${names} 등). 정육·식품 유통 밀집 상권`,
-            competitiveLevel: list.length >= 4 ? '높음' : list.length >= 2 ? '보통' : '낮음',
-            source: 'api',
-          };
-        }
+  const resolved = options?.tradeAreaCode
+    ? {
+        code: options.tradeAreaCode,
+        source: options.tradeAreaCodeSource || 'store' as const,
       }
-    } catch { /* fallback */ }
+    : resolveTradeAreaCode('', regionSigungu);
+  const tradeAreaMeta = {
+    tradeAreaCode: resolved.code || undefined,
+    tradeAreaCodeSource: resolved.source,
+  };
+
+  if (apiKey) {
+    if (resolved.source === 'store' && resolved.code) {
+      const trdar = await fetchStoreListByDiv(apiKey, 'trdarCdN', resolved.code);
+      if (trdar) {
+        return commercialFromStoreList(
+          regionSido, regionSigungu, trdar.list, trdar.query, tradeAreaMeta,
+        );
+      }
+    }
+
+    const signgu = getSigunguCode(regionSigungu);
+    if (signgu) {
+      const sig = await fetchStoreListByDiv(apiKey, 'signguCd', signgu);
+      if (sig) {
+        return commercialFromStoreList(
+          regionSido, regionSigungu, sig.list, sig.query, tradeAreaMeta,
+        );
+      }
+    }
   }
 
   const isMetro = /서울|부산|대구|인천|광주|대전|울산|경기/.test(regionSido);
@@ -193,6 +267,8 @@ export async function fetchCommercialArea(
     businessSummary: `${regionSigungu || regionSido} 식품·정육 유통 밀집 추정. 동네 단골·배달 수요 혼재`,
     competitiveLevel: isMetro ? '높음' : '보통',
     source: 'estimate',
+    apiQuery: 'estimate',
+    ...tradeAreaMeta,
   };
 }
 

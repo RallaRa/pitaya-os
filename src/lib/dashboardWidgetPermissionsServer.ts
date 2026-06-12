@@ -21,6 +21,11 @@ export const DEFAULT_WIDGET_PERMISSIONS = {
   inventory_turnover: { master: true, admin: true,  user: true,  staff: false },
   sales_category:     { master: true, admin: true,  user: true,  staff: true  },
   time_slot_aov:      { master: true, admin: true,  user: true,  staff: true  },
+  repurchase_due:     { master: true, admin: true,  user: true,  staff: false },
+  co_purchase:        { master: true, admin: true,  user: true,  staff: false },
+  procurement_gap:    { master: true, admin: true,  user: true,  staff: false },
+  rfm_pipeline:       { master: true, admin: true,  user: true,  staff: false },
+  lost_buyers:        { master: true, admin: true,  user: true,  staff: false },
 };
 
 export async function getDashboardWidgetPermissions(storeId: string) {

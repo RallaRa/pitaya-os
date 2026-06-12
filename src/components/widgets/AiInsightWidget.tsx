@@ -14,6 +14,9 @@ import { AiUsedBadge, type AiMetaDisplay } from '@/components/AiUsedBadge';
 import SalesEvidenceLine from './SalesEvidenceLine';
 import WidgetAnalysisPanel from './WidgetAnalysisPanel';
 import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
+import BriefingActionExecuteButton from '@/components/briefing/BriefingActionExecuteButton';
+import BriefingActionAttributionPanel from '@/components/briefing/BriefingActionAttributionPanel';
+import { getExecutableBriefingAction, isBriefingActionExecutable, enrichBriefingAction } from '@/lib/briefingActions';
 import type { BriefingAction, SalesEvidenceLine as SalesEvidenceLineType } from '@/lib/salesEvidence';
 
 interface TrendItem {
@@ -42,7 +45,24 @@ interface ComprehensiveData {
       vsLastMonth: { changePct: number | null };
     };
   };
-  commercial?: { businessSummary: string; competitiveLevel: string };
+  commercial?: {
+    businessSummary: string;
+    competitiveLevel: string;
+    source?: 'api' | 'estimate';
+    apiQuery?: 'trdarCdN' | 'signguCd' | 'estimate';
+    tradeAreaCode?: string;
+    tradeAreaCodeSource?: 'store' | 'sigungu_fallback' | 'none';
+  };
+  tradeAreaSnapshot?: {
+    tradeAreaCode: string;
+    tradeAreaCodeSource: 'store' | 'sigungu_fallback' | 'none';
+    sources: {
+      commercial: 'api' | 'estimate';
+      footTraffic: 'api' | 'estimate';
+      commercialQuery?: 'trdarCdN' | 'signguCd' | 'estimate';
+    };
+    savedAt?: string;
+  };
   sales?: { today: number; yesterday: number; change: number | null };
   evidenceLines?: SalesEvidenceLineType[];
   salesBasis?: string;
@@ -59,8 +79,8 @@ interface ComprehensiveData {
 function normalizeActions(actions: ComprehensiveData['actions']): BriefingAction[] {
   if (!actions?.length) return [];
   return actions.map(a => {
-    if (typeof a === 'string') return { text: a };
-    return a;
+    if (typeof a === 'string') return enrichBriefingAction({ text: a });
+    return enrichBriefingAction(a);
   });
 }
 
@@ -147,6 +167,14 @@ function boldify(text: string) {
   );
 }
 
+function sourceBadgeLabel(source?: 'api' | 'estimate', query?: string): { label: string; className: string } {
+  if (source === 'api') {
+    const detail = query === 'trdarCdN' ? '상권 API' : query === 'signguCd' ? '상가 API' : 'API';
+    return { label: detail, className: 'bg-green-900/40 text-green-300 border-green-700/40' };
+  }
+  return { label: '추정', className: 'bg-amber-900/40 text-amber-300 border-amber-700/40' };
+}
+
 function AiInsightWidgetContent({
   editMode, onRemove, storeId, mobileLayout = false,
 }: {
@@ -192,8 +220,17 @@ function AiInsightWidgetContent({
   const srcStatus = data?.dataSourceStatus || {};
   const okCount = Object.values(srcStatus).filter(s => s.status === 'ok' || s.status === 'estimate').length;
   const briefingActions = normalizeActions(data?.actions);
+  const executableActionCount = briefingActions.filter(a =>
+    isBriefingActionExecutable(getExecutableBriefingAction(a)),
+  ).length;
   const evidenceLines = data?.evidenceLines;
   const ev = (id: string) => evidenceLines?.find(l => l.id === id);
+  const tradeSnap = data?.tradeAreaSnapshot;
+  const commercialBadge = sourceBadgeLabel(
+    tradeSnap?.sources.commercial ?? data?.commercial?.source,
+    tradeSnap?.sources.commercialQuery ?? data?.commercial?.apiQuery,
+  );
+  const footTrafficBadge = sourceBadgeLabel(tradeSnap?.sources.footTraffic ?? 'estimate');
 
   return (
     <WidgetWrapper
@@ -233,7 +270,12 @@ function AiInsightWidgetContent({
             <div className={`grid gap-2 ${mobileLayout ? 'grid-cols-1' : 'grid-cols-3'}`}>
               {data?.footTraffic && (
                 <div className="bg-slate-800/40 rounded-lg p-2 border border-slate-700/40">
-                  <p className="text-[9px] text-slate-500">유동</p>
+                  <div className="flex items-center justify-between gap-1">
+                    <p className="text-[9px] text-slate-500">유동</p>
+                    <span className={`text-[8px] px-1 py-0.5 rounded border ${footTrafficBadge.className}`}>
+                      {footTrafficBadge.label}
+                    </span>
+                  </div>
                   <p className="text-sm font-bold text-slate-200">{data.footTraffic.index}</p>
                   <p className="text-[9px] text-slate-500">{data.footTraffic.level}</p>
                   {data.footTraffic.comparisons && (
@@ -254,9 +296,20 @@ function AiInsightWidgetContent({
               )}
               {data?.commercial && (
                 <div className="bg-slate-800/40 rounded-lg p-2 border border-slate-700/40">
-                  <p className="text-[9px] text-slate-500">상권</p>
+                  <div className="flex items-center justify-between gap-1">
+                    <p className="text-[9px] text-slate-500">상권</p>
+                    <span className={`text-[8px] px-1 py-0.5 rounded border ${commercialBadge.className}`}>
+                      {commercialBadge.label}
+                    </span>
+                  </div>
                   <p className="text-sm font-bold text-slate-200">{data.commercial.competitiveLevel}</p>
                   <p className="text-[9px] text-slate-500 truncate">{data.commercial.businessSummary.slice(0, 20)}</p>
+                  {(tradeSnap?.tradeAreaCode || data.commercial.tradeAreaCode) && (
+                    <p className="text-[8px] text-slate-600 font-mono mt-0.5">
+                      코드 {(tradeSnap?.tradeAreaCode || data.commercial.tradeAreaCode)}
+                      {(tradeSnap?.tradeAreaCodeSource || data.commercial.tradeAreaCodeSource) === 'sigungu_fallback' && ' (구 추정)'}
+                    </p>
+                  )}
                   <EvidenceBlock line={ev('commercial')} className="mt-1.5" compact />
                 </div>
               )}
@@ -281,13 +334,21 @@ function AiInsightWidgetContent({
               <div className="bg-blue-900/25 border border-blue-700/35 rounded-xl p-3">
                 <p className="text-[10px] font-semibold text-blue-300 mb-1.5 flex items-center gap-1">
                   <CheckCircle2 className="w-3 h-3" /> 오늘 실행 · 매출 향상
+                  {executableActionCount > 0 && (
+                    <span className="text-[9px] font-normal text-blue-400/80">
+                      · {executableActionCount}건 1클릭
+                    </span>
+                  )}
                 </p>
                 <ul className="space-y-2">
                   {briefingActions.map((a, i) => (
                     <li key={i} className="text-[11px] text-blue-100/90">
                       <div className="flex gap-1.5">
                         <span className="text-blue-400 shrink-0">{i + 1}.</span>
-                        <span>{a.text}</span>
+                        <div className="min-w-0 flex-1">
+                          <span>{a.text}</span>
+                          <BriefingActionExecuteButton action={a} storeId={storeId} />
+                        </div>
                       </div>
                       {a.basis && (
                         <SalesEvidenceLine
@@ -301,6 +362,8 @@ function AiInsightWidgetContent({
                 </ul>
               </div>
             )}
+
+            <BriefingActionAttributionPanel storeId={storeId} />
 
             {/* 핵심 포인트 */}
             {data?.highlights && data.highlights.length > 0 && (

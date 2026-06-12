@@ -50,7 +50,11 @@ export type WidgetAnalysisId =
   | 'sales_category'
   | 'time_slot_aov'
   | 'break_even'
-  | 'repurchase_due';
+  | 'repurchase_due'
+  | 'co_purchase'
+  | 'procurement_gap'
+  | 'rfm_pipeline'
+  | 'lost_buyers';
 
 function fmtWon(n: number): string {
   if (n <= 0) return '0원';
@@ -331,6 +335,112 @@ export function buildRepurchaseDueAnalysis(
     prediction,
     suggestions: suggestions.slice(0, 3),
     basis: '고객 구매주기·예측 TOP·월 목표',
+  };
+}
+
+export function buildCoPurchaseAnalysis(
+  data: { pairs?: { item: string; lift: number; anchorRate: number }[]; anchorKeyword?: string },
+  ctx: PerformanceContext,
+): WidgetAnalysisBlock {
+  const top = data.pairs?.[0];
+  const prediction = top
+    ? `'${data.anchorKeyword || '기준'}' 구매 시 ${top.item} 동반 ${top.anchorRate}% — 세트·진열 연계`
+    : '공동구매 패턴 수집 중 — 영수증 라인 데이터 필요';
+
+  const suggestions: string[] = [];
+  if (top && top.lift >= 1.5) {
+    suggestions.push(`${top.item} 세트 구성·POP 진열 — lift ${top.lift.toFixed(1)}x`);
+  }
+  if (ctx.predictionTopItems[0]) {
+    suggestions.push(`예측 TOP ${ctx.predictionTopItems[0]} 옆 동반품 배치`);
+  }
+  suggestions.push('주간 TOP과 교차 배치로 객단가 상승');
+
+  return {
+    prediction,
+    suggestions: suggestions.slice(0, 3),
+    basis: '90일 영수증·예측 TOP·주간 베스트',
+  };
+}
+
+export function buildProcurementGapAnalysis(
+  data: { gaps?: { itemName: string; status: string; recommendedQty: number }[] },
+  ctx: PerformanceContext,
+): WidgetAnalysisBlock {
+  const shortage = data.gaps?.filter(g => g.status === 'shortage_risk') || [];
+  const prediction = shortage.length > 0
+    ? `내일 ${shortage.length}품목 재고 부족 위험 — ${shortage[0].itemName} 등 선발주`
+    : '예측·실적 대비 발주 갭 정상 — 과발주 품목만 점검';
+
+  const suggestions: string[] = [];
+  if (shortage.length > 0) {
+    suggestions.push(`${shortage.map(s => s.itemName).slice(0, 2).join(', ')} 우선 발주`);
+  }
+  if (ctx.predictionTopItems.length) {
+    suggestions.push(`AI 예측 TOP: ${ctx.predictionTopItems.slice(0, 3).join(', ')}`);
+  }
+  if (ctx.monthTargetPacePct != null && ctx.monthTargetPacePct >= 100) {
+    suggestions.push('목표 초과 달성 중 — 인기품목 안전재고 확대');
+  }
+
+  return {
+    prediction,
+    suggestions: suggestions.filter(Boolean).slice(0, 3),
+    basis: '7일 품목통계·예측·날씨·목표',
+  };
+}
+
+export function buildRfmPipelineAnalysis(
+  data: { total?: number; grades?: { grade: string; count: number; sharePct: number }[] },
+  ctx: PerformanceContext,
+): WidgetAnalysisBlock {
+  const vip = data.grades?.find(g => g.grade === 'VIP');
+  const risk = data.grades?.find(g => g.grade === '이탈위험');
+  const prediction = vip && vip.count > 0
+    ? `VIP ${vip.count}명(${vip.sharePct}%) — 매출 핵심, 전용 혜택 유지`
+    : `등록 ${data.total ?? 0}명 — VIP·단골 비율 확대 여지`;
+
+  const suggestions: string[] = [];
+  if (risk && risk.count > 0) {
+    suggestions.push(`이탈위험 ${risk.count}명 — 재방문 쿠폰·알림톡`);
+  }
+  if (ctx.monthTargetPacePct != null && ctx.monthTargetPacePct < 95) {
+    suggestions.push('월 목표 지연 — VIP·단골 대상 프로모');
+  }
+  suggestions.push('등급별 구매주기 모니터링');
+
+  return {
+    prediction,
+    suggestions: suggestions.slice(0, 3),
+    basis: 'RFM 등급·월 목표·CRM',
+  };
+}
+
+export function buildLostBuyersAnalysis(
+  data: { totalLostBuyers?: number; items?: { itemName: string; lostBuyerCount: number }[] },
+  ctx: PerformanceContext,
+): WidgetAnalysisBlock {
+  const top = data.items?.[0];
+  const n = data.totalLostBuyers ?? 0;
+  const prediction = top
+    ? `${top.itemName} 재구매 이탈 ${top.lostBuyerCount}명 — 품목별 CRM 대상`
+    : n > 0
+      ? `품목별 이탈 ${n}명 — 재방문 유도 필요`
+      : '품목별 이탈 고객 없음';
+
+  const suggestions: string[] = [];
+  if (top) {
+    suggestions.push(`${top.itemName} 구매 고객 대상 할인·알림톡`);
+  }
+  if (ctx.weeklyTopItem) {
+    suggestions.push(`주간 1위 ${ctx.weeklyTopItem}과 교차 프로모`);
+  }
+  suggestions.push('재구매 주기 초과 고객과 교차 확인');
+
+  return {
+    prediction,
+    suggestions: suggestions.slice(0, 3),
+    basis: '90일 구매라인·주간 TOP·CRM',
   };
 }
 
@@ -681,6 +791,14 @@ export function buildWidgetAnalysis(
       return buildChurnRiskAnalysis(d, ctx);
     case 'repurchase_due':
       return buildRepurchaseDueAnalysis(d, ctx);
+    case 'co_purchase':
+      return buildCoPurchaseAnalysis(d, ctx);
+    case 'procurement_gap':
+      return buildProcurementGapAnalysis(d, ctx);
+    case 'rfm_pipeline':
+      return buildRfmPipelineAnalysis(d, ctx);
+    case 'lost_buyers':
+      return buildLostBuyersAnalysis(d, ctx);
     case 'break_even':
       return buildBreakEvenAnalysis(d, ctx);
     case 'cost_ratio':

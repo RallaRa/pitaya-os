@@ -8,6 +8,8 @@ import { useStore } from '@/context/StoreContext';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import AccountingShell from '@/components/accounting/AccountingShell';
 import VoucherLineSheet, { type CodeNameOption, type PartnerOption } from '@/components/accounting/VoucherLineSheet';
+import VoucherEntryAiChat from '@/components/accounting/VoucherEntryAiChat';
+import type { VoucherAiDraft } from '@/lib/accounting/voucherAiPrompt';
 import { todayYMD } from '@/components/accounting/accountingDateUtils';
 import {
   VOUCHER_STATUS_LABELS,
@@ -213,6 +215,27 @@ export default function VoucherEntryForm({
 
   const readOnly = status !== 'draft';
 
+  const applyAiDraft = useCallback((draft: VoucherAiDraft) => {
+    if (draft.description) setDescription(draft.description);
+    if (draft.voucherDate) setVoucherDate(draft.voucherDate);
+    if (draft.voucherType) setVoucherType(draft.voucherType);
+    if (draft.lines?.length) {
+      const padded = [...draft.lines.map((l, i) => ({ ...l, lineNo: i + 1 }))];
+      while (padded.length < 2) padded.push(EMPTY_LINE());
+      setLines(padded);
+    }
+    setMsg('AI 분개가 반영되었습니다. 내용을 확인한 뒤 저장하세요.');
+    setError('');
+  }, []);
+
+  const aiContext = useMemo(() => ({
+    voucherDate,
+    voucherType,
+    description,
+    lines,
+    fundMode,
+  }), [voucherDate, voucherType, description, lines, fundMode]);
+
   return (
     <AccountingShell
       title={title || (voucherId ? '전표 수정' : '전표 작성')}
@@ -311,6 +334,13 @@ export default function VoucherEntryForm({
             readOnly={readOnly}
             onChange={setLines}
             totals={totals}
+          />
+
+          <VoucherEntryAiChat
+            storeId={storeId}
+            readOnly={readOnly}
+            context={aiContext}
+            onApply={applyAiDraft}
           />
 
           {error && <p className="text-xs text-red-400 mt-3">{error}</p>}

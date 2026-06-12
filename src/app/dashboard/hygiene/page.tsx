@@ -355,7 +355,7 @@ function HygieneChecklistContent() {
             href="/dashboard/hygiene/report"
             className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-teal-400 transition-colors shrink-0 mt-1 ml-3"
           >
-            자동화
+            시간별알림
           </Link>
         </div>
 

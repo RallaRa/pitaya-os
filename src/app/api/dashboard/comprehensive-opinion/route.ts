@@ -13,6 +13,7 @@ import {
   estimateFootTrafficWithComparisons,
   fetchCommercialArea,
   fetchNaverNewsHeadlines,
+  resolveTradeAreaCode,
 } from '@/lib/areaContext';
 import {
   fetchRecentLivestockDisease,
@@ -25,6 +26,7 @@ import {
   normalizeBriefingActions,
 } from '@/lib/salesEvidence';
 import { formatStaffingLine, STORE_BUSINESS_ANALYSIS_RULES } from '@/lib/storeBusinessContext';
+import { buildTradeAreaSnapshot, saveTradeAreaSnapshot } from '@/lib/tradeArea/tradeAreaSnapshot.server';
 
 export const maxDuration = 60;
 
@@ -63,7 +65,12 @@ export async function GET(req: Request) {
     } catch { /* ignore */ }
   }
 
-  let storeData: { regionSido?: string; regionSigungu?: string; storeName?: string } = {};
+  let storeData: {
+    regionSido?: string;
+    regionSigungu?: string;
+    storeName?: string;
+    tradeAreaCode?: string;
+  } = {};
   if (storeId) {
     try {
       const snap = await adminDb.collection('stores').doc(storeId).get();
@@ -75,17 +82,37 @@ export async function GET(req: Request) {
   const regionSigungu = storeData.regionSigungu || '';
 
   const regionKeyword = regionSigungu || regionSido;
+  const tradeAreaResolved = resolveTradeAreaCode(storeData.tradeAreaCode, regionSigungu);
 
   const [storeContext, trendResult, commercial, news, livestockDisease] = await Promise.all([
     storeId ? loadSystemContext(storeId).catch(() => null) : Promise.resolve(null),
     fetchNaverTrendData(storeId),
-    fetchCommercialArea(regionSido, regionSigungu),
+    fetchCommercialArea(regionSido, regionSigungu, {
+      tradeAreaCode: tradeAreaResolved.code,
+      tradeAreaCodeSource: tradeAreaResolved.source,
+    }),
     fetchNaverNewsHeadlines(6),
     fetchRecentLivestockDisease({ limit: 15, daysBack: 180, regionKeyword })
       .catch(() => ({ rows: [] as LivestockDiseaseRow[], totalCount: 0, fetchedAt: '', source: 'mafra' as const })),
   ]);
 
   const footTraffic = estimateFootTrafficWithComparisons(regionSido, regionSigungu);
+
+  const tradeAreaSnapshot = storeId
+    ? buildTradeAreaSnapshot({
+        storeId,
+        dateYmd: today,
+        regionSido,
+        regionSigungu,
+        tradeAreaCode: storeData.tradeAreaCode,
+        commercial,
+        footTraffic,
+      })
+    : null;
+
+  const commercialSourceDetail = commercial.source === 'api'
+    ? (commercial.apiQuery === 'trdarCdN' ? '상권코드 API' : '시군구 상가 API')
+    : '지역 추정';
 
   const todaySale = getDisplayNetSales(storeContext?.todaySales ?? null);
   const yesterdaySale = getDisplayNetSales(storeContext?.yesterdaySales ?? null);
@@ -131,7 +158,7 @@ export async function GET(req: Request) {
 
   const dataSourceStatus: Record<string, { status: string; detail?: string }> = {
     유동인구: sourceStatus(footTraffic.source === 'api' ? 'ok' : 'estimate', `지수 ${footTraffic.index}`),
-    상권: sourceStatus(commercial.source === 'api' ? 'ok' : 'estimate', commercial.competitiveLevel),
+    상권: sourceStatus(commercial.source === 'api' ? 'ok' : 'estimate', commercialSourceDetail),
     네이버트렌드: sourceStatus(
       trendResult.trends.length > 0 ? 'ok' : 'empty',
       trendResult.error || (trendResult.trends.length > 0 ? `${trendResult.trends.length}그룹` : '키워드 미설정'),
@@ -171,6 +198,9 @@ export async function GET(req: Request) {
   }
 
   if (!hasAnyAiProvider()) {
+    if (tradeAreaSnapshot) {
+      await saveTradeAreaSnapshot(tradeAreaSnapshot).catch(() => {});
+    }
     const noAiMsg = 'AI API 키(Gemini/Anthropic/GROQ 등)가 서버에 설정되지 않았습니다. Vercel 환경변수를 확인하세요.';
     return NextResponse.json({
       summary: noAiMsg,
@@ -185,6 +215,7 @@ export async function GET(req: Request) {
       evidenceLines,
       salesBasis,
       dataSourceStatus,
+      tradeAreaSnapshot,
       aiError: true,
       error: noAiMsg,
       cached: false,
@@ -199,7 +230,11 @@ export async function GET(req: Request) {
 ${STORE_BUSINESS_ANALYSIS_RULES}
 
 원칙:
-- actions는 진열·가격·홍보·시간대 프로모션 등 **매출 직결** 행동만 (재고·발주·월간계획 금지)
+- actions는 진열·가격·홍보·시간대 프로모션 등 **매출 직결** 행동 (월간계획·장기 재고전략 금지)
+- actionType 필수: coupon(할인·쿠폰) | signage(POP·진열·키오스크 문구) | order(긴급 발주) | none(수동 실행만)
+- coupon → params.coupon {title, type:percent|fixed, value, validDays}
+- signage → params.signage {prompt: AI 쇼에 넣을 한국어 지시}
+- order → params.order {templateName} (발주 템플릿명, 없으면 첫 템플릿 사용)
 - 유인(11–21시): 상담·진열·대면 프로모션 / 무인(21–11시): POP·키오스크·셀프 동선·알림 (직원 배치·대면 상담 조치 금지)
 - 각 action에 basis: "무엇 vs 무엇" 근거 40자 이내 (예: "유동 전주同시 +8%·점심피크")
 - highlights도 매출 연결 관점, text에 수치·비교 포함
@@ -225,7 +260,12 @@ JSON 형식:
     {"tag":"상권|트렌드|뉴스|매출|고객|가축질병","text":"핵심(비교·수치 포함)"}
   ],
   "actions": [
-    {"text":"오늘 매출 향상 행동","basis":"근거 40자: A vs B"}
+    {
+      "text":"오늘 매출 향상 행동",
+      "basis":"근거 40자: A vs B",
+      "actionType":"coupon|signage|order|none",
+      "params":{"coupon":{"title":"","type":"percent","value":10,"validDays":7}}
+    }
   ]
 }
 highlights 4~6개, actions 3개(구체·즉시 실행·basis 필수)`;
@@ -258,9 +298,14 @@ highlights 4~6개, actions 3개(구체·즉시 실행·basis 필수)`;
       evidenceLines,
       salesBasis,
       dataSourceStatus,
+      tradeAreaSnapshot,
       generatedAt: new Date().toISOString(),
       cached: false,
     };
+
+    if (tradeAreaSnapshot) {
+      await saveTradeAreaSnapshot(tradeAreaSnapshot).catch(() => {});
+    }
 
     const cacheable =
       result.summary
@@ -290,6 +335,7 @@ highlights 4~6개, actions 3개(구체·즉시 실행·basis 필수)`;
       evidenceLines,
       salesBasis,
       dataSourceStatus,
+      tradeAreaSnapshot,
       cached: false,
     }));
   }

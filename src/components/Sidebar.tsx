@@ -8,7 +8,7 @@ import {
   BarChart2, ClipboardCheck, X,
   Circle, CalendarDays, Tag, Scale, LineChart, SlidersHorizontal, Users, Crown, ChevronRight, ChevronDown,
   FileText, TrendingUp, Truck, BookOpen, LayoutGrid, PenLine, Clock, Tv, ListTodo, FolderOpen, Package,
-  BookOpenCheck, UsersRound,
+  BookOpenCheck, UsersRound, Camera,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -453,9 +453,9 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
 
   const mainMenus = [
     { key: 'ai' as const,        href: '/dashboard/ai',                    icon: <Sparkles className="w-4 h-4" />,       label: 'AI 대화모드' },
-    { key: 'ai' as const,        href: '/dashboard/manual',                icon: <BookOpen className="w-4 h-4" />,       label: 'AI 매장 메뉴얼' },
+    { key: 'ai' as const,        href: '/dashboard/manual',                icon: <BookOpen className="w-4 h-4" />,       label: 'AI 매장 백과' },
     { key: 'hygiene' as const,   href: '/dashboard/hygiene',               icon: <ClipboardCheck className="w-4 h-4" />, label: '위생 점검일지' },
-    { key: 'hygiene' as const,   href: '/dashboard/hygiene/report',        icon: <ClipboardCheck className="w-4 h-4" />, label: '위생 자동화' },
+    { key: 'hygiene' as const,   href: '/dashboard/hygiene/report',        icon: <ClipboardCheck className="w-4 h-4" />, label: '시간별알림' },
     { key: 'report' as const,    href: '/dashboard/inventory/turnover',    icon: <Package className="w-4 h-4" />,        label: '재고 회전율' },
     { key: 'hygiene' as const,   href: '/dashboard/operations/checklist', icon: <ClipboardCheck className="w-4 h-4" />, label: '개폐점 체크리스트' },
     { key: 'hrCalendar' as const,         href: '/dashboard/hr/calendar',                    icon: <CalendarDays className="w-4 h-4" />,  label: '캘린더' },
@@ -687,6 +687,21 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                   </div>
                 );
               })()}
+
+              {isSuperuser && (
+                <Link
+                  href="/dashboard/superuser/caps"
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm ${
+                    pathname.startsWith('/dashboard/superuser/caps')
+                      ? 'bg-purple-600/20 text-purple-300 font-semibold border border-purple-500/20'
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  <Camera className="w-4 h-4 shrink-0 text-purple-400" />
+                  <span className="flex-1">캡스 CCTV</span>
+                  <span className="text-[9px] text-purple-500/80 font-medium">SU</span>
+                </Link>
+              )}
 
               {/* 구매관리 */}
               {hasPurchaseModuleMenu && purchaseSectionsVisible.length > 0 && (() => {

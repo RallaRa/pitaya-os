@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   X, ChevronRight, ChevronLeft, Database, HardDrive, TrendingUp,
-  Calendar, Brain, Tag, Bell, ExternalLink, Loader2, FileText,
+  Calendar, Brain, Tag, Bell, ExternalLink, Loader2, FileText, GitCompare,
 } from 'lucide-react';
 import type { PurchaseSaveDestination } from '@/lib/purchaseSaveDestinations';
 import type { PurchaseAttachment } from '@/lib/purchaseAttachments';
@@ -19,7 +19,8 @@ const KIND_ICON: Record<PurchaseSaveDestination['kind'], typeof Database> = {
   ocr_correction: Brain,
   item_alias: Tag,
   kakao_notify: Bell,
-  auto_voucher: FileText,
+  tax_invoice: FileText,
+  reconciliation: GitCompare,
 };
 
 interface PurchaseRecordDetail {

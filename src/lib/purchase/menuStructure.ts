@@ -27,6 +27,8 @@ export const PURCHASE_MENU_SECTIONS: PurchaseMenuSection[] = [
     permission: 'purchaseInput',
     items: [
       { href: '/dashboard/report/purchases/input', label: '매입 등록', description: '명세서·OCR 매입 입력' },
+      { href: '/dashboard/report/purchases/reconciliation', label: '증빙 3자 대조', description: '카드·현금영수증·세금계산서 대조' },
+      { href: '/dashboard/report/purchases/tax-invoice', label: '(세금)계산서 처리', description: '증빙·실물 대조 후 자동전표 전송' },
       { href: '/dashboard/report/purchases/ledger', label: '매입 원장', description: '기간별 매입 집계' },
       { href: '/dashboard/report/purchases/by-supplier', label: '거래처별 매입', description: '공급처별 매입 현황' },
     ],

@@ -12,7 +12,8 @@ import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 
 interface PartnerItem {
   rank: number; item: string; action: string;
-  expectedSales: string; reason: string; badge: string;
+  expectedSales: string; expectedAmount?: number;
+  reason: string; badge: string;
 }
 
 interface PeriodData {
@@ -52,6 +53,12 @@ const BADGE_STYLE: Record<string, string> = {
 
 const BADGE_EMOJI: Record<string, string> = { HOT:'🔥', UP:'⬆️', 주의:'⚠️', 추천:'💡' };
 
+function formatPartnerAmount(amount?: number): string {
+  if (!amount || amount <= 0) return '';
+  if (amount >= 10000) return `${Math.round(amount / 10000)}만원`;
+  return `${amount.toLocaleString('ko-KR')}원`;
+}
+
 function boldify(text: string) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return parts.map((p, i) =>
@@ -76,7 +83,13 @@ function ItemCard({ item, isTop }: { item: PartnerItem; isTop: boolean }) {
             </span>
           )}
         </div>
-        <p className="text-[10px] text-teal-400 mt-0.5">{item.expectedSales} · {item.action}</p>
+        <p className="text-[10px] text-teal-400 mt-0.5">
+          {item.expectedSales}
+          {item.expectedAmount ? (
+            <span className="text-amber-300/90"> · {formatPartnerAmount(item.expectedAmount)}</span>
+          ) : null}
+          {' · '}{item.action}
+        </p>
         <p className="text-[10px] text-slate-500 truncate">{item.reason}</p>
       </div>
     </div>

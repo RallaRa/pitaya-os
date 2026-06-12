@@ -153,6 +153,7 @@ export async function POST(req: Request) {
         region: `${regionSido} ${regionSigungu}`,
         regionSido,
         regionSigungu,
+        tradeAreaCode: (body.tradeAreaCode || '').trim(),
         address: address || '',
         phone: phone || '',
         businessNumber: businessNumber || '',
@@ -470,7 +471,7 @@ export async function PUT(req: Request) {
 
   try {
     const body = await req.json();
-    const { storeId, storeName, ownerName, regionSido, regionSigungu, region, address, phone, businessNumber } = body;
+    const { storeId, storeName, ownerName, regionSido, regionSigungu, region, address, phone, businessNumber, tradeAreaCode } = body;
 
     if (!storeId) {
       return NextResponse.json({ error: 'storeId 없음' }, { status: 400 });
@@ -498,6 +499,7 @@ export async function PUT(req: Request) {
       region,
       regionSido,
       regionSigungu,
+      tradeAreaCode: (tradeAreaCode ?? '').trim(),
       address: address || '',
       phone: phone || '',
       businessNumber: businessNumber || '',

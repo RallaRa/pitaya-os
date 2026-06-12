@@ -3,7 +3,6 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { STOCK_COLLECTIONS } from '@/lib/stock/constants';
 import type { StockSettings } from '@/lib/stock/settings.server';
 import type { UniverseCandidate } from '@/lib/stock/universe.server';
-import { computeTop5VirtualReturn } from '@/lib/stock/backtestSim.server';
 
 export interface FactorScoreRow {
   symbol: string;
@@ -99,11 +98,6 @@ export async function saveFactorScores(
   strategyMode?: string,
 ) {
   const date = new Date().toISOString().slice(0, 10);
-  const avgComposite = rows.length
-    ? rows.reduce((s, r) => s + r.composite, 0) / rows.length
-    : 0;
-  const top5VirtualReturnPct = computeTop5VirtualReturn(rows);
-
   await adminDb.collection(STOCK_COLLECTIONS.scores).doc(date).set({
     date,
     uid,
@@ -112,19 +106,6 @@ export async function saveFactorScores(
     strategyMode: strategyMode ?? 'balanced',
     updatedAt: FieldValue.serverTimestamp(),
   });
-
-  await adminDb.collection(STOCK_COLLECTIONS.backtest).doc(date).set({
-    date,
-    uid,
-    top20: rows,
-    avgComposite,
-    top5VirtualReturnPct,
-    strategyMode: strategyMode ?? 'balanced',
-    count: rows.length,
-    note: 'buyProbability 기반 간이 추정',
-    updatedAt: FieldValue.serverTimestamp(),
-  });
-
   return date;
 }
 

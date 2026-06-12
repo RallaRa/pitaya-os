@@ -68,7 +68,7 @@ export default function HygieneReportPage() {
         <div>
           <h1 className="text-lg font-semibold flex items-center gap-2">
             <ClipboardCheck className="w-5 h-5 text-teal-400" />
-            위생 점검 자동화
+            시간별알림
           </h1>
           <p className="text-xs text-slate-500">아침·오후·마감 3회 · 미완료 30분 후 메신저</p>
         </div>

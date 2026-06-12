@@ -33,6 +33,15 @@
     },
     "src/app/api/cron/stock-ai-cycle/route.ts": {
       "maxDuration": 120
+    },
+    "src/app/api/cron/hometax-sync/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/purchases/hometax/sync/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/superuser/caps/stream/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -64,6 +73,8 @@
     { "path": "/api/cron/birthday-marketing", "schedule": "0 0 * * *" },
     { "path": "/api/cron/daily-checklist-alert-open", "schedule": "30 0 * * *" },
     { "path": "/api/cron/daily-sales-auto-voucher", "schedule": "30 15 * * *" },
+    { "path": "/api/cron/hometax-session-check", "schedule": "30 21 * * *" },
+    { "path": "/api/cron/hometax-sync", "schedule": "0 22 * * *" },
     { "path": "/api/cron/daily-checklist-alert-close", "schedule": "0 12 * * *" },
     { "path": "/api/cron/payroll-profit-share", "schedule": "0 15 25 * *" },
     { "path": "/api/cron/weekly-coaching", "schedule": "0 23 * * 0" },

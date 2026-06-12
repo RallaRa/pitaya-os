@@ -1,7 +1,7 @@
 import type { LayoutItem } from 'react-grid-layout';
 
 export const GRID_COLS = 12;
-export const DASHBOARD_LAYOUT_VERSION = 10;
+export const DASHBOARD_LAYOUT_VERSION = 11;
 
 export interface WidgetMeta {
   id: string;
@@ -140,6 +140,30 @@ export const WIDGET_META: WidgetMeta[] = [
     title: 'AI 운영 파트너',
     defaultItem: { i: 'total_partner', x: 0, y: 32, w: 12, h: 6, minW: 6, minH: 5, maxW: 12, maxH: 10 },
     permKey: 'total_partner',
+  },
+  {
+    id: 'co_purchase',
+    title: '세트·공동구매',
+    defaultItem: { i: 'co_purchase', x: 4, y: 22, w: 4, h: 4, minW: 3, minH: 3, maxW: 8, maxH: 6 },
+    permKey: 'co_purchase',
+  },
+  {
+    id: 'procurement_gap',
+    title: '발주 vs 예측',
+    defaultItem: { i: 'procurement_gap', x: 8, y: 22, w: 4, h: 4, minW: 3, minH: 3, maxW: 8, maxH: 6 },
+    permKey: 'procurement_gap',
+  },
+  {
+    id: 'rfm_pipeline',
+    title: 'RFM 고객 등급',
+    defaultItem: { i: 'rfm_pipeline', x: 0, y: 38, w: 4, h: 4, minW: 3, minH: 3, maxW: 8, maxH: 6 },
+    permKey: 'rfm_pipeline',
+  },
+  {
+    id: 'lost_buyers',
+    title: '품목별 이탈 고객',
+    defaultItem: { i: 'lost_buyers', x: 4, y: 38, w: 4, h: 4, minW: 3, minH: 3, maxW: 8, maxH: 6 },
+    permKey: 'lost_buyers',
   },
 ];
 

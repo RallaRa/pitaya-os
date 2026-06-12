@@ -4,7 +4,7 @@ import { overlay } from '@/components/overlay';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
-  collection, query, where, orderBy, onSnapshot,
+  collection, query, where, onSnapshot,
 } from 'firebase/firestore';
 import {
   BookOpen, Plus, Search, Save, Trash2, History, Eye, Edit3,
@@ -25,32 +25,6 @@ import {
 interface RoomOption {
   id: string;
   name: string;
-}
-
-function tsToIso(v: unknown): string | undefined {
-  if (!v) return undefined;
-  if (typeof v === 'object' && v !== null && 'toDate' in v) {
-    return (v as { toDate: () => Date }).toDate().toISOString();
-  }
-  return String(v);
-}
-
-function pageFromDoc(id: string, data: Record<string, unknown>): WikiPage {
-  return {
-    id,
-    storeId: String(data.storeId || ''),
-    title: String(data.title || ''),
-    content: String(data.content || ''),
-    category: String(data.category || '운영매뉴얼'),
-    createdBy: String(data.createdBy || ''),
-    createdByName: data.createdByName ? String(data.createdByName) : undefined,
-    updatedBy: data.updatedBy ? String(data.updatedBy) : undefined,
-    updatedByName: data.updatedByName ? String(data.updatedByName) : undefined,
-    roomId: data.roomId ? String(data.roomId) : undefined,
-    version: Number(data.version || 1),
-    updatedAt: tsToIso(data.updatedAt),
-    createdAt: tsToIso(data.createdAt),
-  };
 }
 
 const EMPTY_FORM = {
@@ -92,33 +66,48 @@ function MessengerWikiPage() {
   const [showVersions, setShowVersions] = useState(false);
   const [versions, setVersions] = useState<WikiPageVersion[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
+  const [saveOk, setSaveOk] = useState('');
 
-  useEffect(() => {
+  const upsertPage = useCallback((page: WikiPage) => {
+    setPages(prev => {
+      const idx = prev.findIndex(p => p.id === page.id);
+      if (idx < 0) return [page, ...prev];
+      const next = [...prev];
+      next[idx] = page;
+      return next.sort((a, b) =>
+        (b.updatedAt || '').localeCompare(a.updatedAt || '') || a.title.localeCompare(b.title, 'ko'),
+      );
+    });
+  }, []);
+
+  const loadPages = useCallback(async () => {
     if (!storeId) {
       setPages([]);
       setLoading(false);
       return;
     }
     setLoading(true);
-    const q = query(
-      collection(db, 'wiki_pages'),
-      where('storeId', '==', storeId),
-      orderBy('updatedAt', 'desc'),
-    );
-    const unsub = onSnapshot(
-      q,
-      snap => {
-        setPages(snap.docs.map(d => pageFromDoc(d.id, d.data() as Record<string, unknown>)));
-        setLoading(false);
-      },
-      err => {
-        console.error('[wiki_pages]', err);
-        setError('위키 목록을 불러오지 못했습니다.');
-        setLoading(false);
-      },
-    );
-    return () => unsub();
+    setError('');
+    try {
+      const headers = await getAuthJsonHeaders();
+      const res = await fetch(
+        `/api/messenger/wiki?storeId=${encodeURIComponent(storeId)}`,
+        { headers, cache: 'no-store' },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '목록 조회 실패');
+      setPages(data.pages || []);
+    } catch (e: unknown) {
+      console.error('[wiki_pages]', e);
+      setError(e instanceof Error ? e.message : '위키 목록을 불러오지 못했습니다.');
+    } finally {
+      setLoading(false);
+    }
   }, [storeId]);
+
+  useEffect(() => {
+    void loadPages();
+  }, [loadPages]);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -159,6 +148,29 @@ function MessengerWikiPage() {
     () => pages.find(p => p.id === selectedId) || null,
     [pages, selectedId],
   );
+
+  const displayPage = useMemo(() => {
+    if (selectedPage) return selectedPage;
+    if (selectedId && mode === 'view' && form.title) {
+      return {
+        id: selectedId,
+        storeId,
+        title: form.title,
+        content: form.content,
+        category: form.category,
+        createdBy: '',
+        roomId: form.roomId || undefined,
+        version: 1,
+      } satisfies WikiPage;
+    }
+    return null;
+  }, [selectedPage, selectedId, mode, form, storeId]);
+
+  useEffect(() => {
+    if (!saveOk) return;
+    const t = setTimeout(() => setSaveOk(''), 4000);
+    return () => clearTimeout(t);
+  }, [saveOk]);
 
   useEffect(() => {
     if (selectedPage && mode === 'view') {
@@ -210,13 +222,14 @@ function MessengerWikiPage() {
   };
 
   const startEdit = () => {
-    if (!selectedPage) return;
+    const page = displayPage || selectedPage;
+    if (!page) return;
     setMode('edit');
     setForm({
-      title: selectedPage.title,
-      content: selectedPage.content,
-      category: selectedPage.category,
-      roomId: selectedPage.roomId || '',
+      title: page.title,
+      content: page.content,
+      category: page.category,
+      roomId: page.roomId || '',
     });
   };
 
@@ -245,8 +258,10 @@ function MessengerWikiPage() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || '생성 실패');
+        upsertPage(data.page);
         setSelectedId(data.page.id);
         setMode('view');
+        setSaveOk('문서가 저장되었습니다.');
       } else if (selectedId) {
         const res = await fetch(`/api/messenger/wiki/${encodeURIComponent(selectedId)}`, {
           method: 'PUT',
@@ -255,7 +270,9 @@ function MessengerWikiPage() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || '저장 실패');
+        upsertPage(data.page);
         setMode('view');
+        setSaveOk('변경 내용이 저장되었습니다.');
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '저장 실패');
@@ -280,6 +297,8 @@ function MessengerWikiPage() {
       setSelectedId(null);
       setMode('view');
       setShowVersions(false);
+      setPages(prev => prev.filter(p => p.id !== selectedId));
+      setSaveOk('문서가 삭제되었습니다.');
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '삭제 실패');
     } finally {
@@ -306,6 +325,8 @@ function MessengerWikiPage() {
       if (!res.ok) throw new Error(data.error || '복원 실패');
       setMode('view');
       await loadVersions(selectedId);
+      if (data.page) upsertPage(data.page);
+      setSaveOk(`v${version}으로 복원되었습니다.`);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '복원 실패');
     } finally {
@@ -331,6 +352,13 @@ function MessengerWikiPage() {
               <BookOpen className="w-4 h-4 text-teal-400" />
               지식베이스
             </h1>
+            <button
+              type="button"
+              onClick={() => void loadPages()}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-700 text-[11px] text-slate-400 hover:bg-slate-800"
+            >
+              <RotateCcw className="w-3 h-3" /> 새로고침
+            </button>
             <button
               type="button"
               onClick={openCreate}
@@ -376,7 +404,22 @@ function MessengerWikiPage() {
               <Loader2 className="w-5 h-5 animate-spin text-teal-400" />
             </div>
           ) : filteredPages.length === 0 ? (
-            <p className="text-xs text-slate-500 text-center py-8">문서가 없습니다</p>
+            <div className="text-center py-8 px-3 space-y-2">
+              <p className="text-xs text-slate-500">
+                {pages.length > 0 && (categoryFilter || roomFilter || search.trim())
+                  ? '필터 조건에 맞는 문서가 없습니다'
+                  : '문서가 없습니다'}
+              </p>
+              {roomFilter && pages.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setRoomFilter('')}
+                  className="text-[11px] text-teal-400 hover:underline"
+                >
+                  채팅방 필터 해제
+                </button>
+              )}
+            </div>
           ) : (
             filteredPages.map(page => (
               <button
@@ -475,7 +518,7 @@ function MessengerWikiPage() {
               </div>
             </div>
           </>
-        ) : selectedPage ? (
+        ) : displayPage ? (
           <>
             <header className="shrink-0 px-4 py-3 border-b border-slate-800">
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -489,11 +532,11 @@ function MessengerWikiPage() {
                     <ChevronLeft className="w-5 h-5" />
                   </button>
                   <div className="min-w-0">
-                  <h2 className="text-lg font-bold text-white">{selectedPage.title}</h2>
+                  <h2 className="text-lg font-bold text-white">{displayPage.title}</h2>
                   <p className="text-xs text-slate-500 mt-1">
-                    {selectedPage.category} · v{selectedPage.version}
-                    {selectedPage.roomId && ` · ${roomName(selectedPage.roomId)}`}
-                    {selectedPage.updatedAt && ` · ${selectedPage.updatedAt.slice(0, 16).replace('T', ' ')}`}
+                    {displayPage.category} · v{displayPage.version}
+                    {displayPage.roomId && ` · ${roomName(displayPage.roomId)}`}
+                    {displayPage.updatedAt && ` · ${displayPage.updatedAt.slice(0, 16).replace('T', ' ')}`}
                   </p>
                   </div>
                 </div>
@@ -525,7 +568,7 @@ function MessengerWikiPage() {
             </header>
             <div className="flex flex-1 min-h-0">
               <div className="flex-1 overflow-y-auto p-4 md:p-6">
-                <WikiMarkdown content={selectedPage.content} />
+                <WikiMarkdown content={displayPage.content} />
               </div>
               {showVersions && (
                 <aside className="w-full md:w-64 shrink-0 border-l border-slate-800 bg-slate-900/40 overflow-y-auto p-3">
@@ -573,6 +616,11 @@ function MessengerWikiPage() {
         {error && (
           <div className="shrink-0 mx-4 mb-3 px-3 py-2 rounded-lg bg-red-950/40 border border-red-900/40 text-xs text-red-300">
             {error}
+          </div>
+        )}
+        {saveOk && !error && (
+          <div className="shrink-0 mx-4 mb-3 px-3 py-2 rounded-lg bg-teal-950/40 border border-teal-800/40 text-xs text-teal-200">
+            {saveOk}
           </div>
         )}
       </main>

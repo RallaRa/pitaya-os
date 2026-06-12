@@ -15,6 +15,7 @@ interface ChatMessage {
 
 interface Props {
   storeId: string;
+  initialPrompt?: string;
   onSaved?: () => void;
   onError?: (msg: string) => void;
 }
@@ -26,7 +27,7 @@ const STARTERS = [
   '쿠폰·혜택 슬라이드 추가해줘',
 ];
 
-export default function SignageShowStudio({ storeId, onSaved, onError }: Props) {
+export default function SignageShowStudio({ storeId, initialPrompt, onSaved, onError }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [slides, setSlides] = useState<SignageSlidePlan[]>([]);
@@ -77,8 +78,8 @@ export default function SignageShowStudio({ storeId, onSaved, onError }: Props) 
   useEffect(() => {
     if (!storeId || bootedRef.current) return;
     bootedRef.current = true;
-    planShow('');
-  }, [storeId, planShow]);
+    planShow(initialPrompt?.trim() || '');
+  }, [storeId, initialPrompt, planShow]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });

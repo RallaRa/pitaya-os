@@ -1,6 +1,9 @@
 import type { FootTrafficWithComparisons } from '@/lib/areaContext';
 import type { CommercialAreaContext } from '@/lib/areaContext';
 import { formatStaffingLine, getCurrentStaffingContext } from '@/lib/storeBusinessContext';
+import { enrichBriefingAction, parseBriefingActionFields, type BriefingAction } from '@/lib/briefingActions';
+
+export type { BriefingAction } from '@/lib/briefingActions';
 
 export const EVIDENCE_SUMMARY_MAX = 100;
 
@@ -10,11 +13,6 @@ export interface SalesEvidenceLine {
   summary: string;
   detail?: string;
   salesLink?: string;
-}
-
-export interface BriefingAction {
-  text: string;
-  basis?: string;
 }
 
 export function truncateEvidenceSummary(text: string, max = EVIDENCE_SUMMARY_MAX): string {
@@ -67,7 +65,9 @@ export function buildBriefingEvidenceLines(params: {
   );
 
   const commercialSummary = truncateEvidenceSummary(
-    `소상공인 상가 API·${commercial.region} 경쟁 ${commercial.competitiveLevel}·${commercial.businessSummary.slice(0, 30)}…→ 차별 진열·가격`,
+    `${commercial.source === 'api'
+      ? (commercial.apiQuery === 'trdarCdN' ? '상권코드 API' : '소상공인 상가 API')
+      : '지역 추정'}·${commercial.region} 경쟁 ${commercial.competitiveLevel}·${commercial.businessSummary.slice(0, 30)}…→ 차별 진열·가격`,
   );
 
   const staffing = getCurrentStaffingContext();
@@ -157,14 +157,19 @@ export function normalizeBriefingActions(raw: unknown): BriefingAction[] {
     .map((a): BriefingAction | null => {
       if (typeof a === 'string') {
         const text = a.trim();
-        return text ? { text } : null;
+        return text ? enrichBriefingAction({ text }) : null;
       }
       if (a && typeof a === 'object') {
         const o = a as { text?: string; basis?: string };
         const text = String(o.text ?? '').trim();
         if (!text) return null;
         const basis = String(o.basis ?? '').trim();
-        return { text, ...(basis ? { basis } : {}) };
+        const extra = parseBriefingActionFields(o as Record<string, unknown>);
+        return enrichBriefingAction({
+          text,
+          ...(basis ? { basis } : {}),
+          ...extra,
+        });
       }
       return null;
     })

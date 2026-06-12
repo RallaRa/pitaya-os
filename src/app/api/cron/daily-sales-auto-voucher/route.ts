@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { addDaysYMD, getKSTTodayYMD } from '@/lib/dateUtils';
+import { loadAccountingSettings } from '@/lib/accounting/accountingSettings.server';
 import { enqueueDailySalesAutoVoucher } from '@/lib/accounting/autoVoucherQueue.server';
 
 /** 매일 KST 00:30 — 전일 daily_reports 매출 → 자동전표처리 대기열 (Vercel cron UTC 15:30) */
@@ -20,6 +21,17 @@ export async function GET(req: Request) {
 
     for (const storeDoc of storesSnap.docs) {
       const storeId = storeDoc.id;
+      const settings = await loadAccountingSettings(storeId);
+      if (!settings.autoVoucherFromSales) {
+        results.push({
+          storeId,
+          ok: true,
+          skipped: true,
+          error: '매출 자동전표 비활성',
+        });
+        continue;
+      }
+
       const result = await enqueueDailySalesAutoVoucher({
         storeId,
         reportDate: yesterday,

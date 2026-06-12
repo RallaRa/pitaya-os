@@ -9,7 +9,8 @@ export type PurchaseSaveDestinationKind =
   | 'ocr_correction'
   | 'item_alias'
   | 'kakao_notify'
-  | 'auto_voucher';
+  | 'tax_invoice'
+  | 'reconciliation';
 
 export interface PurchaseSaveDestinationItem {
   name: string;
@@ -47,7 +48,6 @@ export function buildPurchaseSaveDestinations(opts: {
   syncedItems: string[];
   storeId: string;
   expiryDetails?: ExpiryReminderSaveDetail[];
-  autoVoucherId?: string;
 }): PurchaseSaveDestination[] {
   const {
     purchaseRecordId,
@@ -55,9 +55,7 @@ export function buildPurchaseSaveDestinations(opts: {
     totalAmount,
     purchaseAttachments,
     syncedItems,
-    storeId,
     expiryDetails = [],
-    autoVoucherId,
   } = opts;
 
   const destinations: PurchaseSaveDestination[] = [];
@@ -75,17 +73,25 @@ export function buildPurchaseSaveDestinations(opts: {
     },
   });
 
-  if (autoVoucherId) {
-    destinations.push({
-      kind: 'auto_voucher',
-      label: '자동전표처리',
-      sublabel: '회계 · 승인대기',
-      docId: autoVoucherId,
-      collection: 'accounting_auto_vouchers',
-      href: '/dashboard/accounting/voucher/auto-process',
-      detail: { supplierName, totalAmount: totalAmount ?? 0 },
-    });
-  }
+  destinations.push({
+    kind: 'reconciliation',
+    label: '증빙 3자 대조',
+    sublabel: '카드·현금영수증·세금계산서',
+    docId: purchaseRecordId,
+    collection: 'purchase_records',
+    href: '/dashboard/report/purchases/reconciliation',
+    detail: { supplierName, totalAmount: totalAmount ?? 0 },
+  });
+
+  destinations.push({
+    kind: 'tax_invoice',
+    label: '(세금)계산서 처리',
+    sublabel: '증빙·실물 대조 후 자동전표',
+    docId: purchaseRecordId,
+    collection: 'purchase_records',
+    href: '/dashboard/report/purchases/tax-invoice',
+    detail: { supplierName, totalAmount: totalAmount ?? 0 },
+  });
 
   if (purchaseAttachments.length > 0) {
     destinations.push({

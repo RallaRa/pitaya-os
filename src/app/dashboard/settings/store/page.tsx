@@ -34,6 +34,7 @@ export default function StoreSettingsPage() {
     ownerName: '',
     regionSido: '',
     regionSigungu: '',
+    tradeAreaCode: '',
     address: '',
     phone: '',
     businessNumber: '',
@@ -54,6 +55,7 @@ export default function StoreSettingsPage() {
         ownerName: currentStore.ownerName || '',
         regionSido: currentStore.regionSido || '',
         regionSigungu: currentStore.regionSigungu || '',
+        tradeAreaCode: currentStore.tradeAreaCode || '',
         address: currentStore.address || '',
         phone: currentStore.phone || '',
         businessNumber: currentStore.businessNumber || '',
@@ -346,6 +348,19 @@ export default function StoreSettingsPage() {
                 className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="text-slate-400 text-sm mb-1 block">상권 코드 (선택)</label>
+            <input type="text"
+              value={form.tradeAreaCode}
+              onChange={e => setForm(p => ({ ...p, tradeAreaCode: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+              placeholder="소상공인 trdarCdN 7~10자리"
+              className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-slate-100 placeholder:text-slate-500 font-mono focus:outline-none focus:border-teal-500 transition-colors"
+            />
+            <p className="text-slate-500 text-[11px] mt-1 leading-relaxed">
+              AI 브리핑·상권 분석에 사용됩니다. 미입력 시 시/군/구 기준으로 추정합니다.
+            </p>
           </div>
 
           <div>

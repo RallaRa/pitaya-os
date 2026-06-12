@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Pitaya 홈택스 연결",
+  "version": "1.0.0",
+  "description": "홈택스 로그인 세션을 Pitaya에 안전하게 전달합니다 (쿠키만 전송)",
+  "permissions": ["cookies", "storage"],
+  "host_permissions": [
+    "https://*.hometax.go.kr/*",
+    "https://hometax.go.kr/*",
+    "https://pitaya-osv1.vercel.app/*",
+    "http://localhost:3000/*",
+    "http://localhost:9000/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Pitaya 홈택스 연결"
+  }
+}

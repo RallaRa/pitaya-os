@@ -13,6 +13,7 @@ interface Store {
   phone?: string;
   businessNumber?: string;
   ownerName?: string;
+  tradeAreaCode?: string;
   attendanceLat?: number;
   attendanceLng?: number;
   attendanceRadiusM?: number;

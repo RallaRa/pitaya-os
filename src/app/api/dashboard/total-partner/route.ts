@@ -16,7 +16,11 @@ import { fetchMeatMarketBundle } from '@/lib/external/meatMarketData.server';
 
 export const maxDuration = 120;
 
-interface PartnerItem { rank: number; item: string; action: string; expectedSales: string; reason: string; badge: string; }
+interface PartnerItem {
+  rank: number; item: string; action: string;
+  expectedSales: string; expectedAmount?: number;
+  reason: string; badge: string;
+}
 
 interface GeminiPeriodData {
   period: string; opinion: string;
@@ -40,6 +44,59 @@ function stripHtml(s: string) {
 }
 
 const DOW_KO = ['일','월','화','수','목','금','토'];
+
+type ItemStat90 = { name: string; qty: number; amount: number; days: number };
+
+function normalizePartnerItemName(name: string): string {
+  return String(name || '').trim().toLowerCase().replace(/\s+/g, '');
+}
+
+function lookupItemStat90(name: string, stats: ItemStat90[]): ItemStat90 | null {
+  const key = normalizePartnerItemName(name);
+  const exact = stats.find(s => normalizePartnerItemName(s.name) === key);
+  if (exact) return exact;
+  return stats.find(s => {
+    const sk = normalizePartnerItemName(s.name);
+    return key.includes(sk) || sk.includes(key);
+  }) || null;
+}
+
+function enrichPartnerItems(items: PartnerItem[], stats: ItemStat90[]): PartnerItem[] {
+  return (items || []).map(item => {
+    const stat = lookupItemStat90(item.item, stats);
+    if (!stat || stat.days <= 0) return item;
+    const dailyQty = Math.max(1, Math.round(stat.qty / stat.days));
+    const dailyAmount = Math.round(stat.amount / stat.days);
+    const qtyMatch = String(item.expectedSales || '').match(/(\d[\d,]*)\s*개/);
+    const displayQty = qtyMatch ? qtyMatch[1].replace(/,/g, '') : String(dailyQty);
+    const qtyNum = Math.max(1, parseInt(displayQty, 10) || dailyQty);
+    const expectedAmount = Math.round((dailyAmount / dailyQty) * qtyNum);
+    return {
+      ...item,
+      expectedSales: `${displayQty}개`,
+      expectedAmount,
+    };
+  });
+}
+
+function enrichPeriodData(period: GeminiPeriodData, stats: ItemStat90[]): GeminiPeriodData {
+  if (!period) return period;
+  return {
+    ...period,
+    topItems: enrichPartnerItems(period.topItems || [], stats),
+    bottomItems: enrichPartnerItems(period.bottomItems || [], stats),
+  };
+}
+
+function enrichPartnerResult(result: GeminiResult, stats: ItemStat90[]): GeminiResult {
+  return {
+    ...result,
+    today: enrichPeriodData(result.today, stats),
+    tomorrow: enrichPeriodData(result.tomorrow, stats),
+    thisWeek: enrichPeriodData(result.thisWeek, stats),
+    thisMonth: enrichPeriodData(result.thisMonth, stats),
+  };
+}
 
 async function fetchWeatherMultiDay(coords: {lat:number;lng:number}) {
   const today = toYMD(new Date());
@@ -256,25 +313,6 @@ export async function GET(req: Request) {
   const today   = getKSTTodayYMD();
   const cacheRef = adminDb.collection('ai_partner_predictions').doc(`${storeId||'global'}_${today}`);
 
-  // 캐시 확인 (당일 자정까지 유효, noData/빈 응답은 제외)
-  if (!refresh) {
-    try {
-      const cached = await cacheRef.get();
-      if (cached.exists) {
-        const d = cached.data()!;
-        const hasPeriodContent = (p: GeminiPeriodData | null | undefined) =>
-          !!(p?.opinion?.trim() || p?.topItems?.length || p?.bottomItems?.length);
-        const usable =
-          !d.noData
-          && !d.aiError
-          && (hasPeriodContent(d.today) || hasPeriodContent(d.thisWeek) || hasPeriodContent(d.tomorrow));
-        if (isKstTodayTimestamp(d.generatedAt) && usable) {
-          return NextResponse.json({ ...d, cached: true });
-        }
-      }
-    } catch {}
-  }
-
   const base    = (process.env.NEXT_PUBLIC_APP_URL || 'https://pitaya-osv1.vercel.app').replace(/\/$/, '');
   const apiKey  = process.env.PUBLIC_DATA_API_KEY || '';
   const now     = new Date();
@@ -315,6 +353,26 @@ export async function GET(req: Request) {
   const fs          = firestoreRes.status === 'fulfilled' ? firestoreRes.value : {
     dailyTotals:[], topItems90:[], closures:[], custStats:{total:0,gradeA:0,gradeB:0,gradeC:0,avgPoint:0}, activeVarCount:0,
   };
+
+  // 캐시 확인 (당일 유효 — POS 금액 enrichment 후 반환)
+  if (!refresh) {
+    try {
+      const cached = await cacheRef.get();
+      if (cached.exists) {
+        const d = cached.data()!;
+        const hasPeriodContent = (p: GeminiPeriodData | null | undefined) =>
+          !!(p?.opinion?.trim() || p?.topItems?.length || p?.bottomItems?.length);
+        const usable =
+          !d.noData
+          && !d.aiError
+          && (hasPeriodContent(d.today) || hasPeriodContent(d.thisWeek) || hasPeriodContent(d.tomorrow));
+        if (isKstTodayTimestamp(d.generatedAt) && usable) {
+          const enriched = enrichPartnerResult(d as GeminiResult, fs.topItems90);
+          return NextResponse.json({ ...enriched, cached: true, dataSourceStatus: d.dataSourceStatus });
+        }
+      }
+    } catch { /* ignore */ }
+  }
 
   // 날짜 컨텍스트
   const todayDow     = new Date(`${today}T12:00:00+09:00`).getDay();
@@ -555,6 +613,10 @@ topItems/bottomItems badge는: HOT(+30%↑) | UP(+10~30%) | 주의(-10%↓) | �
       thisMonth: { period:`이번달 ${now.getFullYear()}년${now.getMonth()+1}월`, opinion:'AI 분석 오류', topItems:[], bottomItems:[], keyAlert:'', monthProgress:`${monthDay}일 경과`, salesForecast:'예측불가', confidence:0 },
       orderAdvice: { isOrderDay:false, dDay:null, comment:'AI 분석 오류', items:[] },
     };
+  }
+
+  if (result) {
+    result = enrichPartnerResult(result, fs.topItems90);
   }
 
   const aiFailed = !result?.today?.opinion?.trim()

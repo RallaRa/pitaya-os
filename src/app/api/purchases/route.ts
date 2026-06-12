@@ -19,7 +19,6 @@ import {
   buildPurchaseSaveDestinations,
   type ExpiryReminderSaveDetail,
 } from '@/lib/purchaseSaveDestinations';
-import { enqueuePurchaseAutoVoucher } from '@/lib/accounting/autoVoucherQueue.server';
 import {
   extFromMime,
   mimeFromFileType,
@@ -214,6 +213,11 @@ export async function POST(req: Request) {
         storeId,
         imageUrls,
         purchaseAttachments,
+        taxDocWorkflowStatus: 'pending_review',
+        taxDocType: 'none',
+        taxDocNumber: String(extractedData.invoiceNumber || ''),
+        physicalMatchOk: false,
+        physicalMatchNote: '',
         createdAt: FieldValue.serverTimestamp(),
       });
 
@@ -251,19 +255,6 @@ export async function POST(req: Request) {
         console.error('[purchases/save] expiry/item_prices:', expErr);
       }
 
-      let autoVoucherId: string | undefined;
-      try {
-        const autoResult = await enqueuePurchaseAutoVoucher({
-          storeId,
-          purchaseId: docRef.id,
-          uid,
-          sourceScreen: '매입입력',
-        });
-        if (autoResult.autoVoucherId) autoVoucherId = autoResult.autoVoucherId;
-      } catch (autoErr) {
-        console.error('[purchases/save] auto-voucher enqueue:', autoErr);
-      }
-
       const saveDestinations = buildPurchaseSaveDestinations({
         purchaseRecordId: docRef.id,
         supplierName: String(extractedData.supplierName || ''),
@@ -272,7 +263,6 @@ export async function POST(req: Request) {
         syncedItems,
         storeId,
         expiryDetails: (expiryReminders?.details || []) as ExpiryReminderSaveDetail[],
-        autoVoucherId,
       });
 
       return NextResponse.json({
@@ -283,7 +273,6 @@ export async function POST(req: Request) {
         expiryReminders,
         syncedItems,
         saveDestinations,
-        autoVoucherId,
       });
     }
 

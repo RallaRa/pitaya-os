@@ -129,7 +129,7 @@ export default function StockSuperuserDashboard() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Link
-            href="/dashboard/stock-trader/market"
+            href="/dashboard/stock-trader/trade"
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700"
           >
             시세·차트

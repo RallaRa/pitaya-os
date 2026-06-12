@@ -338,3 +338,68 @@ export function useRepurchaseDue(storeId: string, enabled = true) {
     refetchOnWindowFocus: true,
   });
 }
+
+export interface CoPurchaseData {
+  anchorKeyword: string;
+  anchorReceiptCount: number;
+  totalReceiptCount: number;
+  pairs: unknown[];
+  sinceYmd: string;
+  emptyReason: string | null;
+}
+
+export function useCoPurchase(storeId: string, enabled = true) {
+  return useDashboardQuery<CoPurchaseData>(
+    queryKeys.dashboard.coPurchase(storeId),
+    `/api/dashboard/co-purchase?storeId=${encodeURIComponent(storeId)}`,
+    { enabled: enabled && !!storeId, staleTime: STALE_TIME.customers, refetchInterval: 30 * 60_000 },
+  );
+}
+
+export interface ProcurementGapData {
+  targetDate: string;
+  predictionDate: string;
+  gaps: unknown[];
+  weatherCondition?: string;
+  emptyReason?: string;
+}
+
+export function useProcurementGap(storeId: string, enabled = true) {
+  return useDashboardQuery<ProcurementGapData>(
+    queryKeys.dashboard.procurementGap(storeId),
+    `/api/dashboard/procurement-gap?storeId=${encodeURIComponent(storeId)}`,
+    { enabled: enabled && !!storeId, staleTime: STALE_TIME.products, refetchInterval: 15 * 60_000 },
+  );
+}
+
+export interface RfmPipelineData {
+  total: number;
+  grades: unknown[];
+  generatedAt: string;
+  emptyReason: string | null;
+}
+
+export function useRfmPipeline(storeId: string, enabled = true) {
+  return useDashboardQuery<RfmPipelineData>(
+    queryKeys.dashboard.rfmPipeline(storeId),
+    `/api/dashboard/rfm-pipeline?storeId=${encodeURIComponent(storeId)}`,
+    { enabled: enabled && !!storeId, staleTime: STALE_TIME.customers, refetchInterval: 30 * 60_000 },
+  );
+}
+
+export interface LostBuyersData {
+  sinceYmd: string;
+  inactiveDays: number;
+  minRepeatPurchases: number;
+  items: unknown[];
+  totalLostBuyers: number;
+  emptyReason?: string;
+}
+
+export function useLostBuyers(storeId: string, enabled = true) {
+  return useDashboardQuery<LostBuyersData>(
+    queryKeys.dashboard.lostBuyers(storeId),
+    `/api/dashboard/lost-buyers?storeId=${encodeURIComponent(storeId)}`,
+    { enabled: enabled && !!storeId, staleTime: STALE_TIME.customers, refetchInterval: 30 * 60_000 },
+  );
+}

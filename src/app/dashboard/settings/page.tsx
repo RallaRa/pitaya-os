@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2, Tag, Package, CalendarDays, UserCircle, Target, Bell, Percent, Cake, BarChart3, CircleDollarSign } from 'lucide-react';
+import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2, Tag, Package, CalendarDays, UserCircle, Target, Bell, Percent, Cake, BarChart3, CircleDollarSign, Camera } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -192,6 +192,13 @@ export default function SettingsPage() {
       description: '실시간 매출·일 마감 알림 ON/OFF',
       show: isAdminLevelGroup(storeRole),
     },
+    {
+      href: '/dashboard/settings/hometax',
+      icon: <Shield className="w-5 h-5 text-emerald-400" />,
+      label: '홈택스 연동',
+      description: '세션(쿠키) 연결 · 매입 증빙 자동 동기화',
+      show: isAdminLevelGroup(storeRole),
+    },
   ].filter(m => m.show);
 
   const isSuperuserUser = isSuperuser(user?.email, userRole || undefined);
@@ -208,6 +215,12 @@ export default function SettingsPage() {
       icon: <Store className="w-5 h-5 text-teal-400" />,
       label: '스크래핑 소스 관리',
       description: '도매가 수집 사이트 추가·관리',
+    },
+    {
+      href: '/dashboard/superuser/caps',
+      icon: <Camera className="w-5 h-5 text-purple-400" />,
+      label: '캡스 CCTV',
+      description: 'ADT 뷰가드 카메라 실시간 (슈퍼유저)',
     },
   ] : [];
 

@@ -22,6 +22,7 @@ export async function GET(req: Request) {
         voucherApprovalRequired: true,
         autoVoucherFromPurchase: false,
         autoVoucherFromSales: false,
+        autoVoucherFromExpense: false,
       },
     });
   } catch (e) {

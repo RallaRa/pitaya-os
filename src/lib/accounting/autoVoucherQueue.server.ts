@@ -1,5 +1,10 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
+import { loadAccountingSettings } from '@/lib/accounting/accountingSettings.server';
+import {
+  buildExpenseVoucherLines,
+  type ExpenseVoucherSource,
+} from '@/lib/accounting/expenseVoucherPattern';
 import type {
   AccountingAutoVoucher,
   AutoVoucherQueueStatus,
@@ -94,6 +99,14 @@ export async function enqueuePurchaseAutoVoucher(params: {
     return { ok: false, skipped: true, error: '이미 회계전표 처리됨' };
   }
 
+  const workflowStatus = String(data.taxDocWorkflowStatus || 'pending_review');
+  if (workflowStatus === 'pending_review') {
+    return { ok: false, error: '세금계산서 처리 후 자동전표로 넘길 수 있습니다.' };
+  }
+  if (workflowStatus === 'excluded') {
+    return { ok: false, skipped: true, error: '전표 제외 건' };
+  }
+
   const existingPending = await findPendingAutoVoucherBySource(storeId, 'purchase', purchaseId);
   if (existingPending) {
     return { ok: true, autoVoucherId: existingPending.id, skipped: true };
@@ -154,7 +167,150 @@ export async function enqueuePurchaseAutoVoucher(params: {
     updatedAt: FieldValue.serverTimestamp(),
   });
 
+  const settings = await loadAccountingSettings(storeId);
+  if (!settings.voucherApprovalRequired) {
+    await approveAutoVoucher({ storeId, uid, autoVoucherId: ref.id });
+  }
+
   return { ok: true, autoVoucherId: ref.id };
+}
+
+export interface EnqueueExpenseAutoVoucherResult {
+  ok: boolean;
+  autoVoucherId?: string;
+  skipped?: boolean;
+  error?: string;
+}
+
+export async function enqueueExpenseAutoVoucher(params: {
+  storeId: string;
+  evidenceId: string;
+  uid: string;
+  sourceScreen?: string;
+}): Promise<EnqueueExpenseAutoVoucherResult> {
+  const { storeId, evidenceId, uid } = params;
+  const sourceScreen = params.sourceScreen || '카드경비';
+
+  const evSnap = await adminDb.collection('purchase_evidence').doc(evidenceId).get();
+  if (!evSnap.exists) return { ok: false, error: '카드 증빙 없음' };
+
+  const data = evSnap.data()!;
+  if (String(data.storeId) !== storeId) return { ok: false, error: '매장 불일치' };
+  if (data.sourceType !== 'card') return { ok: false, error: '카드 증빙만 경비 전표 가능' };
+  if (data.matchedPurchaseId) return { ok: false, skipped: true, error: '매입 매칭된 카드' };
+  if (data.accountingVoucherId) return { ok: false, skipped: true, error: '이미 회계전표 처리됨' };
+
+  const existingPending = await findPendingAutoVoucherBySource(storeId, 'expense', evidenceId);
+  if (existingPending) {
+    return { ok: true, autoVoucherId: existingPending.id, skipped: true };
+  }
+
+  const source: ExpenseVoucherSource = {
+    id: evidenceId,
+    txnDate: String(data.txnDate || ''),
+    merchantName: String(data.merchantName || ''),
+    supplyAmount: Number(data.supplyAmount || 0),
+    taxAmount: Number(data.taxAmount || 0),
+    totalAmount: Number(data.totalAmount || 0),
+    memo: String(data.memo || ''),
+  };
+
+  if (!source.txnDate || source.totalAmount <= 0) {
+    return { ok: false, error: '일자·금액 없음' };
+  }
+
+  const accountNames = await loadAccountNameMap(storeId);
+  const lines = buildExpenseVoucherLines(source, accountNames);
+  const { totalDebit, totalCredit } = sumLines(lines);
+  if (totalDebit !== totalCredit || totalDebit <= 0) {
+    return { ok: false, error: '분개 금액 불균형' };
+  }
+
+  const description = `경비전표 ${source.merchantName} · ${source.totalAmount.toLocaleString()}원`;
+
+  const ref = await adminDb.collection('accounting_auto_vouchers').add({
+    storeId,
+    sourceType: 'expense' as AutoVoucherSourceType,
+    sourceScreen,
+    sourceId: evidenceId,
+    status: 'pending' as AutoVoucherQueueStatus,
+    voucherDate: source.txnDate,
+    voucherType: 'payment' as VoucherType,
+    description,
+    lines,
+    totalDebit,
+    totalCredit,
+    sourceSummary: {
+      merchantName: source.merchantName,
+      totalAmount: source.totalAmount,
+      supplyAmount: source.supplyAmount,
+      taxAmount: source.taxAmount,
+      evidenceSource: 'card',
+    },
+    createdBy: uid,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  await evSnap.ref.update({
+    accountingAutoVoucherId: ref.id,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  const settings = await loadAccountingSettings(storeId);
+  if (!settings.voucherApprovalRequired) {
+    await approveAutoVoucher({ storeId, uid, autoVoucherId: ref.id });
+  }
+
+  return { ok: true, autoVoucherId: ref.id };
+}
+
+/** 매입 미매칭 카드 증빙 → 경비 자동전표 대기열 */
+export async function syncCardExpensesToAutoVoucherQueue(
+  storeId: string,
+  uid: string,
+  opts?: { startDate?: string; endDate?: string },
+): Promise<{ synced: number; skipped: number; errors: string[] }> {
+  const settings = await loadAccountingSettings(storeId);
+  if (!settings.autoVoucherFromExpense) {
+    return { synced: 0, skipped: 0, errors: [] };
+  }
+
+  const snap = await adminDb.collection('purchase_evidence')
+    .where('storeId', '==', storeId)
+    .where('sourceType', '==', 'card')
+    .limit(500)
+    .get();
+
+  let cards = snap.docs.filter(d => {
+    const data = d.data();
+    return !data.matchedPurchaseId && !data.accountingVoucherId && Number(data.totalAmount || 0) > 0;
+  });
+
+  if (opts?.startDate) {
+    cards = cards.filter(d => String(d.data().txnDate || '') >= opts.startDate!);
+  }
+  if (opts?.endDate) {
+    cards = cards.filter(d => String(d.data().txnDate || '') <= opts.endDate!);
+  }
+
+  let synced = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+
+  for (const doc of cards) {
+    const result = await enqueueExpenseAutoVoucher({
+      storeId,
+      evidenceId: doc.id,
+      uid,
+      sourceScreen: '카드경비',
+    });
+    if (result.ok && !result.skipped) synced += 1;
+    else if (result.skipped) skipped += 1;
+    else if (result.error) errors.push(`${doc.id}: ${result.error}`);
+  }
+
+  return { synced, skipped, errors };
 }
 
 export interface EnqueueSalesAutoVoucherResult {
@@ -238,6 +394,11 @@ export async function enqueueSalesAutoVoucher(params: {
     updatedAt: FieldValue.serverTimestamp(),
   });
 
+  const settings = await loadAccountingSettings(storeId);
+  if (!settings.voucherApprovalRequired) {
+    await approveAutoVoucher({ storeId, uid, autoVoucherId: ref.id });
+  }
+
   return { ok: true, autoVoucherId: ref.id };
 }
 
@@ -292,20 +453,35 @@ export async function syncPurchasesToAutoVoucherQueue(
   storeId: string,
   uid: string,
 ): Promise<{ synced: number; skipped: number; errors: string[] }> {
+  const settings = await loadAccountingSettings(storeId);
+  if (!settings.autoVoucherFromPurchase) {
+    return { synced: 0, skipped: 0, errors: [] };
+  }
+
   const purchases = await listPurchasesForVoucherIntegration(storeId, { linked: 'pending' });
   let synced = 0;
   let skipped = 0;
   const errors: string[] = [];
 
   for (const p of purchases) {
+    const snap = await adminDb.collection('purchase_records').doc(p.id).get();
+    const status = String(snap.data()?.taxDocWorkflowStatus || 'pending_review');
+    if (status !== 'verified') continue;
+
     const result = await enqueuePurchaseAutoVoucher({
       storeId,
       purchaseId: p.id,
       uid,
-      sourceScreen: '매입입력',
+      sourceScreen: '세금계산서처리',
     });
-    if (result.ok && !result.skipped) synced += 1;
-    else if (result.skipped) skipped += 1;
+    if (result.ok && !result.skipped) {
+      await adminDb.collection('purchase_records').doc(p.id).update({
+        taxDocWorkflowStatus: 'released',
+        taxDocReleasedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      synced += 1;
+    } else if (result.skipped) skipped += 1;
     else if (result.error) errors.push(`${p.id}: ${result.error}`);
   }
 
@@ -375,6 +551,13 @@ export async function approveAutoVoucher(params: {
     }
   }
 
+  if (auto.sourceType === 'expense') {
+    const evSnap = await adminDb.collection('purchase_evidence').doc(auto.sourceId).get();
+    if (evSnap.exists && evSnap.data()?.accountingVoucherId) {
+      return { id: autoVoucherId, ok: false, error: '카드 증빙이 이미 회계전표와 연결됨' };
+    }
+  }
+
   const voucherNo = await nextVoucherNo(storeId, auto.voucherDate);
   const voucherRef = await adminDb.collection('accounting_vouchers').add({
     storeId,
@@ -390,7 +573,9 @@ export async function approveAutoVoucher(params: {
       ? 'purchase'
       : auto.sourceType === 'sales' || auto.sourceType === 'pos'
         ? 'pos'
-        : 'manual',
+        : auto.sourceType === 'expense'
+          ? 'expense'
+          : 'manual',
     sourceId: auto.sourceId,
     autoVoucherId: autoVoucherId,
     createdBy: auto.createdBy || uid,
@@ -413,6 +598,17 @@ export async function approveAutoVoucher(params: {
 
   if (auto.sourceType === 'sales' || auto.sourceType === 'pos') {
     await adminDb.collection('daily_reports').doc(auto.sourceId).set({
+      accountingVoucherId: voucherRef.id,
+      accountingVoucherNo: voucherNo,
+      accountingVoucherStatus: 'approved',
+      accountingLinkedAt: FieldValue.serverTimestamp(),
+      accountingAutoVoucherId: autoVoucherId,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }
+
+  if (auto.sourceType === 'expense') {
+    await adminDb.collection('purchase_evidence').doc(auto.sourceId).set({
       accountingVoucherId: voucherRef.id,
       accountingVoucherNo: voucherNo,
       accountingVoucherStatus: 'approved',

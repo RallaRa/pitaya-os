@@ -61,7 +61,7 @@ export interface AccountingVoucher {
   lines: VoucherLine[];
   totalDebit: number;
   totalCredit: number;
-  sourceType?: 'manual' | 'purchase' | 'pos';
+  sourceType?: 'manual' | 'purchase' | 'pos' | 'expense';
   sourceId?: string;
   createdBy?: string;
   approvedBy?: string;
@@ -86,6 +86,8 @@ export interface AccountingSettings {
   voucherApprovalRequired: boolean;
   autoVoucherFromPurchase: boolean;
   autoVoucherFromSales: boolean;
+  /** 카드 증빙(매입 미매칭) → 판관비 자동전표 */
+  autoVoucherFromExpense: boolean;
   /** ERP 회사코드 (더존 등) */
   erpCompanyCode?: string;
   /** ERP 사업장코드 (영림원·더존) */
@@ -144,7 +146,7 @@ export const VOUCHER_STATUS_LABELS: Record<VoucherStatus, string> = {
 /** 자동전표처리 큐 — 원천 화면에서 넘어온 미승인 분개 */
 export type AutoVoucherQueueStatus = 'pending' | 'approved' | 'rejected';
 
-export type AutoVoucherSourceType = 'purchase' | 'sales' | 'pos';
+export type AutoVoucherSourceType = 'purchase' | 'sales' | 'pos' | 'expense';
 
 export interface AccountingAutoVoucher {
   id?: string;
@@ -176,6 +178,8 @@ export interface AccountingAutoVoucher {
     cashSale?: number;
     cardSale?: number;
     customerCount?: number;
+    merchantName?: string;
+    evidenceSource?: string;
   };
   createdBy?: string;
   approvedBy?: string;
@@ -196,6 +200,10 @@ export const AUTO_VOUCHER_QUEUE_STATUS_LABELS: Record<AutoVoucherQueueStatus, st
 export const AUTO_VOUCHER_SOURCE_SCREEN_LABELS: Record<string, string> = {
   purchase_input: '매입입력',
   purchase_import: '매입일괄',
+  '세금계산서처리': '세금계산서처리',
+  tax_invoice: '세금계산서처리',
   sales_daily: '일별매출',
   pos_sales: 'POS매출',
+  card_expense: '카드경비',
+  '카드경비': '카드경비',
 };

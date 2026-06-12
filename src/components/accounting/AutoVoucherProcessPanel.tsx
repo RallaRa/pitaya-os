@@ -227,7 +227,7 @@ export default function AutoVoucherProcessPanel() {
     >
       <div className="mb-4 p-3 rounded-xl border border-slate-800 bg-slate-900/40 text-[11px] text-slate-400 leading-relaxed space-y-1">
         <p>
-          <span className="text-teal-400 font-medium">매입입력</span> — 차변 <span className="text-slate-300">146 상품</span> · 135 부가세대급금 / 대변 251 외상매입금 (거래처 자동)
+          <span className="text-teal-400 font-medium">세금계산서처리</span> — 매입등록 후 증빙·실물 대조 완료 건 · 차변 146 상품·135 / 대변 251 외상매입금
         </p>
         <p>
           <span className="text-teal-400 font-medium">일별매출집계</span> — 매일 KST 00:30 전일 매출 자동 등록 · 차변 <span className="text-slate-300">101 현금 / 103 보통예금(카드)</span> / 대변 401 상품매출 · 255 부가세예수금
@@ -266,7 +266,7 @@ export default function AutoVoucherProcessPanel() {
         <p className="text-sm text-slate-500 text-center py-12">
           자동전표 대기 건이 없습니다.
           <br />
-          <span className="text-xs text-slate-600">매입입력·일별매출집계에서 자동 등록되거나 「미전표 가져오기」를 사용하세요.</span>
+          <span className="text-xs text-slate-600">매입은 (세금)계산서 처리 후, 매출은 일별집계 후 자동 등록됩니다.</span>
         </p>
       ) : (
         <div className="border border-slate-800 rounded-xl overflow-x-auto">

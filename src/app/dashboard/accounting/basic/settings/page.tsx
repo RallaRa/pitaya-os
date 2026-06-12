@@ -16,6 +16,7 @@ export default function AccountingSettingsPage() {
   const [voucherApprovalRequired, setVoucherApprovalRequired] = useState(true);
   const [autoVoucherFromPurchase, setAutoVoucherFromPurchase] = useState(false);
   const [autoVoucherFromSales, setAutoVoucherFromSales] = useState(false);
+  const [autoVoucherFromExpense, setAutoVoucherFromExpense] = useState(false);
   const [erpCompanyCode, setErpCompanyCode] = useState('1000');
   const [erpBusinessPlaceCode, setErpBusinessPlaceCode] = useState('1000');
   const [msg, setMsg] = useState('');
@@ -37,6 +38,7 @@ export default function AccountingSettingsPage() {
       setVoucherApprovalRequired(s.voucherApprovalRequired !== false);
       setAutoVoucherFromPurchase(!!s.autoVoucherFromPurchase);
       setAutoVoucherFromSales(!!s.autoVoucherFromSales);
+      setAutoVoucherFromExpense(!!s.autoVoucherFromExpense);
       setErpCompanyCode(s.erpCompanyCode || '1000');
       setErpBusinessPlaceCode(s.erpBusinessPlaceCode || '1000');
     } finally {
@@ -63,6 +65,7 @@ export default function AccountingSettingsPage() {
           voucherApprovalRequired,
           autoVoucherFromPurchase,
           autoVoucherFromSales,
+          autoVoucherFromExpense,
           erpCompanyCode,
           erpBusinessPlaceCode,
         }),
@@ -160,15 +163,7 @@ export default function AccountingSettingsPage() {
           />
           전표 승인 후 장부 반영 (영림원 전표승인)
         </label>
-        <label className="flex items-center gap-2 text-sm text-slate-300">
-          <input
-            type="checkbox"
-            checked={autoVoucherFromPurchase}
-            onChange={e => setAutoVoucherFromPurchase(e.target.checked)}
-            className="rounded border-slate-600"
-          />
-          Pitaya 매입 저장 시 자동전표처리 대기열 등록 (자동전표처리 메뉴에서 승인)
-        </label>
+        <p className="text-[10px] text-slate-500 pt-1">정육점 투트랙 자동화 — Track A</p>
         <label className="flex items-center gap-2 text-sm text-slate-300">
           <input
             type="checkbox"
@@ -176,8 +171,29 @@ export default function AccountingSettingsPage() {
             onChange={e => setAutoVoucherFromSales(e.target.checked)}
             className="rounded border-slate-600"
           />
-          POS 일마감 시 매출전표 자동 생성 (예정)
+          POS 일마감 → 매출 자동전표 (크론 00:30)
         </label>
+        <label className="flex items-center gap-2 text-sm text-slate-300">
+          <input
+            type="checkbox"
+            checked={autoVoucherFromPurchase}
+            onChange={e => setAutoVoucherFromPurchase(e.target.checked)}
+            className="rounded border-slate-600"
+          />
+          홈택스 동기화 후 3자 일치 매입 → 자동전표 (OCR 명세서 + 세금계산서)
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-300">
+          <input
+            type="checkbox"
+            checked={autoVoucherFromExpense}
+            onChange={e => setAutoVoucherFromExpense(e.target.checked)}
+            className="rounded border-slate-600"
+          />
+          매입 미매칭 카드 → 판관비 경비 자동전표 (홈택스 동기화 후)
+        </label>
+        <p className="text-[10px] text-slate-600">
+          위 체크 시 자동전표 대기열 등록. 「전표 승인 후 장부 반영」을 끄면 즉시 장부 반영됩니다.
+        </p>
         {msg && <p className="text-xs text-teal-300">{msg}</p>}
       </div>
     </AccountingShell>

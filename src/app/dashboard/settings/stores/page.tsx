@@ -21,6 +21,7 @@ interface StoreRecord {
   region?: string;
   regionSido?: string;
   regionSigungu?: string;
+  tradeAreaCode?: string;
   address?: string;
   phone?: string;
   businessNumber?: string;
@@ -50,6 +51,7 @@ export default function StoresManagementPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [editForm, setEditForm] = useState({
     storeName: '', ownerName: '', regionSido: '', regionSigungu: '',
+    tradeAreaCode: '',
     address: '', phone: '', businessNumber: '',
   });
 
@@ -154,6 +156,7 @@ export default function StoresManagementPage() {
       ownerName: store.ownerName || '',
       regionSido: store.regionSido || '',
       regionSigungu: store.regionSigungu || '',
+      tradeAreaCode: store.tradeAreaCode || '',
       address: store.address || '',
       phone: store.phone || '',
       businessNumber: store.businessNumber || '',
@@ -256,6 +259,7 @@ export default function StoresManagementPage() {
                       </div>
                       <p className="text-slate-400 text-xs mt-0.5">
                         {store.ownerName && `대표: ${store.ownerName} · `}{store.region}
+                        {store.tradeAreaCode && ` · 상권 ${store.tradeAreaCode}`}
                       </p>
                       <p className="text-slate-600 text-[10px] mt-0.5 font-mono">{store.storeId}</p>
                       {store.rejectedReason && (
@@ -359,6 +363,15 @@ export default function StoresManagementPage() {
                   onChange={e => setEditForm(p => ({ ...p, regionSigungu: e.target.value }))}
                   className="bg-slate-800 border border-slate-600 rounded-xl px-3 py-2.5 text-sm text-slate-100 focus:outline-none"
                 />
+              </div>
+              <div>
+                <input type="text" placeholder="상권 코드 (7~10자리, 선택)" value={editForm.tradeAreaCode}
+                  onChange={e => setEditForm(p => ({ ...p, tradeAreaCode: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+                  className="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-2.5 text-sm text-slate-100 font-mono focus:outline-none focus:border-teal-500"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  소상공인 상권정보 trdarCdN. 미입력 시 시/군/구 코드로 추정합니다.
+                </p>
               </div>
               <input type="text" placeholder="주소" value={editForm.address}
                 onChange={e => setEditForm(p => ({ ...p, address: e.target.value }))}
