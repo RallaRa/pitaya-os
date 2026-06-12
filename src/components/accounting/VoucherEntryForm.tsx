@@ -161,7 +161,14 @@ export default function VoucherEntryForm({
     setMsg('');
     try {
       const headers = await getAuthJsonHeaders();
-      const payloadLines = lines.map((l, i) => ({ ...l, lineNo: i + 1 }));
+      const payloadLines = lines
+        .filter(l => String(l.accountCode || '').trim() || Number(l.debit) > 0 || Number(l.credit) > 0)
+        .map((l, i) => ({ ...l, lineNo: i + 1 }));
+      if (payloadLines.length < 2) {
+        setError('분개는 2행 이상 입력해야 합니다.');
+        setSaving(false);
+        return;
+      }
       if (voucherId) {
         const res = await fetch('/api/accounting/vouchers', {
           method: 'PATCH',
@@ -246,52 +253,52 @@ export default function VoucherEntryForm({
         <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-teal-400" /></div>
       ) : (
         <>
-          {/* 영림원형 전표 헤더 */}
-          <div className="mb-3 border border-slate-700/80 rounded-lg overflow-hidden bg-slate-900">
-            <div className="grid grid-cols-2 md:grid-cols-6 divide-x divide-y md:divide-y-0 divide-slate-800">
-              <label className="px-2 py-1.5 bg-slate-800/50">
-                <span className="text-[9px] text-slate-500 block">전표일자</span>
+          {/* 영림원형 전표 헤더 — 라벨|값 셀 구조 */}
+          <div className="mb-2 border border-slate-500/60 rounded overflow-hidden bg-[#0c1219]">
+            <div className="grid grid-cols-1 md:grid-cols-12 text-[11px]">
+              <div className="md:col-span-2 flex border-b md:border-b-0 border-r border-slate-700/60">
+                <span className="w-20 shrink-0 px-2 py-1.5 bg-[#1e3a5f] text-sky-100 font-medium border-r border-slate-600/50">전표일자</span>
                 <input
                   type="date"
                   value={voucherDate}
                   disabled={readOnly}
                   onChange={e => setVoucherDate(e.target.value)}
-                  className="w-full bg-transparent text-xs text-white font-mono focus:outline-none disabled:opacity-60"
+                  className="flex-1 px-2 py-1.5 bg-transparent text-white font-mono focus:outline-none focus:bg-sky-950/30 disabled:opacity-60"
                 />
-              </label>
-              <label className="px-2 py-1.5 bg-slate-800/30">
-                <span className="text-[9px] text-slate-500 block">전표유형</span>
+              </div>
+              <div className="md:col-span-2 flex border-b md:border-b-0 border-r border-slate-700/60">
+                <span className="w-20 shrink-0 px-2 py-1.5 bg-[#1e3a5f] text-sky-100 font-medium border-r border-slate-600/50">전표유형</span>
                 <select
                   value={voucherType}
                   disabled={readOnly}
                   onChange={e => setVoucherType(e.target.value as VoucherType)}
-                  className="w-full bg-transparent text-xs text-white focus:outline-none disabled:opacity-60"
+                  className="flex-1 px-2 py-1.5 bg-transparent text-white focus:outline-none focus:bg-sky-950/30 disabled:opacity-60"
                 >
                   {Object.entries(VOUCHER_TYPE_LABELS).map(([key, label]) => (
                     <option key={key} value={key} className="bg-slate-900">{label}</option>
                   ))}
                 </select>
-              </label>
-              <div className="px-2 py-1.5 bg-slate-800/20">
-                <span className="text-[9px] text-slate-500 block">전표번호</span>
-                <span className="text-xs font-mono text-teal-300">{voucherNo || '(저장 후 부여)'}</span>
               </div>
-              <div className="px-2 py-1.5 bg-slate-800/20">
-                <span className="text-[9px] text-slate-500 block">상태</span>
-                <span className="text-xs text-slate-300">
+              <div className="md:col-span-2 flex border-b md:border-b-0 border-r border-slate-700/60">
+                <span className="w-20 shrink-0 px-2 py-1.5 bg-[#1e3a5f] text-sky-100 font-medium border-r border-slate-600/50">전표번호</span>
+                <span className="flex-1 px-2 py-1.5 font-mono text-teal-300">{voucherNo || '—'}</span>
+              </div>
+              <div className="md:col-span-2 flex border-b md:border-b-0 border-r border-slate-700/60">
+                <span className="w-16 shrink-0 px-2 py-1.5 bg-[#1e3a5f] text-sky-100 font-medium border-r border-slate-600/50">상태</span>
+                <span className="flex-1 px-2 py-1.5 text-slate-200">
                   {VOUCHER_STATUS_LABELS[status as keyof typeof VOUCHER_STATUS_LABELS] || status}
                 </span>
               </div>
-              <label className="px-2 py-1.5 md:col-span-2 bg-slate-800/10">
-                <span className="text-[9px] text-slate-500 block">전표적요</span>
+              <div className="md:col-span-4 flex">
+                <span className="w-20 shrink-0 px-2 py-1.5 bg-[#1e3a5f] text-sky-100 font-medium border-r border-slate-600/50">전표적요</span>
                 <input
                   value={description}
                   disabled={readOnly}
                   onChange={e => setDescription(e.target.value)}
-                  className="w-full bg-transparent text-xs text-white focus:outline-none disabled:opacity-60"
-                  placeholder="전표 헤더 적요"
+                  className="flex-1 px-2 py-1.5 bg-transparent text-white focus:outline-none focus:bg-sky-950/30 disabled:opacity-60"
+                  placeholder="헤더 적요"
                 />
-              </label>
+              </div>
             </div>
           </div>
 
