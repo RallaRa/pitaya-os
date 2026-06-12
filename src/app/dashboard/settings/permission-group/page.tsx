@@ -131,6 +131,13 @@ export default function PermissionGroupPage() {
 
   useEffect(() => { fetchGroups(); fetchUsers(); }, [fetchGroups, fetchUsers]);
 
+  useEffect(() => {
+    if (!expandedId) return;
+    requestAnimationFrame(() => {
+      document.getElementById(`perm-expand-${expandedId}`)?.scrollIntoView({ block: 'nearest' });
+    });
+  }, [expandedId]);
+
   const selectedGroupId = selectedGroup?.groupId;
   useEffect(() => {
     if (!selectedGroupId) return;
@@ -342,7 +349,7 @@ export default function PermissionGroupPage() {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-slate-950">
+    <div className="bg-slate-950">
 
       {/* ── 모바일 탭 바 (미리보기 열렸을 때만) ── */}
       {previewGroup && (
@@ -406,11 +413,11 @@ export default function PermissionGroupPage() {
       )}
 
       {/* ── 메인 row ── */}
-      <div className="flex flex-1 min-h-0 flex-col md:flex-row overflow-hidden">
+      <div className="flex flex-col md:flex-row md:items-start">
 
-        {/* ═══ 좌측 스크롤 영역 ═══ */}
+        {/* ═══ 좌측 콘텐츠 ═══ */}
         <div
-          className={`flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden overscroll-y-contain touch-pan-y [-webkit-overflow-scrolling:touch] ${
+          className={`flex-1 min-w-0 ${
             previewGroup && mobileTab === 'preview' ? 'hidden md:block' : ''
           }`}
         >
@@ -431,7 +438,7 @@ export default function PermissionGroupPage() {
               </div>
             ) : (
               <div className="px-6 pb-4">
-                <div className="overflow-x-auto overscroll-x-contain">
+                <div className="overflow-x-auto overflow-y-visible overscroll-x-contain">
                 <table className="w-full text-sm border-collapse min-w-[720px]">
                   <thead>
                     <tr className="border-b border-slate-700">
@@ -543,7 +550,7 @@ export default function PermissionGroupPage() {
 
                           {/* 권한 편집 확장 행 */}
                           {isExpanded && (
-                            <tr className="bg-slate-900/60 border-b border-slate-800/60">
+                            <tr id={`perm-expand-${group.groupId}`} className="bg-slate-900/60 border-b border-slate-800/60">
                               <td colSpan={MENU_COLS.length + 3} className="px-4 py-3" onClick={e => e.stopPropagation()}>
                                 <div className="space-y-4">
                                   {MENU_ACCESS_UI_GROUPS.map(section => (
@@ -598,7 +605,7 @@ export default function PermissionGroupPage() {
           </div>
 
           {/* ── 유저 테이블 ── */}
-          <div className="pb-8 safe-bottom">
+          <div className="pb-16 safe-bottom">
             <div className="px-6 pt-4 pb-2">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">멤버 목록</p>
             </div>
@@ -614,7 +621,7 @@ export default function PermissionGroupPage() {
               </div>
             ) : (
               <div className="px-6 pb-6">
-                <div className="overflow-x-auto overscroll-x-contain">
+                <div className="overflow-x-auto overflow-y-visible overscroll-x-contain">
                 <table className="w-full text-sm border-collapse">
                   <thead>
                     <tr className="border-b border-slate-700">
@@ -654,12 +661,12 @@ export default function PermissionGroupPage() {
 
         {/* ═══ 우측: 미리보기 패널 ═══ */}
         {previewGroup && (
-          <div className={`flex flex-col min-h-0 min-w-0 border-t md:border-t-0 md:border-l border-slate-700 bg-slate-950/60
-            w-full md:w-64 shrink-0 overflow-hidden
-            ${mobileTab === 'preview' ? 'flex flex-1' : 'hidden md:flex'}`}
+          <div className={`border-t md:border-t-0 md:border-l border-slate-700 bg-slate-950/60
+            w-full md:w-64 shrink-0
+            ${mobileTab === 'preview' ? 'block' : 'hidden md:block'}`}
           >
             {/* 패널 헤더 */}
-            <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-800 shrink-0">
+            <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <Eye className="w-4 h-4 text-teal-400" />
                 <div>
@@ -675,7 +682,7 @@ export default function PermissionGroupPage() {
               </button>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y [-webkit-overflow-scrolling:touch] p-4 space-y-5 pb-8 safe-bottom">
+            <div className="p-4 space-y-5 pb-16 safe-bottom">
 
               {/* 사이드바 미리보기 */}
               <div>
@@ -775,8 +782,8 @@ export default function PermissionGroupPage() {
 
         {/* ═══ 유저 배정 패널 (더블클릭) ═══ */}
         {selectedGroup && (
-          <div className="hidden md:flex md:flex-col md:min-h-0 md:w-64 shrink-0 md:border-l md:border-slate-700 bg-slate-900 overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-800 shrink-0">
+          <div className="hidden md:block md:w-64 shrink-0 md:border-l md:border-slate-700 bg-slate-900">
+            <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-800">
               <div>
                 <p className="text-white font-bold text-sm">{selectedGroup.groupName}</p>
                 <p className="text-slate-400 text-xs mt-0.5">멤버 배정</p>
@@ -786,7 +793,7 @@ export default function PermissionGroupPage() {
               </button>
             </div>
 
-            <div className="px-4 py-3 bg-slate-800/50 border-b border-slate-800 shrink-0 flex gap-4">
+            <div className="px-4 py-3 bg-slate-800/50 border-b border-slate-800 flex gap-4">
               <div className="text-xs text-slate-400">
                 배정됨 <strong className="text-teal-400">{memberCount(selectedGroup.groupId)}명</strong>
               </div>
@@ -797,7 +804,7 @@ export default function PermissionGroupPage() {
               )}
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y [-webkit-overflow-scrolling:touch] p-3 space-y-3 pb-8">
+            <div className="p-3 space-y-3 pb-16 safe-bottom">
               {storeUsers.length === 0 ? (
                 <p className="text-slate-500 text-xs text-center py-8">소속 멤버가 없습니다.</p>
               ) : (
