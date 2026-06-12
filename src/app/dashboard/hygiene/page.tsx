@@ -1,6 +1,7 @@
 'use client';
 
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { overlay } from '@/components/overlay';
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
@@ -282,7 +283,7 @@ function HygieneChecklistContent() {
   const handleFinalSave = async () => {
     const { unchecked } = buildPayload();
     if (unchecked > 0) {
-      const confirmed = window.confirm(`미체크 항목이 ${unchecked}개 있습니다. 저장하시겠습니까?`);
+      const confirmed = await overlay.confirm(`미체크 항목이 ${unchecked}개 있습니다. 저장하시겠습니까?`);
       if (!confirmed) return;
     }
     setIsSavingFinal(true);

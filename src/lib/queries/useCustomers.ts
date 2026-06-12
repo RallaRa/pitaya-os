@@ -4,44 +4,77 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { STALE_TIME, queryKeys } from '@/lib/queries/keys';
 import { fetchAuthJson } from '@/lib/queries/fetchJson';
 
-export interface CustomerRow {
-  id: string;
-  cusCode: string;
-  name: string;
-  mobile?: string;
-  grade?: string;
-  [key: string]: unknown;
-}
-
-interface CustomersResponse {
-  customers: CustomerRow[];
-  total?: number;
-}
-
-export interface UseCustomersParams {
+export interface CustomerListParams {
   storeId: string;
   page?: number;
   limit?: number;
   search?: string;
+  sortBy?: string;
+  sortOrder?: string;
+  joinFrom?: string;
+  joinTo?: string;
+  visitFrom?: string;
+  visitTo?: string;
+  cycleStatus?: string;
+  visitTrend?: string;
+  exportAll?: boolean;
   enabled?: boolean;
 }
 
-function buildCustomersUrl(storeId: string, params: Omit<UseCustomersParams, 'storeId' | 'enabled'>) {
-  const qs = new URLSearchParams({ storeId });
-  if (params.page) qs.set('page', String(params.page));
-  if (params.limit) qs.set('limit', String(params.limit));
-  if (params.search) qs.set('search', params.search);
-  return `/api/customers?${qs.toString()}`;
+export interface CustomersListResult {
+  customers: Record<string, unknown>[];
+  total: number;
+  stats?: Record<string, unknown>;
 }
 
-export function useCustomers({ storeId, page = 1, limit = 50, search, enabled = true }: UseCustomersParams) {
-  const params = { page, limit, search };
+type CustomerQueryFilters = Omit<CustomerListParams, 'storeId' | 'enabled'>;
+
+export function buildCustomersSearchParams(params: CustomerQueryFilters & { storeId: string }) {
+  const qs = new URLSearchParams({
+    storeId: params.storeId,
+    page: String(params.page ?? 1),
+    limit: String(params.limit ?? 50),
+  });
+  if (params.sortBy) qs.set('sortBy', params.sortBy);
+  if (params.sortOrder) qs.set('sortOrder', params.sortOrder);
+  if (params.search?.trim()) qs.set('search', params.search.trim());
+  if (params.joinFrom) qs.set('joinFrom', params.joinFrom);
+  if (params.joinTo) qs.set('joinTo', params.joinTo);
+  if (params.visitFrom) qs.set('visitFrom', params.visitFrom);
+  if (params.visitTo) qs.set('visitTo', params.visitTo);
+  if (params.cycleStatus) qs.set('cycleStatus', params.cycleStatus);
+  if (params.visitTrend) qs.set('visitTrend', params.visitTrend);
+  if (params.exportAll) qs.set('exportAll', '1');
+  return qs;
+}
+
+export async function fetchCustomersList(params: CustomerListParams): Promise<CustomersListResult> {
+  const qs = buildCustomersSearchParams(params);
+  const data = await fetchAuthJson<{
+    customers?: Record<string, unknown>[];
+    total?: number;
+    stats?: Record<string, unknown>;
+    error?: string;
+  }>(`/api/customers?${qs.toString()}`);
+  return {
+    customers: data.customers ?? [],
+    total: data.total ?? 0,
+    stats: data.stats,
+  };
+}
+
+export function useCustomers(params: CustomerListParams) {
+  const { storeId, enabled = true, ...filters } = params;
   return useQuery({
-    queryKey: queryKeys.customers(storeId, params),
-    queryFn: () => fetchAuthJson<CustomersResponse>(buildCustomersUrl(storeId, params)),
+    queryKey: queryKeys.customers(storeId, filters),
+    queryFn: () => fetchCustomersList({ storeId, ...filters }),
     enabled: enabled && !!storeId,
     staleTime: STALE_TIME.customers,
-    select: data => ({ customers: data.customers ?? [], total: data.total ?? 0 }),
+    select: data => ({
+      customers: data.customers,
+      total: data.total,
+      stats: data.stats,
+    }),
   });
 }
 
@@ -55,15 +88,22 @@ export function useRegisterCustomer(storeId: string) {
       }),
     onMutate: async (body) => {
       await queryClient.cancelQueries({ queryKey: ['customers', storeId] });
-      const temp: CustomerRow = {
-        id: `temp-${Date.now()}`,
-        cusCode: '등록중…',
-        name: body.name,
-        mobile: body.phone,
-        grade: body.grade,
-      };
-      queryClient.setQueriesData<CustomersResponse>({ queryKey: ['customers', storeId] }, old =>
-        old ? { ...old, customers: [temp, ...(old.customers ?? [])], total: (old.total ?? 0) + 1 } : old,
+      queryClient.setQueriesData<CustomersListResult>({ queryKey: ['customers', storeId] }, old =>
+        old
+          ? {
+              ...old,
+              customers: [
+                {
+                  cusCode: '등록중…',
+                  nameMasked: body.name,
+                  phoneMasked: body.phone,
+                  grade: body.grade,
+                },
+                ...old.customers,
+              ],
+              total: old.total + 1,
+            }
+          : old,
       );
     },
     onSettled: () => {

@@ -13,7 +13,9 @@ export interface EmployeeSummary {
   status?: string;
   hireDate?: string;
   linkedUid?: string;
-  [key: string]: unknown;
+  linkedEmail?: string;
+  photoUrl?: string;
+  isAdminAccount?: boolean;
 }
 
 export function useEmployees(storeId: string, enabled = true) {

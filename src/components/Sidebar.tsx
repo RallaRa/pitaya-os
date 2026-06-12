@@ -448,6 +448,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
     { key: 'messenger' as const, href: '/dashboard/messenger/tasks',      icon: <LayoutGrid         className="w-4 h-4" />,  label: '메신저 칸반' },
     { key: 'messenger' as const, href: '/dashboard/messenger/docs',       icon: <FileText           className="w-4 h-4" />,  label: '메신저 문서' },
     { key: 'hygiene' as const,   href: '/dashboard/hygiene',               icon: <ClipboardCheck className="w-4 h-4" />, label: '위생 점검일지' },
+    { key: 'hygiene' as const,   href: '/dashboard/operations/checklist', icon: <ClipboardCheck className="w-4 h-4" />, label: '개폐점 체크리스트' },
     { key: 'hrCalendar' as const,         href: '/dashboard/hr/calendar',                    icon: <CalendarDays className="w-4 h-4" />,  label: '캘린더' },
     { key: 'hrCalendar' as const,         href: '/dashboard/hr/attendance',                  icon: <Clock className="w-4 h-4" />,         label: '출퇴근' },
     { key: 'members' as const,            href: '/dashboard/hr/employee-register',           icon: <Users className="w-4 h-4" />,         label: '사원등록' },
@@ -576,6 +577,18 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                     </button>
                     {(purchaseOpen || purchaseActive) && (
                       <div className="ml-4 mt-0.5 space-y-2 border-l border-slate-700/60 pl-3 max-h-72 overflow-y-auto">
+                        <Link
+                          href="/dashboard/purchase-mgmt"
+                          onClick={onClose}
+                          className={`flex items-center gap-2.5 px-2 py-2 rounded-lg transition-all text-xs ${
+                            pathname === '/dashboard/purchase-mgmt'
+                              ? 'bg-teal-600/20 text-teal-300 font-semibold'
+                              : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'
+                          }`}
+                        >
+                          <ShoppingCart className="w-3.5 h-3.5" />
+                          구매관리 개요
+                        </Link>
                         {purchaseSectionsVisible.map(section => (
                           <div key={section.id}>
                             <p className="text-[9px] font-semibold text-slate-600 uppercase tracking-wider px-2 pt-1">{section.label}</p>
@@ -626,6 +639,18 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                     </button>
                     {(salesOpen || salesActive) && (
                       <div className="ml-4 mt-0.5 space-y-2 border-l border-slate-700/60 pl-3 max-h-72 overflow-y-auto">
+                        <Link
+                          href="/dashboard/sales-mgmt"
+                          onClick={onClose}
+                          className={`flex items-center gap-2.5 px-2 py-2 rounded-lg transition-all text-xs ${
+                            pathname === '/dashboard/sales-mgmt'
+                              ? 'bg-indigo-600/20 text-indigo-300 font-semibold'
+                              : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'
+                          }`}
+                        >
+                          <BarChart2 className="w-3.5 h-3.5" />
+                          영업관리 개요
+                        </Link>
                         {salesSectionsVisible.map(section => (
                           <div key={section.id}>
                             <p className="text-[9px] font-semibold text-slate-600 uppercase tracking-wider px-2 pt-1">{section.label}</p>

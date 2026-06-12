@@ -10,6 +10,13 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
+import { overlay } from '@/components/overlay';
+import {
+  useProducts,
+  useUpdateProduct,
+  useDeleteProduct,
+  useCreateProduct,
+} from '@/lib/queries';
 import { ITEM_CATEGORIES_WITH_ALL, ALL_ITEM_CATEGORIES } from '@/lib/purchaseCategories';
 import {
   LineChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid,
@@ -485,8 +492,12 @@ export default function ItemsPage() {
   const { currentStore } = useStore();
   const storeId = currentStore?.storeId || '';
 
-  const [items,        setItems]        = useState<Item[]>([]);
-  const [loading,      setLoading]      = useState(true);
+  const { data: rawItems = [], isLoading: loading, refetch } = useProducts(storeId, undefined, !!storeId);
+  const items = rawItems as Item[];
+  const updateProduct = useUpdateProduct(storeId);
+  const deleteProduct = useDeleteProduct(storeId);
+  const createProduct = useCreateProduct(storeId);
+
   const [activeTab,    setActiveTab]    = useState('전체');
   const [search,       setSearch]       = useState('');
   const [filterStorage,setFilterStorage]= useState('전체');
@@ -531,16 +542,9 @@ export default function ItemsPage() {
   };
 
   const load = useCallback(async () => {
-    if (!storeId) return;
-    setLoading(true);
-    const headers = await getAuthHeaders();
-    const res = await fetch(`/api/items?storeId=${storeId}`, { headers });
-    const data = await res.json();
-    setItems(data.items || []);
-    setLoading(false);
-  }, [storeId]);
+    await refetch();
+  }, [refetch]);
 
-  useEffect(() => { load(); }, [load]);
   useEffect(() => { if (pageView === 'aliases') loadAliases(); }, [pageView, loadAliases]);
 
   /* 필터링 + 정렬 */
@@ -582,11 +586,7 @@ export default function ItemsPage() {
       [key]: parsed,
     };
 
-    const headers = await getAuthJsonHeaders();
-    const res = await fetch('/api/items', { method: 'PUT', headers, body: JSON.stringify({ id, updates }) });
-    const data = await res.json();
-
-    setItems(prev => prev.map(i => i.id === id ? { ...i, ...updates, ...data } : i));
+    await updateProduct.mutateAsync({ id, updates });
   };
 
   /* 모달 저장 */
@@ -599,18 +599,13 @@ export default function ItemsPage() {
       lossRate:     updates.lossRate     ?? item.lossRate,
       ...updates,
     };
-    const headers = await getAuthJsonHeaders();
-    const res = await fetch('/api/items', { method: 'PUT', headers, body: JSON.stringify({ id, updates: merged }) });
-    const data = await res.json();
-    setItems(prev => prev.map(i => i.id === id ? { ...i, ...merged, ...data } : i));
+    await updateProduct.mutateAsync({ id, updates: merged });
   };
 
   /* 삭제 */
   const deleteItem = async (id: string) => {
-    if (!confirm('품목을 삭제하시겠습니까?')) return;
-    const headers = await getAuthHeaders();
-    await fetch(`/api/items?id=${id}`, { method: 'DELETE', headers });
-    setItems(prev => prev.filter(i => i.id !== id));
+    if (!(await overlay.confirm('품목을 삭제하시겠습니까?', { destructive: true }))) return;
+    deleteProduct.mutate(id);
   };
 
   /* 선택 */
@@ -653,7 +648,6 @@ export default function ItemsPage() {
     const wb  = XLSX.read(buf);
     const ws  = wb.Sheets[wb.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(ws) as any[];
-    const headers = await getAuthJsonHeaders();
 
     let saved = 0;
     for (const row of rows) {
@@ -674,11 +668,11 @@ export default function ItemsPage() {
         lastTrace:    row['최근이력'] || null,
       };
       if (!item.cut) continue;
-      await fetch('/api/items', { method: 'POST', headers, body: JSON.stringify({ storeId, item }) });
+      await createProduct.mutateAsync(item);
       saved++;
     }
-    alert(`${saved}개 품목이 저장되었습니다.`);
-    load();
+    overlay.toast(`${saved}개 품목이 저장되었습니다`, { variant: 'success' });
+    await refetch();
     if (fileRef.current) fileRef.current.value = '';
   };
 
@@ -701,7 +695,7 @@ export default function ItemsPage() {
   return (
     <div className="flex flex-col h-full bg-slate-950">
       {/* 헤더 */}
-      <div className="shrink-0 px-6 py-3 border-b border-slate-800/60">
+      <div className="shrink-0 px-3 sm:px-6 py-3 border-b border-slate-800/60">
         <div className="flex items-center gap-2 flex-wrap">
           <h1 className="text-slate-400 text-xs font-semibold uppercase tracking-widest flex-1">품목관리</h1>
 
@@ -777,7 +771,7 @@ export default function ItemsPage() {
       ) : (
       <>
       {/* 탭 */}
-      <div className="shrink-0 flex items-center gap-1 px-6 pt-3 border-b border-slate-800/40 overflow-x-auto">
+      <div className="shrink-0 flex items-center gap-1 px-3 sm:px-6 pt-3 border-b border-slate-800/40 overflow-x-auto">
         {CATEGORIES.map(cat => (
           <button
             key={cat}
@@ -797,8 +791,8 @@ export default function ItemsPage() {
       </div>
 
       {/* 검색 + 필터 */}
-      <div className="shrink-0 flex items-center gap-2 px-6 py-2 border-b border-slate-800/40">
-        <div className="relative flex-1 max-w-xs">
+      <div className="shrink-0 flex flex-wrap items-center gap-2 px-3 sm:px-6 py-2 border-b border-slate-800/40">
+        <div className="relative flex-1 min-w-[140px] max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
           <input
             value={search}
@@ -833,6 +827,7 @@ export default function ItemsPage() {
             <p className="text-xs text-slate-700">설정 → 품목 초기 데이터 로드 버튼으로 기본 187개를 불러올 수 있습니다</p>
           </div>
         ) : (
+          <div className="min-w-[1100px]">
           <table className="w-full border-collapse" style={{ fontSize: 12 }}>
             <thead className="sticky top-0 z-10 bg-slate-900 border-b border-slate-800">
               <tr>
@@ -949,6 +944,7 @@ export default function ItemsPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

@@ -36,7 +36,7 @@ export function defaultStoreModules(): StoreModules {
     hygiene:   { enabled: true },
     messenger: { enabled: true },
     pos:       { enabled: true },
-    accounting: { enabled: false },
+    accounting: { enabled: true },
   };
 }
 
@@ -85,7 +85,9 @@ export function pathToModule(pathname: string): LicenseModuleKey | null {
       pathname.startsWith('/dashboard/settings/widgets')) {
     return 'dashboard';
   }
-  if (pathname.startsWith('/dashboard/report/purchases')) return 'purchases';
+  if (pathname.startsWith('/dashboard/report/purchases') || pathname.startsWith('/dashboard/purchase-mgmt')) {
+    return 'purchases';
+  }
   if (pathname.startsWith('/dashboard/hr-system') || pathname.startsWith('/dashboard/hr') ||
       pathname.startsWith('/dashboard/settings/employees') ||
       pathname.startsWith('/dashboard/settings/departments') ||
@@ -94,6 +96,7 @@ export function pathToModule(pathname: string): LicenseModuleKey | null {
   }
   if (pathname.startsWith('/dashboard/hygiene')) return 'hygiene';
   if (pathname.startsWith('/dashboard/messenger')) return 'messenger';
+  if (pathname.startsWith('/dashboard/sales-mgmt')) return 'pos';
   if (pathname.startsWith('/dashboard/report')) return 'pos';
   if (pathname.startsWith('/dashboard/items') || pathname.startsWith('/dashboard/suppliers')) {
     return 'purchases';

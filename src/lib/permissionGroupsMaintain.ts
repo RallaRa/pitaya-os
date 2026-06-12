@@ -211,6 +211,39 @@ async function migrateAccountingMenuForSystemGroups() {
   await metaRef.set({ accountingMenuV1: true }, { merge: true });
 }
 
+async function migrateAccountingModuleForStores() {
+  const metaRef = adminDb.collection('system_meta').doc('licenses');
+  const metaSnap = await metaRef.get();
+  if (metaSnap.data()?.accountingModuleV1) return;
+
+  const snap = await adminDb.collection('store_licenses').get();
+  const BATCH_LIMIT = 450;
+  let batch = adminDb.batch();
+  let writes = 0;
+
+  for (const doc of snap.docs) {
+    const modules = doc.data()?.modules || {};
+    if (modules.accounting?.enabled === true) continue;
+
+    batch.update(doc.ref, {
+      'modules.accounting.enabled': true,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    writes += 1;
+
+    if (writes % BATCH_LIMIT === 0) {
+      await batch.commit();
+      batch = adminDb.batch();
+    }
+  }
+
+  if (writes > 0 && writes % BATCH_LIMIT !== 0) {
+    await batch.commit();
+  }
+
+  await metaRef.set({ accountingModuleV1: true }, { merge: true });
+}
+
 async function migratePurchaseSalesModuleV1() {
   const metaRef = adminDb.collection('system_meta').doc('permissions');
   const metaSnap = await metaRef.get();
@@ -268,5 +301,6 @@ export async function ensurePermissionSystemGroups() {
   await ensureSystemGroups();
   await migratePredictionVariablesMenuForSystemGroups();
   await migrateAccountingMenuForSystemGroups();
+  await migrateAccountingModuleForStores();
   await migratePurchaseSalesModuleV1();
 }

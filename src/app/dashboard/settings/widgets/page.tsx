@@ -21,6 +21,8 @@ const WIDGET_LIST = [
   { key: 'churn_risk',         label: '이탈 위험 고객',       desc: '이탈 스코어 TOP10 + 알림톡 큐' },
   { key: 'sales_heatmap',      label: '시간대 히트맵',        desc: '요일×시간 평균 매출 (축약)' },
   { key: 'dow_profitability',  label: '요일별 수익성',        desc: '요일별 매출·수익 랭킹' },
+  { key: 'cost_ratio',         label: '원가율 모니터',        desc: '품목별 원가율·목표 초과' },
+  { key: 'margin_ranking',     label: '마진율 랭킹',          desc: 'TOP/BOTTOM 마진·목표 달성률' },
   { key: 'sales_category',     label: '카테고리별 매출',    desc: '소고기·돼지·닭·양념 파이차트' },
   { key: 'time_slot_aov',      label: '시간대별 객단가',    desc: '오전·오후·저녁·야간 객단가' },
 ];
@@ -49,6 +51,8 @@ const DEFAULT_PERMS: Permissions = {
   churn_risk:         { master: true, admin: true,  user: true,  staff: false },
   sales_heatmap:      { master: true, admin: true,  user: true,  staff: false },
   dow_profitability:  { master: true, admin: true,  user: true,  staff: false },
+  cost_ratio:         { master: true, admin: true,  user: true,  staff: false },
+  margin_ranking:     { master: true, admin: true,  user: true,  staff: false },
   sales_category:     { master: true, admin: true,  user: true,  staff: true  },
   time_slot_aov:      { master: true, admin: true,  user: true,  staff: true  },
 };

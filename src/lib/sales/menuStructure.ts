@@ -12,6 +12,7 @@ export type SalesPermissionKey =
 export interface SalesMenuItem {
   href: string;
   label: string;
+  description?: string;
   /** POS 미연동 매장에서만 표시 */
   manualOnly?: boolean;
 }
@@ -29,10 +30,10 @@ export const SALES_MENU_SECTIONS: SalesMenuSection[] = [
     label: '매출·마감',
     permission: 'salesReport',
     items: [
-      { href: '/dashboard/report/view', label: '일마감내역' },
-      { href: '/dashboard/report/calendar', label: '달력매출' },
-      { href: '/dashboard/report/anomalies', label: '매출 이상 탐지' },
-      { href: '/dashboard/report/monthly', label: '월간 리포트' },
+      { href: '/dashboard/report/view', label: '일마감내역', description: '일별 매출·마감 확인' },
+      { href: '/dashboard/report/calendar', label: '달력매출', description: '월간 매출 달력' },
+      { href: '/dashboard/report/anomalies', label: '매출 이상 탐지', description: '비정상 매출 알림' },
+      { href: '/dashboard/report/monthly', label: '월간 리포트', description: '월별 종합 리포트' },
     ],
   },
   {
@@ -40,8 +41,8 @@ export const SALES_MENU_SECTIONS: SalesMenuSection[] = [
     label: '매출 키인',
     permission: 'salesManual',
     items: [
-      { href: '/dashboard/report/input', label: '매출 키인', manualOnly: true },
-      { href: '/dashboard/report/sales_ai', label: '판매내역 분석', manualOnly: true },
+      { href: '/dashboard/report/input', label: '매출 키인', description: '수동 매출 입력', manualOnly: true },
+      { href: '/dashboard/report/sales_ai', label: '판매내역 분석', description: '키인 매출 AI 분석', manualOnly: true },
     ],
   },
   {
@@ -49,9 +50,9 @@ export const SALES_MENU_SECTIONS: SalesMenuSection[] = [
     label: '분석·예측',
     permission: 'salesAnalysis',
     items: [
-      { href: '/dashboard/sales-forecast', label: '품목별 매출 추이' },
-      { href: '/dashboard/prediction-analysis', label: '예측분석' },
-      { href: '/dashboard/settings/prediction-variables', label: 'AI 예측 변수' },
+      { href: '/dashboard/sales-forecast', label: '품목별 매출 추이', description: '품목별 판매 추세' },
+      { href: '/dashboard/prediction-analysis', label: '예측분석', description: 'AI 매출 예측' },
+      { href: '/dashboard/settings/prediction-variables', label: 'AI 예측 변수', description: '예측 모델 변수 조정' },
     ],
   },
   {
@@ -59,8 +60,8 @@ export const SALES_MENU_SECTIONS: SalesMenuSection[] = [
     label: '고객',
     permission: 'salesCustomer',
     items: [
-      { href: '/dashboard/customers', label: '고객 관리' },
-      { href: '/dashboard/marketing/journey', label: '고객 여정' },
+      { href: '/dashboard/customers', label: '고객 관리', description: '회원·포인트 관리' },
+      { href: '/dashboard/marketing/journey', label: '고객 여정', description: '마케팅 자동화 흐름' },
     ],
   },
   {
@@ -68,10 +69,10 @@ export const SALES_MENU_SECTIONS: SalesMenuSection[] = [
     label: '판촉·주문',
     permission: 'salesPromotion',
     items: [
-      { href: '/dashboard/coupons', label: '쿠폰·할인' },
-      { href: '/dashboard/public-orders', label: '공개 주문' },
-      { href: '/dashboard/orders/templates', label: '발주 템플릿' },
-      { href: '/dashboard/signage', label: '사이니지' },
+      { href: '/dashboard/coupons', label: '쿠폰·할인', description: '프로모션·쿠폰 설정' },
+      { href: '/dashboard/public-orders', label: '공개 주문', description: '온라인 주문 접수' },
+      { href: '/dashboard/orders/templates', label: '발주 템플릿', description: '정기 발주 템플릿' },
+      { href: '/dashboard/signage', label: '사이니지', description: 'TV 콘텐츠·AI 쇼' },
     ],
   },
   {
@@ -79,7 +80,7 @@ export const SALES_MENU_SECTIONS: SalesMenuSection[] = [
     label: '저울·PLU',
     permission: 'salesScale',
     items: [
-      { href: '/dashboard/scale', label: '저울 코드 관리' },
+      { href: '/dashboard/scale', label: '저울 코드 관리', description: 'PLU·저울 바코드' },
     ],
   },
 ];
@@ -150,6 +151,18 @@ export function flattenSalesMenu(
     .flatMap(s => s.items.filter(it => includeManual || !it.manualOnly));
 }
 
+export function findSalesMenuItem(pathname: string): SalesMenuItem | undefined {
+  return flattenSalesMenu({ salesMgmt: true }).find(
+    i => pathname === i.href || pathname.startsWith(`${i.href}/`),
+  );
+}
+
+export function findSalesSection(pathname: string): SalesMenuSection | undefined {
+  return SALES_MENU_SECTIONS.find(s =>
+    s.items.some(i => pathname === i.href || pathname.startsWith(`${i.href}/`)),
+  );
+}
+
 export function hasSalesMenu(
   menuAccess: Partial<Record<MenuAccessKey, boolean>>,
 ): boolean {
@@ -158,6 +171,7 @@ export function hasSalesMenu(
 
 export function isSalesPath(pathname: string): boolean {
   if (pathname.startsWith('/dashboard/report/purchases')) return false;
+  if (pathname.startsWith('/dashboard/sales-mgmt')) return true;
   if (pathname.startsWith('/dashboard/report/view')
     || pathname.startsWith('/dashboard/report/calendar')
     || pathname.startsWith('/dashboard/report/input')

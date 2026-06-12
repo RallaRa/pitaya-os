@@ -1,71 +1,64 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import WidgetWrapper from './WidgetWrapper';
-import WidgetAsyncBoundary from '@/components/suspense/WidgetAsyncBoundary';
 import EmptyState from '@/components/suspense/EmptyState';
-import { fetchAuthJson } from '@/components/suspense/fetchJson';
-import { useSuspenseInvalidate, useSuspenseResource } from '@/components/suspense/useSuspenseResource';
+import SkeletonWidget from '@/components/suspense/SkeletonWidget';
+import { useSalesData } from '@/lib/queries';
 import { getKSTTodayYMD } from '@/lib/dateUtils';
-import { getDisplayNetSales, getDisplayReturnAmount, type SalesDocData } from '@/lib/posDailySales';
+import { getDisplayNetSales, getDisplayReturnAmount } from '@/lib/posDailySales';
 import { RefreshCw } from 'lucide-react';
-
-interface TodaySalesPayload {
-  today?: SalesDocData | null;
-  yesterday?: SalesDocData | null;
-  emptyReason?: string | null;
-}
-
-function cacheKey(storeId: string) {
-  return `dashboard:today-sales:${storeId}:${getKSTTodayYMD()}`;
-}
 
 function TodaySalesContent({
   editMode, onRemove, storeId,
 }: { editMode: boolean; onRemove: () => void; storeId: string }) {
-  const key = cacheKey(storeId);
-  const invalidate = useSuspenseInvalidate(key);
-  const data = useSuspenseResource(key, async () => {
-    const today = getKSTTodayYMD();
-    return fetchAuthJson<TodaySalesPayload>(
-      `/api/dashboard/today-sales?storeId=${encodeURIComponent(storeId)}&date=${today}`,
-    );
-  });
+  const today = getKSTTodayYMD();
+  const { data, isLoading, isError, refetch, dataUpdatedAt } = useSalesData(storeId, today);
   const [updatedAt, setUpdatedAt] = useState(() => new Date());
 
   useEffect(() => {
-    setUpdatedAt(new Date());
-  }, [data]);
-
-  const refresh = useCallback(() => invalidate(), [invalidate]);
-
-  useEffect(() => {
-    const interval = setInterval(refresh, 30000);
-    return () => clearInterval(interval);
-  }, [refresh]);
+    if (dataUpdatedAt) setUpdatedAt(new Date(dataUpdatedAt));
+  }, [dataUpdatedAt]);
 
   const fmt = (n: number) => (n || 0).toLocaleString('ko-KR');
-  const todayDoc = data.today ?? null;
-  const yesterdayDoc = data.yesterday ?? null;
+  const todayDoc = data?.today ?? null;
+  const yesterdayDoc = data?.yesterday ?? null;
   const todayNet = getDisplayNetSales(todayDoc);
   const todayReturn = getDisplayReturnAmount(todayDoc);
   const yesterdayNet = getDisplayNetSales(yesterdayDoc);
-  const isClosed = todayDoc?.isClosed ?? false;
-  const todayStr = getKSTTodayYMD();
-  const syncedAt = (todayDoc as { syncedAt?: string } | null)?.syncedAt;
+  const isClosed = todayDoc?.isClosed ?? data?.isClosed ?? false;
+  const syncedAt = data?.syncedAt ?? (todayDoc as { syncedAt?: string } | null)?.syncedAt;
+
+  if (isLoading && !data) {
+    return (
+      <WidgetWrapper title="📊 당일 매출 현황" editMode={editMode} onRemove={onRemove}>
+        <SkeletonWidget />
+      </WidgetWrapper>
+    );
+  }
+
+  if (isError) {
+    return (
+      <WidgetWrapper title="📊 당일 매출 현황" editMode={editMode} onRemove={onRemove} onRefresh={() => void refetch()}>
+        <div className="p-3">
+          <EmptyState reason="매출 데이터를 불러오지 못했습니다." />
+        </div>
+      </WidgetWrapper>
+    );
+  }
 
   return (
     <WidgetWrapper
       title="📊 당일 매출 현황"
       editMode={editMode}
       onRemove={onRemove}
-      onRefresh={refresh}
+      onRefresh={() => void refetch()}
       updatedAt={updatedAt}
     >
       <div className="h-full p-3 flex flex-col gap-2 justify-center overflow-y-auto">
-        {data.emptyReason && <EmptyState reason={data.emptyReason} />}
+        {data?.emptyReason && <EmptyState reason={data.emptyReason} />}
         <div className="flex items-center justify-between">
-          <span className="text-slate-400 text-[10px]">{todayStr}</span>
+          <span className="text-slate-400 text-[10px]">{today}</span>
           <div className="flex items-center gap-1.5">
             {isClosed
               ? <span className="text-[10px] px-1.5 py-0.5 bg-emerald-900/50 text-emerald-400 rounded-full border border-emerald-700/40">마감완료</span>
@@ -111,9 +104,5 @@ export default function TodaySalesWidget({
     );
   }
 
-  return (
-    <WidgetAsyncBoundary skeleton="widget" widgetName="당일 매출">
-      <TodaySalesContent editMode={editMode} onRemove={onRemove} storeId={storeId} />
-    </WidgetAsyncBoundary>
-  );
+  return <TodaySalesContent editMode={editMode} onRemove={onRemove} storeId={storeId} />;
 }

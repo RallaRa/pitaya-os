@@ -44,6 +44,7 @@ import TimeSlotAovWidget      from '@/components/widgets/TimeSlotAovWidget';
 import RepurchaseDueWidget    from '@/components/widgets/RepurchaseDueWidget';
 import SalesHeatmapWidget     from '@/components/widgets/SalesHeatmapWidget';
 import DowProfitabilityWidget from '@/components/widgets/DowProfitabilityWidget';
+import MarginRankingWidget  from '@/components/widgets/MarginRankingWidget';
 import ChurnRiskWidget        from '@/components/widgets/ChurnRiskWidget';
 import DailyBriefingBar       from '@/components/dashboard/DailyBriefingBar';
 import { useDashboardChrome } from '@/components/dashboard/DashboardChromeContext';
@@ -355,6 +356,7 @@ export default function DashboardPage() {
       case 'sales_heatmap':      return wrapWidget(id, <SalesHeatmapWidget     editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'dow_profitability':  return wrapWidget(id, <DowProfitabilityWidget editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'cost_ratio':         return wrapWidget(id, <CostRatioWidget        editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
+      case 'margin_ranking':     return wrapWidget(id, <MarginRankingWidget    editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'sales_category':     return wrapWidget(id, <SalesCategoryWidget    editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'time_slot_aov':      return wrapWidget(id, <TimeSlotAovWidget      editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);
       case 'repurchase_due':     return wrapWidget(id, <RepurchaseDueWidget    editMode={editMode} onRemove={() => removeWidget(id)} storeId={storeId} />);

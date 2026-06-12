@@ -39,6 +39,7 @@ export default function ManualPage() {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [showDocList, setShowDocList] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<'chat' | 'wiki'>('chat');
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const slugTitleMap = useMemo(
@@ -168,9 +169,37 @@ export default function ManualPage() {
         </div>
       </header>
 
+      {/* 모바일 탭 */}
+      <div className="lg:hidden shrink-0 flex border-b border-slate-800 bg-slate-900/80">
+        <button
+          type="button"
+          onClick={() => setMobilePanel('chat')}
+          className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${
+            mobilePanel === 'chat'
+              ? 'text-teal-300 border-b-2 border-teal-500'
+              : 'text-slate-500'
+          }`}
+        >
+          AI 안내
+        </button>
+        <button
+          type="button"
+          onClick={() => setMobilePanel('wiki')}
+          className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${
+            mobilePanel === 'wiki'
+              ? 'text-amber-300 border-b-2 border-amber-500'
+              : 'text-slate-500'
+          }`}
+        >
+          백과 문서
+        </button>
+      </div>
+
       <div className="flex flex-1 min-h-0 flex-col lg:flex-row">
         {/* 좌: AI 채팅 40% */}
-        <section className="flex flex-col min-h-0 border-b lg:border-b-0 lg:border-r border-slate-800 lg:w-[40%]">
+        <section className={`flex flex-col min-h-0 border-b lg:border-b-0 lg:border-r border-slate-800 lg:w-[40%] ${
+          mobilePanel === 'chat' ? 'flex' : 'hidden lg:flex'
+        }`}>
           <div className="px-4 py-2 border-b border-slate-800/80 flex items-center gap-2">
             <Bot className="w-4 h-4 text-teal-400" />
             <span className="text-xs font-semibold text-slate-300">AI 안내</span>
@@ -269,7 +298,9 @@ export default function ManualPage() {
         </section>
 
         {/* 우: 위키 60% */}
-        <section className="flex flex-col min-h-0 lg:w-[60%] bg-slate-900/50">
+        <section className={`flex flex-col min-h-0 lg:w-[60%] bg-slate-900/50 ${
+          mobilePanel === 'wiki' ? 'flex' : 'hidden lg:flex'
+        }`}>
           <div className="px-4 py-2 border-b border-slate-800 flex items-center gap-2">
             <button
               type="button"

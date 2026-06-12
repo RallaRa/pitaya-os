@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -17,6 +17,7 @@ import {
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { overlay } from '@/components/overlay';
 import { CustomerRegistrationFunnel } from '@/components/funnel';
+import { useCustomers, fetchCustomersList } from '@/lib/queries';
 import * as XLSX from 'xlsx';
 import type { CustomerSortField } from '@/lib/customerQuery';
 import type { VisitCycleStatus } from '@/lib/customerVisitCycle';
@@ -168,12 +169,9 @@ function CustomersPageContent() {
 
   /* ── 상태 ── */
   const [tab,          setTab]          = useState<typeof TABS[number]>('고객 목록');
-  const [customers,    setCustomers]    = useState<Customer[]>([]);
   const [stats,        setStats]        = useState<Stats | null>(null);
   const [page,         setPage]         = useState(1);
-  const [total,        setTotal]        = useState(0);
   const [search,       setSearch]       = useState('');
-  const [loading,      setLoading]      = useState(true);
   const [listError,    setListError]    = useState<string | null>(null);
   const [analysis,     setAnalysis]     = useState<AnalysisData | null>(null);
   const [analysisLoad, setAnalysisLoad] = useState(false);
@@ -346,25 +344,6 @@ function CustomersPageContent() {
     void loadUnmatchedCount();
   }, [loadUnmatchedCount]);
 
-  const buildQueryParams = useCallback((opts?: { page?: number; exportAll?: boolean }) => {
-    const params = new URLSearchParams({
-      storeId,
-      page: String(opts?.page ?? page),
-      limit: String(LIMIT),
-      sortBy,
-      sortOrder,
-    });
-    if (search.trim()) params.set('search', search.trim());
-    if (joinFrom) params.set('joinFrom', joinFrom);
-    if (joinTo) params.set('joinTo', joinTo);
-    if (visitFrom) params.set('visitFrom', visitFrom);
-    if (visitTo) params.set('visitTo', visitTo);
-    if (cycleFilter) params.set('cycleStatus', cycleFilter);
-    if (trendFilter) params.set('visitTrend', trendFilter);
-    if (opts?.exportAll) params.set('exportAll', '1');
-    return params;
-  }, [storeId, page, sortBy, sortOrder, search, joinFrom, joinTo, visitFrom, visitTo, cycleFilter, trendFilter]);
-
   const buildFilterBody = useCallback(() => ({
     storeId,
     search: search.trim(),
@@ -378,7 +357,7 @@ function CustomersPageContent() {
     sortOrder,
   }), [storeId, search, joinFrom, joinTo, visitFrom, visitTo, cycleFilter, trendFilter, sortBy, sortOrder]);
 
-  const mapApiRow = (r: Record<string, unknown>): Customer => ({
+  const mapApiRow = useCallback((r: Record<string, unknown>): Customer => ({
     id: String(r.cusCode || ''),
     cusCode: String(r.cusCode || ''),
     name: String(r.nameMasked || ''),
@@ -402,37 +381,42 @@ function CustomersPageContent() {
     recentAvgDays: r.recentAvgDays != null ? Number(r.recentAvgDays) : null,
     historicalAvgDays: r.historicalAvgDays != null ? Number(r.historicalAvgDays) : null,
     trendRatio: r.trendRatio != null ? Number(r.trendRatio) : null,
+  }), []);
+
+  const {
+    data: customerData,
+    isLoading: loading,
+    isError: customerListError,
+    refetch: refetchCustomers,
+  } = useCustomers({
+    storeId,
+    page,
+    limit: LIMIT,
+    search: search.trim(),
+    sortBy,
+    sortOrder,
+    joinFrom,
+    joinTo,
+    visitFrom,
+    visitTo,
+    cycleStatus: cycleFilter,
+    visitTrend: trendFilter,
+    enabled: !!storeId && tab === '고객 목록',
   });
 
-  /* ── 고객 목록 (API) ── */
-  const loadCustomerList = useCallback(async () => {
-    if (!storeId) {
-      setCustomers([]);
-      setLoading(false);
-      return;
-    }
+  const customers = useMemo(
+    () => (customerData?.customers ?? []).map(mapApiRow),
+    [customerData?.customers, mapApiRow],
+  );
+  const total = customerData?.total ?? 0;
 
-    setLoading(true);
-    setListError(null);
-    try {
-      const headers = await getAuthHeaders();
-      const res = await fetch(`/api/customers?${buildQueryParams()}`, { headers });
-      const d = await res.json();
-      if (d.error) throw new Error(d.error);
+  useEffect(() => {
+    if (customerData?.stats) setStats(customerData.stats as unknown as Stats);
+  }, [customerData?.stats]);
 
-      setCustomers((d.customers || []).map(mapApiRow));
-      setTotal(d.total ?? 0);
-      if (d.stats) setStats(d.stats);
-    } catch (e) {
-      console.error('[customers] list error:', e);
-      setListError('고객 목록을 불러오지 못했습니다. 잠시 후 새로고침하세요.');
-      setCustomers([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [storeId, buildQueryParams]);
-
-  useEffect(() => { loadCustomerList(); }, [loadCustomerList]);
+  useEffect(() => {
+    setListError(customerListError ? '고객 목록을 불러오지 못했습니다. 잠시 후 새로고침하세요.' : null);
+  }, [customerListError]);
 
   /* 알림·POS watcher 딥링크: ?cusCode=98001234&openRequests=1 */
   useEffect(() => {
@@ -506,10 +490,21 @@ function CustomersPageContent() {
     if (!storeId || exporting) return;
     setExporting(true);
     try {
-      const headers = await getAuthHeaders();
-      const res = await fetch(`/api/customers?${buildQueryParams({ exportAll: true, page: 1 })}`, { headers });
-      const d = await res.json();
-      if (d.error) throw new Error(d.error);
+      const d = await fetchCustomersList({
+        storeId,
+        page: 1,
+        limit: LIMIT,
+        exportAll: true,
+        search: search.trim(),
+        sortBy,
+        sortOrder,
+        joinFrom,
+        joinTo,
+        visitFrom,
+        visitTo,
+        cycleStatus: cycleFilter,
+        visitTrend: trendFilter,
+      });
 
       const rows = (d.customers || []).map((r: Record<string, unknown>) => ({
         고객코드: String(r.cusCode || ''),
@@ -726,7 +721,6 @@ function CustomersPageContent() {
       const d = await res.json();
       if (!d.error) {
         setStats(d.stats || null);
-        if (d.total > 0) setTotal(d.total);
       }
     } catch (e) {
       console.error('[customers] stats error:', e);
@@ -815,7 +809,7 @@ function CustomersPageContent() {
                   storeId={storeId}
                   onClose={() => overlay.close()}
                   onDone={() => {
-                    void loadCustomerList();
+                    void refetchCustomers();
                     overlay.toast('고객이 등록되었습니다', { variant: 'success' });
                   }}
                 />,
@@ -844,7 +838,7 @@ function CustomersPageContent() {
           )}
           <button
             onClick={() => {
-              if (tab === '고객 목록') loadCustomerList();
+              if (tab === '고객 목록') void refetchCustomers();
               else if (tab === '조회 이력') loadDecryptLogs();
               else { loadStats(); loadAnalysis(); }
               void loadUnmatchedCount();

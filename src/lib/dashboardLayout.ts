@@ -1,7 +1,7 @@
 import type { LayoutItem } from 'react-grid-layout';
 
 export const GRID_COLS = 12;
-export const DASHBOARD_LAYOUT_VERSION = 7;
+export const DASHBOARD_LAYOUT_VERSION = 8;
 
 export interface WidgetMeta {
   id: string;
@@ -86,6 +86,12 @@ export const WIDGET_META: WidgetMeta[] = [
     title: '원가율 모니터',
     defaultItem: { i: 'cost_ratio', x: 8, y: 22, w: 4, h: 4, minW: 3, minH: 3, maxW: 6, maxH: 6 },
     permKey: 'cost_ratio',
+  },
+  {
+    id: 'margin_ranking',
+    title: '마진율 랭킹',
+    defaultItem: { i: 'margin_ranking', x: 8, y: 30, w: 4, h: 4, minW: 3, minH: 3, maxW: 8, maxH: 6 },
+    permKey: 'margin_ranking',
   },
   {
     id: 'dow_profitability',

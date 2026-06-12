@@ -11,6 +11,7 @@ import {
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { overlay } from '@/components/overlay';
 import { EmployeeRegistrationFunnel } from '@/components/funnel';
+import { useEmployees, type EmployeeSummary } from '@/lib/queries';
 import EmployeeDocumentsPanel from '@/components/hr/EmployeeDocumentsPanel';
 import type { HrEmployeeDocument } from '@/lib/hrEmployeeDocs';
 import { computeLeaveRemain, formatLeaveRemainLabel, leaveRemainClass } from '@/lib/hr/leaveRemainDisplay';
@@ -181,7 +182,7 @@ export default function EmployeesPage() {
 
   const [departments,   setDepartments]   = useState<Department[]>([]);
   const [accounts,      setAccounts]      = useState<StoreAccount[]>([]);
-  const [empList,       setEmpList]       = useState<EmpSummary[]>([]);
+  const { data: empList = [], refetch: refetchEmployees, isLoading: empLoading } = useEmployees(storeId, !!storeId);
   const [loading,       setLoading]       = useState(true);
   const [search,        setSearch]        = useState('');
   const [statusFilter,  setStatusFilter]  = useState('');
@@ -206,23 +207,22 @@ export default function EmployeesPage() {
     setLoading(true);
     try {
       const headers = await getAuthHeaders();
-      const [deptsRes, accRes, empRes] = await Promise.all([
+      const [deptsRes, accRes] = await Promise.all([
         fetch(`/api/hr/departments?storeId=${storeId}`, { headers }),
         fetch(`/api/users?storeId=${storeId}`, { headers }),
-        fetch(`/api/hr/employees?storeId=${storeId}`, { headers }),
       ]);
-      const [deptsData, accData, empData] = await Promise.all([
-        deptsRes.json(), accRes.json(), empRes.json(),
+      const [deptsData, accData] = await Promise.all([
+        deptsRes.json(), accRes.json(),
       ]);
       setDepartments(deptsData.departments || []);
       setAccounts(accData.users || []);
-      setEmpList(empData.employees || []);
+      await refetchEmployees();
     } catch {
       setError('데이터를 불러오지 못했습니다');
     } finally {
       setLoading(false);
     }
-  }, [storeId]);
+  }, [storeId, refetchEmployees]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -282,7 +282,7 @@ export default function EmployeesPage() {
     }
   };
 
-  const handleEmployeeClick = async (emp: EmpSummary) => {
+  const handleEmployeeClick = async (emp: EmployeeSummary) => {
     setError('');
     setSuccess('');
     setActiveTab(0);
@@ -309,7 +309,7 @@ export default function EmployeesPage() {
         storeId={storeId}
         onClose={() => overlay.close()}
         onDone={() => {
-          void loadAll();
+          void refetchEmployees();
           overlay.toast('사원이 등록되었습니다', { variant: 'success' });
         }}
       />,
@@ -417,7 +417,7 @@ export default function EmployeesPage() {
 
   /* ── 삭제 ── */
   const handleDelete = async () => {
-    if (!form.empNo || !confirm(`사원 "${form.name}"을 삭제하시겠습니까?`)) return;
+    if (!form.empNo || !(await overlay.confirm(`사원 "${form.name}"을 삭제하시겠습니까?`, { destructive: true }))) return;
     setDeleting(true);
     try {
       const headers = await getAuthHeaders();
@@ -627,7 +627,7 @@ export default function EmployeesPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          {loading ? (
+          {loading || empLoading ? (
             <div className="flex justify-center py-10">
               <Loader2 className="w-5 h-5 text-teal-400 animate-spin" />
             </div>

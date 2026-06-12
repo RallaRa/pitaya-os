@@ -12,6 +12,7 @@ import {
   inferCampaignKey,
   parseMessageLogs,
 } from '@/lib/coupons/campaignAnalytics';
+import { markBirthdayCouponRedeemed } from '@/lib/birthdayCampaign.server';
 
 /** POST — 직원이 수동으로 쿠폰 적용 (사용 카운트·이력 기록) */
 export async function POST(req: Request) {
@@ -103,6 +104,11 @@ export async function POST(req: Request) {
       appliedAt: FieldValue.serverTimestamp(),
     });
   });
+
+  const cusCode = body.customerCusCode ? String(body.customerCusCode).trim().slice(0, 32) : '';
+  if (cusCode && String(data.code || '').startsWith('BDAY')) {
+    await markBirthdayCouponRedeemed(storeId, cusCode, logRef.id, couponId).catch(() => {});
+  }
 
   return NextResponse.json({
     ok: true,

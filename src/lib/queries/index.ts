@@ -1,11 +1,11 @@
 export { STALE_TIME, makeQueryClient } from './queryClient';
 export { queryKeys } from './keys';
 export { fetchAuthJson, QueryFetchError } from './fetchJson';
-export { useCustomers, useRegisterCustomer } from './useCustomers';
-export type { CustomerRow, UseCustomersParams } from './useCustomers';
+export { useCustomers, useRegisterCustomer, fetchCustomersList, buildCustomersSearchParams } from './useCustomers';
+export type { CustomerListParams, CustomersListResult } from './useCustomers';
 export { useSalesData } from './useSalesData';
-export type { TodaySalesData } from './useSalesData';
-export { useProducts } from './useProducts';
+export type { TodaySalesPayload } from './useSalesData';
+export { useProducts, useUpdateProduct, useDeleteProduct, useCreateProduct } from './useProducts';
 export type { ProductItem } from './useProducts';
 export { useOrders, useCreateOrderTemplate, useDeleteOrderTemplate } from './useOrders';
 export type { OrderTemplate } from './useOrders';

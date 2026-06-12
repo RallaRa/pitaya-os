@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2, Tag, Package, CalendarDays, UserCircle, Target, Bell, Percent } from 'lucide-react';
+import { Store, Shield, Users, ChevronRight, Layers, UserCog, Loader2, LayoutGrid, SlidersHorizontal, Database, CloudSun, TrendingUp, UserSquare, Building2, Tag, Package, CalendarDays, UserCircle, Target, Bell, Percent, Cake, BarChart3 } from 'lucide-react';
 import { getAuthHeaders, getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
@@ -162,6 +162,20 @@ export default function SettingsPage() {
       icon: <Percent className="w-5 h-5 text-orange-400" />,
       label: '원가율 목표',
       description: '전체·품목별 목표 원가율 — 초과 시 매출알림 경고',
+      show: isAdminLevelGroup(storeRole),
+    },
+    {
+      href: '/dashboard/settings/margin-targets',
+      icon: <BarChart3 className="w-5 h-5 text-teal-400" />,
+      label: '마진율 목표',
+      description: '전체·품목별 목표 마진율 — 랭킹 달성률',
+      show: isAdminLevelGroup(storeRole),
+    },
+    {
+      href: '/dashboard/settings/birthday-campaign',
+      icon: <Cake className="w-5 h-5 text-pink-400" />,
+      label: '생일 마케팅',
+      description: 'D-3 생일 쿠폰 · D-0 매장 알림 — 금액·유효기간 설정',
       show: isAdminLevelGroup(storeRole),
     },
     {
