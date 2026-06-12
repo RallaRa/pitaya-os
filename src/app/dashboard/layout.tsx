@@ -139,7 +139,7 @@ function DashboardLayoutInner({
       </header>
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-        <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden flex flex-col touch-pan-y [-webkit-overflow-scrolling:touch]">
+        <main className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden touch-pan-y overscroll-y-contain [-webkit-overflow-scrolling:touch]">
           {children}
         </main>
       </div>

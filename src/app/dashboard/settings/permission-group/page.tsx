@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, Fragment } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useStore } from '@/context/StoreContext';
 import { useAuth } from '@/context/AuthContext';
 import {
@@ -349,7 +349,7 @@ export default function PermissionGroupPage() {
   }
 
   return (
-    <div className="bg-slate-950">
+    <div className="flex flex-col h-full min-h-0 bg-slate-950 overflow-y-auto overflow-x-hidden touch-pan-y overscroll-y-contain [-webkit-overflow-scrolling:touch]">
 
       {/* ── 모바일 탭 바 (미리보기 열렸을 때만) ── */}
       {previewGroup && (
@@ -455,19 +455,19 @@ export default function PermissionGroupPage() {
                       const isExpanded = expandedId === group.groupId;
                       const isPreviewing = previewGroupId === group.groupId;
                       const isSelected = selectedGroup?.groupId === group.groupId;
-                      const draft = draftAccess[group.groupId] || group.menuAccess;
                       const isSaving = savingId === group.groupId;
                       const isEditingName = editingId === group.groupId;
 
                       const rowChanged = hasGroupChanges(group.groupId);
 
                       return (
-                        <Fragment key={group.groupId}>
                           <tr
+                            key={group.groupId}
                             onDoubleClick={() => setSelectedGroup(isSelected ? null : group)}
                             onClick={() => handleExpand(group)}
                             className={`border-b border-slate-800/60 cursor-pointer transition-colors select-none
                               ${rowChanged ? 'bg-yellow-900/10 border-l-2 border-l-yellow-500/50' :
+                                isExpanded   ? 'bg-teal-900/20 border-l-2 border-l-teal-500/50' :
                                 isSelected   ? 'bg-purple-900/15' :
                                 isPreviewing ? 'bg-teal-900/15' :
                                                'hover:bg-slate-800/40'}
@@ -547,59 +547,74 @@ export default function PermissionGroupPage() {
                               </div>
                             </td>
                           </tr>
-
-                          {/* 권한 편집 확장 행 */}
-                          {isExpanded && (
-                            <tr id={`perm-expand-${group.groupId}`} className="bg-slate-900/60 border-b border-slate-800/60">
-                              <td colSpan={MENU_COLS.length + 3} className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                                <div className="space-y-4">
-                                  {MENU_ACCESS_UI_GROUPS.map(section => (
-                                    <div key={section.label}>
-                                      <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                                        {section.label}
-                                      </p>
-                                      <div className="flex items-center gap-4 flex-wrap">
-                                        {section.keys.map(key => {
-                                          const def = MENU_ACCESS_DEFINITIONS.find(d => d.key === key);
-                                          const label = def?.label || key;
-                                          return (
-                                            <label key={key} className="flex items-center gap-1.5 cursor-pointer min-w-[100px]">
-                                              <div
-                                                className={`relative w-8 h-4 rounded-full transition-colors flex-shrink-0 ${draft[key] ? 'bg-teal-600' : 'bg-slate-700'}`}
-                                                onClick={e => { e.stopPropagation(); handleToggle(group.groupId, key); }}
-                                              >
-                                                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${draft[key] ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                                              </div>
-                                              <span className="text-xs text-slate-300">{label}</span>
-                                            </label>
-                                          );
-                                        })}
-                                      </div>
-                                    </div>
-                                  ))}
-                                  <div className="flex items-center gap-2 pt-1">
-                                    <button
-                                      onClick={() => handleSaveAccess(group.groupId)}
-                                      disabled={isSaving}
-                                      className="ml-auto flex items-center gap-1 bg-teal-600 hover:bg-teal-500 disabled:bg-slate-600 text-white px-3 py-1 rounded-lg text-xs font-bold transition-colors"
-                                    >
-                                      {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                                      저장
-                                    </button>
-                                    <button onClick={() => setExpandedId(null)} className="text-slate-400 hover:text-slate-200 p-1">
-                                      <X className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </Fragment>
                       );
                     })}
                   </tbody>
                 </table>
                 </div>
+
+                {expandedId && (() => {
+                  const group = groups.find(g => g.groupId === expandedId);
+                  if (!group) return null;
+                  const draft = draftAccess[group.groupId] || group.menuAccess;
+                  const isSaving = savingId === group.groupId;
+                  return (
+                    <div
+                      id={`perm-expand-${group.groupId}`}
+                      className="mt-4 rounded-xl border border-teal-500/30 bg-slate-900/80 p-4 space-y-4"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-bold text-teal-400">{group.groupName} 메뉴 권한</p>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedId(null)}
+                          className="text-slate-400 hover:text-slate-200 p-1"
+                          aria-label="닫기"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                      {MENU_ACCESS_UI_GROUPS.map(section => (
+                        <div key={section.label}>
+                          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                            {section.label}
+                          </p>
+                          <div className="flex items-center gap-4 flex-wrap">
+                            {section.keys.map(key => {
+                              const def = MENU_ACCESS_DEFINITIONS.find(d => d.key === key);
+                              const label = def?.label || key;
+                              return (
+                                <label key={key} className="flex items-center gap-1.5 cursor-pointer min-w-[100px]">
+                                  <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={!!draft[key]}
+                                    onClick={() => handleToggle(group.groupId, key)}
+                                    className={`relative w-8 h-4 rounded-full transition-colors flex-shrink-0 ${draft[key] ? 'bg-teal-600' : 'bg-slate-700'}`}
+                                  >
+                                    <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform ${draft[key] ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                  </button>
+                                  <span className="text-xs text-slate-300">{label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => handleSaveAccess(group.groupId)}
+                          disabled={isSaving}
+                          className="ml-auto flex items-center gap-1 bg-teal-600 hover:bg-teal-500 disabled:bg-slate-600 text-white px-3 py-1 rounded-lg text-xs font-bold transition-colors"
+                        >
+                          {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                          저장
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
