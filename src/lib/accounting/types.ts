@@ -43,6 +43,8 @@ export interface VoucherLine {
   accountName?: string;
   partnerCode?: string;
   partnerName?: string;
+  deptCode?: string;
+  projectCode?: string;
   debit: number;
   credit: number;
   memo?: string;

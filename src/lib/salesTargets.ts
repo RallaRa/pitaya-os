@@ -22,12 +22,22 @@ export interface StoreSalesTargetsDoc {
 export interface TargetProgressResult {
   daysElapsed: number;
   daysInMonth: number;
+  daysRemaining: number;
   avgDailyCustomers: number;
+  avgDailySales: number;
   targetDailyCustomers: number;
   salesPct: number | null;
   customersPct: number | null;
   salesPacePct: number | null;
   customersPacePct: number | null;
+  remainingSales: number;
+  remainingCustomers: number;
+  dailySalesNeeded: number;
+  dailyCustomersNeeded: number;
+  projectedSales: number;
+  projectedCustomers: number;
+  achievementLikelihoodPct: number | null;
+  achievementStatus: 'achieved' | 'on_track' | 'at_risk' | 'unlikely' | null;
 }
 
 const DEFAULT_START = '2025-05';
@@ -172,6 +182,8 @@ export function computeTargetProgress(opts: {
   const daysElapsed = countDaysInclusive(startYmd, todayYmd > endYmd ? endYmd : todayYmd);
 
   const avgDailyCustomers = Math.round(actualCustomers / daysElapsed);
+  const avgDailySales = Math.round(actualNet / daysElapsed);
+  const daysRemaining = Math.max(0, periodDays - daysElapsed);
   const isWeekScope = periodDays < daysInMonth;
   const targetDailyCustomers =
     target.customers > 0
@@ -195,15 +207,58 @@ export function computeTargetProgress(opts: {
       ? Math.round((actualCustomers / target.customers / timeRatio) * 100)
       : null;
 
+  const remainingSales = Math.max(0, target.sales - actualNet);
+  const remainingCustomers = Math.max(0, target.customers - actualCustomers);
+  const dailySalesNeeded =
+    daysRemaining > 0 && remainingSales > 0 ? Math.ceil(remainingSales / daysRemaining) : 0;
+  const dailyCustomersNeeded =
+    daysRemaining > 0 && remainingCustomers > 0 ? Math.ceil(remainingCustomers / daysRemaining) : 0;
+  const projectedSales = Math.round(actualNet + avgDailySales * daysRemaining);
+  const projectedCustomers = Math.round(actualCustomers + avgDailyCustomers * daysRemaining);
+
+  let achievementLikelihoodPct: number | null = null;
+  let achievementStatus: TargetProgressResult['achievementStatus'] = null;
+  if (target.sales > 0) {
+    if (actualNet >= target.sales) {
+      achievementLikelihoodPct = 100;
+      achievementStatus = 'achieved';
+    } else {
+      achievementLikelihoodPct = Math.min(99, Math.round((projectedSales / target.sales) * 100));
+      if (achievementLikelihoodPct >= 90) achievementStatus = 'on_track';
+      else if (achievementLikelihoodPct >= 60) achievementStatus = 'at_risk';
+      else achievementStatus = 'unlikely';
+    }
+  } else if (target.customers > 0) {
+    if (actualCustomers >= target.customers) {
+      achievementLikelihoodPct = 100;
+      achievementStatus = 'achieved';
+    } else {
+      achievementLikelihoodPct = Math.min(99, Math.round((projectedCustomers / target.customers) * 100));
+      if (achievementLikelihoodPct >= 90) achievementStatus = 'on_track';
+      else if (achievementLikelihoodPct >= 60) achievementStatus = 'at_risk';
+      else achievementStatus = 'unlikely';
+    }
+  }
+
   return {
     daysElapsed,
     daysInMonth: periodDays,
+    daysRemaining,
     avgDailyCustomers,
+    avgDailySales,
     targetDailyCustomers,
     salesPct,
     customersPct,
     salesPacePct,
     customersPacePct,
+    remainingSales,
+    remainingCustomers,
+    dailySalesNeeded,
+    dailyCustomersNeeded,
+    projectedSales,
+    projectedCustomers,
+    achievementLikelihoodPct,
+    achievementStatus,
   };
 }
 

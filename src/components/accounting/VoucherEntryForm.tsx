@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2, Plus, Save, Send, Trash2 } from 'lucide-react';
+import { Loader2, Save, Send } from 'lucide-react';
 import { useStore } from '@/context/StoreContext';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import AccountingShell from '@/components/accounting/AccountingShell';
+import VoucherLineSheet, { type CodeNameOption, type PartnerOption } from '@/components/accounting/VoucherLineSheet';
 import { todayYMD } from '@/components/accounting/accountingDateUtils';
 import {
   VOUCHER_STATUS_LABELS,
@@ -22,6 +23,8 @@ const EMPTY_LINE = (): VoucherLine => ({
   accountName: '',
   partnerCode: '',
   partnerName: '',
+  deptCode: '',
+  projectCode: '',
   debit: 0,
   credit: 0,
   memo: '',
@@ -45,6 +48,9 @@ export default function VoucherEntryForm({
   const storeId = currentStore?.storeId || '';
 
   const [accounts, setAccounts] = useState<AccountingAccount[]>([]);
+  const [partners, setPartners] = useState<PartnerOption[]>([]);
+  const [depts, setDepts] = useState<CodeNameOption[]>([]);
+  const [projects, setProjects] = useState<CodeNameOption[]>([]);
   const [loading, setLoading] = useState(!!voucherId);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
@@ -74,12 +80,40 @@ export default function VoucherEntryForm({
     return { debit, credit, balanced: debit === credit && debit > 0 };
   }, [lines]);
 
-  const loadAccounts = useCallback(async () => {
+  const loadMasterData = useCallback(async () => {
     if (!storeId) return;
     const headers = await getAuthJsonHeaders();
-    const res = await fetch(`/api/accounting/accounts?storeId=${encodeURIComponent(storeId)}`, { headers });
-    const data = await res.json();
-    if (res.ok) setAccounts(data.accounts || []);
+    const [accRes, supRes, deptRes, projRes] = await Promise.all([
+      fetch(`/api/accounting/accounts?storeId=${encodeURIComponent(storeId)}`, { headers }),
+      fetch(`/api/suppliers?storeId=${encodeURIComponent(storeId)}`, { headers }),
+      fetch(`/api/accounting/management-items?storeId=${encodeURIComponent(storeId)}&type=dept`, { headers }),
+      fetch(`/api/accounting/management-items?storeId=${encodeURIComponent(storeId)}&type=project`, { headers }),
+    ]);
+    const [accData, supData, deptData, projData] = await Promise.all([
+      accRes.json(),
+      supRes.json(),
+      deptRes.json(),
+      projRes.json(),
+    ]);
+    if (accRes.ok) setAccounts(accData.accounts || []);
+    if (supRes.ok) {
+      setPartners((supData.suppliers || []).map((s: { id: string; supplierName: string }) => ({
+        id: s.id,
+        supplierName: s.supplierName,
+      })));
+    }
+    if (deptRes.ok) {
+      setDepts((deptData.items || []).map((i: { code: string; name: string }) => ({
+        code: i.code,
+        name: i.name,
+      })));
+    }
+    if (projRes.ok) {
+      setProjects((projData.items || []).map((i: { code: string; name: string }) => ({
+        code: i.code,
+        name: i.name,
+      })));
+    }
   }, [storeId]);
 
   const loadVoucher = useCallback(async () => {
@@ -103,6 +137,8 @@ export default function VoucherEntryForm({
       setLines((v.lines || [EMPTY_LINE(), EMPTY_LINE()]).map((l: VoucherLine, i: number) => ({
         ...l,
         lineNo: i + 1,
+        deptCode: l.deptCode || '',
+        projectCode: l.projectCode || '',
       })));
     } catch (e) {
       setError(e instanceof Error ? e.message : '조회 실패');
@@ -111,26 +147,8 @@ export default function VoucherEntryForm({
     }
   }, [storeId, voucherId, defaultVoucherType]);
 
-  useEffect(() => { loadAccounts(); }, [loadAccounts]);
+  useEffect(() => { loadMasterData(); }, [loadMasterData]);
   useEffect(() => { loadVoucher(); }, [loadVoucher]);
-
-  const updateLine = (index: number, patch: Partial<VoucherLine>) => {
-    setLines(prev => prev.map((line, i) => {
-      if (i !== index) return line;
-      const next = { ...line, ...patch };
-      if (patch.accountCode !== undefined) {
-        const acc = entryAccounts.find(a => String(a.code) === String(patch.accountCode));
-        if (acc) next.accountName = acc.name;
-      }
-      return next;
-    }));
-  };
-
-  const addLine = () => setLines(prev => [...prev, EMPTY_LINE()]);
-  const removeLine = (index: number) => {
-    if (lines.length <= 2) return;
-    setLines(prev => prev.filter((_, i) => i !== index));
-  };
 
   const save = async (submit: boolean) => {
     if (!storeId || saving) return;
@@ -143,6 +161,7 @@ export default function VoucherEntryForm({
     setMsg('');
     try {
       const headers = await getAuthJsonHeaders();
+      const payloadLines = lines.map((l, i) => ({ ...l, lineNo: i + 1 }));
       if (voucherId) {
         const res = await fetch('/api/accounting/vouchers', {
           method: 'PATCH',
@@ -154,7 +173,7 @@ export default function VoucherEntryForm({
             voucherDate,
             voucherType,
             description,
-            lines,
+            lines: payloadLines,
           }),
         });
         const data = await res.json();
@@ -170,7 +189,7 @@ export default function VoucherEntryForm({
             voucherDate,
             voucherType,
             description,
-            lines,
+            lines: payloadLines,
             status: submit ? 'submit' : 'draft',
           }),
         });
@@ -227,153 +246,65 @@ export default function VoucherEntryForm({
         <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-teal-400" /></div>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4 p-4 bg-slate-900 border border-slate-800 rounded-xl">
-            {voucherNo && (
-              <label className="text-[10px] text-slate-500">
-                전표번호
-                <div className="mt-1 text-sm font-mono text-teal-300">{voucherNo}</div>
+          {/* 영림원형 전표 헤더 */}
+          <div className="mb-3 border border-slate-700/80 rounded-lg overflow-hidden bg-slate-900">
+            <div className="grid grid-cols-2 md:grid-cols-6 divide-x divide-y md:divide-y-0 divide-slate-800">
+              <label className="px-2 py-1.5 bg-slate-800/50">
+                <span className="text-[9px] text-slate-500 block">전표일자</span>
+                <input
+                  type="date"
+                  value={voucherDate}
+                  disabled={readOnly}
+                  onChange={e => setVoucherDate(e.target.value)}
+                  className="w-full bg-transparent text-xs text-white font-mono focus:outline-none disabled:opacity-60"
+                />
               </label>
-            )}
-            <label className="text-[10px] text-slate-500">
-              전표일자
-              <input
-                type="date"
-                value={voucherDate}
-                disabled={readOnly}
-                onChange={e => setVoucherDate(e.target.value)}
-                className="block mt-1 w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-white disabled:opacity-60"
-              />
-            </label>
-            <label className="text-[10px] text-slate-500">
-              전표유형
-              <select
-                value={voucherType}
-                disabled={readOnly}
-                onChange={e => setVoucherType(e.target.value as VoucherType)}
-                className="block mt-1 w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-white disabled:opacity-60"
-              >
-                {Object.entries(VOUCHER_TYPE_LABELS).map(([key, label]) => (
-                  <option key={key} value={key}>{label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="text-[10px] text-slate-500 md:col-span-1">
-              상태
-              <div className="mt-1 text-xs text-slate-300">
-                {VOUCHER_STATUS_LABELS[status as keyof typeof VOUCHER_STATUS_LABELS] || status}
+              <label className="px-2 py-1.5 bg-slate-800/30">
+                <span className="text-[9px] text-slate-500 block">전표유형</span>
+                <select
+                  value={voucherType}
+                  disabled={readOnly}
+                  onChange={e => setVoucherType(e.target.value as VoucherType)}
+                  className="w-full bg-transparent text-xs text-white focus:outline-none disabled:opacity-60"
+                >
+                  {Object.entries(VOUCHER_TYPE_LABELS).map(([key, label]) => (
+                    <option key={key} value={key} className="bg-slate-900">{label}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="px-2 py-1.5 bg-slate-800/20">
+                <span className="text-[9px] text-slate-500 block">전표번호</span>
+                <span className="text-xs font-mono text-teal-300">{voucherNo || '(저장 후 부여)'}</span>
               </div>
-            </label>
-            <label className="text-[10px] text-slate-500 md:col-span-4">
-              적요
-              <input
-                value={description}
-                disabled={readOnly}
-                onChange={e => setDescription(e.target.value)}
-                className="block mt-1 w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-white disabled:opacity-60"
-                placeholder="전표 적요"
-              />
-            </label>
+              <div className="px-2 py-1.5 bg-slate-800/20">
+                <span className="text-[9px] text-slate-500 block">상태</span>
+                <span className="text-xs text-slate-300">
+                  {VOUCHER_STATUS_LABELS[status as keyof typeof VOUCHER_STATUS_LABELS] || status}
+                </span>
+              </div>
+              <label className="px-2 py-1.5 md:col-span-2 bg-slate-800/10">
+                <span className="text-[9px] text-slate-500 block">전표적요</span>
+                <input
+                  value={description}
+                  disabled={readOnly}
+                  onChange={e => setDescription(e.target.value)}
+                  className="w-full bg-transparent text-xs text-white focus:outline-none disabled:opacity-60"
+                  placeholder="전표 헤더 적요"
+                />
+              </label>
+            </div>
           </div>
 
-          <div className="border border-slate-800 rounded-xl overflow-x-auto mb-3">
-            <table className="w-full text-xs min-w-[920px]">
-              <thead className="bg-slate-800/80 text-slate-400">
-                <tr>
-                  <th className="text-left px-3 py-2">계정</th>
-                  <th className="text-left px-3 py-2">거래처</th>
-                  <th className="text-right px-3 py-2">차변</th>
-                  <th className="text-right px-3 py-2">대변</th>
-                  <th className="text-left px-3 py-2">적요</th>
-                  {!readOnly && <th className="w-10" />}
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((line, idx) => (
-                  <tr key={idx} className="border-t border-slate-800/80">
-                    <td className="px-3 py-2">
-                      <select
-                        value={line.accountCode}
-                        disabled={readOnly}
-                        onChange={e => updateLine(idx, { accountCode: e.target.value })}
-                        className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-white disabled:opacity-60"
-                      >
-                        <option value="">계정 선택</option>
-                        {entryAccounts.map(acc => (
-                          <option key={acc.id || acc.code} value={acc.code}>
-                            {acc.code} · {acc.name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-3 py-2">
-                      <input
-                        value={line.partnerName || ''}
-                        disabled={readOnly}
-                        onChange={e => updateLine(idx, { partnerName: e.target.value })}
-                        className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-white disabled:opacity-60"
-                        placeholder="거래처"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input
-                        type="number"
-                        min={0}
-                        value={line.debit || ''}
-                        disabled={readOnly}
-                        onChange={e => updateLine(idx, { debit: Number(e.target.value || 0), credit: 0 })}
-                        className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-white text-right disabled:opacity-60"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input
-                        type="number"
-                        min={0}
-                        value={line.credit || ''}
-                        disabled={readOnly}
-                        onChange={e => updateLine(idx, { credit: Number(e.target.value || 0), debit: 0 })}
-                        className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-white text-right disabled:opacity-60"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input
-                        value={line.memo || ''}
-                        disabled={readOnly}
-                        onChange={e => updateLine(idx, { memo: e.target.value })}
-                        className="w-full px-2 py-1.5 bg-slate-800 border border-slate-700 rounded text-white disabled:opacity-60"
-                      />
-                    </td>
-                    {!readOnly && (
-                      <td className="px-2 py-2">
-                        <button type="button" onClick={() => removeLine(idx)} className="text-slate-500 hover:text-red-400">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="bg-slate-900/80">
-                <tr>
-                  <td colSpan={2} className="px-3 py-2 text-right text-slate-400">합계</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-200">{totals.debit.toLocaleString()}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-slate-200">{totals.credit.toLocaleString()}</td>
-                  <td colSpan={readOnly ? 1 : 2} className={`px-3 py-2 text-xs ${totals.balanced ? 'text-teal-400' : 'text-red-400'}`}>
-                    {totals.balanced ? '차·대변 일치' : '차·대변 불일치'}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-
-          {!readOnly && (
-            <button
-              type="button"
-              onClick={addLine}
-              className="text-xs px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 inline-flex items-center gap-1"
-            >
-              <Plus className="w-3.5 h-3.5" /> 분개 추가
-            </button>
-          )}
+          <VoucherLineSheet
+            lines={lines}
+            accounts={entryAccounts}
+            partners={partners}
+            depts={depts}
+            projects={projects}
+            readOnly={readOnly}
+            onChange={setLines}
+            totals={totals}
+          />
 
           {error && <p className="text-xs text-red-400 mt-3">{error}</p>}
           {msg && <p className="text-xs text-teal-300 mt-3">{msg}</p>}

@@ -66,6 +66,11 @@ import {
   isMessengerPath,
   isMessengerSubLinkActive,
 } from '@/lib/messenger/menuStructure';
+import {
+  STOCK_TRADER_SIDEBAR_LINKS,
+  isStockTraderPath,
+  isStockTraderSubLinkActive,
+} from '@/lib/stock-trader/menuStructure';
 
 const ALL_FALSE = createAllFalseMenuAccess();
 const ALL_TRUE = createAllTrueMenuAccess();
@@ -108,6 +113,7 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const [hrSystemOpen,  setHrSystemOpen]  = useState(false);
   const [accountingOpen, setAccountingOpen] = useState(false);
   const [messengerOpen, setMessengerOpen] = useState(false);
+  const [stockTraderOpen, setStockTraderOpen] = useState(false);
   const { hasModule } = useLicense();
 
   interface SalesSummary { todayNet: number; todaySource: string; weekNet: number; }
@@ -622,6 +628,52 @@ export default function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                                   {unreadCount > 9 ? '9+' : unreadCount}
                                 </span>
                               )}
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* KIS AI 자동매매 (슈퍼유저 전용) */}
+              {isSuperuser && (effectiveAccess.stockTrader || isSuperuser) && (() => {
+                const stActive = isStockTraderPath(pathname);
+                return (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setStockTraderOpen(o => !o)}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm w-full ${
+                        stActive
+                          ? 'bg-amber-600/20 text-amber-300 font-semibold border border-amber-500/20'
+                          : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      <span className={`shrink-0 ${stActive ? 'text-amber-400' : ''}`}>
+                        <TrendingUp className="w-4 h-4" />
+                      </span>
+                      <span className="flex-1 text-left">KIS AI매매</span>
+                      <span className="text-[9px] text-amber-500/80 font-medium">SU</span>
+                      <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${stockTraderOpen || stActive ? 'rotate-180' : ''}`} />
+                    </button>
+                    {(stockTraderOpen || stActive) && (
+                      <div className="ml-4 mt-0.5 space-y-0.5 border-l border-slate-700/60 pl-3">
+                        {STOCK_TRADER_SIDEBAR_LINKS.map(sub => {
+                          const subActive = isStockTraderSubLinkActive(pathname, sub);
+                          return (
+                            <Link
+                              key={sub.href}
+                              href={sub.href}
+                              onClick={onClose}
+                              className={`flex items-center gap-2.5 px-2 py-2 rounded-lg transition-all text-xs ${
+                                subActive
+                                  ? 'bg-amber-600/20 text-amber-300 font-semibold'
+                                  : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300'
+                              }`}
+                            >
+                              {sub.label}
                             </Link>
                           );
                         })}

@@ -18,6 +18,8 @@ export function normalizeVoucherLines(lines: VoucherLine[]): VoucherLine[] {
     accountName: String(line.accountName || '').trim(),
     partnerCode: String(line.partnerCode || '').trim(),
     partnerName: String(line.partnerName || '').trim(),
+    deptCode: String(line.deptCode || '').trim(),
+    projectCode: String(line.projectCode || '').trim(),
     debit: Number(line.debit || 0),
     credit: Number(line.credit || 0),
     memo: String(line.memo || '').trim(),

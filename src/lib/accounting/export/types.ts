@@ -21,6 +21,8 @@ export interface FlatJournalRow {
   externalAccountCode: string;
   partnerCode: string;
   partnerName: string;
+  deptCode: string;
+  projectCode: string;
   debit: number;
   credit: number;
   lineMemo: string;

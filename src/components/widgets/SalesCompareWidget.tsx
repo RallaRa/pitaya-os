@@ -93,6 +93,84 @@ function SalesCompareWidgetContent({
     );
   };
 
+  const AchievementPanel = ({
+    prog,
+    kind,
+    hasSalesTarget,
+    hasCustomersTarget,
+  }: {
+    prog: TargetProgressResult;
+    kind: 'week' | 'month';
+    hasSalesTarget: boolean;
+    hasCustomersTarget: boolean;
+  }) => {
+    if (!hasSalesTarget && !hasCustomersTarget) return null;
+    if (prog.achievementLikelihoodPct == null) return null;
+
+    const statusLabel = {
+      achieved: '목표 달성',
+      on_track: '달성 가능',
+      at_risk: '주의 필요',
+      unlikely: '달성 어려움',
+    }[prog.achievementStatus || 'at_risk'] || '';
+
+    const statusColor = {
+      achieved: 'text-teal-400 border-teal-500/40 bg-teal-950/30',
+      on_track: 'text-teal-300 border-teal-500/30 bg-teal-950/20',
+      at_risk: 'text-amber-300 border-amber-500/30 bg-amber-950/20',
+      unlikely: 'text-red-300 border-red-500/40 bg-red-950/20',
+    }[prog.achievementStatus || 'at_risk'] || 'text-slate-300';
+
+    const periodLabel = kind === 'month' ? '월말' : '주말';
+
+    return (
+      <div className={`rounded-lg border px-2.5 py-2 space-y-1.5 ${statusColor}`}>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] font-semibold">
+            {kind === 'month' ? '당월' : '이번 주'} 달성 가능성
+          </span>
+          <span className="text-xs font-bold tabular-nums">
+            {prog.achievementLikelihoodPct}%
+          </span>
+        </div>
+        <p className="text-[9px] opacity-90">{statusLabel} · 현재 페이스 기준</p>
+
+        {prog.achievementStatus !== 'achieved' && prog.daysRemaining > 0 && (
+          <div className="text-[10px] space-y-0.5 pt-0.5 border-t border-white/10">
+            <p>
+              남은 <strong>{prog.daysRemaining}일</strong> · 일별 필요
+            </p>
+            {hasSalesTarget && prog.dailySalesNeeded > 0 && (
+              <p className="tabular-nums">
+                매출 <strong className="text-white">{fmt(prog.dailySalesNeeded)}</strong>원/일
+                <span className="text-slate-500 ml-1">(잔여 {fmt(prog.remainingSales)}원)</span>
+              </p>
+            )}
+            {hasCustomersTarget && prog.dailyCustomersNeeded > 0 && (
+              <p className="tabular-nums">
+                객수 <strong className="text-white">{fmt(prog.dailyCustomersNeeded)}</strong>명/일
+                <span className="text-slate-500 ml-1">(잔여 {fmt(prog.remainingCustomers)}명)</span>
+              </p>
+            )}
+          </div>
+        )}
+
+        {prog.achievementStatus === 'achieved' && (
+          <p className="text-[10px]">🎉 목표 달성 — 현재 페이스 유지</p>
+        )}
+
+        {(hasSalesTarget || hasCustomersTarget) && (
+          <p className="text-[9px] text-slate-500 pt-0.5">
+            {periodLabel} 예상
+            {hasSalesTarget && <> 매출 {fmt(prog.projectedSales)}원</>}
+            {hasSalesTarget && hasCustomersTarget && ' · '}
+            {hasCustomersTarget && <> 객수 {fmt(prog.projectedCustomers)}명</>}
+          </p>
+        )}
+      </div>
+    );
+  };
+
   const TargetBlockView = ({
     block,
     label,
@@ -105,6 +183,8 @@ function SalesCompareWidgetContent({
     const { current, target, pct } = block;
     const prog = target.progress;
     const hasTarget = target.sales > 0 || target.customers > 0;
+    const hasSalesTarget = target.sales > 0;
+    const hasCustomersTarget = target.customers > 0;
 
     return (
       <div className="bg-slate-800/50 rounded-xl p-3 space-y-2.5">
@@ -170,6 +250,15 @@ function SalesCompareWidgetContent({
               style={{ width: `${Math.min(100, prog.salesPct ?? 0)}%` }}
             />
           </div>
+        )}
+
+        {hasTarget && (
+          <AchievementPanel
+            prog={prog}
+            kind={kind}
+            hasSalesTarget={hasSalesTarget}
+            hasCustomersTarget={hasCustomersTarget}
+          />
         )}
 
         {/* 전기간 대비 (보조) */}

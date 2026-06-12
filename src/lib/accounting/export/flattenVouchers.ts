@@ -34,6 +34,8 @@ export function flattenVouchersToJournalRows(
         externalAccountCode: externalByCode.get(accountCode) || accountCode,
         partnerCode: String(line.partnerCode || ''),
         partnerName: String(line.partnerName || ''),
+        deptCode: String(line.deptCode || ''),
+        projectCode: String(line.projectCode || ''),
         debit: Number(line.debit || 0),
         credit: Number(line.credit || 0),
         lineMemo: String(line.memo || ''),

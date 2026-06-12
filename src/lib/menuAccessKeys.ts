@@ -36,6 +36,7 @@ export const MENU_ACCESS_DEFINITIONS = [
   { key: 'settings',            label: '설정',           previewLabel: '설정',               icon: '⚙️' },
   { key: 'permissionGroup',     label: '권한그룹',       previewLabel: '권한 그룹 관리',     icon: '🛡️' },
   { key: 'memberGroup',         label: '멤버그룹',       previewLabel: '멤버-그룹 연결',     icon: '🔗' },
+  { key: 'stockTrader',         label: 'KIS AI매매',     previewLabel: 'KIS AI 자동매매',     icon: '📈' },
   // ── 회계 (영림원 SystemEver 구조) ──
   { key: 'accounting',          label: '회계',           previewLabel: '회계관리 개요',       icon: '📒' },
   { key: 'accountingMaster',    label: '회계·기본',      previewLabel: '계정과목·환경설정',   icon: '📋' },
@@ -85,6 +86,10 @@ export const MENU_ACCESS_UI_GROUPS: {
   {
     label: '인사/급여',
     keys: ['hrSystem', 'hrPersonnel', 'hrAttendanceMgmt', 'hrPayrollMaster', 'hrPayrollCalc', 'hrPayrollReport'],
+  },
+  {
+    label: '슈퍼유저 전용',
+    keys: ['stockTrader'],
   },
   {
     label: '레거시 (자동 호환)',
@@ -155,7 +160,7 @@ export const DEFAULT_SYSTEM_GROUP_MENUS: Record<SystemGroupId, MenuAccess> = {
     accountingLedger: true, accountingClosing: true, accountingFund: true,
     hrSystem: true, hrPersonnel: true, hrAttendanceMgmt: true,
     hrPayrollMaster: true, hrPayrollCalc: true, hrPayrollReport: true,
-    permissionGroup: false, memberGroup: false,
+    permissionGroup: false, memberGroup: false, stockTrader: false,
   }),
   staff: mergeMenuAccess(null, {
     ai: true, sales: true, purchase: true, report: true, messenger: true,
@@ -171,6 +176,7 @@ export const DEFAULT_SYSTEM_GROUP_MENUS: Record<SystemGroupId, MenuAccess> = {
     accountingLedger: false, accountingClosing: false, accountingFund: false,
     hrSystem: false, hrPersonnel: false, hrAttendanceMgmt: true,
     hrPayrollMaster: false, hrPayrollCalc: false, hrPayrollReport: false,
+    stockTrader: false,
   }),
 };
 

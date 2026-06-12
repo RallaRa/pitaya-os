@@ -55,8 +55,8 @@ export const douzoneFormat: ErpFormatAdapter = {
       '적요내용': memo,
       '거래처코드': row.partnerCode,
       '거래처명': row.partnerName,
-      '부서코드': '',
-      '프로젝트코드': '',
+      '부서코드': row.deptCode,
+      '프로젝트코드': row.projectCode,
     };
   },
 };

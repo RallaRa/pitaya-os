@@ -140,17 +140,47 @@ export function buildTodaySalesAnalysis(
 
 export function buildSalesCompareAnalysis(
   data: {
-    week?: { pct?: number | null; target?: { progress?: { salesPacePct?: number | null; salesPct?: number | null } } };
-    month?: { pct?: number | null; target?: { progress?: { salesPacePct?: number | null; salesPct?: number | null } } };
+    week?: {
+      pct?: number | null;
+      target?: {
+        progress?: {
+          salesPacePct?: number | null;
+          salesPct?: number | null;
+          achievementLikelihoodPct?: number | null;
+          dailySalesNeeded?: number;
+          dailyCustomersNeeded?: number;
+          daysRemaining?: number;
+        };
+      };
+    };
+    month?: {
+      pct?: number | null;
+      target?: {
+        progress?: {
+          salesPacePct?: number | null;
+          salesPct?: number | null;
+          achievementLikelihoodPct?: number | null;
+          dailySalesNeeded?: number;
+          dailyCustomersNeeded?: number;
+          daysRemaining?: number;
+        };
+      };
+    };
   },
   ctx: PerformanceContext,
 ): WidgetAnalysisBlock {
-  const monthPace = data.month?.target?.progress?.salesPacePct ?? ctx.monthTargetPacePct;
+  const monthProg = data.month?.target?.progress;
+  const monthPace = monthProg?.salesPacePct ?? ctx.monthTargetPacePct;
   const weekPct = data.week?.pct ?? ctx.weekSalesChangePct;
   const monthPct = data.month?.pct ?? ctx.monthSalesChangePct;
 
   let prediction: string | undefined;
-  if (monthPace != null) {
+  if (monthProg?.achievementLikelihoodPct != null) {
+    const daily = monthProg.dailySalesNeeded
+      ? `잔여 ${monthProg.daysRemaining ?? '-'}일 · 일 ${fmtWon(monthProg.dailySalesNeeded)}·객 ${monthProg.dailyCustomersNeeded ?? '-'}명 필요`
+      : '목표 달성 궤도';
+    prediction = `당월 달성 가능성 ${monthProg.achievementLikelihoodPct}% · ${daily}`;
+  } else if (monthPace != null) {
     const remain = monthPace < 100
       ? `잔여 기간 일평균 ${fmtWon(Math.max(0, (100 - monthPace) * (ctx.monthNetSales / Math.max(monthPace, 1))))} 추가 필요(추정)`
       : '목표 초과 달성 궤도';

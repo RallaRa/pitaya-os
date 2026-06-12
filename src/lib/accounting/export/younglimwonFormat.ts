@@ -48,9 +48,9 @@ export const younglimwonFormat: ErpFormatAdapter = {
       '적요': memo,
       '거래처코드': row.partnerCode,
       '거래처명': row.partnerName,
-      '부서코드': '',
+      '부서코드': row.deptCode,
       '사업장코드': ctx.businessPlaceCode || '1000',
-      '프로젝트코드': '',
+      '프로젝트코드': row.projectCode,
     };
   },
 };
