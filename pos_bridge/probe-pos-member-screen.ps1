@@ -1,4 +1,4 @@
-# POS 판매/결제 화면에서 회원코드·이름·평문 전화 추출 (JSON stdout)
+﻿# POS 판매/결제 화면에서 회원코드·이름·평문 전화 추출 (JSON stdout)
 # powershell -NoProfile -ExecutionPolicy Bypass -File probe-pos-member-screen.ps1
 
 $ErrorActionPreference = 'SilentlyContinue'
@@ -74,6 +74,19 @@ function Test-IsPaymentScreen([string[]]$texts) {
   return $false
 }
 
+# 회원조회·건별 검색 화면 (평문 전화가 노출되는 POS 회원정보 화면)
+function Test-IsMemberLookupScreen([string[]]$texts) {
+  if (-not $texts -or $texts.Count -eq 0) { return $false }
+  $blob = ($texts -join ' ')
+  $lookupHints = @(
+    '회원관리', '회원조회', '회원검색', '회원정보', '회원명검색', '회원정보관리', '회원현황', '휴대폰번호'
+  )
+  foreach ($h in $lookupHints) {
+    if ($blob -match [regex]::Escape($h)) { return $true }
+  }
+  return $false
+}
+
 $pos = Get-Process -Name 'POSON2','POSon2' -EA 0 | Select-Object -First 1
 if (-not $pos) {
   @{ running = $false; isPaymentScreen = $false; cusCode = $null; memberName = $null; phone = $null } | ConvertTo-Json -Compress
@@ -137,6 +150,7 @@ try {
 
 $unique = @($texts | Select-Object -Unique)
 $isPaymentScreen = Test-IsPaymentScreen $unique
+$isMemberLookupScreen = Test-IsMemberLookupScreen $unique
 $codes = @()
 $names = @()
 $phones = @()
@@ -161,7 +175,8 @@ if (-not $phone) {
   $ocrScript = Join-Path $PSScriptRoot 'probe-pos-member-ocr.ps1'
   if (Test-Path $ocrScript) {
     try {
-      $ocrOut = & powershell -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File $ocrScript 2>$null
+      $ocrRegion = if ($isMemberLookupScreen) { 'top' } else { 'bottom' }
+      $ocrOut = & powershell -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File $ocrScript -Region $ocrRegion 2>$null
       $ocrLine = ($ocrOut | Where-Object { $_ -match '^\{' } | Select-Object -Last 1)
       if ($ocrLine) {
         $ocr = $ocrLine | ConvertFrom-Json
@@ -179,6 +194,7 @@ if (-not $phone) {
 [pscustomobject]@{
   running = $true
   isPaymentScreen = $isPaymentScreen
+  isMemberLookupScreen = $isMemberLookupScreen
   pid = $pos.Id
   cusCode = $cusCode
   memberName = $memberName
@@ -186,5 +202,6 @@ if (-not $phone) {
 } | ConvertTo-Json -Compress
 
 if ($isPaymentScreen -and ($cusCode -or $phone)) { exit 0 }
+if ($isMemberLookupScreen -and $cusCode -and $phone) { exit 4 }
 if ($cusCode -or $phone) { exit 3 }
 exit 2

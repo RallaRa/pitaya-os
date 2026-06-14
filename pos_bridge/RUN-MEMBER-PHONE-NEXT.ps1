@@ -1,4 +1,9 @@
-# POS PC에서 실행 — Pitaya API에서 member watcher 파일 다운로드 + 설치
+# Pitaya — 회원 전화 다음단계: bridge/watcher 최신화 + (옵션) 건별 동기화
+param(
+  [string]$CusCode = '98000001',
+  [switch]$SkipSync
+)
+
 $ErrorActionPreference = 'Stop'
 Set-Location 'C:\pitaya-bridge'
 
@@ -16,15 +21,14 @@ $files = @(
   'bridge.js',
   'probe-pos-member-screen.ps1',
   'probe-pos-member-ocr.ps1',
-  'show-pitaya-toast.ps1',
   'pos-member-watcher.js',
-  'RUN-MEMBER-PHONE-NEXT.bat',
-  'RUN-MEMBER-PHONE-NEXT.ps1',
+  'show-pitaya-toast.ps1',
   'run-member-watcher.bat',
   'run-member-watcher-loop.bat',
   'run-member-watcher-hidden.vbs',
   'install-member-watcher.ps1',
   'install-member-watcher.bat',
+  'RUN-MEMBER-PHONE-NEXT.bat',
   'update-from-server.ps1'
 )
 
@@ -33,5 +37,15 @@ foreach ($f in $files) {
   Invoke-WebRequest -Uri "$base/api/pos/bridge-files?pkg=bridge&file=$f" -Headers $headers -OutFile $f
 }
 
-npm install
-powershell -NoProfile -ExecutionPolicy Bypass -File install-member-watcher.ps1
+if (-not $SkipSync) {
+  Write-Host "`nprobe-customer-one $CusCode"
+  node bridge.js probe-customer-one $CusCode
+  Write-Host "`nsync-customer-one $CusCode"
+  node bridge.js sync-customer-one $CusCode
+  Write-Host "`nsync-recent-customers 3"
+  node bridge.js sync-recent-customers 3
+  Write-Host "`ninstall watcher"
+  powershell -NoProfile -ExecutionPolicy Bypass -File install-member-watcher.ps1
+}
+
+Write-Host "`n다운로드 완료"

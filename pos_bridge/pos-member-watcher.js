@@ -111,12 +111,24 @@ function probePosMember() {
 
     let out = '';
     ps.stdout.on('data', d => { out += d.toString(); });
-    ps.on('close', () => {
+    let err = '';
+    ps.stderr.on('data', d => { err += d.toString(); });
+    ps.on('close', code => {
       try {
-        const line = out.trim().split('\n').pop();
-        resolve(JSON.parse(line || '{}'));
-      } catch {
-        resolve({ running: false });
+        const line = out.trim().split('\n').filter(Boolean).pop() || '';
+        if (!line.startsWith('{')) {
+          resolve({
+            running: false,
+            error: err.trim() || out.trim().slice(0, 200) || `probe exit ${code}`,
+          });
+          return;
+        }
+        resolve(JSON.parse(line));
+      } catch (e) {
+        resolve({
+          running: false,
+          error: e.message || err.trim() || out.trim().slice(0, 200),
+        });
       }
     });
     ps.on('error', () => resolve({ running: false }));
@@ -151,7 +163,7 @@ function markSynced(state, cusCode, phone) {
   }
 }
 
-async function syncCustomerScreen(cusCode, phone, memberName) {
+async function syncCustomerScreen(cusCode, phone, memberName, source = 'pos_payment_screen') {
   const res = await axios.post(
     `${APP_URL}/api/pos/sync-customer-screen`,
     {
@@ -159,7 +171,7 @@ async function syncCustomerScreen(cusCode, phone, memberName) {
       cusCode,
       phoneFull: phone,
       memberName: memberName || undefined,
-      source: 'pos_payment_screen',
+      source,
       rematch: true,
       syncedAt: new Date().toISOString(),
     },
@@ -292,13 +304,13 @@ async function notifyStoreWeb(title, message, cusCode) {
   }
 }
 
-async function handlePhoneSync(cusCode, phone, memberName) {
+async function handlePhoneSync(cusCode, phone, memberName, source = 'pos_payment_screen') {
   const state = loadState();
   if (!shouldSyncPhone(state, cusCode, phone)) return null;
 
   try {
     appendUiScrapedPhone(cusCode, phone);
-    const data = await syncCustomerScreen(cusCode, phone, memberName);
+    const data = await syncCustomerScreen(cusCode, phone, memberName, source);
     markSynced(state, cusCode, phone);
     saveState(state);
 
@@ -354,12 +366,20 @@ async function pollOnce() {
   polling = true;
   try {
     const probe = await probePosMember();
-    if (!probe.running) return;
+    if (!probe.running) {
+      if (!probe._failLogged || Date.now() - probe._failLogged > 120000) {
+        probe._failLogged = Date.now();
+        const reason = probe.error || 'POS 미실행 또는 probe 실패';
+        log(`POS probe 실패: ${reason}`);
+      }
+      return;
+    }
 
     const state = loadState();
     const onPayment = probe.isPaymentScreen === true;
+    const onLookup = probe.isMemberLookupScreen === true;
 
-    if (!onPayment) {
+    if (!onPayment && !onLookup) {
       if (state.onPaymentScreen || state.lastCusCode) {
         state.onPaymentScreen = false;
         state.lastCusCode = '';
@@ -369,13 +389,13 @@ async function pollOnce() {
         probe._skipLogged = Date.now();
         const cus = normalizeCusCode(probe.cusCode);
         if (cus) {
-          log(`회원화면/기타 화면 — 결제화면 회원 입력만 알림 (${cus} 무시)`);
+          log(`기타 화면 — 결제/회원조회 화면만 수집 (${cus} 무시)`);
         }
       }
       return;
     }
 
-    state.onPaymentScreen = true;
+    state.onPaymentScreen = onPayment;
     saveState(state);
 
     const cusCode = normalizeCusCode(probe.cusCode);
@@ -389,14 +409,27 @@ async function pollOnce() {
       }
       if (!probe._emptyLogged || Date.now() - probe._emptyLogged > 60000) {
         probe._emptyLogged = Date.now();
-        log('결제화면 — 회원번호/전화 대기 중 (회원호출 후 입력)');
+        const screen = onPayment ? '결제' : '회원조회';
+        log(`${screen}화면 — 회원번호/전화 대기 중`);
+      }
+      return;
+    }
+
+    /* 회원조회 건별 검색: 전화만 sync (토스트 생략) */
+    if (onLookup && !onPayment) {
+      if (phone) {
+        await handlePhoneSync(cusCode, phone, memberName, 'pos_member_lookup_screen');
+        log(`회원조회 화면 전화 sync: ${cusCode} ${phone.slice(0, 3)}****${phone.slice(-4)}`);
+      } else if (!probe._lookupNoPhone || Date.now() - probe._lookupNoPhone > 60000) {
+        probe._lookupNoPhone = Date.now();
+        log(`회원조회 화면 — ${cusCode} 전화 OCR/스크랩 실패`);
       }
       return;
     }
 
     let syncNote = '';
     if (phone) {
-      syncNote = (await handlePhoneSync(cusCode, phone, memberName)) || '';
+      syncNote = (await handlePhoneSync(cusCode, phone, memberName, 'pos_payment_screen')) || '';
     }
 
     await handleMemberNotify(cusCode, memberName, phone, syncNote);

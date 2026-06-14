@@ -65,6 +65,8 @@ const PACKAGES: Record<Pkg, { dir: string; files: Set<string> }> = {
       'install-member-watcher.bat',
       'deploy-member-watcher-remote.ps1',
       'remote-notification-deploy.ps1',
+      'RUN-MEMBER-PHONE-NEXT.bat',
+      'RUN-MEMBER-PHONE-NEXT.ps1',
       'probe-member-sales-range.js',
     ]),
   },

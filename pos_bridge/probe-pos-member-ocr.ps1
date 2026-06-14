@@ -1,5 +1,10 @@
 # POSon2 회원정보 영역 OCR (Win32 텍스트 읽기 실패 시)
-# powershell -NoProfile -ExecutionPolicy Bypass -File probe-pos-member-ocr.ps1
+# powershell -NoProfile -ExecutionPolicy Bypass -File probe-pos-member-ocr.ps1 [-Region top|bottom|full]
+
+param(
+  [ValidateSet('bottom', 'top', 'full')]
+  [string]$Region = 'bottom'
+)
 
 $ErrorActionPreference = 'SilentlyContinue'
 
@@ -73,9 +78,21 @@ $rect = New-Object PosWinRect+RECT
 $w = [Math]::Max(100, $rect.Right - $rect.Left)
 $h = [Math]::Max(100, $rect.Bottom - $rect.Top)
 
-# 하단 55% (회원정보·전화번호 패널)
-$y0 = [int]($rect.Top + ($h * 0.45))
-$capH = [Math]::Max(80, $rect.Bottom - $y0)
+# Region: bottom=결제화면 하단, top=회원관리 기본정보(휴대폰번호), full=전체
+switch ($Region) {
+  'top' {
+    $y0 = $rect.Top
+    $capH = [Math]::Max(120, [int]($h * 0.55))
+  }
+  'full' {
+    $y0 = $rect.Top
+    $capH = $h
+  }
+  default {
+    $y0 = [int]($rect.Top + ($h * 0.45))
+    $capH = [Math]::Max(80, $rect.Bottom - $y0)
+  }
+}
 $capW = $w
 
 $bmp = New-Object System.Drawing.Bitmap $capW, $capH

@@ -11,6 +11,9 @@
  *   node bridge.js customers            # Cus_Mst 고객 마스터 (레거시)
  *   node bridge.js sync-employees       # 사원정보만 동기화
  *   node bridge.js sync-customers       # Customer_Info 고객 동기화
+ *   node bridge.js probe-customer-one CODE  # 건별 DB 전화 점검
+ *   node bridge.js sync-customer-one CODE    # 건별 Pitaya 동기화
+ *   node bridge.js sync-recent-customers [days]  # 최근 N일 방문 회원 동기화
  *   node bridge.js sync-goods          # Goods 품목→Pitaya 저울코드 동기화
  *   node bridge.js probe-customer-phones # DB 전화 컬럼 원본 확인
  *   node bridge.js probe-unmasked-phones # 마스킹 안 된 전화 컬럼 전체 스캔
@@ -503,6 +506,286 @@ async function fetchCustomerInfo(pool) {
     log('고객 조회 실패: ' + e.message);
     return [];
   }
+}
+
+const CUSTOMER_INFO_FIELDS = `
+      ci.Cus_Code       as cusCode,
+      ci.Cus_Name       as name,
+      ci.Cus_Gubun      as cusGubun,
+      ci.Cus_Class      as cusClass,
+      ci.Cus_Mobile     as mobile,
+      ci.Cus_Tel        as tel,
+      cm.Cus_HP         as cusHp,
+      ci.Cus_BirDay     as birthday,
+      ci.Mem_Day        as joinDate,
+      ci.Vis_Date       as lastVisitDate,
+      ci.last_eDATE     as lastEventDate,
+      ci.Cus_Point      as point,
+      ci.Cus_TPoint     as totalPoint,
+      ci.Cus_UsePoint   as usedPoint,
+      ci.Pur_Pri        as totalPurchase,
+      ci.Dec_Pri        as totalDiscount,
+      ci.Vis_Count      as visitCount,
+      ci.cPoint_Use     as pointUseYn,
+      ci.Cus_Use        as isActive,
+      ci.Email          as email,
+      ci.en_uKey2       as enUKey2`;
+
+const CUSTOMER_INFO_FIELDS_PLAIN = `
+      Cus_Code       as cusCode,
+      Cus_Name       as name,
+      Cus_Gubun      as cusGubun,
+      Cus_Class      as cusClass,
+      Cus_Mobile     as mobile,
+      Cus_Tel        as tel,
+      Cus_BirDay     as birthday,
+      Mem_Day        as joinDate,
+      Vis_Date       as lastVisitDate,
+      last_eDATE     as lastEventDate,
+      Cus_Point      as point,
+      Cus_TPoint     as totalPoint,
+      Cus_UsePoint   as usedPoint,
+      Pur_Pri        as totalPurchase,
+      Dec_Pri        as totalDiscount,
+      Vis_Count      as visitCount,
+      cPoint_Use     as pointUseYn,
+      Cus_Use        as isActive,
+      Email          as email,
+      en_uKey2       as enUKey2`;
+
+function mapCustomerForApi(c, overlay) {
+  const phoneFull = resolveCustomerPhoneFull(c, overlay);
+  return {
+    cusCode:        String(c.cusCode        || '').trim(),
+    name:           String(c.name           || '').trim(),
+    cusGubun:       String(c.cusGubun       || '').trim(),
+    cusClass:       String(c.cusClass       || '').trim(),
+    mobile:         String(c.mobile         || '').trim(),
+    tel:            String(c.tel            || '').trim(),
+    cusHp:          String(c.cusHp          || '').trim(),
+    phoneFull,
+    birthday:       String(c.birthday       || '').trim(),
+    joinDate:       String(c.joinDate       || '').trim(),
+    lastVisitDate:  String(c.lastVisitDate  || '').trim(),
+    lastEventDate:  String(c.lastEventDate  || '').trim(),
+    point:          toInt(c.point),
+    totalPoint:     toInt(c.totalPoint),
+    usedPoint:      toInt(c.usedPoint),
+    totalPurchase:  toInt(c.totalPurchase),
+    totalDiscount:  toInt(c.totalDiscount),
+    visitCount:     toInt(c.visitCount),
+    pointUseYn:     String(c.pointUseYn     || '').trim(),
+    isActive:       String(c.isActive       || '1').trim(),
+    email:          String(c.email          || '').trim(),
+    enUKey2:        String(c.enUKey2        || '').trim(),
+  };
+}
+
+async function fetchCustomerByCode(pool, cusCode) {
+  const code = String(cusCode || '').trim();
+  if (!code) return null;
+
+  const sqlJoin = `
+    SELECT ${CUSTOMER_INFO_FIELDS}
+    FROM Customer_Info ci
+    LEFT JOIN Cus_Mst cm ON ci.Cus_Code = cm.Cus_Code
+    WHERE ci.Cus_Code = @cusCode
+  `;
+  const sqlPlain = `
+    SELECT ${CUSTOMER_INFO_FIELDS_PLAIN}
+    FROM Customer_Info
+    WHERE Cus_Code = @cusCode
+  `;
+
+  try {
+    const result = await pool.request()
+      .input('cusCode', sql.VarChar(20), code)
+      .query(sqlJoin);
+    return result.recordset[0] || null;
+  } catch (joinErr) {
+    warn('Cus_Mst JOIN 실패, Customer_Info 단독: ' + joinErr.message);
+    const result = await pool.request()
+      .input('cusCode', sql.VarChar(20), code)
+      .query(sqlPlain);
+    return result.recordset[0] || null;
+  }
+}
+
+async function fetchRecentCustomerInfo(pool, days) {
+  const n = Math.max(1, parseInt(days, 10) || 3);
+  const since = new Date(Date.now() + 9 * 3600_000);
+  since.setUTCDate(since.getUTCDate() - n);
+  const sinceYmd = since.toISOString().slice(0, 10);
+
+  const sqlJoin = `
+    SELECT ${CUSTOMER_INFO_FIELDS}
+    FROM Customer_Info ci
+    LEFT JOIN Cus_Mst cm ON ci.Cus_Code = cm.Cus_Code
+    WHERE ci.Cus_Use = '1'
+      AND CONVERT(varchar(10), ci.Vis_Date, 23) >= @sinceDate
+    ORDER BY ci.Vis_Date DESC
+  `;
+  const sqlPlain = `
+    SELECT ${CUSTOMER_INFO_FIELDS_PLAIN}
+    FROM Customer_Info
+    WHERE Cus_Use = '1'
+      AND CONVERT(varchar(10), Vis_Date, 23) >= @sinceDate
+    ORDER BY Vis_Date DESC
+  `;
+
+  try {
+    let result;
+    try {
+      result = await pool.request()
+        .input('sinceDate', sql.VarChar(10), sinceYmd)
+        .query(sqlJoin);
+      log(`최근 ${n}일 방문 고객 ${result.recordset.length}명 (since ${sinceYmd})`);
+    } catch (joinErr) {
+      warn('Cus_Mst JOIN 실패, Customer_Info 단독: ' + joinErr.message);
+      result = await pool.request()
+        .input('sinceDate', sql.VarChar(10), sinceYmd)
+        .query(sqlPlain);
+      log(`최근 ${n}일 방문 고객 ${result.recordset.length}명 (Customer_Info만)`);
+    }
+    return result.recordset;
+  } catch (e) {
+    log('최근 방문 고객 조회 실패: ' + e.message);
+    return [];
+  }
+}
+
+async function postCustomersToApi(customers) {
+  if (!customers.length) return { ok: true, count: 0 };
+  await axios.post(
+    CUSTOMERS_API_URL,
+    { storeId: STORE_ID, customers, syncedAt: new Date().toISOString() },
+    {
+      headers: {
+        Authorization:  `Bearer ${API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 60000,
+    },
+  );
+  return { ok: true, count: customers.length };
+}
+
+async function probeCustomerOne(pool, cusCode) {
+  const c = await fetchCustomerByCode(pool, cusCode);
+  if (!c) {
+    log(`회원 없음: ${cusCode}`);
+    return false;
+  }
+
+  const overlay = loadPhoneOverlay();
+  const digits = resolveCustomerPhoneFull(c, overlay);
+  const plainFromDb = normalizePhoneDigits(pickBestPhone(c.cusHp, c.tel, c.mobile));
+  const fromOverlay = overlay.has(String(c.cusCode || '').trim());
+
+  let sourceGuess = 'none';
+  if (plainFromDb) sourceGuess = 'db_plain_cusHp_tel_mobile';
+  else if (fromOverlay) sourceGuess = 'overlay_csv';
+  else if (c.enUKey2) sourceGuess = 'en_uKey2_needs_server_key';
+  else if (isMaskedPhone(c.mobile) || isMaskedPhone(c.tel)) sourceGuess = 'masked_only';
+
+  const report = {
+    cusCode: c.cusCode,
+    name: c.name,
+    lastVisitDate: c.lastVisitDate,
+    cusHp: c.cusHp || null,
+    tel: c.tel || null,
+    mobile: c.mobile || null,
+    hasEnUKey2: !!(c.enUKey2 && String(c.enUKey2).trim()),
+    syncDigits: digits || null,
+    canSyncPlain: !!digits,
+    sourceGuess,
+    pitayaAction: digits ? 'sync-customer-one 실행' : '회원정보 화면 왓쳐 또는 en_uKey2 키 설정',
+  };
+
+  console.log(JSON.stringify(report, null, 2));
+  if (!digits) {
+    warn('평문 전화 없음 — Cus_Mobile은 마스킹일 수 있음. 회원정보 화면 왓쳐 또는 en_uKey2 키 필요');
+  } else {
+    log(`평문 전화 확보: ${digits.slice(0, 3)}****${digits.slice(-4)} (${sourceGuess})`);
+  }
+  return true;
+}
+
+async function syncCustomerOne(pool, cusCode, dryRun) {
+  const c = await fetchCustomerByCode(pool, cusCode);
+  if (!c) {
+    log(`회원 없음: ${cusCode}`);
+    return false;
+  }
+
+  const overlay = loadPhoneOverlay();
+  const row = mapCustomerForApi(c, overlay);
+  if (!row.cusCode) return false;
+
+  const digits = row.phoneFull;
+  log(`━━━ 건별 동기화 ${row.cusCode} (${row.name || '-'}) ━━━`);
+  log(`  Cus_HP:${row.cusHp || '-'} mobile:${row.mobile || '-'} → ${digits || '(마스킹/없음)'}`);
+
+  if (dryRun) {
+    log('[DRY-RUN] Pitaya 전송 생략');
+    return !!digits;
+  }
+
+  if (!digits) {
+    warn('평문 전화 없어 Pitaya full 반영 불가. probe-customer-one 결과 참고');
+    return false;
+  }
+
+  try {
+    const res = await postCustomersToApi([row]);
+    log(`✅ Pitaya 반영 ${res.count}명 | ${digits.slice(0, 3)}****${digits.slice(-4)}`);
+    return true;
+  } catch (e) {
+    err(`전송 실패: ${e.response?.data?.error || e.message}`);
+    return false;
+  }
+}
+
+async function syncRecentCustomers(pool, days, dryRun) {
+  const n = Math.max(1, parseInt(days, 10) || 3);
+  log(`━━━ 최근 ${n}일 방문 회원 동기화 ━━━`);
+  const customers = await fetchRecentCustomerInfo(pool, n);
+  if (!customers.length) {
+    log('대상 없음');
+    return true;
+  }
+
+  const overlay = loadPhoneOverlay();
+  auditCustomerPhones(customers, overlay);
+
+  const rows = customers.map(c => mapCustomerForApi(c, overlay)).filter(c => c.cusCode);
+  const withPlain = rows.filter(r => r.phoneFull).length;
+  const missing = rows.length - withPlain;
+  log(`  평문 전화: ${withPlain}명 | 마스킹/없음: ${missing}명`);
+
+  if (dryRun) {
+    log('[DRY-RUN] 상위 10명:');
+    rows.slice(0, 10).forEach(r => {
+      log(`  ${r.cusCode} | ${r.phoneFull || r.mobile || '-'} | 방문 ${r.lastVisitDate || '-'}`);
+    });
+    return true;
+  }
+
+  const batchSize = 400;
+  let totalSynced = 0;
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const batch = rows.slice(i, i + batchSize);
+    try {
+      await postCustomersToApi(batch);
+      totalSynced += batch.length;
+      log(`배치 전송: ${totalSynced}/${rows.length}`);
+    } catch (e) {
+      err(`배치 실패: ${e.message}`);
+      return false;
+    }
+  }
+  log(`✅ 최근 ${n}일 방문 ${totalSynced}명 동기화 완료`);
+  return true;
 }
 
 // ── 고객 마스터 조회 (Cus_Mst, 레거시) ───────────────────────────
@@ -1974,6 +2257,35 @@ async function main() {
         break;
       }
 
+      case 'probe-customer-one': {
+        const code = args[1];
+        if (!code) {
+          err('사용법: node bridge.js probe-customer-one 98000001');
+          process.exit(1);
+        }
+        const p = await getPool();
+        success = await probeCustomerOne(p, code);
+        break;
+      }
+
+      case 'sync-customer-one': {
+        const code = args[1];
+        if (!code) {
+          err('사용법: node bridge.js sync-customer-one 98000001 [--dry-run]');
+          process.exit(1);
+        }
+        const p = await getPool();
+        success = await syncCustomerOne(p, code, dryRun);
+        break;
+      }
+
+      case 'sync-recent-customers': {
+        const days = args[1] || '3';
+        const p = await getPool();
+        success = await syncRecentCustomers(p, days, dryRun);
+        break;
+      }
+
       case 'check-tables': {
         const p = await getPool();
         await checkTables(p);
@@ -1986,7 +2298,7 @@ async function main() {
           success = await runDate(mode, dryRun);
         } else {
           err(`알 수 없는 모드: ${mode}`);
-          console.log('사용법: node bridge.js [today|realtime|date YYYY-MM-DD|migrate START END|customers|sync-employees|sync-customers|sync-goods|probe-customer-phones|probe-unmasked-phones|probe-member-use|probe-en-ukey|check-tables] [--dry-run]');
+          console.log('사용법: node bridge.js [today|realtime|date YYYY-MM-DD|migrate START END|customers|sync-employees|sync-customers|sync-recent-customers [days]|sync-customer-one CODE|probe-customer-one CODE|sync-goods|probe-customer-phones|probe-unmasked-phones|probe-member-use|probe-en-ukey|check-tables] [--dry-run]');
           process.exit(1);
         }
     }
