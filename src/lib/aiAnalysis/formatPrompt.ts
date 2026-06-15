@@ -28,9 +28,9 @@ ${meta.focusHint}
 - ${formatStaffingLine()}
 ${STORE_BUSINESS_ANALYSIS_RULES}
 - 아래 수치는 Firestore POS·회원 품목 구매 이력(pos_customer_purchase_lines) 기반 사실입니다.
-- 추측보다 수치 인용을 우선하세요. 원인은 "유입(객수/회원수) → 객단가 → 품목 mix" 순으로 분리하세요.
+- 추측보다 수치 인용을 우선하세요. 원인은 "유입(객수/회원수) → 객단가 → 품목 mix → 외부·요일" 순으로 **각각 분리**하고, 원인 분해 블록의 기여도·후보를 인용하세요.
 - 객단가 = 순매출÷POS객수, 회원 1회 구매액 = 회원매출÷방문횟수 (혼동 금지).
-- 응답 형식: ①한줄 결론 ②원인(순위) ③근거 수치 ④실행 조치(3개 이내)
+- 응답 형식: ①한줄 결론 ②원인(2~4개, 현상→연결→영향→확신도) ③근거 수치 ④실행 조치(3개 이내)
 
 --- 매출 헤드라인 ---
 최근7일 순매출: ${fmtWon(h.last7.net)} (POS객 ${h.last7.cust}명, 객단가 ${fmtWon(h.last7.ticket)}) | WoW ${fmtPct(h.last7.netWoW)}

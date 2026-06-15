@@ -78,7 +78,7 @@ type ModelId = typeof MODELS[number]['id'];
 type ChatMode = 'chat' | 'debate' | 'analysis';
 
 const CHAT_MODES: { id: ChatMode; label: string; desc: string }[] = [
-  { id: 'chat',     label: '일반 대화', desc: 'Pitaya OS·매장 데이터·API 기반 Q&A (사원 정보 제외)' },
+  { id: 'chat',     label: '일반 대화', desc: 'DB·API·외부기사 기반 전략 조언 (매출·고객·시장·마케팅)' },
   { id: 'debate',   label: '토론 모드', desc: '4개 AI가 3라운드 의견 교환 후 종합 답변' },
   { id: 'analysis', label: '분석 모드', desc: '매출·고객 데이터 심층 분석' },
 ];

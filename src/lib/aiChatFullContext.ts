@@ -1,5 +1,13 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { getKSTTodayYMD } from '@/lib/dateUtils';
+import { fetchNaverTrendData } from '@/lib/naverTrendServer';
+import { fetchCommercialArea, fetchNaverNewsHeadlines } from '@/lib/areaContext';
+import {
+  fetchRecentLivestockDisease,
+  summarizeLivestockDiseaseForAi,
+} from '@/lib/mafra/fetchLivestockDisease';
+import { fetchMeatPrices, fetchMeatAuction } from '@/lib/external/meatMarketData.server';
+import { fetchStoreItemSales } from '@/lib/dashboardSalesData';
 
 export const AI_EMPLOYEE_DATA_POLICY = `
 
@@ -251,6 +259,132 @@ export async function loadModuleSnapshotsAppendix(storeId: string): Promise<stri
   }
 
   block += `\n위 스냅샷·분석 팩·매장 컨텍스트·위키·API 카탈로그를 종합해 답변하세요. 사원·HR 데이터는 없습니다.`;
+
+  return block;
+}
+
+/** 일반 대화 모드 — DB·외부 API·뉴스·브리핑 캐시 종합 컨텍스트 */
+export async function loadStrategicChatContextAppendix(storeId: string): Promise<string> {
+  const today = getKSTTodayYMD();
+  let regionSido = '서울';
+  let regionSigungu = '';
+  let regionKeyword = '';
+
+  try {
+    const storeSnap = await adminDb.collection('stores').doc(storeId).get();
+    if (storeSnap.exists) {
+      const d = storeSnap.data()!;
+      regionSido = String(d.regionSido || regionSido);
+      regionSigungu = String(d.regionSigungu || '');
+      regionKeyword = regionSigungu || regionSido;
+    }
+  } catch { /* ignore */ }
+
+  const briefingCacheId = `market_briefing_${storeId}_${today}`;
+  const insightCacheId = `ai_insight_${storeId}_${today}`;
+
+  const [
+    briefingSnap,
+    insightSnap,
+    trendResult,
+    news,
+    livestock,
+    meatPrices,
+    meatAuction,
+    salesItems,
+    commercial,
+  ] = await Promise.all([
+    adminDb.collection('dashboard_cache').doc(briefingCacheId).get().catch(() => null),
+    adminDb.collection('dashboard_cache').doc(insightCacheId).get().catch(() => null),
+    fetchNaverTrendData(storeId),
+    fetchNaverNewsHeadlines(6),
+    fetchRecentLivestockDisease({ limit: 10, daysBack: 180, regionKeyword })
+      .catch(() => ({ rows: [], totalCount: 0, fetchedAt: '', source: 'mafra' as const })),
+    fetchMeatPrices(),
+    fetchMeatAuction(),
+    fetchStoreItemSales(storeId, 30, 12).catch(() => []),
+    fetchCommercialArea(regionSido, regionSigungu).catch(() => null),
+  ]);
+
+  let block = `\n\n=== 전략 참조 컨텍스트 (DB·API·외부기사, ${today}) ===\n`;
+
+  const briefing = briefingSnap?.exists ? (briefingSnap.data()?.result as Record<string, unknown> | undefined) : undefined;
+  if (briefing?.summary || briefing?.opinion) {
+    block += `\n[일일 마켓 브리핑 캐시]\n`;
+    if (briefing.summary) block += `요약: ${String(briefing.summary).slice(0, 400)}\n`;
+    if (briefing.opinion) block += `의견: ${String(briefing.opinion).slice(0, 400)}\n`;
+    const actions = Array.isArray(briefing.actions) ? briefing.actions : [];
+    if (actions.length > 0) {
+      block += `조치: ${actions.slice(0, 3).map(a => typeof a === 'string' ? a : (a as { text?: string }).text || JSON.stringify(a)).join(' | ')}\n`;
+    }
+  }
+
+  const insight = insightSnap?.exists ? (insightSnap.data()?.result as Record<string, unknown> | undefined) : undefined;
+  if (insight?.summary) {
+    block += `\n[AI 인사이트 캐시]\n${String(insight.summary).slice(0, 350)}\n`;
+    const improvements = Array.isArray(insight.improvements) ? insight.improvements : [];
+    if (improvements.length > 0) {
+      block += improvements.slice(0, 3).map((imp: { category?: string; suggestion?: string }) =>
+        `- ${imp.category || '개선'}: ${imp.suggestion || ''}`,
+      ).join('\n');
+      block += '\n';
+    }
+  }
+
+  if (meatPrices.prices.length > 0) {
+    block += `\n[축산 도매가 API]\n`;
+    block += meatPrices.prices.slice(0, 6).map(p =>
+      `${p.itemName}: ${Number(p.price).toLocaleString('ko-KR')}원/${p.unit}`,
+    ).join('\n');
+    block += '\n';
+  } else if (meatPrices.error) {
+    block += `\n[축산 도매가] ${meatPrices.error}\n`;
+  }
+
+  if (meatAuction.auction) {
+    const a = meatAuction.auction;
+    block += `[축산 경매] ${a.date} | ${a.count}두 | 평균 ${Number(a.avgPrice).toLocaleString('ko-KR')}원 (최고 ${Number(a.maxPrice).toLocaleString('ko-KR')} / 최저 ${Number(a.minPrice).toLocaleString('ko-KR')})\n`;
+  }
+
+  if (trendResult.trends.length > 0) {
+    block += `\n[네이버 검색 트렌드]\n`;
+    if (trendResult.marketKeywords?.length) {
+      block += `키워드: ${trendResult.marketKeywords.join(', ')}\n`;
+    }
+    if (trendResult.operationHint) block += `운영힌트: ${trendResult.operationHint}\n`;
+    block += trendResult.trends.slice(0, 5).map(t =>
+      `${t.groupName}: 지수 ${t.current} (${t.change > 0 ? '+' : ''}${t.change}%)`,
+    ).join('\n');
+    block += '\n';
+  } else if (trendResult.error) {
+    block += `\n[네이버 트렌드] ${trendResult.error}\n`;
+  }
+
+  if (news.length > 0) {
+    block += `\n[외부 뉴스 헤드라인]\n`;
+    block += news.map(n => `· [${n.keyword}] ${n.title}`).join('\n');
+    block += '\n';
+  }
+
+  if (livestock.rows.length > 0) {
+    block += `\n[가축질병 MAFRA — ${regionKeyword || '전국'}]\n`;
+    block += summarizeLivestockDiseaseForAi(livestock.rows.slice(0, 6));
+    block += '\n';
+  }
+
+  if (commercial) {
+    block += `\n[상권] ${commercial.region} | 밀도 ${commercial.storeDensity} | 경쟁 ${commercial.competitiveLevel} | ${commercial.businessSummary.slice(0, 120)} (${commercial.source})\n`;
+  }
+
+  if (salesItems.length > 0) {
+    block += `\n[최근 30일 매출 TOP 품목 — Firestore]\n`;
+    block += salesItems.slice(0, 10).map((it, i) =>
+      `${i + 1}. ${it.name}: ${Number(it.qty || 0).toLocaleString('ko-KR')}개 / ${Number(it.amount || 0).toLocaleString('ko-KR')}원`,
+    ).join('\n');
+    block += '\n';
+  }
+
+  block += `\n※ 위 컨텍스트를 답변의 1차 근거로 사용하세요. 내부 DB·외부 API·뉴스를 **수치·헤드라인으로 인용**하고, 없는 항목은 「데이터 없음」이라고 하세요.\n`;
 
   return block;
 }

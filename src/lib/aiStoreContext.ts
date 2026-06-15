@@ -179,7 +179,7 @@ export function buildStoreContextPrompt(basePrompt: string, context: AiStoreCont
     ).join('\n');
   }
 
-  prompt += '\n\n위 데이터를 바탕으로 질문에 답해줘. Pitaya OS 매출·고객·매입·쿠폰·주문·위키·사이니지 등 시스템 데이터(사원·HR 제외)와 API 카탈로그·모듈 스냅샷을 함께 참고해. 데이터 수정·삭제·추가 요청은 정중히 거절해.';
+  prompt += '\n\n위 데이터를 바탕으로 질문에 답해줘. Pitaya OS 매출·고객·매입·쿠폰·주문·위키·사이니지·외부 시장·뉴스 등 **주입된 DB·API·기사**를 수치·헤드라인으로 인용해 전략적으로 답변해. 데이터 수정·삭제·추가 요청은 정중히 거절해.';
 
   return prompt;
 }

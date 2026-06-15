@@ -4,7 +4,8 @@ import OpenAI from 'openai';
 import Groq from 'groq-sdk';
 import { NextResponse } from 'next/server';
 import { trackUsage, trackTokens } from '@/lib/trackUsage';
-import { SYSTEM_PROMPT } from '@/lib/aiSystemPrompt';
+import { SYSTEM_PROMPT, AI_STRATEGIC_RESPONSE_FORMAT, AI_CAUSAL_ANALYSIS_RULES } from '@/lib/aiSystemPrompt';
+import { formatCausalAnalysisAppendix } from '@/lib/aiAnalysis/formatCausalAppendix';
 import { verifyToken } from '@/lib/authVerify';
 import {
   buildStoreContextPrompt,
@@ -52,6 +53,7 @@ import {
   AI_API_CATALOG_APPENDIX,
   AI_EMPLOYEE_DATA_POLICY,
   loadModuleSnapshotsAppendix,
+  loadStrategicChatContextAppendix,
 } from '@/lib/aiChatFullContext';
 import {
   buildWikiAiAppendix,
@@ -377,13 +379,26 @@ export async function POST(req: Request) {
         console.error('[AI] loadSystemContext failed:', err);
       }
 
-      const analysisMessage =
-        chatMode === 'analysis' ? message.trim() : '매장 운영 종합 분석';
+      const analysisMessage = message.trim();
       try {
         analysisPack = await loadAnalysisPack(storeId, analysisMessage);
       } catch (err) {
         console.error('[AI] loadAnalysisPack failed:', err);
       }
+    }
+
+    let regionSido = '서울';
+    let regionSigungu = '';
+    if (storeId) {
+      try {
+        const { adminDb } = await import('@/lib/firebase/admin');
+        const storeSnap = await adminDb.collection('stores').doc(storeId).get();
+        if (storeSnap.exists) {
+          const d = storeSnap.data()!;
+          regionSido = String(d.regionSido || regionSido);
+          regionSigungu = String(d.regionSigungu || '');
+        }
+      } catch { /* ignore */ }
     }
 
     const basePersona =
@@ -394,6 +409,16 @@ export async function POST(req: Request) {
 
     if (analysisPack) {
       system += `\n\n${analysisPack.promptAppendix}`;
+      if (chatMode === 'chat' || chatMode === 'analysis') {
+        try {
+          system += await formatCausalAnalysisAppendix(storeId!, analysisPack.data, {
+            regionSido,
+            regionSigungu,
+          });
+        } catch (err) {
+          console.error('[AI] causal appendix:', err);
+        }
+      }
     }
 
     if (storeId) {
@@ -408,6 +433,16 @@ export async function POST(req: Request) {
         system += await loadModuleSnapshotsAppendix(storeId);
       } catch (err) {
         console.error('[AI] module snapshots:', err);
+      }
+
+      if (chatMode === 'chat') {
+        try {
+          system += await loadStrategicChatContextAppendix(storeId);
+        } catch (err) {
+          console.error('[AI] strategic chat context:', err);
+        }
+        system += AI_CAUSAL_ANALYSIS_RULES;
+        system += AI_STRATEGIC_RESPONSE_FORMAT;
       }
     }
 

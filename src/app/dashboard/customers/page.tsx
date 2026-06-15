@@ -22,6 +22,7 @@ import * as XLSX from 'xlsx';
 import type { CustomerSortField } from '@/lib/customerQuery';
 import type { VisitCycleStatus } from '@/lib/customerVisitCycle';
 import type { VisitTrendSegment } from '@/lib/customerVisitTrend';
+import type { CustomerAdviceSegment } from '@/lib/marketing/customerSegmentAdvice';
 import {
   clearCustomerPiiSession,
   loadCustomerPiiSession,
@@ -71,6 +72,11 @@ const UnmatchedIdentityPanel = dynamic(
 
 const PiiUnlockModal = dynamic(
   () => import('@/components/customers/PiiUnlockModal'),
+  { ssr: false },
+);
+
+const CustomerSegmentMarketingPanel = dynamic(
+  () => import('@/components/customers/CustomerSegmentMarketingPanel'),
   { ssr: false },
 );
 
@@ -199,6 +205,7 @@ function CustomersPageContent() {
   const [exporting,    setExporting]    = useState(false);
   const [cycleFilter,  setCycleFilter]  = useState<VisitCycleStatus | ''>('');
   const [trendFilter,  setTrendFilter]  = useState<VisitTrendSegment | ''>('');
+  const [adviceSegment, setAdviceSegment] = useState<CustomerAdviceSegment | null>(null);
   const [requestPanel, setRequestPanel] = useState<{ cusCode: string; label: string } | null>(null);
   const [purchasePanel, setPurchasePanel] = useState<{ cusCode: string; label: string } | null>(null);
   const [messagePanelOpen, setMessagePanelOpen] = useState(false);
@@ -209,6 +216,13 @@ function CustomersPageContent() {
   const pendingDecryptRef = useRef(false);
 
   const pendingDeepLink = useRef<string | null>(null);
+  const pendingOpenRequests = useRef(false);
+  const [deepLinkMember, setDeepLinkMember] = useState<{
+    cusCode: string;
+    label: string;
+    exists: boolean;
+  } | null>(null);
+  const [highlightCusCode, setHighlightCusCode] = useState('');
 
   const LIMIT = 50;
   const COL_COUNT = 15;
@@ -418,43 +432,120 @@ function CustomersPageContent() {
     setListError(customerListError ? '고객 목록을 불러오지 못했습니다. 잠시 후 새로고침하세요.' : null);
   }, [customerListError]);
 
-  /* 알림·POS watcher 딥링크: ?cusCode=98001234&openRequests=1 */
+  /* 알림·POS watcher 딥링크: ?cusCode=98001234 (&openRequests=1 선택) */
   useEffect(() => {
     if (!storeId) return;
     const cusCode = searchParams.get('cusCode')?.trim();
-    if (!cusCode) return;
-    if (pendingDeepLink.current === cusCode) return;
-
-    pendingDeepLink.current = cusCode;
-    setSearch(cusCode);
-    setPage(1);
-    setTab('고객 목록');
-
-    const openRequests = searchParams.get('openRequests');
-    if (openRequests === '1' || openRequests === 'true') {
-      setRequestPanel({ cusCode, label: cusCode });
+    if (!cusCode) {
+      setDeepLinkMember(null);
+      setHighlightCusCode('');
+      return;
     }
 
-    router.replace('/dashboard/customers', { scroll: false });
-  }, [storeId, searchParams, router]);
+    const openRequests = searchParams.get('openRequests');
+    const wantPanel = openRequests === '1' || openRequests === 'true';
+    pendingOpenRequests.current = wantPanel;
+    setHighlightCusCode(cusCode);
+
+    if (pendingDeepLink.current !== cusCode) {
+      pendingDeepLink.current = cusCode;
+      setSearch(cusCode);
+      setPage(1);
+      setTab('고객 목록');
+    }
+
+    if (wantPanel) {
+      setRequestPanel(prev => {
+        if (prev?.cusCode === cusCode) return prev;
+        return { cusCode, label: cusCode };
+      });
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const headers = await getAuthHeaders();
+        const res = await fetch(
+          `/api/customers/lookup?storeId=${encodeURIComponent(storeId)}&cusCode=${encodeURIComponent(cusCode)}`,
+          { headers },
+        );
+        const d = await res.json();
+        if (cancelled) return;
+        const label = String(d.name || cusCode).trim() || cusCode;
+        setDeepLinkMember({
+          cusCode,
+          label,
+          exists: !!d.exists,
+        });
+        if (wantPanel) {
+          setRequestPanel(prev => {
+            if (prev?.cusCode !== cusCode) return prev;
+            return { cusCode, label };
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setDeepLinkMember({ cusCode, label: cusCode, exists: false });
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [storeId, searchParams]);
 
   useEffect(() => {
     const cusCode = pendingDeepLink.current;
-    if (!cusCode || loading) return;
+    if (!cusCode || !storeId) return;
 
     const match = customers.find(c => c.cusCode === cusCode);
-    if (!match) return;
+    if (match) {
+      const dec = decryptedMap[match.cusCode];
+      const label = dec?.name || match.name || match.cusCode;
+      setDeepLinkMember(prev => {
+        if (prev?.cusCode !== cusCode) return prev;
+        return { cusCode, label: dec?.name || prev.label || label, exists: true };
+      });
+      if (pendingOpenRequests.current) {
+        setRequestPanel(prev => {
+          if (!prev || prev.cusCode !== cusCode) return prev;
+          if (prev.label === label) return prev;
+          return { ...prev, label };
+        });
+      }
+      pendingDeepLink.current = null;
+      return;
+    }
 
-    const dec = decryptedMap[match.cusCode];
-    setRequestPanel(prev => {
-      if (prev?.cusCode === cusCode && prev.label !== cusCode) return prev;
-      return {
-        cusCode: match.cusCode,
-        label: dec?.name || match.name || match.cusCode,
-      };
-    });
-    pendingDeepLink.current = null;
-  }, [customers, loading, decryptedMap]);
+    if (loading) return;
+
+    let cancelled = false;
+    fetchCustomersList({ storeId, search: cusCode, limit: 10, page: 1 })
+      .then(d => {
+        if (cancelled) return;
+        const row = d.customers.find(c => String(c.cusCode) === cusCode);
+        if (row) {
+          const label = String(row.name || cusCode);
+          setDeepLinkMember({ cusCode, label, exists: true });
+          if (pendingOpenRequests.current) {
+            setRequestPanel(prev => {
+              if (prev?.cusCode === cusCode) return { ...prev, label };
+              return { cusCode, label };
+            });
+          }
+        }
+      })
+      .finally(() => {
+        if (!cancelled) pendingDeepLink.current = null;
+      });
+
+    return () => { cancelled = true; };
+  }, [customers, loading, decryptedMap, storeId]);
+
+  useEffect(() => {
+    if (!highlightCusCode || tab !== '고객 목록') return;
+    const el = document.querySelector(`[data-cus-code="${highlightCusCode}"]`);
+    if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [highlightCusCode, customers, tab, loading]);
 
   const applyDateFilters = () => {
     setJoinFrom(joinFromDraft);
@@ -710,6 +801,29 @@ function CustomersPageContent() {
     setTrendFilter(trend);
     setCycleFilter('');
     setPage(1);
+    if (trend === 'churned' || trend === 'increasing' || trend === 'decreasing') {
+      setAdviceSegment(trend);
+    }
+  };
+
+  const openCycleSegment = (cycle: VisitCycleStatus, segment: CustomerAdviceSegment) => {
+    setTab('고객 목록');
+    setCycleFilter(cycle);
+    setTrendFilter('');
+    setPage(1);
+    setAdviceSegment(segment);
+  };
+
+  const segmentCount = (segment: CustomerAdviceSegment): number => {
+    if (!stats) return 0;
+    switch (segment) {
+      case 'due_soon': return stats.dueSoonCount ?? 0;
+      case 'overdue': return stats.overdueCount ?? 0;
+      case 'churned': return stats.churnedCount ?? 0;
+      case 'increasing': return stats.increasingCount ?? 0;
+      case 'decreasing': return stats.decreasingCount ?? 0;
+      default: return 0;
+    }
   };
 
   /* ── 통계/등급 (API) ── */
@@ -863,20 +977,33 @@ function CustomersPageContent() {
             label="평균 객단가" value={stats.avgSpend.toLocaleString()} unit="원" />
           <StatCard icon={<BarChart2 className="w-4 h-4 text-amber-400" />}
             label="재방문 임박" value={(stats.dueSoonCount ?? 0).toLocaleString()} unit="명"
-            onClick={() => { setTab('고객 목록'); setCycleFilter('due_soon'); setTrendFilter(''); setPage(1); }} />
+            active={adviceSegment === 'due_soon'}
+            onClick={() => openCycleSegment('due_soon', 'due_soon')} />
           <StatCard icon={<BarChart2 className="w-4 h-4 text-red-400" />}
             label="이탈 위험" value={(stats.overdueCount ?? 0).toLocaleString()} unit="명"
-            onClick={() => { setTab('고객 목록'); setCycleFilter('overdue'); setTrendFilter(''); setPage(1); }} />
+            active={adviceSegment === 'overdue'}
+            onClick={() => openCycleSegment('overdue', 'overdue')} />
           <StatCard icon={<Users className="w-4 h-4 text-rose-400" />}
             label="방문 끊김" value={(stats.churnedCount ?? 0).toLocaleString()} unit="명"
+            active={adviceSegment === 'churned'}
             onClick={() => openTrendList('churned')} />
           <StatCard icon={<TrendingUp className="w-4 h-4 text-teal-300" />}
             label="방문 증가" value={(stats.increasingCount ?? 0).toLocaleString()} unit="명"
+            active={adviceSegment === 'increasing'}
             onClick={() => openTrendList('increasing')} />
           <StatCard icon={<TrendingUp className="w-4 h-4 text-orange-300 rotate-180" />}
             label="방문 감소" value={(stats.decreasingCount ?? 0).toLocaleString()} unit="명"
+            active={adviceSegment === 'decreasing'}
             onClick={() => openTrendList('decreasing')} />
         </div>
+      )}
+
+      {adviceSegment && storeId && (
+        <CustomerSegmentMarketingPanel
+          segment={adviceSegment}
+          storeId={storeId}
+          count={segmentCount(adviceSegment)}
+        />
       )}
 
       {/* 탭 */}
@@ -892,6 +1019,45 @@ function CustomersPageContent() {
       {/* 고객 목록 탭 */}
       {tab === '고객 목록' && (
         <div className="space-y-3">
+          {deepLinkMember && (
+            <div className="bg-teal-950/40 border border-teal-700/40 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-teal-100">
+                  {deepLinkMember.label}
+                  <span className="ml-2 font-mono text-xs text-teal-300/80">{deepLinkMember.cusCode}</span>
+                </p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {deepLinkMember.exists
+                    ? 'Pitaya 회원정보 페이지 · 요청 이력이 없어도 회원 조회 가능'
+                    : 'Pitaya에 아직 동기화되지 않은 회원번호입니다'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRequestPanel({
+                    cusCode: deepLinkMember.cusCode,
+                    label: deepLinkMember.label,
+                  })}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-teal-600 hover:bg-teal-500 text-white"
+                >
+                  <ClipboardList className="w-3.5 h-3.5" />
+                  요청 이력
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPurchasePanel({
+                    cusCode: deepLinkMember.cusCode,
+                    label: deepLinkMember.label,
+                  })}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-slate-800 hover:bg-slate-700 text-slate-200"
+                >
+                  <ShoppingBag className="w-3.5 h-3.5" />
+                  구매 이력
+                </button>
+              </div>
+            </div>
+          )}
           {/* 기간 · 검색 · 필터 */}
           <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-3">
             <div className="flex flex-wrap items-end gap-3">
@@ -1108,7 +1274,13 @@ function CustomersPageContent() {
                 ) : paginatedCustomers.map(c => {
                   const dec = decryptedMap[c.cusCode];
                   return (
-                    <tr key={c.cusCode} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition">
+                    <tr
+                      key={c.cusCode}
+                      data-cus-code={c.cusCode}
+                      className={`border-b border-slate-800/50 hover:bg-slate-800/30 transition ${
+                        highlightCusCode === c.cusCode ? 'bg-teal-950/30 ring-1 ring-inset ring-teal-600/40' : ''
+                      }`}
+                    >
                       <td className="px-3 py-2 font-mono text-slate-400">{c.cusCode}</td>
                       <td className="px-3 py-2">
                         {dec ? (
@@ -1509,8 +1681,9 @@ function CustomersPageContent() {
   );
 }
 
-function StatCard({ icon, label, value, unit, onClick }: {
-  icon: React.ReactNode; label: string; value: string; unit: string; onClick?: () => void;
+function StatCard({ icon, label, value, unit, onClick, active }: {
+  icon: React.ReactNode; label: string; value: string; unit: string;
+  onClick?: () => void; active?: boolean;
 }) {
   return (
     <div
@@ -1518,7 +1691,9 @@ function StatCard({ icon, label, value, unit, onClick }: {
       tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
       onKeyDown={onClick ? e => { if (e.key === 'Enter' || e.key === ' ') onClick(); } : undefined}
-      className={`bg-slate-900/60 border border-slate-800 rounded-xl p-3.5${onClick ? ' cursor-pointer hover:border-slate-600 transition' : ''}`}
+      className={`bg-slate-900/60 border rounded-xl p-3.5${
+        onClick ? ' cursor-pointer hover:border-slate-600 transition' : ''
+      }${active ? ' border-teal-500/60 ring-1 ring-teal-500/30' : ' border-slate-800'}`}
     >
       <div className="flex items-center gap-2 mb-1">
         {icon}
