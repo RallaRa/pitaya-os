@@ -45,6 +45,10 @@ import {
   tryCreateCalendarEventFromAiChat,
 } from '@/lib/calendarAi/fromAiChat';
 import {
+  buildMarketingChatAppendix,
+  tryBuildMarketingRecommendFromAiChat,
+} from '@/lib/marketing/fromAiChat';
+import {
   AI_API_CATALOG_APPENDIX,
   AI_EMPLOYEE_DATA_POLICY,
   loadModuleSnapshotsAppendix,
@@ -423,6 +427,7 @@ export async function POST(req: Request) {
     // ── 유통기한 등록 (독립 모듈, AI 대화 채널) ──
     let expiryReminder: Awaited<ReturnType<typeof tryCreateExpiryFromAiChat>> | undefined;
     let calendarEvent: Awaited<ReturnType<typeof tryCreateCalendarEventFromAiChat>> | undefined;
+    let marketingRecommendations: Awaited<ReturnType<typeof tryBuildMarketingRecommendFromAiChat>> | undefined;
     if (
       chatMode !== 'debate'
       && (modelChoice as string) !== 'debate'
@@ -449,6 +454,15 @@ export async function POST(req: Request) {
           console.error('[AI] calendar event:', err);
         }
       }
+      try {
+        marketingRecommendations = await tryBuildMarketingRecommendFromAiChat({
+          storeId,
+          message: message.trim(),
+          includePii: false,
+        });
+      } catch (err) {
+        console.error('[AI] marketing recommendations:', err);
+      }
     }
 
     if (expiryReminder?.created && expiryReminder.result) {
@@ -459,6 +473,8 @@ export async function POST(req: Request) {
         ? t.startDate
         : `${t.startDate} ${t.startTime}`;
       system += `\n\n[시스템] 캘린더 일정이 자동 등록되었습니다 (제목: ${t.title}, ${when}). 등록 방법·메뉴 안내 없이 짧게 확인만 하세요.`;
+    } else if (marketingRecommendations?.triggered && marketingRecommendations.generated) {
+      system += `\n\n[시스템] 고객별 쿠폰·마케팅 문자 추천 리스트가 생성되었습니다 (${marketingRecommendations.data?.recommendationCount ?? 0}명). 세그먼트·판단기준·쿠폰·문자안은 화면 패널과 엑셀에 포함됩니다. 이름·전화번호는 엑셀 다운로드 시 본인확인 후 제공됩니다.`;
     }
 
     // ── 4AI 협업 토론 (model=debate 또는 chatMode=debate) ──
@@ -611,10 +627,15 @@ export async function POST(req: Request) {
     let responseText = result.text;
     const expiryAppendix = expiryReminder ? buildExpiryChatAppendix(expiryReminder) : '';
     const calendarAppendix = calendarEvent ? buildCalendarChatAppendix(calendarEvent) : '';
+    const marketingAppendix = marketingRecommendations
+      ? buildMarketingChatAppendix(marketingRecommendations)
+      : '';
     if (expiryAppendix) {
       responseText = `${responseText.trim()}${expiryAppendix}`;
     } else if (calendarAppendix) {
       responseText = `${responseText.trim()}${calendarAppendix}`;
+    } else if (marketingAppendix) {
+      responseText = `${responseText.trim()}${marketingAppendix}`;
     }
     if (aiExclusions.length > 0) {
       responseText += `\n\n---\n⛔ **제외된 AI**\n${aiExclusions.map(e => `• ${e}`).join('\n')}\n✅ **응답 AI:** ${MODEL_NAMES[finalModel] || finalModel}`;
@@ -636,6 +657,9 @@ export async function POST(req: Request) {
       } : undefined,
       expiryReminder: expiryReminder?.created ? expiryReminder.result : undefined,
       calendarEvent: calendarEvent?.created ? calendarEvent.result : undefined,
+      marketingRecommendations: marketingRecommendations?.generated
+        ? marketingRecommendations.data
+        : undefined,
     });
 
   } catch (error: any) {

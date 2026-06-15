@@ -16,6 +16,9 @@ import { useSpeechInput } from '@/hooks/useSpeechInput';
 import { useSpeechOutput } from '@/hooks/useSpeechOutput';
 import { useIsMobileView } from '@/hooks/useIsMobileView';
 import type { DebateEntry, DebateRoundResult } from '@/app/api/ai/route';
+import MarketingRecommendPanel, {
+  type MarketingRecommendPayload,
+} from '@/components/ai/MarketingRecommendPanel';
 
 // ── 모델 정의 ──────────────────────────────────────────────────────
 const MODELS = [
@@ -92,6 +95,12 @@ const ANALYSIS_STARTER_PROMPTS = [
   '요일별 매출·쿠폰 타깃 제안',
 ];
 
+const MARKETING_STARTER_PROMPTS = [
+  '고객별 쿠폰·마케팅 문자 추천 리스트 엑셀로 만들어줘',
+  '이탈 위험 고객에게 보낼 쿠폰과 문자 정리해줘',
+  '생일·재방문 주기 초과 고객 마케팅 대상 뽑아줘',
+];
+
 interface AnalysisContextMeta {
   pack: string;
   packLabel: string;
@@ -125,6 +134,7 @@ interface Message {
   debatePhase?: string;
   chatMode?: ChatMode;
   analysisContext?: AnalysisContextMeta;
+  marketingRecommendations?: MarketingRecommendPayload;
 }
 
 function formatPct(n: number | null | undefined): string {
@@ -180,6 +190,7 @@ function normalizeMsg(msg: any): Message {
     debatePhase:     msg.debatePhase,
     chatMode:        msg.chatMode,
     analysisContext: msg.analysisContext,
+    marketingRecommendations: msg.marketingRecommendations,
   };
 }
 
@@ -529,6 +540,7 @@ export default function AiChatPage() {
         autoSelectedBy: data.autoSelectedBy,
         chatMode,
         analysisContext: data.analysisContext,
+        marketingRecommendations: data.marketingRecommendations,
       };
 
       const finalMessages = [...newMessages, aiMsg];
@@ -858,6 +870,20 @@ export default function AiChatPage() {
                     ))}
                   </div>
                 )}
+                {chatMode === 'chat' && (
+                  <div className="flex flex-wrap justify-center gap-2 mt-6 max-w-lg">
+                    {MARKETING_STARTER_PROMPTS.map(prompt => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => setInput(prompt)}
+                        className="px-3 py-2 rounded-full text-xs bg-teal-500/10 text-teal-300 border border-teal-500/30 hover:border-teal-400/50 hover:text-teal-200 transition-colors"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {chatMode === 'debate' && (
                   <div className="flex flex-wrap justify-center gap-2 mt-6">
                     {DEBATE_TOPICS.map(topic => (
@@ -912,6 +938,13 @@ export default function AiChatPage() {
                         </div>
                       )}
                       {msg.analysisContext && <AnalysisContextChips ctx={msg.analysisContext} />}
+                      {msg.marketingRecommendations && user?.uid && currentStore?.storeId && (
+                        <MarketingRecommendPanel
+                          data={msg.marketingRecommendations}
+                          storeId={currentStore.storeId}
+                          uid={user.uid}
+                        />
+                      )}
                     </div>
                   )}
                 </div>
