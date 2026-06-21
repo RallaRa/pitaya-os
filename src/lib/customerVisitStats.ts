@@ -1,5 +1,5 @@
 import { adminDb } from '@/lib/firebase/admin';
-import { getKSTTodayYMD, normDateYMD, subtractMonthsYMD } from '@/lib/dateUtils';
+import { getKSTTodayYMD, normDateYMD, subtractMonthsYMD, subtractYearsYMD } from '@/lib/dateUtils';
 import { truncateEvidenceSummary } from '@/lib/salesEvidence';
 
 export interface CustomerVisitSummary {
@@ -31,6 +31,20 @@ export interface CustomerVisitSummary {
   /** @deprecated prevMonthFullVisits 와 동일 */
   prevMonthVisits: number;
   visitTxChangePct: number | null;
+  /** 전년 동월 라벨 (예: 작년 6월) */
+  prevYearMonthLabel: string;
+  /** 전년 동월 같은 기간(1일~동일일) 방문 고객 수 */
+  prevYearSamePeriodVisitors: number;
+  /** 전년 동월 전체 방문 고객 수 — 보조 표시 */
+  prevYearFullVisitors: number;
+  visitorYoYChange: number;
+  /** 당월 vs 전년 동월 동일기간 객수 증감률 */
+  visitorYoYChangePct: number | null;
+  prevYearSamePeriodVisitRate: number | null;
+  visitRateYoYChange: number | null;
+  visitRateYoYChangePct: number | null;
+  prevYearSamePeriodVisits: number;
+  visitTxYoYChangePct: number | null;
   direction: 'up' | 'down' | 'flat';
   evidenceSummary: string;
   evidenceDetail: string;
@@ -85,6 +99,10 @@ export async function getCustomerVisitSummary(storeId: string): Promise<Customer
   const prevMonthStart = `${prevYM}-01`;
   const prevSamePeriodEnd = subtractMonthsYMD(today, 1);
   const prevMonthEnd = lastDayOfYm(prevYM);
+  const prevYearYM = monthPrefix(subtractYearsYMD(thisMonthStart, 1));
+  const prevYearMonthStart = `${prevYearYM}-01`;
+  const prevYearSamePeriodEnd = subtractYearsYMD(today, 1);
+  const prevYearMonthEnd = lastDayOfYm(prevYearYM);
 
   const [salesSnap, customerSnap] = await Promise.all([
     adminDb.collection('pos_customer_sales').where('storeId', '==', storeId).get(),
@@ -101,6 +119,8 @@ export async function getCustomerVisitSummary(storeId: string): Promise<Customer
   const thisMtd = countVisitorsInRange(salesDocs, thisMonthStart, today);
   const prevSame = countVisitorsInRange(salesDocs, prevMonthStart, prevSamePeriodEnd);
   const prevFull = countVisitorsInRange(salesDocs, prevMonthStart, prevMonthEnd);
+  const prevYearSame = countVisitorsInRange(salesDocs, prevYearMonthStart, prevYearSamePeriodEnd);
+  const prevYearFull = countVisitorsInRange(salesDocs, prevYearMonthStart, prevYearMonthEnd);
 
   const visitorChange = thisMtd.visitors - prevSame.visitors;
   const visitorChangePct = pctChange(thisMtd.visitors, prevSame.visitors);
@@ -124,17 +144,31 @@ export async function getCustomerVisitSummary(storeId: string): Promise<Customer
 
   const visitTxChangePct = pctChange(thisMtd.visits, prevSame.visits);
 
+  const visitorYoYChange = thisMtd.visitors - prevYearSame.visitors;
+  const visitorYoYChangePct = pctChange(thisMtd.visitors, prevYearSame.visitors);
+  const prevYearSamePeriodVisitRate = totalCustomers > 0
+    ? Math.round((prevYearSame.visitors / totalCustomers) * 1000) / 10
+    : null;
+  const visitRateYoYChange = thisMonthVisitRate != null && prevYearSamePeriodVisitRate != null
+    ? Math.round((thisMonthVisitRate - prevYearSamePeriodVisitRate) * 10) / 10
+    : null;
+  const visitRateYoYChangePct = thisMonthVisitRate != null && prevYearSamePeriodVisitRate != null && prevYearSamePeriodVisitRate > 0
+    ? Math.round(((thisMonthVisitRate - prevYearSamePeriodVisitRate) / prevYearSamePeriodVisitRate) * 1000) / 10
+    : null;
+  const visitTxYoYChangePct = pctChange(thisMtd.visits, prevYearSame.visits);
+
   const primaryChange = visitRateChangePct ?? visitorChangePct ?? 0;
   const direction: CustomerVisitSummary['direction'] =
     primaryChange > 0 ? 'up' : primaryChange < 0 ? 'down' : 'flat';
 
   const evidenceSummary = truncateEvidenceSummary(
-    `POS 방문고객 ${monthLabel(thisYM)} ${mtdPeriodLabel} ${thisMtd.visitors}명 vs ${monthLabel(prevYM)} 동일 ${prevSame.visitors}명·등록 ${totalCustomers}명·pos_customer_sales`,
+    `POS 방문고객 ${monthLabel(thisYM)} ${mtdPeriodLabel} ${thisMtd.visitors}명 vs ${monthLabel(prevYM)} 동일 ${prevSame.visitors}명·작년 ${monthLabel(thisYM)} 동일 ${prevYearSame.visitors}명·등록 ${totalCustomers}명`,
   );
   const evidenceDetail =
     `기준: pos_customer_sales cusCode 중복 제거(방문고객), visitCount 합(방문횟수). ` +
-    `주 비교: ${monthLabel(thisYM)}·${monthLabel(prevYM)} 각 ${mtdPeriodLabel}. ` +
-    `보조: ${monthLabel(prevYM)} 전체 ${prevFull.visitors}명.`;
+    `전월: ${monthLabel(thisYM)}·${monthLabel(prevYM)} 각 ${mtdPeriodLabel}. ` +
+    `전년: ${monthLabel(thisYM)}·작년 ${monthLabel(thisYM)} 각 ${mtdPeriodLabel}. ` +
+    `보조: ${monthLabel(prevYM)} 전체 ${prevFull.visitors}명, 작년 ${monthLabel(thisYM)} 전체 ${prevYearFull.visitors}명.`;
   const salesHint =
     direction === 'down'
       ? '방문·방문률 하락 → 단골 쿠폰·재방문 알림·핵심 품목 전면 진열로 객단가 보완'
@@ -164,6 +198,16 @@ export async function getCustomerVisitSummary(storeId: string): Promise<Customer
     prevMonthFullVisits: prevFull.visits,
     prevMonthVisits: prevFull.visits,
     visitTxChangePct,
+    prevYearMonthLabel: `작년 ${monthLabel(thisYM)}`,
+    prevYearSamePeriodVisitors: prevYearSame.visitors,
+    prevYearFullVisitors: prevYearFull.visitors,
+    visitorYoYChange,
+    visitorYoYChangePct,
+    prevYearSamePeriodVisitRate,
+    visitRateYoYChange,
+    visitRateYoYChangePct,
+    prevYearSamePeriodVisits: prevYearSame.visits,
+    visitTxYoYChangePct,
     direction,
     evidenceSummary,
     evidenceDetail,

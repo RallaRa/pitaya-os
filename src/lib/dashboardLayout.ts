@@ -1,7 +1,7 @@
 import type { LayoutItem } from 'react-grid-layout';
 
 export const GRID_COLS = 12;
-export const DASHBOARD_LAYOUT_VERSION = 11;
+export const DASHBOARD_LAYOUT_VERSION = 13;
 
 export interface WidgetMeta {
   id: string;
@@ -65,7 +65,7 @@ export const WIDGET_META: WidgetMeta[] = [
   },
   {
     id: 'customer_visit',
-    title: '고객 방문 · 전월대비',
+    title: '고객 방문 · 전월·전년대비',
     defaultItem: { i: 'customer_visit', x: 0, y: 22, w: 4, h: 4, minW: 3, minH: 3, maxW: 6, maxH: 8 },
     permKey: 'customer_visit',
   },
@@ -152,6 +152,18 @@ export const WIDGET_META: WidgetMeta[] = [
     title: '발주 vs 예측',
     defaultItem: { i: 'procurement_gap', x: 8, y: 22, w: 4, h: 4, minW: 3, minH: 3, maxW: 8, maxH: 6 },
     permKey: 'procurement_gap',
+  },
+  {
+    id: 'trade_area_sku_fit',
+    title: '상권-fit SKU Top20',
+    defaultItem: { i: 'trade_area_sku_fit', x: 6, y: 38, w: 6, h: 5, minW: 4, minH: 4, maxW: 12, maxH: 8 },
+    permKey: 'trade_area_sku_fit',
+  },
+  {
+    id: 'staffing_footfall',
+    title: '유인·무인 × 유동',
+    defaultItem: { i: 'staffing_footfall', x: 0, y: 38, w: 6, h: 5, minW: 4, minH: 4, maxW: 12, maxH: 8 },
+    permKey: 'staffing_footfall',
   },
   {
     id: 'rfm_pipeline',

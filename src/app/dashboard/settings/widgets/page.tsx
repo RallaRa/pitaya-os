@@ -17,7 +17,7 @@ const WIDGET_LIST = [
   { key: 'sales_prediction',   label: 'AI 매출 예측',      desc: '예측 + AI 서포터 코멘트' },
   { key: 'today_sales',        label: '당일 매출 현황',    desc: '실시간 POS 매출' },
   { key: 'sales_compare',      label: '매출 목표',         desc: '주·월 목표 달성·진도율' },
-  { key: 'customer_visit',     label: '고객 방문 · 전월대비', desc: '방문 고객·방문률 전월 대비' },
+  { key: 'customer_visit',     label: '고객 방문 · 전월·전년대비', desc: '방문 고객·방문률 전월·전년 동월 대비' },
   { key: 'churn_risk',         label: '이탈 위험 고객',       desc: '이탈 스코어 TOP10 + 알림톡 큐' },
   { key: 'sales_heatmap',      label: '시간대 히트맵',        desc: '요일×시간 평균 매출 (축약)' },
   { key: 'dow_profitability',  label: '요일별 수익성',        desc: '요일별 매출·수익 랭킹' },
@@ -32,6 +32,8 @@ const WIDGET_LIST = [
   { key: 'inventory_turnover', label: '재고 회전율',          desc: '품목별 주간 회전·발주 제안' },
   { key: 'sales_category',     label: '카테고리별 매출',    desc: '소고기·돼지·닭·양념 파이차트' },
   { key: 'time_slot_aov',      label: '시간대별 객단가',    desc: '오전·오후·저녁·야간 객단가' },
+  { key: 'staffing_footfall',  label: '유인·무인 × 유동',   desc: '24h 유동지수·매출 — 유인/무인 구분' },
+  { key: 'trade_area_sku_fit', label: '상권-fit SKU Top20', desc: '상권·트렌드·매출·마진 종합 fit' },
 ];
 
 const ROLE_COLS: { key: string; label: string; locked?: boolean }[] = [
@@ -69,6 +71,8 @@ const DEFAULT_PERMS: Permissions = {
   inventory_turnover: { master: true, admin: true,  user: true,  staff: false },
   sales_category:     { master: true, admin: true,  user: true,  staff: true  },
   time_slot_aov:      { master: true, admin: true,  user: true,  staff: true  },
+  staffing_footfall:  { master: true, admin: true,  user: true,  staff: true  },
+  trade_area_sku_fit: { master: true, admin: true,  user: true,  staff: false },
 };
 
 export default function WidgetPermissionsPage() {

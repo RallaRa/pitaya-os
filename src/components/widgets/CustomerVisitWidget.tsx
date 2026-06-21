@@ -10,6 +10,8 @@ import { useCustomerVisitSummary } from '@/lib/queries';
 import WidgetAnalysisPanel from './WidgetAnalysisPanel';
 import { useWidgetAnalysis } from '@/hooks/useWidgetAnalysis';
 
+const WIDGET_TITLE = '고객 방문 · 전월·전년대비';
+
 function ChangeBadge({
   value,
   suffix = '%',
@@ -59,7 +61,7 @@ function CustomerVisitWidgetContent({
 
   if (isLoading && !data) {
     return (
-      <WidgetWrapper title="고객 방문 · 전월대비" editMode={editMode} onRemove={onRemove}>
+      <WidgetWrapper title={WIDGET_TITLE} editMode={editMode} onRemove={onRemove}>
         <div className="p-3"><SkeletonCard /></div>
       </WidgetWrapper>
     );
@@ -67,7 +69,7 @@ function CustomerVisitWidgetContent({
 
   if (isError || !data) {
     return (
-      <WidgetWrapper title="고객 방문 · 전월대비" editMode={editMode} onRemove={onRemove} onRefresh={refresh}>
+      <WidgetWrapper title={WIDGET_TITLE} editMode={editMode} onRemove={onRemove} onRefresh={refresh}>
         <div className="p-3"><EmptyState reason="고객 방문 데이터를 불러오지 못했습니다." /></div>
       </WidgetWrapper>
     );
@@ -86,7 +88,7 @@ function CustomerVisitWidgetContent({
 
   return (
     <WidgetWrapper
-      title="고객 방문 · 전월대비"
+      title={WIDGET_TITLE}
       editMode={editMode}
       onRemove={onRemove}
       onRefresh={refresh}
@@ -110,7 +112,7 @@ function CustomerVisitWidgetContent({
             />
           )}
 
-          {/* 주 비교: 당월·전월 동일 기간 객수 */}
+          {/* 주 비교: 당월·전월·전년 동월 동일 기간 객수 */}
           <div className="rounded-xl border border-teal-500/30 bg-teal-950/20 p-3">
             <p className="text-[10px] font-semibold text-teal-300/90 mb-2">
               동일 기간 객수 ({data.mtdPeriodLabel})
@@ -130,12 +132,24 @@ function CustomerVisitWidgetContent({
                     {data.prevMonthSamePeriodVisitors.toLocaleString()}명
                   </strong>
                 </p>
+                <p className="text-[10px] text-slate-400">
+                  {data.prevYearMonthLabel} {data.mtdPeriodLabel}{' '}
+                  <strong className="text-slate-300 tabular-nums">
+                    {data.prevYearSamePeriodVisitors.toLocaleString()}명
+                  </strong>
+                </p>
               </div>
-              <div className={`flex flex-col items-end ${directionColor}`}>
-                <DirectionIcon className="w-5 h-5" />
+              <div className="flex flex-col items-end gap-1">
+                <div className={`flex flex-col items-end ${directionColor}`}>
+                  <DirectionIcon className="w-5 h-5" />
+                  <ChangeBadge
+                    value={data.visitorChangePct}
+                    label="전월"
+                  />
+                </div>
                 <ChangeBadge
-                  value={data.visitorChangePct}
-                  label="동일기간"
+                  value={data.visitorYoYChangePct}
+                  label="전년"
                 />
               </div>
             </div>
@@ -152,7 +166,11 @@ function CustomerVisitWidgetContent({
               <p className="text-[9px] text-slate-500">
                 {data.prevMonthLabel} 동일 {data.prevMonthSamePeriodVisitRate != null ? `${data.prevMonthSamePeriodVisitRate}%` : '-'}
               </p>
-              <ChangeBadge value={data.visitRateChangePct} label="동일기간" size="xs" />
+              <p className="text-[9px] text-slate-500">
+                {data.prevYearMonthLabel} 동일 {data.prevYearSamePeriodVisitRate != null ? `${data.prevYearSamePeriodVisitRate}%` : '-'}
+              </p>
+              <ChangeBadge value={data.visitRateChangePct} label="전월" size="xs" />
+              <ChangeBadge value={data.visitRateYoYChangePct} label="전년" size="xs" />
             </div>
             <div className="bg-slate-800/50 rounded-lg p-2 border border-slate-700/40">
               <p className="text-[9px] text-slate-500">방문 횟수</p>
@@ -162,13 +180,17 @@ function CustomerVisitWidgetContent({
               <p className="text-[9px] text-slate-500">
                 {data.prevMonthLabel} 동일 {data.prevMonthSamePeriodVisits.toLocaleString()}회
               </p>
-              <ChangeBadge value={data.visitTxChangePct} label="동일기간" size="xs" />
+              <p className="text-[9px] text-slate-500">
+                {data.prevYearMonthLabel} 동일 {data.prevYearSamePeriodVisits.toLocaleString()}회
+              </p>
+              <ChangeBadge value={data.visitTxChangePct} label="전월" size="xs" />
+              <ChangeBadge value={data.visitTxYoYChangePct} label="전년" size="xs" />
             </div>
           </div>
 
-          {/* 보조: 전월 전체 (작게) */}
-          <div className="rounded-lg border border-slate-700/30 bg-slate-900/40 px-2.5 py-2">
-            <p className="text-[9px] text-slate-500 mb-1">참고 · 전월 전체</p>
+          {/* 보조: 전월·전년 동월 전체 (작게) */}
+          <div className="rounded-lg border border-slate-700/30 bg-slate-900/40 px-2.5 py-2 space-y-1.5">
+            <p className="text-[9px] text-slate-500 mb-1">참고 · 전월·전년 동월 전체</p>
             <div className="flex items-center justify-between gap-2 text-[10px] text-slate-500">
               <span>
                 {data.thisMonthLabel} {data.mtdPeriodLabel}{' '}
@@ -180,14 +202,34 @@ function CustomerVisitWidgetContent({
                 <span className="text-slate-400 tabular-nums">{data.prevMonthFullVisitors.toLocaleString()}명</span>
               </span>
             </div>
+            <div className="flex items-center justify-between gap-2 text-[10px] text-slate-500">
+              <span>
+                {data.thisMonthLabel} {data.mtdPeriodLabel}{' '}
+                <span className="text-slate-400 tabular-nums">{data.thisMonthVisitors.toLocaleString()}명</span>
+              </span>
+              <span className="text-slate-600">vs</span>
+              <span>
+                {data.prevYearMonthLabel} 전체{' '}
+                <span className="text-slate-400 tabular-nums">{data.prevYearFullVisitors.toLocaleString()}명</span>
+              </span>
+            </div>
           </div>
 
-          {data.visitRateChange != null && (
-            <p className={`text-[10px] text-center ${directionColor}`}>
-              동일기간 방문률 {data.visitRateChange > 0 ? '+' : ''}{data.visitRateChange}%p
-              {' '}
-              ({data.direction === 'up' ? '증가' : data.direction === 'down' ? '감소' : '유지'})
-            </p>
+          {(data.visitRateChange != null || data.visitRateYoYChange != null) && (
+            <div className="text-[10px] text-center space-y-0.5">
+              {data.visitRateChange != null && (
+                <p className={directionColor}>
+                  전월 동일기간 방문률 {data.visitRateChange > 0 ? '+' : ''}{data.visitRateChange}%p
+                  {' '}
+                  ({data.direction === 'up' ? '증가' : data.direction === 'down' ? '감소' : '유지'})
+                </p>
+              )}
+              {data.visitRateYoYChange != null && (
+                <p className="text-slate-400">
+                  전년 동월 동일기간 방문률 {data.visitRateYoYChange > 0 ? '+' : ''}{data.visitRateYoYChange}%p
+                </p>
+              )}
+            </div>
           )}
           <WidgetAnalysisPanel analysis={analysis} />
         </div>
@@ -205,7 +247,7 @@ export default function CustomerVisitWidget({
 }) {
   if (!storeId) {
     return (
-      <WidgetWrapper title="고객 방문 · 전월대비" editMode={editMode} onRemove={onRemove}>
+      <WidgetWrapper title={WIDGET_TITLE} editMode={editMode} onRemove={onRemove}>
         <div className="p-3">
           <EmptyState reason="매장이 선택되지 않았습니다." />
         </div>
