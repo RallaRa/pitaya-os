@@ -39,12 +39,17 @@ function DashboardLayoutInner({
   const isAiFullscreen = pathname === '/dashboard/ai';
   const chrome = useDashboardChrome();
   const isDashboardFullscreen = chrome?.hideChrome && pathname === '/dashboard';
+  const isPiiApprove =
+    pathname?.startsWith('/pii-approve') ||
+    pathname?.includes('/pii-approve');
 
   useEffect(() => {
     if (!loading && !user) {
-      router.push('/login');
+      const search = typeof window !== 'undefined' ? window.location.search : '';
+      const next = encodeURIComponent(`${pathname}${search}`);
+      router.push(`/login?next=${next}`);
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, pathname]);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -56,14 +61,14 @@ function DashboardLayoutInner({
   }, [user?.uid]);
 
   useEffect(() => {
-    if (!user?.uid || !storesLoaded) return;
+    if (isPiiApprove || !user?.uid || !storesLoaded) return;
     if (myStores.length === 0) {
       router.push('/select-store?mode=apply');
     }
-  }, [user?.uid, storesLoaded, myStores.length, router]);
+  }, [user?.uid, storesLoaded, myStores.length, router, isPiiApprove]);
 
   useEffect(() => {
-    if (!user?.uid || currentStore) return;
+    if (isPiiApprove || !user?.uid || currentStore) return;
     if (myStores.length > 0) {
       if (myStores.length === 1) setCurrentStore(myStores[0]);
       return;
@@ -77,7 +82,7 @@ function DashboardLayoutInner({
         router.push('/select-store');
       }
     });
-  }, [user?.uid, currentStore, myStores, refreshStores, setCurrentStore, router]);
+  }, [user?.uid, currentStore, myStores, refreshStores, setCurrentStore, router, isPiiApprove]);
 
   if (loading || !user) {
     return (

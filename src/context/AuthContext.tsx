@@ -7,6 +7,8 @@ import {
   User,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase/firebase';
@@ -19,6 +21,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInWithGoogleRedirect: () => Promise<void>;
   logout: () => Promise<void>;
   checkAndRoute: (uid: string) => Promise<void>;
 }
@@ -90,8 +93,38 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         ).catch(() => {});
       }
     });
+
+    getRedirectResult(auth)
+      .then(async (result) => {
+        if (!result?.user) return;
+        await fetch('/api/users', {
+          method: 'POST',
+          headers: await getAuthJsonHeaders(),
+          body: JSON.stringify({
+            uid: result.user.uid,
+            name: result.user.displayName,
+            email: result.user.email,
+            photoURL: result.user.photoURL,
+          }),
+        }).catch(() => {});
+      })
+      .catch((error) => {
+        console.error('[Auth redirect result]', error);
+      });
+
     return () => unsubscribe();
   }, []);
+
+  const signInWithGoogleRedirect = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      await signInWithRedirect(auth, provider);
+    } catch (error: unknown) {
+      const code = (error as { code?: string })?.code;
+      console.error('[Auth redirect 에러]', code, error);
+    }
+  };
 
   const signInWithGoogle = async () => {
     try {
@@ -134,7 +167,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, signInWithGoogle, logout, checkAndRoute }}>
+    <AuthContext.Provider value={{ user, loading, signInWithGoogle, signInWithGoogleRedirect, logout, checkAndRoute }}>
       {children}
     </AuthContext.Provider>
   );

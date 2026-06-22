@@ -36,6 +36,15 @@ async function resolveKakaoPayload(opts: NotifyOptions): Promise<Partial<KakaoNo
     };
   }
 
+  if (type === 'pii_unlock_request') {
+    return {
+      template: 'text',
+      link,
+      buttonTitle: opts.buttonTitle || '지문 승인',
+      notifyType: type,
+    };
+  }
+
   if (type === 'public_order') {
     const imageUrl = opts.imageUrl
       || (opts.storeId ? await getStoreLogoKakaoImageUrl(opts.storeId) : undefined)

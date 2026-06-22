@@ -1,10 +1,22 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { isInAppBrowser } from '@/lib/piiStepUp/inAppBrowser.client';
+
+function safeNextPath(raw: string | null): string | null {
+  if (!raw) return null;
+  const path = raw.trim();
+  if (!path.startsWith('/') || path.startsWith('//')) return null;
+  return path;
+}
+
 export default function LoginPage() {
-  const { user, loading, signInWithGoogle, checkAndRoute } = useAuth();
+  const { user, loading, signInWithGoogle, signInWithGoogleRedirect, checkAndRoute } = useAuth();
+  const router = useRouter();
   const [notice, setNotice] = useState('');
+  const [useRedirect, setUseRedirect] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -12,13 +24,29 @@ export default function LoginPage() {
     if (err === 'login_disabled') {
       setNotice('카카오로는 로그인할 수 없습니다. Google로 가입·로그인한 뒤 설정에서 카카오 알림을 연동해주세요.');
     }
+    const next = safeNextPath(params.get('next'));
+    const inApp = params.get('inapp') === '1' || isInAppBrowser();
+    setUseRedirect(inApp || (next?.includes('/pii-approve') ?? false));
   }, []);
 
   useEffect(() => {
     if (!loading && user) {
+      const next = safeNextPath(new URLSearchParams(window.location.search).get('next'));
+      if (next) {
+        router.replace(next);
+        return;
+      }
       checkAndRoute(user.uid);
     }
-  }, [user, loading, checkAndRoute]);
+  }, [user, loading, checkAndRoute, router]);
+
+  const handleGoogleLogin = useCallback(async () => {
+    if (useRedirect) {
+      await signInWithGoogleRedirect();
+      return;
+    }
+    await signInWithGoogle();
+  }, [useRedirect, signInWithGoogle, signInWithGoogleRedirect]);
 
   if (loading) {
     return (
@@ -48,8 +76,14 @@ export default function LoginPage() {
           </p>
         )}
 
+        {useRedirect && (
+          <p className="text-teal-300/90 text-xs text-center mb-4 bg-teal-900/20 border border-teal-800/50 rounded-lg px-3 py-2">
+            카카오톡·앱 내 브라우저에서는 Google 로그인 후 승인 페이지로 돌아옵니다.
+          </p>
+        )}
+
         <button
-          onClick={() => signInWithGoogle()}
+          onClick={() => void handleGoogleLogin()}
           className="w-full flex items-center justify-center gap-3
             bg-white hover:bg-gray-50 active:bg-gray-100
             text-[#3c4043] font-medium text-sm
