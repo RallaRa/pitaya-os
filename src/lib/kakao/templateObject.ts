@@ -63,7 +63,8 @@ export function buildKakaoTemplateObject(input: BuildKakaoTemplateInput): Record
       object_type: 'text',
       text,
       link,
-      buttons: [{ title: buttonTitle.slice(0, 8), link }],
+      // text 템플릿은 buttons[]가 아닌 button_title 사용 (나에게 보내기 UI)
+      button_title: buttonTitle.slice(0, 8),
     };
   }
 

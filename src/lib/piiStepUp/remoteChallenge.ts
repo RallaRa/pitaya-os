@@ -42,8 +42,8 @@ export async function createRemoteChallenge(opts: {
   const approvePath = `/pii-approve?challenge=${ref.id}&from=kakao`;
   const title = '고객정보 복호화 승인 요청';
   const message =
-    `${opts.storeName || '매장'} · ${opts.deviceLabel || 'PC'}에서 개인정보 열람을 요청했습니다.\n` +
-    `아래 「지문 승인」 버튼을 눌러 Face ID·지문으로 승인하세요.`;
+    `${opts.storeName || '매장'} · ${opts.deviceLabel || 'PC'}에서 개인정보 열람을 요청했습니다. ` +
+    `하단 「지문승인」 버튼을 눌러 Face ID·지문으로 승인하세요.`;
 
   await notifyUser(opts.uid, {
     title,
@@ -51,7 +51,7 @@ export async function createRemoteChallenge(opts: {
     link: approvePath,
     type: 'pii_unlock_request',
     storeId: opts.storeId,
-    buttonTitle: '지문으로 승인',
+    buttonTitle: '지문승인',
   });
 
   return { challengeId: ref.id, expiresAt };

@@ -38,9 +38,10 @@ async function resolveKakaoPayload(opts: NotifyOptions): Promise<Partial<KakaoNo
 
   if (type === 'pii_unlock_request') {
     return {
-      template: 'text',
+      template: 'feed',
       link,
-      buttonTitle: opts.buttonTitle || '지문 승인',
+      imageUrl: getDefaultKakaoNotifyImageUrl(),
+      buttonTitle: opts.buttonTitle || '지문승인',
       notifyType: type,
     };
   }
