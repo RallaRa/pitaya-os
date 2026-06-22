@@ -1,7 +1,7 @@
 import { adminDb } from '@/lib/firebase/admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { notifyUser } from '@/lib/notifications/notifyUser';
-import { getAppBaseUrl, REMOTE_CHALLENGE_TTL_MS } from './config';
+import { REMOTE_CHALLENGE_TTL_MS } from './config';
 import { createPiiUnlockToken } from './unlockToken';
 
 export type RemoteChallengeStatus = 'pending' | 'approved' | 'expired' | 'denied';
@@ -39,9 +39,11 @@ export async function createRemoteChallenge(opts: {
     expiresAt,
   } satisfies Omit<RemoteChallengeDoc, 'createdAt'> & { createdAt: FieldValue });
 
-  const approvePath = `/pii-approve?challenge=${ref.id}`;
+  const approvePath = `/pii-approve?challenge=${ref.id}&from=kakao`;
   const title = '고객정보 복호화 승인 요청';
-  const message = `${opts.storeName || '매장'} · ${opts.deviceLabel || 'PC'}에서 개인정보 열람을 요청했습니다. 휴대폰에서 지문으로 승인하세요.`;
+  const message =
+    `${opts.storeName || '매장'} · ${opts.deviceLabel || 'PC'}에서 개인정보 열람을 요청했습니다.\n` +
+    `아래 「지문 승인」 버튼을 눌러 Face ID·지문으로 승인하세요.`;
 
   await notifyUser(opts.uid, {
     title,

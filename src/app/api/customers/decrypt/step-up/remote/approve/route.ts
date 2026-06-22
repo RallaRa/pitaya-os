@@ -6,7 +6,7 @@ import {
   getRemoteChallenge,
 } from '@/lib/piiStepUp/remoteChallenge';
 import {
-  buildAuthenticationOptions,
+  buildRemoteApprovalOptions,
   buildRegistrationOptions,
   verifyAuthentication,
   verifyRegistration,
@@ -119,10 +119,9 @@ export async function PUT(req: Request) {
     return NextResponse.json({ options });
   }
 
-  const auth = await buildAuthenticationOptions(user.uid);
+  const auth = await buildRemoteApprovalOptions(user.uid, user.email || user.uid);
   if (auth.needsRegistration) {
-    const options = await buildRegistrationOptions(user.uid, user.email || user.uid);
-    return NextResponse.json({ needsRegistration: true, options });
+    return NextResponse.json({ needsRegistration: true, options: auth.options });
   }
   return NextResponse.json({ needsRegistration: false, options: auth.options });
 }

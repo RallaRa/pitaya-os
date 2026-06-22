@@ -75,6 +75,24 @@ export async function verifyRegistration(
   return true;
 }
 
+export async function buildRemoteApprovalOptions(uid: string, userName: string) {
+  const creds = await listUserWebAuthnCredentials(uid);
+
+  if (creds.length === 0) {
+    const options = await buildRegistrationOptions(uid, userName);
+    return { needsRegistration: true as const, options };
+  }
+
+  // 휴대폰 승인: PC 등록 키 ID를 강제하지 않고 이 기기 패스키만 선택
+  const options = await generateAuthenticationOptions({
+    rpID: getWebAuthnRpId(),
+    userVerification: 'required',
+  });
+
+  await saveWebAuthnChallenge(uid, options.challenge, 'authentication');
+  return { needsRegistration: false as const, options };
+}
+
 export async function buildAuthenticationOptions(uid: string) {
   const creds = await listUserWebAuthnCredentials(uid);
   if (creds.length === 0) {

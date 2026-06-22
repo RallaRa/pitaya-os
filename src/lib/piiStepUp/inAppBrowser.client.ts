@@ -10,9 +10,27 @@ export function isKakaoTalkInApp(): boolean {
   return /KAKAOTALK/i.test(navigator.userAgent || '');
 }
 
+/** 카카오톡 인앱 → Safari/Chrome으로 현재 페이지 열기 */
+export function escapeKakaoInAppBrowser(targetUrl?: string): void {
+  if (typeof window === 'undefined') return;
+  const url = targetUrl || window.location.href;
+  window.location.href = `kakaotalk://web/openExternal?url=${encodeURIComponent(url)}`;
+  setTimeout(() => {
+    const ua = navigator.userAgent;
+    window.location.href = /iPad|iPhone|iPod/i.test(ua)
+      ? 'kakaoweb://closeBrowser'
+      : 'kakaotalk://inappbrowser/close';
+  }, 600);
+}
+
 export function openInExternalBrowser(href?: string): void {
   const url = href || (typeof window !== 'undefined' ? window.location.href : '');
   if (!url) return;
+
+  if (isKakaoTalkInApp()) {
+    escapeKakaoInAppBrowser(url);
+    return;
+  }
 
   if (/Android/i.test(navigator.userAgent)) {
     const stripped = url.replace(/^https?:\/\//, '');

@@ -1,18 +1,24 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Fingerprint, Loader2, ShieldCheck, XCircle, CheckCircle2, ExternalLink } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { getAuthJsonHeaders } from '@/lib/getAuthHeaders';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
-import { isInAppBrowser, isKakaoTalkInApp, openInExternalBrowser } from '@/lib/piiStepUp/inAppBrowser.client';
+import {
+  isInAppBrowser,
+  isKakaoTalkInApp,
+  openInExternalBrowser,
+  escapeKakaoInAppBrowser,
+} from '@/lib/piiStepUp/inAppBrowser.client';
 
 function PiiApproveInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const challengeId = searchParams.get('challenge') || '';
+  const kakaoEscapedRef = useRef(false);
 
   const [loading, setLoading] = useState(true);
   const [approving, setApproving] = useState(false);
@@ -25,10 +31,20 @@ function PiiApproveInner() {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [inApp, setInApp] = useState(false);
+  const [escaping, setEscaping] = useState(false);
 
   useEffect(() => {
     setInApp(isInAppBrowser());
   }, []);
+
+  // 카카오 링크 탭 직후 → Safari/Chrome으로 자동 전환 (지문 인증 필수)
+  useEffect(() => {
+    if (!challengeId || kakaoEscapedRef.current) return;
+    if (!isKakaoTalkInApp()) return;
+    kakaoEscapedRef.current = true;
+    setEscaping(true);
+    escapeKakaoInAppBrowser(window.location.href);
+  }, [challengeId]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -63,40 +79,62 @@ function PiiApproveInner() {
     })();
   }, [user?.uid, challengeId, authLoading]);
 
+  const runWebAuthnAndApprove = useCallback(async () => {
+    const headers = await getAuthJsonHeaders();
+
+    const optRes = await fetch('/api/customers/decrypt/step-up/remote/approve', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ challengeId, mode: 'auth-options' }),
+    });
+    const optData = await optRes.json();
+    if (!optRes.ok) throw new Error(optData.error || '인증 준비 실패');
+
+    let webauthnAction: 'register' | 'authenticate' = 'authenticate';
+    let response;
+
+    if (optData.needsRegistration) {
+      webauthnAction = 'register';
+      response = await startRegistration({ optionsJSON: optData.options });
+    } else {
+      try {
+        response = await startAuthentication({ optionsJSON: optData.options });
+      } catch {
+        // PC 등 다른 기기에만 등록된 경우 → 이 휴대폰에 지문 등록 후 승인
+        const regOptRes = await fetch('/api/customers/decrypt/step-up/remote/approve', {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({ challengeId, mode: 'register-options' }),
+        });
+        const regOptData = await regOptRes.json();
+        if (!regOptRes.ok) throw new Error(regOptData.error || '지문 등록 준비 실패');
+        webauthnAction = 'register';
+        response = await startRegistration({ optionsJSON: regOptData.options });
+      }
+    }
+
+    const approveRes = await fetch('/api/customers/decrypt/step-up/remote/approve', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ challengeId, action: 'approve', webauthnAction, response }),
+    });
+    const approveData = await approveRes.json();
+    if (!approveRes.ok) throw new Error(approveData.error || '승인 실패');
+    setDone(true);
+  }, [challengeId]);
+
   const handleApprove = useCallback(async () => {
-    if (!challengeId || approving || inApp) return;
+    if (!challengeId || approving) return;
+
+    if (isKakaoTalkInApp()) {
+      openInExternalBrowser();
+      return;
+    }
+
     setApproving(true);
     setError(null);
     try {
-      const headers = await getAuthJsonHeaders();
-
-      const optRes = await fetch('/api/customers/decrypt/step-up/remote/approve', {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify({ challengeId, mode: 'auth-options' }),
-      });
-      const optData = await optRes.json();
-      if (!optRes.ok) throw new Error(optData.error || '인증 준비 실패');
-
-      let webauthnAction: 'register' | 'authenticate' = 'authenticate';
-      let response;
-
-      if (optData.needsRegistration) {
-        webauthnAction = 'register';
-        response = await startRegistration({ optionsJSON: optData.options });
-      } else {
-        response = await startAuthentication({ optionsJSON: optData.options });
-      }
-
-      const approveRes = await fetch('/api/customers/decrypt/step-up/remote/approve', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ challengeId, action: 'approve', webauthnAction, response }),
-      });
-      const approveData = await approveRes.json();
-      if (!approveRes.ok) throw new Error(approveData.error || '승인 실패');
-
-      setDone(true);
+      await runWebAuthnAndApprove();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : '지문 승인 실패';
       if (/cancel|abort|not allowed|not supported/i.test(msg)) {
@@ -107,7 +145,7 @@ function PiiApproveInner() {
     } finally {
       setApproving(false);
     }
-  }, [approving, challengeId, inApp]);
+  }, [approving, challengeId, runWebAuthnAndApprove]);
 
   const handleDeny = useCallback(async () => {
     if (!challengeId) return;
@@ -124,6 +162,23 @@ function PiiApproveInner() {
       setError('거절 처리 실패');
     }
   }, [challengeId]);
+
+  if (escaping) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 px-6 text-center">
+        <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
+        <p className="text-sm text-slate-300">Safari·Chrome으로 이동 중…</p>
+        <p className="text-xs text-slate-500">이동되지 않으면 아래 버튼을 눌러주세요.</p>
+        <button
+          type="button"
+          onClick={() => openInExternalBrowser()}
+          className="mt-2 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium"
+        >
+          외부 브라우저에서 열기
+        </button>
+      </div>
+    );
+  }
 
   if (authLoading || (!user && challengeId)) {
     return (
@@ -159,10 +214,7 @@ function PiiApproveInner() {
       {inApp && !done && (
         <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-950/30 p-4 space-y-3">
           <p className="text-sm text-amber-100 leading-relaxed">
-            {isKakaoTalkInApp()
-              ? '카카오톡 앱 안에서는 지문 인증이 되지 않습니다.'
-              : '앱 내 브라우저에서는 지문 인증이 제한됩니다.'}
-            {' '}Safari·Chrome에서 열어주세요.
+            지문 인증은 Safari·Chrome에서만 가능합니다.
           </p>
           <button
             type="button"
@@ -170,13 +222,8 @@ function PiiApproveInner() {
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold text-sm"
           >
             <ExternalLink className="w-4 h-4" />
-            외부 브라우저에서 열기
+            Safari·Chrome에서 열기
           </button>
-          {isKakaoTalkInApp() && (
-            <p className="text-[11px] text-amber-200/80">
-              iPhone: 우측 상단 ··· → 「Safari에서 열기」
-            </p>
-          )}
         </div>
       )}
 
@@ -213,9 +260,9 @@ function PiiApproveInner() {
           {error && <p className="text-sm text-red-400">{error}</p>}
           <button
             type="button"
-            disabled={approving || inApp}
+            disabled={approving}
             onClick={handleApprove}
-            className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold disabled:opacity-40 text-base"
+            className="w-full flex items-center justify-center gap-2 py-4 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold disabled:opacity-50 text-base"
           >
             {approving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Fingerprint className="w-5 h-5" />}
             지문 · Face ID로 승인
